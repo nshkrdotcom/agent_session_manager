@@ -8,9 +8,9 @@ defmodule AgentSessionManager.AuditLoggerTest do
 
   use ExUnit.Case, async: true
 
-  alias AgentSessionManager.AuditLogger
   alias AgentSessionManager.Adapters.InMemorySessionStore
-  alias AgentSessionManager.Core.{Event, Run, Session}
+  alias AgentSessionManager.AuditLogger
+  alias AgentSessionManager.Core.{Run, Session}
   alias AgentSessionManager.Ports.SessionStore
 
   # ============================================================================

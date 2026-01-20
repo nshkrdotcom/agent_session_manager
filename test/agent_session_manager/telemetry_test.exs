@@ -5,10 +5,12 @@ defmodule AgentSessionManager.TelemetryTest do
   Following TDD workflow: these tests specify expected behavior before implementation.
   """
 
-  use ExUnit.Case, async: true
+  # NOTE: async: false because these tests manipulate global telemetry_enabled state
+  # via Application.put_env, which causes race conditions with parallel execution
+  use ExUnit.Case, async: false
 
-  alias AgentSessionManager.Telemetry
   alias AgentSessionManager.Core.{Run, Session}
+  alias AgentSessionManager.Telemetry
 
   # ============================================================================
   # Test Helpers

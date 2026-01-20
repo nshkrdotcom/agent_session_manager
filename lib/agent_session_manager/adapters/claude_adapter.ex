@@ -457,59 +457,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
   defp handle_claude_event(%{type: "content_block_delta"} = event, ctx) do
     index = event.index
     delta = event.delta
-
-    case delta.type do
-      "text_delta" ->
-        # Accumulate text and emit streamed event
-        text = delta.text
-
-        emit_event(ctx, :message_streamed, %{
-          content: text,
-          delta: text,
-          index: index
-        })
-
-        # Update accumulated content
-        new_content = ctx.accumulated_content <> text
-
-        # Update content block (safely handling missing block)
-        new_blocks =
-          case Map.get(ctx.content_blocks, index) do
-            nil ->
-              # Create block if it doesn't exist
-              Map.put(ctx.content_blocks, index, %{type: :text, content: text})
-
-            block ->
-              Map.put(ctx.content_blocks, index, %{
-                block
-                | content: (block[:content] || "") <> text
-              })
-          end
-
-        %{ctx | accumulated_content: new_content, content_blocks: new_blocks}
-
-      "input_json_delta" ->
-        # Accumulate tool input JSON (safely handling missing block)
-        partial_json = delta.partial_json
-
-        new_blocks =
-          case Map.get(ctx.content_blocks, index) do
-            nil ->
-              # Should not happen, but handle gracefully
-              ctx.content_blocks
-
-            block ->
-              Map.put(ctx.content_blocks, index, %{
-                block
-                | input_json: (block[:input_json] || "") <> partial_json
-              })
-          end
-
-        %{ctx | content_blocks: new_blocks}
-
-      _ ->
-        ctx
-    end
+    handle_delta(delta.type, delta, index, ctx)
   end
 
   defp handle_claude_event(%{type: "content_block_stop"} = event, ctx) do
@@ -599,6 +547,48 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
   defp handle_claude_event(_event, ctx) do
     # Unknown event type, ignore
     ctx
+  end
+
+  defp handle_delta("text_delta", delta, index, ctx) do
+    text = delta.text
+
+    emit_event(ctx, :message_streamed, %{
+      content: text,
+      delta: text,
+      index: index
+    })
+
+    new_content = ctx.accumulated_content <> text
+    new_blocks = update_text_block(ctx.content_blocks, index, text)
+    %{ctx | accumulated_content: new_content, content_blocks: new_blocks}
+  end
+
+  defp handle_delta("input_json_delta", delta, index, ctx) do
+    partial_json = delta.partial_json
+    new_blocks = update_json_block(ctx.content_blocks, index, partial_json)
+    %{ctx | content_blocks: new_blocks}
+  end
+
+  defp handle_delta(_type, _delta, _index, ctx), do: ctx
+
+  defp update_text_block(blocks, index, text) do
+    case Map.get(blocks, index) do
+      nil ->
+        Map.put(blocks, index, %{type: :text, content: text})
+
+      block ->
+        Map.put(blocks, index, %{block | content: (block[:content] || "") <> text})
+    end
+  end
+
+  defp update_json_block(blocks, index, partial_json) do
+    case Map.get(blocks, index) do
+      nil ->
+        blocks
+
+      block ->
+        Map.put(blocks, index, %{block | input_json: (block[:input_json] || "") <> partial_json})
+    end
   end
 
   defp emit_event(ctx, type, data) do

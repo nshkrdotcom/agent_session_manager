@@ -123,7 +123,7 @@ defmodule AgentSessionManager.Core.EventTest do
       types = Event.all_types()
 
       assert is_list(types)
-      assert length(types) > 0
+      refute Enum.empty?(types)
       assert :session_created in types
       assert :run_started in types
       assert :message_sent in types

@@ -189,7 +189,7 @@ defmodule AgentSessionManager.Core.ErrorTest do
       codes = Error.all_codes()
 
       assert is_list(codes)
-      assert length(codes) > 0
+      refute Enum.empty?(codes)
       assert :validation_error in codes
       assert :provider_error in codes
       assert :storage_error in codes
@@ -203,7 +203,7 @@ defmodule AgentSessionManager.Core.ErrorTest do
 
       assert error.code == :validation_error
       assert error.message == "Invalid input provided"
-      assert error.timestamp != nil
+      assert %DateTime{} = error.timestamp
     end
 
     test "creates error with default message for code" do

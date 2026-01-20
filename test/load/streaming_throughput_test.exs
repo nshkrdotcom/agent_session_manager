@@ -298,26 +298,28 @@ defmodule AgentSessionManager.Load.StreamingThroughputTest do
     all_latencies = :ets.tab2list(latencies) |> Enum.map(fn {_, lat} -> lat end) |> Enum.sort()
 
     results =
-      if length(all_latencies) > 0 do
-        %{
-          sample_count: length(all_latencies),
-          min_latency_ms: Enum.min(all_latencies),
-          max_latency_ms: Enum.max(all_latencies),
-          avg_latency_ms: Enum.sum(all_latencies) / length(all_latencies),
-          p50_latency_ms: percentile(all_latencies, 50),
-          p95_latency_ms: percentile(all_latencies, 95),
-          p99_latency_ms: percentile(all_latencies, 99)
-        }
-      else
-        %{
-          sample_count: 0,
-          min_latency_ms: 0,
-          max_latency_ms: 0,
-          avg_latency_ms: 0,
-          p50_latency_ms: 0,
-          p95_latency_ms: 0,
-          p99_latency_ms: 0
-        }
+      case all_latencies do
+        [_ | _] ->
+          %{
+            sample_count: length(all_latencies),
+            min_latency_ms: Enum.min(all_latencies),
+            max_latency_ms: Enum.max(all_latencies),
+            avg_latency_ms: Enum.sum(all_latencies) / length(all_latencies),
+            p50_latency_ms: percentile(all_latencies, 50),
+            p95_latency_ms: percentile(all_latencies, 95),
+            p99_latency_ms: percentile(all_latencies, 99)
+          }
+
+        [] ->
+          %{
+            sample_count: 0,
+            min_latency_ms: 0,
+            max_latency_ms: 0,
+            avg_latency_ms: 0,
+            p50_latency_ms: 0,
+            p95_latency_ms: 0,
+            p99_latency_ms: 0
+          }
       end
 
     :ets.delete(latencies)
@@ -404,8 +406,9 @@ defmodule AgentSessionManager.Load.StreamingThroughputTest do
     end
   end
 
-  defp percentile(sorted_list, p) when length(sorted_list) > 0 do
-    k = (length(sorted_list) - 1) * p / 100
+  defp percentile([_ | _] = sorted_list, p) do
+    len = length(sorted_list)
+    k = (len - 1) * p / 100
     f = floor(k)
     c = ceil(k)
 
@@ -418,7 +421,7 @@ defmodule AgentSessionManager.Load.StreamingThroughputTest do
     end
   end
 
-  defp percentile(_, _), do: 0
+  defp percentile([], _), do: 0
 
   defp cleanup(pids) do
     for pid <- pids do

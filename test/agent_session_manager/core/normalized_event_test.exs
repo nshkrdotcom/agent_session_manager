@@ -9,8 +9,8 @@ defmodule AgentSessionManager.Core.NormalizedEventTest do
   """
   use ExUnit.Case, async: true
 
-  alias AgentSessionManager.Core.NormalizedEvent
   alias AgentSessionManager.Core.Error
+  alias AgentSessionManager.Core.NormalizedEvent
 
   describe "NormalizedEvent struct - required fields" do
     test "defines all required fields" do

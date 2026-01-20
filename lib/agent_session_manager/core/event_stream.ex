@@ -33,9 +33,9 @@ defmodule AgentSessionManager.Core.EventStream do
 
   """
 
-  alias AgentSessionManager.Core.NormalizedEvent
-  alias AgentSessionManager.Core.EventNormalizer
   alias AgentSessionManager.Core.Error
+  alias AgentSessionManager.Core.EventNormalizer
+  alias AgentSessionManager.Core.NormalizedEvent
 
   @default_buffer_size 1000
 

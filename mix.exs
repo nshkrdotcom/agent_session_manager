@@ -34,6 +34,7 @@ defmodule AgentSessionManager.MixProject do
     [
       # Core dependencies
       {:telemetry, "~> 1.2"},
+      {:jason, "~> 1.4"},
 
       # Development and documentation
       {:ex_doc, "~> 0.38", only: :dev, runtime: false},

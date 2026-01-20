@@ -1,7 +1,7 @@
 defmodule AgentSessionManager.Core.RegistryTest do
   use ExUnit.Case, async: true
 
-  alias AgentSessionManager.Core.{Registry, Manifest, Capability}
+  alias AgentSessionManager.Core.{Capability, Manifest, Registry}
 
   # Helper to create test manifests
   defp create_manifest(name, version, opts \\ []) do

@@ -36,8 +36,8 @@ defmodule AgentSessionManager.Core.EventNormalizer do
 
   """
 
-  alias AgentSessionManager.Core.NormalizedEvent
   alias AgentSessionManager.Core.Error
+  alias AgentSessionManager.Core.NormalizedEvent
 
   # Type mappings from common provider patterns to canonical types
   @type_mappings %{
@@ -227,31 +227,21 @@ defmodule AgentSessionManager.Core.EventNormalizer do
     raw_event["type"] || raw_event[:type] || raw_event["event"] || raw_event[:event] || ""
   end
 
-  defp infer_type_from_content(raw_event, original_type) do
-    cond do
-      Map.has_key?(raw_event, "delta") or Map.has_key?(raw_event, :delta) ->
-        :message_streamed
-
-      Map.has_key?(raw_event, "tool_use") or Map.has_key?(raw_event, :tool_use) ->
-        :tool_call_started
-
-      Map.has_key?(raw_event, "content") or Map.has_key?(raw_event, :content) ->
-        :message_received
-
-      Map.has_key?(raw_event, "error") or Map.has_key?(raw_event, :error) ->
-        :error_occurred
-
-      true ->
-        # Unknown type - wrap in error_occurred to preserve the data
-        :error_occurred
-    end
-    |> tap(fn type ->
-      if type == :error_occurred and original_type != "" do
-        # We'll store the original type in the data
-        :ok
-      end
-    end)
+  defp infer_type_from_content(raw_event, _original_type) do
+    infer_type_by_keys(raw_event)
   end
+
+  defp infer_type_by_keys(raw_event) do
+    cond do
+      has_key?(raw_event, "delta") -> :message_streamed
+      has_key?(raw_event, "tool_use") -> :tool_call_started
+      has_key?(raw_event, "content") -> :message_received
+      has_key?(raw_event, "error") -> :error_occurred
+      true -> :error_occurred
+    end
+  end
+
+  defp has_key?(map, key), do: Map.has_key?(map, key) or Map.has_key?(map, String.to_atom(key))
 
   defp maybe_refine_type(:run_completed, raw_event) do
     status = raw_event["status"] || raw_event[:status]

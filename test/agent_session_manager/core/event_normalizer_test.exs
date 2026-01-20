@@ -7,9 +7,9 @@ defmodule AgentSessionManager.Core.EventNormalizerTest do
   """
   use ExUnit.Case, async: true
 
+  alias AgentSessionManager.Core.Error
   alias AgentSessionManager.Core.EventNormalizer
   alias AgentSessionManager.Core.NormalizedEvent
-  alias AgentSessionManager.Core.Error
 
   describe "EventNormalizer.normalize/2 - basic normalization" do
     test "normalizes a raw event map into NormalizedEvent" do

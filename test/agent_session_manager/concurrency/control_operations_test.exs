@@ -176,8 +176,18 @@ defmodule AgentSessionManager.Concurrency.ControlOperationsTest do
     {:ok, ops} = ControlOperations.start_link(adapter: adapter)
 
     on_exit(fn ->
-      if Process.alive?(ops), do: GenServer.stop(ops)
-      if Process.alive?(adapter), do: GenServer.stop(adapter)
+      # Safely stop processes, ignoring if already dead
+      try do
+        if Process.alive?(ops), do: GenServer.stop(ops)
+      catch
+        :exit, _ -> :ok
+      end
+
+      try do
+        if Process.alive?(adapter), do: GenServer.stop(adapter)
+      catch
+        :exit, _ -> :ok
+      end
     end)
 
     {:ok, ops: ops, adapter: adapter}
@@ -207,7 +217,7 @@ defmodule AgentSessionManager.Concurrency.ControlOperationsTest do
 
       # Should have been called twice at adapter level (or just once depending on implementation)
       calls = MockControlAdapter.get_calls(adapter, :interrupt)
-      assert length(calls) >= 1
+      refute Enum.empty?(calls)
     end
 
     test "returns error when adapter fails to interrupt", %{ops: ops, adapter: adapter} do
@@ -488,25 +498,25 @@ defmodule AgentSessionManager.Concurrency.ControlOperationsTest do
     end
   end
 
-  describe "is_terminal_state?/1" do
+  describe "terminal_state?/1" do
     test "cancelled is terminal" do
-      assert ControlOperations.is_terminal_state?(:cancelled) == true
+      assert ControlOperations.terminal_state?(:cancelled) == true
     end
 
     test "completed is terminal" do
-      assert ControlOperations.is_terminal_state?(:completed) == true
+      assert ControlOperations.terminal_state?(:completed) == true
     end
 
     test "failed is terminal" do
-      assert ControlOperations.is_terminal_state?(:failed) == true
+      assert ControlOperations.terminal_state?(:failed) == true
     end
 
     test "running is not terminal" do
-      assert ControlOperations.is_terminal_state?(:running) == false
+      assert ControlOperations.terminal_state?(:running) == false
     end
 
     test "paused is not terminal" do
-      assert ControlOperations.is_terminal_state?(:paused) == false
+      assert ControlOperations.terminal_state?(:paused) == false
     end
   end
 end

@@ -215,8 +215,8 @@ defmodule AgentSessionManager.Concurrency.ControlOperations do
 
   Terminal states are: :cancelled, :completed, :failed, :timeout
   """
-  @spec is_terminal_state?(atom()) :: boolean()
-  def is_terminal_state?(state) do
+  @spec terminal_state?(atom()) :: boolean()
+  def terminal_state?(state) do
     state in @terminal_states
   end
 
@@ -368,22 +368,23 @@ defmodule AgentSessionManager.Concurrency.ControlOperations do
       # Already paused, return success (idempotent)
       {{:ok, run_id}, state}
     else
-      # Check capability
-      case check_capability(state.adapter, "pause") do
-        :ok ->
-          case call_adapter_pause(state.adapter, run_id) do
-            {:ok, _} ->
-              new_state = record_operation(state, run_id, :pause, :ok, :paused)
-              {{:ok, run_id}, new_state}
+      do_pause_with_capability_check(run_id, state)
+    end
+  end
 
-            {:error, error} ->
-              new_state = record_operation(state, run_id, :pause, {:error, error}, nil)
-              {{:error, error}, new_state}
-          end
-
-        {:error, error} ->
+  defp do_pause_with_capability_check(run_id, state) do
+    with :ok <- check_capability(state.adapter, "pause"),
+         {:ok, _} <- call_adapter_pause(state.adapter, run_id) do
+      new_state = record_operation(state, run_id, :pause, :ok, :paused)
+      {{:ok, run_id}, new_state}
+    else
+      {:error, error} ->
+        if check_capability(state.adapter, "pause") == :ok do
+          new_state = record_operation(state, run_id, :pause, {:error, error}, nil)
+          {{:error, error}, new_state}
+        else
           {{:error, error}, state}
-      end
+        end
     end
   end
 
@@ -403,21 +404,22 @@ defmodule AgentSessionManager.Concurrency.ControlOperations do
         {{:error, error}, state}
 
       true ->
-        # Check capability
-        case check_capability(state.adapter, "resume") do
-          :ok ->
-            case call_adapter_resume(state.adapter, run_id) do
-              {:ok, _} ->
-                new_state = record_operation(state, run_id, :resume, :ok, :running)
-                {{:ok, run_id}, new_state}
+        do_resume_with_capability_check(run_id, state)
+    end
+  end
 
-              {:error, error} ->
-                new_state = record_operation(state, run_id, :resume, {:error, error}, nil)
-                {{:error, error}, new_state}
-            end
-
-          {:error, error} ->
-            {{:error, error}, state}
+  defp do_resume_with_capability_check(run_id, state) do
+    with :ok <- check_capability(state.adapter, "resume"),
+         {:ok, _} <- call_adapter_resume(state.adapter, run_id) do
+      new_state = record_operation(state, run_id, :resume, :ok, :running)
+      {{:ok, run_id}, new_state}
+    else
+      {:error, error} ->
+        if check_capability(state.adapter, "resume") == :ok do
+          new_state = record_operation(state, run_id, :resume, {:error, error}, nil)
+          {{:error, error}, new_state}
+        else
+          {{:error, error}, state}
         end
     end
   end
@@ -444,20 +446,27 @@ defmodule AgentSessionManager.Concurrency.ControlOperations do
   defp check_capability(adapter, capability_name) do
     case get_capabilities(adapter) do
       {:ok, capabilities} ->
-        if Enum.any?(capabilities, fn cap ->
-             cap.name == capability_name && cap.enabled
-           end) do
-          :ok
-        else
-          {:error,
-           Error.new(
-             :capability_not_supported,
-             "Capability '#{capability_name}' not supported by adapter"
-           )}
-        end
+        check_capability_enabled(capabilities, capability_name)
 
       {:error, error} ->
         {:error, error}
+    end
+  end
+
+  defp check_capability_enabled(capabilities, capability_name) do
+    has_capability =
+      Enum.any?(capabilities, fn cap ->
+        cap.name == capability_name && cap.enabled
+      end)
+
+    if has_capability do
+      :ok
+    else
+      {:error,
+       Error.new(
+         :capability_not_supported,
+         "Capability '#{capability_name}' not supported by adapter"
+       )}
     end
   end
 

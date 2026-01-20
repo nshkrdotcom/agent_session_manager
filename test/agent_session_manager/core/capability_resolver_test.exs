@@ -1,7 +1,7 @@
 defmodule AgentSessionManager.Core.CapabilityResolverTest do
   use ExUnit.Case, async: true
 
-  alias AgentSessionManager.Core.{CapabilityResolver, Capability}
+  alias AgentSessionManager.Core.{Capability, CapabilityResolver}
 
   # Helper to create test capabilities
   defp create_capability(name, type, opts \\ []) do

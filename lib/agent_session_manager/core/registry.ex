@@ -51,7 +51,7 @@ defmodule AgentSessionManager.Core.Registry do
 
   """
 
-  alias AgentSessionManager.Core.{Manifest, Capability, Error}
+  alias AgentSessionManager.Core.{Capability, Error, Manifest}
 
   @type t :: %__MODULE__{
           manifests: %{String.t() => Manifest.t()},

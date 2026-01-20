@@ -142,7 +142,7 @@ defmodule AgentSessionManager.Core.RunTest do
 
       assert completed.output == %{response: "Hello!"}
       assert completed.status == :completed
-      assert completed.ended_at != nil
+      assert %DateTime{} = completed.ended_at
     end
   end
 
@@ -154,7 +154,7 @@ defmodule AgentSessionManager.Core.RunTest do
 
       assert failed.error == error
       assert failed.status == :failed
-      assert failed.ended_at != nil
+      assert %DateTime{} = failed.ended_at
     end
   end
 

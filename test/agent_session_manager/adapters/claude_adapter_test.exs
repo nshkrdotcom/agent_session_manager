@@ -268,7 +268,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
 
       # Should have message_streamed events for text deltas
       streamed_events = Enum.filter(events, &(&1.type == :message_streamed))
-      assert length(streamed_events) >= 1
+      refute Enum.empty?(streamed_events)
 
       # Each streamed event should have content
       Enum.each(streamed_events, fn event ->
@@ -367,7 +367,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
 
       # Should have token_usage_updated event
       usage_events = Enum.filter(events, &(&1.type == :token_usage_updated))
-      assert length(usage_events) >= 1
+      refute Enum.empty?(usage_events)
 
       usage = hd(usage_events)
       assert Map.has_key?(usage.data, :input_tokens)
@@ -556,7 +556,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
       events = collect_events(test_pid, 500)
 
       error_events = Enum.filter(events, &(&1.type == :error_occurred))
-      assert length(error_events) >= 1
+      refute Enum.empty?(error_events)
 
       error_event = hd(error_events)
       assert error_event.data.error_code == :provider_rate_limited
@@ -803,7 +803,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
 
       events = collect_events(test_pid, 500)
 
-      assert length(events) > 0
+      refute Enum.empty?(events)
       first_event = hd(events)
       assert first_event.type == :run_started
     end
@@ -831,7 +831,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
 
       events = collect_events(test_pid, 500)
 
-      assert length(events) > 0
+      refute Enum.empty?(events)
       last_event = List.last(events)
       assert last_event.type == :run_completed
     end

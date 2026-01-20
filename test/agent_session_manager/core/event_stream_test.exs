@@ -7,9 +7,9 @@ defmodule AgentSessionManager.Core.EventStreamTest do
   """
   use ExUnit.Case, async: true
 
+  alias AgentSessionManager.Core.Error
   alias AgentSessionManager.Core.EventStream
   alias AgentSessionManager.Core.NormalizedEvent
-  alias AgentSessionManager.Core.Error
 
   describe "EventStream.new/1 - stream creation" do
     test "creates a new event stream with context" do

@@ -91,6 +91,14 @@ defmodule AgentSessionManager.Core.Error do
     :unknown_error
   ]
 
+  # Concurrency errors
+  @concurrency_codes [
+    :max_sessions_exceeded,
+    :max_runs_exceeded,
+    :capability_not_supported,
+    :invalid_operation
+  ]
+
   # Tool errors
   @tool_codes [
     :tool_error,
@@ -105,6 +113,7 @@ defmodule AgentSessionManager.Core.Error do
                @provider_codes ++
                @storage_codes ++
                @runtime_codes ++
+               @concurrency_codes ++
                @tool_codes
 
   @retryable_codes [
@@ -148,7 +157,11 @@ defmodule AgentSessionManager.Core.Error do
     tool_error: "Tool error occurred",
     tool_not_found: "Tool not found",
     tool_execution_failed: "Tool execution failed",
-    tool_permission_denied: "Tool permission denied"
+    tool_permission_denied: "Tool permission denied",
+    max_sessions_exceeded: "Maximum parallel sessions limit exceeded",
+    max_runs_exceeded: "Maximum parallel runs limit exceeded",
+    capability_not_supported: "Capability not supported by provider",
+    invalid_operation: "Operation not valid for current state"
   }
 
   @type error_code ::
@@ -185,9 +198,21 @@ defmodule AgentSessionManager.Core.Error do
           | :tool_not_found
           | :tool_execution_failed
           | :tool_permission_denied
+          | :max_sessions_exceeded
+          | :max_runs_exceeded
+          | :capability_not_supported
+          | :invalid_operation
 
   @type error_category ::
-          :validation | :state | :resource | :provider | :storage | :runtime | :tool | :unknown
+          :validation
+          | :state
+          | :resource
+          | :provider
+          | :storage
+          | :runtime
+          | :concurrency
+          | :tool
+          | :unknown
 
   @type t :: %__MODULE__{
           code: error_code(),
@@ -343,6 +368,12 @@ defmodule AgentSessionManager.Core.Error do
   def tool_codes, do: @tool_codes
 
   @doc """
+  Returns concurrency error codes.
+  """
+  @spec concurrency_codes() :: [error_code()]
+  def concurrency_codes, do: @concurrency_codes
+
+  @doc """
   Returns the category of an error code.
   """
   @spec category(error_code() | atom()) :: error_category()
@@ -352,6 +383,7 @@ defmodule AgentSessionManager.Core.Error do
   def category(code) when code in @provider_codes, do: :provider
   def category(code) when code in @storage_codes, do: :storage
   def category(code) when code in @runtime_codes, do: :runtime
+  def category(code) when code in @concurrency_codes, do: :concurrency
   def category(code) when code in @tool_codes, do: :tool
   def category(_), do: :unknown
 

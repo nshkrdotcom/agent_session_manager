@@ -51,7 +51,8 @@ defmodule AgentSessionManager.Core.Error do
     :invalid_status,
     :invalid_transition,
     :invalid_event_type,
-    :invalid_capability_type
+    :invalid_capability_type,
+    :missing_required_capability
   ]
 
   # Resource errors
@@ -123,6 +124,7 @@ defmodule AgentSessionManager.Core.Error do
     invalid_transition: "Invalid state transition",
     invalid_event_type: "Invalid event type",
     invalid_capability_type: "Invalid capability type",
+    missing_required_capability: "Required capability is missing",
     not_found: "Resource not found",
     session_not_found: "Session not found",
     run_not_found: "Run not found",
@@ -158,6 +160,7 @@ defmodule AgentSessionManager.Core.Error do
           | :invalid_transition
           | :invalid_event_type
           | :invalid_capability_type
+          | :missing_required_capability
           | :not_found
           | :session_not_found
           | :run_not_found

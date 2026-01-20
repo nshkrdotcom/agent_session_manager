@@ -12,6 +12,8 @@ defmodule AgentSessionManager do
   - `AgentSessionManager.Core.Event` - Represents events in the session lifecycle
   - `AgentSessionManager.Core.Capability` - Represents agent capabilities
   - `AgentSessionManager.Core.Manifest` - Represents an agent manifest
+  - `AgentSessionManager.Core.CapabilityResolver` - Negotiates capabilities between requirements and providers
+  - `AgentSessionManager.Core.Registry` - Thread-safe registry for provider manifests
   - `AgentSessionManager.Core.Error` - Normalized error taxonomy
 
   ## Quick Start
@@ -73,4 +75,11 @@ defmodule AgentSessionManager do
   defdelegate new_event(attrs), to: AgentSessionManager.Core.Event, as: :new
   defdelegate new_capability(attrs), to: AgentSessionManager.Core.Capability, as: :new
   defdelegate new_manifest(attrs), to: AgentSessionManager.Core.Manifest, as: :new
+
+  # Registry and capability resolution
+  defdelegate new_registry(), to: AgentSessionManager.Core.Registry, as: :new
+
+  defdelegate new_capability_resolver(opts),
+    to: AgentSessionManager.Core.CapabilityResolver,
+    as: :new
 end

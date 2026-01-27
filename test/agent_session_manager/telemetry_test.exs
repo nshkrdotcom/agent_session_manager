@@ -2,34 +2,14 @@ defmodule AgentSessionManager.TelemetryTest do
   @moduledoc """
   Tests for telemetry event emission.
 
-  Following TDD workflow: these tests specify expected behavior before implementation.
+  All configuration overrides are process-local via `AgentSessionManager.Config`,
+  so these tests run fully async with no cross-test contamination.
   """
 
-  # NOTE: async: false because these tests manipulate global telemetry_enabled state
-  # via Application.put_env, which causes race conditions with parallel execution
-  use AgentSessionManager.SupertesterCase, async: false
+  use AgentSessionManager.SupertesterCase, async: true
 
   alias AgentSessionManager.Core.{Run, Session}
   alias AgentSessionManager.Telemetry
-
-  # ============================================================================
-  # Test Setup - Ensure clean state for each test
-  # ============================================================================
-
-  setup do
-    # Reset telemetry to enabled state at start of each test
-    Telemetry.set_enabled(true)
-
-    # Clear any stale messages in the mailbox from other tests
-    flush_mailbox()
-
-    on_exit(fn ->
-      # Ensure telemetry is re-enabled after test
-      Telemetry.set_enabled(true)
-    end)
-
-    :ok
-  end
 
   # ============================================================================
   # Handler Module - Using module function avoids telemetry warnings
@@ -47,15 +27,6 @@ defmodule AgentSessionManager.TelemetryTest do
   # Test Helpers
   # ============================================================================
 
-  # Flush all messages from the process mailbox
-  defp flush_mailbox do
-    receive do
-      _ -> flush_mailbox()
-    after
-      0 -> :ok
-    end
-  end
-
   defp attach_test_handler(event_name) do
     ref = make_ref()
     handler_id = "test-handler-#{:erlang.unique_integer()}"
@@ -67,7 +38,6 @@ defmodule AgentSessionManager.TelemetryTest do
       %{pid: self(), ref: ref}
     )
 
-    # Register cleanup to ensure handler is always detached
     on_exit(fn ->
       try do
         :telemetry.detach(handler_id)
@@ -79,23 +49,18 @@ defmodule AgentSessionManager.TelemetryTest do
     {handler_id, ref}
   end
 
-  # Wait for a telemetry event matching the given ref and session_id
-  # This filters out events from other tests
   defp receive_event(ref, session_id, timeout \\ 1000) do
     receive do
       {:telemetry_event, ^ref, event, measurements, %{session_id: ^session_id} = metadata} ->
         {:ok, event, measurements, metadata}
 
       {:telemetry_event, ^ref, _event, _measurements, _metadata} ->
-        # Event from our handler but different session - keep waiting
         receive_event(ref, session_id, timeout)
     after
       timeout -> {:error, :timeout}
     end
   end
 
-  # Assert no events matching our ref arrive within timeout
-  # Events from other tests (different ref) are ignored
   defp refute_event(ref, timeout \\ 100) do
     receive do
       {:telemetry_event, ^ref, event, _measurements, metadata} ->
@@ -123,37 +88,18 @@ defmodule AgentSessionManager.TelemetryTest do
 
   describe "Telemetry.enabled?/0" do
     test "returns true by default" do
-      # Clear any existing config
-      Application.delete_env(:agent_session_manager, :telemetry_enabled)
       assert Telemetry.enabled?() == true
     end
 
-    test "returns false when telemetry is disabled via config" do
-      original = Application.get_env(:agent_session_manager, :telemetry_enabled)
-      Application.put_env(:agent_session_manager, :telemetry_enabled, false)
-
+    test "returns false when disabled via set_enabled/1" do
+      Telemetry.set_enabled(false)
       assert Telemetry.enabled?() == false
-
-      # Restore original
-      if original == nil do
-        Application.delete_env(:agent_session_manager, :telemetry_enabled)
-      else
-        Application.put_env(:agent_session_manager, :telemetry_enabled, original)
-      end
     end
 
-    test "returns true when telemetry is explicitly enabled via config" do
-      original = Application.get_env(:agent_session_manager, :telemetry_enabled)
-      Application.put_env(:agent_session_manager, :telemetry_enabled, true)
-
+    test "returns true when explicitly enabled via set_enabled/1" do
+      Telemetry.set_enabled(false)
+      Telemetry.set_enabled(true)
       assert Telemetry.enabled?() == true
-
-      # Restore original
-      if original == nil do
-        Application.delete_env(:agent_session_manager, :telemetry_enabled)
-      else
-        Application.put_env(:agent_session_manager, :telemetry_enabled, original)
-      end
     end
   end
 
@@ -166,9 +112,22 @@ defmodule AgentSessionManager.TelemetryTest do
     test "disables telemetry" do
       Telemetry.set_enabled(false)
       assert Telemetry.enabled?() == false
+    end
 
-      # Re-enable for other tests
-      Telemetry.set_enabled(true)
+    test "override is process-local" do
+      Telemetry.set_enabled(false)
+
+      # Spawn a separate process and verify it sees the default (true)
+      parent = self()
+
+      spawn(fn ->
+        send(parent, {:other_process_enabled, Telemetry.enabled?()})
+      end)
+
+      assert_receive {:other_process_enabled, true}
+
+      # This process still sees false
+      assert Telemetry.enabled?() == false
     end
   end
 
@@ -232,17 +191,12 @@ defmodule AgentSessionManager.TelemetryTest do
       session = create_test_session()
       run = create_test_run(session)
 
-      # Disable telemetry FIRST, then attach handler
       Telemetry.set_enabled(false)
       {_handler_id, ref} = attach_test_handler([:agent_session_manager, :run, :start])
 
-      # Now emit - should NOT produce any event because telemetry is disabled
       Telemetry.emit_run_start(run, session)
 
-      # Only check for events from OUR handler (matching ref)
       refute_event(ref)
-
-      Telemetry.set_enabled(true)
     end
   end
 
@@ -317,8 +271,6 @@ defmodule AgentSessionManager.TelemetryTest do
       Telemetry.emit_run_end(run, session, result)
 
       refute_event(ref)
-
-      Telemetry.set_enabled(true)
     end
   end
 
@@ -391,8 +343,6 @@ defmodule AgentSessionManager.TelemetryTest do
       Telemetry.emit_error(run, session, error)
 
       refute_event(ref)
-
-      Telemetry.set_enabled(true)
     end
   end
 
@@ -461,8 +411,6 @@ defmodule AgentSessionManager.TelemetryTest do
       Telemetry.emit_usage_metrics(session, metrics)
 
       refute_event(ref)
-
-      Telemetry.set_enabled(true)
     end
   end
 
@@ -649,8 +597,6 @@ defmodule AgentSessionManager.TelemetryTest do
       Telemetry.emit_adapter_event(run, session, event_data)
 
       refute_event(ref)
-
-      Telemetry.set_enabled(true)
     end
   end
 end

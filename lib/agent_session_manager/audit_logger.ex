@@ -16,12 +16,13 @@ defmodule AgentSessionManager.AuditLogger do
 
   ## Configuration
 
-  Audit logging can be enabled or disabled via application config:
+  Audit logging is enabled by default. Disable it via application config
+  (global baseline) or at runtime per-process:
 
-      config :agent_session_manager, audit_logging_enabled: true  # default
+      # Global baseline (config.exs)
+      config :agent_session_manager, audit_logging_enabled: false
 
-  Or at runtime:
-
+      # Per-process override (safe in concurrent tests)
       AgentSessionManager.AuditLogger.set_enabled(false)
 
   ## Usage
@@ -47,6 +48,7 @@ defmodule AgentSessionManager.AuditLogger do
 
   """
 
+  alias AgentSessionManager.Config
   alias AgentSessionManager.Core.{Event, Run, Session}
   alias AgentSessionManager.Ports.SessionStore
 
@@ -59,20 +61,23 @@ defmodule AgentSessionManager.AuditLogger do
   @doc """
   Returns whether audit logging is enabled.
 
-  Defaults to `true` if not configured.
+  Checks the process-local override first, then Application environment,
+  then defaults to `true`. See `AgentSessionManager.Config` for details.
   """
   @spec enabled?() :: boolean()
   def enabled? do
-    Application.get_env(:agent_session_manager, :audit_logging_enabled, true)
+    Config.get(:audit_logging_enabled)
   end
 
   @doc """
-  Enables or disables audit logging at runtime.
+  Enables or disables audit logging for the current process.
+
+  The override is process-local and automatically cleaned up when the
+  process exits. This is safe to call in concurrent tests.
   """
   @spec set_enabled(boolean()) :: :ok
   def set_enabled(enabled) when is_boolean(enabled) do
-    Application.put_env(:agent_session_manager, :audit_logging_enabled, enabled)
-    :ok
+    Config.put(:audit_logging_enabled, enabled)
   end
 
   # ============================================================================

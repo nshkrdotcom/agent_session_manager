@@ -17,12 +17,13 @@ defmodule AgentSessionManager.Telemetry do
 
   ## Configuration
 
-  Telemetry can be enabled or disabled via application config:
+  Telemetry is enabled by default. Disable it via application config
+  (global baseline) or at runtime per-process:
 
-      config :agent_session_manager, telemetry_enabled: true  # default
+      # Global baseline (config.exs)
+      config :agent_session_manager, telemetry_enabled: false
 
-  Or at runtime:
-
+      # Per-process override (safe in concurrent tests)
       AgentSessionManager.Telemetry.set_enabled(false)
 
   ## Usage
@@ -55,6 +56,7 @@ defmodule AgentSessionManager.Telemetry do
 
   """
 
+  alias AgentSessionManager.Config
   alias AgentSessionManager.Core.{Run, Session}
 
   # ============================================================================
@@ -64,20 +66,23 @@ defmodule AgentSessionManager.Telemetry do
   @doc """
   Returns whether telemetry is enabled.
 
-  Defaults to `true` if not configured.
+  Checks the process-local override first, then Application environment,
+  then defaults to `true`. See `AgentSessionManager.Config` for details.
   """
   @spec enabled?() :: boolean()
   def enabled? do
-    Application.get_env(:agent_session_manager, :telemetry_enabled, true)
+    Config.get(:telemetry_enabled)
   end
 
   @doc """
-  Enables or disables telemetry at runtime.
+  Enables or disables telemetry for the current process.
+
+  The override is process-local and automatically cleaned up when the
+  process exits. This is safe to call in concurrent tests.
   """
   @spec set_enabled(boolean()) :: :ok
   def set_enabled(enabled) when is_boolean(enabled) do
-    Application.put_env(:agent_session_manager, :telemetry_enabled, enabled)
-    :ok
+    Config.put(:telemetry_enabled, enabled)
   end
 
   # ============================================================================

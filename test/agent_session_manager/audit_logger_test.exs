@@ -25,14 +25,6 @@ defmodule AgentSessionManager.AuditLoggerTest do
     {:ok, run} = Run.new(%{session_id: session.id})
     :ok = SessionStore.save_run(store, run)
 
-    # Ensure audit logging is enabled at start of each test
-    AuditLogger.set_enabled(true)
-
-    on_exit(fn ->
-      # Reset to enabled after test
-      AuditLogger.set_enabled(true)
-    end)
-
     %{store: store, session: session, run: run}
   end
 
@@ -42,22 +34,12 @@ defmodule AgentSessionManager.AuditLoggerTest do
 
   describe "AuditLogger.enabled?/0" do
     test "returns true by default" do
-      Application.delete_env(:agent_session_manager, :audit_logging_enabled)
       assert AuditLogger.enabled?() == true
     end
 
-    test "returns false when audit logging is disabled via config" do
-      original = Application.get_env(:agent_session_manager, :audit_logging_enabled)
-      Application.put_env(:agent_session_manager, :audit_logging_enabled, false)
-
+    test "returns false when disabled via set_enabled/1" do
+      AuditLogger.set_enabled(false)
       assert AuditLogger.enabled?() == false
-
-      # Restore
-      if original == nil do
-        Application.delete_env(:agent_session_manager, :audit_logging_enabled)
-      else
-        Application.put_env(:agent_session_manager, :audit_logging_enabled, original)
-      end
     end
   end
 

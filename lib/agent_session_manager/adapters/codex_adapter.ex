@@ -268,6 +268,7 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
       session: session,
       event_callback: event_callback,
       adapter_pid: adapter_pid,
+      model: state.model,
       accumulated_content: "",
       tool_calls: [],
       token_usage: %{input_tokens: 0, output_tokens: 0},
@@ -286,12 +287,12 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
   end
 
   defp execute_with_real_sdk(state, ctx) do
-    # Build Codex SDK options
-    codex_opts = build_codex_options(state)
-    thread_opts = build_thread_options(state)
-
-    with {:ok, thread} <- Codex.start_thread(codex_opts, thread_opts),
-         {:ok, streaming_result} <- Codex.Thread.run_streamed(thread, ctx.run.input, %{}) do
+    # Build Codex SDK options using proper struct constructors
+    with {:ok, codex_opts} <- build_codex_options(state),
+         {:ok, thread_opts} <- build_thread_options(state),
+         {:ok, thread} <- Codex.start_thread(codex_opts, thread_opts),
+         prompt = extract_prompt(ctx.run.input),
+         {:ok, streaming_result} <- Codex.Thread.run_streamed(thread, prompt, %{}) do
       # Notify the adapter about the streaming result for cancellation tracking
       GenServer.cast(ctx.adapter_pid, {:update_streaming_result, ctx.run.id, streaming_result})
 
@@ -316,21 +317,24 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
   end
 
   defp build_codex_options(state) do
-    opts = %{}
-
-    opts =
-      if state.model do
-        Map.put(opts, :model, state.model)
-      else
-        opts
-      end
-
-    opts
+    attrs = %{}
+    attrs = if state.model, do: Map.put(attrs, :model, state.model), else: attrs
+    Codex.Options.new(attrs)
   end
 
   defp build_thread_options(state) do
-    %{working_directory: state.working_directory}
+    Codex.Thread.Options.new(%{working_directory: state.working_directory})
   end
+
+  defp extract_prompt(input) when is_binary(input), do: input
+
+  defp extract_prompt(%{messages: messages}) when is_list(messages) do
+    messages
+    |> Enum.filter(fn msg -> msg[:role] == "user" || msg["role"] == "user" end)
+    |> Enum.map_join("\n", fn msg -> msg[:content] || msg["content"] || "" end)
+  end
+
+  defp extract_prompt(input), do: inspect(input)
 
   defp process_real_event_stream(events_stream, ctx, thread) do
     # Update context with thread_id once available
@@ -450,6 +454,7 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
   defp handle_codex_event(%Events.ThreadStarted{} = event, ctx) do
     emit_event(ctx, :run_started, %{
       thread_id: event.thread_id,
+      model: ctx[:model],
       metadata: event.metadata
     })
 
@@ -475,6 +480,44 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
     end
 
     %{ctx | accumulated_content: ctx.accumulated_content <> content}
+  end
+
+  defp handle_codex_event(
+         %Events.ItemCompleted{item: %Codex.Items.AgentMessage{text: text}} = event,
+         ctx
+       )
+       when is_binary(text) do
+    # ItemCompleted with AgentMessage carries the full response text.
+    # Only emit as streamed if we haven't already accumulated this content via deltas.
+    already_have = ctx.accumulated_content
+
+    if already_have == "" and text != "" do
+      emit_event(ctx, :message_streamed, %{
+        content: text,
+        delta: text,
+        thread_id: event.thread_id,
+        turn_id: event.turn_id
+      })
+
+      %{ctx | accumulated_content: text}
+    else
+      ctx
+    end
+  end
+
+  defp handle_codex_event(%Events.ItemCompleted{}, ctx) do
+    # Non-AgentMessage item completed, ignore
+    ctx
+  end
+
+  defp handle_codex_event(%Events.ItemStarted{}, ctx) do
+    # Item started, no action needed
+    ctx
+  end
+
+  defp handle_codex_event(%Events.ItemUpdated{}, ctx) do
+    # Item updated, no action needed
+    ctx
   end
 
   defp handle_codex_event(%Events.ThreadTokenUsageUpdated{usage: usage} = event, ctx) do
@@ -556,6 +599,7 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
 
     # Emit run_completed
     emit_event(final_ctx, :run_completed, %{
+      stop_reason: event.status || "end_turn",
       status: event.status,
       thread_id: event.thread_id,
       turn_id: event.turn_id,
@@ -585,6 +629,18 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
     ctx
   end
 
+  # Codex ItemAgentMessageDelta items use "text" directly (string-keyed map)
+  defp extract_message_content(%{"text" => text}) when is_binary(text), do: text
+
+  # Codex Items.AgentMessage struct (atom-keyed)
+  defp extract_message_content(%{text: text}) when is_binary(text), do: text
+
+  # Nested content block with text type
+  defp extract_message_content(%{"content" => %{"type" => "text", "text" => text}})
+       when is_binary(text),
+       do: text
+
+  # Content block arrays
   defp extract_message_content(%{"content" => content}) when is_list(content) do
     content
     |> Enum.filter(&(&1["type"] == "text"))

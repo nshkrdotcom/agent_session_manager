@@ -154,24 +154,20 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
       ClaudeAdapter.stop(adapter)
     end
 
-    test "returns error when api_key is missing" do
+    test "accepts config without api_key (SDK handles auth)" do
       {:ok, adapter} = ClaudeAdapter.start_link(api_key: "test-key")
 
       config = %{model: "claude-sonnet-4-20250514"}
-
-      assert {:error, %Error{code: :validation_error}} =
-               ClaudeAdapter.validate_config(adapter, config)
+      assert :ok = ClaudeAdapter.validate_config(adapter, config)
 
       ClaudeAdapter.stop(adapter)
     end
 
-    test "returns error when api_key is empty" do
+    test "accepts config with empty api_key (SDK handles auth)" do
       {:ok, adapter} = ClaudeAdapter.start_link(api_key: "test-key")
 
       config = %{api_key: ""}
-
-      assert {:error, %Error{code: :validation_error}} =
-               ClaudeAdapter.validate_config(adapter, config)
+      assert :ok = ClaudeAdapter.validate_config(adapter, config)
 
       ClaudeAdapter.stop(adapter)
     end

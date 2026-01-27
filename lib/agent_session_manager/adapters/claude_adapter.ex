@@ -43,11 +43,10 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
 
   ## Configuration
 
-  Required:
-  - `:api_key` - Anthropic API key
-
   Optional:
   - `:model` - Model to use (default: "claude-sonnet-4-20250514")
+  - `:api_key` - Anthropic API key (optional; the SDK authenticates via
+    `claude login` session or the `ANTHROPIC_API_KEY` environment variable)
   - `:sdk_module` - SDK module for testing (default: real SDK)
   - `:sdk_pid` - SDK process for testing
   """
@@ -78,8 +77,8 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
 
   ## Options
 
-  - `:api_key` - Required. The Anthropic API key.
   - `:model` - Optional. The model to use (default: #{@default_model})
+  - `:api_key` - Optional. Anthropic API key (SDK authenticates via `claude login` or env var).
   - `:sdk_module` - Optional. Mock SDK module for testing.
   - `:sdk_pid` - Optional. Mock SDK process for testing.
   - `:name` - Optional. GenServer name for registration.
@@ -131,17 +130,11 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
   end
 
   @impl AgentSessionManager.Ports.ProviderAdapter
-  def validate_config(_adapter, config) do
-    cond do
-      not Map.has_key?(config, :api_key) ->
-        {:error, Error.new(:validation_error, "api_key is required")}
-
-      config.api_key == "" ->
-        {:error, Error.new(:validation_error, "api_key cannot be empty")}
-
-      true ->
-        :ok
-    end
+  def validate_config(_adapter, _config) do
+    # ClaudeAgentSDK handles authentication internally via `claude login`
+    # or the ANTHROPIC_API_KEY environment variable. No explicit config
+    # validation is needed at the adapter level.
+    :ok
   end
 
   # ============================================================================
@@ -150,7 +143,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
 
   @impl GenServer
   def init(opts) do
-    api_key = Keyword.fetch!(opts, :api_key)
+    api_key = Keyword.get(opts, :api_key)
     model = Keyword.get(opts, :model, @default_model)
     sdk_module = Keyword.get(opts, :sdk_module)
     sdk_pid = Keyword.get(opts, :sdk_pid)
@@ -301,14 +294,25 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
   defp execute_with_real_sdk(ctx, state) do
     # Build options for ClaudeAgentSDK
     sdk_opts = build_sdk_options(state)
+    prompt = extract_prompt(ctx.run.input)
 
     # Use the real ClaudeAgentSDK.Query.run/3
     try do
-      stream = ClaudeAgentSDK.Query.run(ctx.run.input, sdk_opts)
+      stream = ClaudeAgentSDK.Query.run(prompt, sdk_opts)
       process_agent_sdk_stream(stream, ctx)
     rescue
       e ->
         error_message = Exception.message(e)
+
+        emit_event(ctx, :error_occurred, %{
+          error_code: :sdk_error,
+          error_message: error_message
+        })
+
+        {:error, Error.new(:provider_error, error_message)}
+    catch
+      :exit, reason ->
+        error_message = "SDK process exited: #{inspect(reason)}"
 
         emit_event(ctx, :error_occurred, %{
           error_code: :sdk_error,
@@ -325,12 +329,23 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
     process_agent_sdk_stream(stream, ctx)
   end
 
-  defp build_sdk_options(_state) do
-    # ClaudeAgentSDK uses environment variables for auth (ANTHROPIC_API_KEY)
-    # Model is determined by the CLI or can be configured via settings
+  defp extract_prompt(input) when is_binary(input), do: input
+
+  defp extract_prompt(%{messages: messages}) when is_list(messages) do
+    messages
+    |> Enum.filter(fn msg -> msg[:role] == "user" || msg["role"] == "user" end)
+    |> Enum.map_join("\n", fn msg -> msg[:content] || msg["content"] || "" end)
+  end
+
+  defp extract_prompt(input), do: inspect(input)
+
+  defp build_sdk_options(state) do
+    # ClaudeAgentSDK handles auth via `claude login` session or ANTHROPIC_API_KEY env var.
+    # Do NOT set output_format: :stream_json here — that causes escaped text (\n instead
+    # of newlines). The SDK already returns a stream of Message structs via Query.run/3.
     %ClaudeAgentSDK.Options{
-      output_format: :stream_json,
-      verbose: true
+      model: state.model,
+      setting_sources: ["user"]
     }
   end
 
@@ -432,9 +447,10 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
   end
 
   defp handle_sdk_message(%ClaudeAgentSDK.Message{type: :result, subtype: :success} = msg, ctx) do
-    usage = msg.data[:usage] || %{}
-    input_tokens = usage["input_tokens"] || usage[:input_tokens] || 0
-    output_tokens = usage["output_tokens"] || usage[:output_tokens] || 0
+    # Usage may appear in data.usage, raw.usage, or at the raw top level
+    usage = msg.data[:usage] || (msg.raw && msg.raw["usage"]) || %{}
+    input_tokens = trunc(usage["input_tokens"] || usage[:input_tokens] || 0)
+    output_tokens = trunc(usage["output_tokens"] || usage[:output_tokens] || 0)
 
     emit_event(ctx, :message_received, %{
       content: ctx.accumulated_content,
@@ -496,21 +512,37 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
   end
 
   defp extract_assistant_content(%ClaudeAgentSDK.Message{data: %{message: message}}) do
-    case message do
-      %{"content" => content} when is_list(content) ->
-        content
-        |> Enum.filter(&(&1["type"] == "text"))
-        |> Enum.map_join("", &(&1["text"] || ""))
+    raw =
+      case message do
+        %{"content" => content} when is_list(content) ->
+          content
+          |> Enum.filter(&(&1["type"] == "text"))
+          |> Enum.map_join("", &(&1["text"] || ""))
 
-      %{"content" => content} when is_binary(content) ->
-        content
+        %{"content" => content} when is_binary(content) ->
+          content
 
-      _ ->
-        ""
-    end
+        _ ->
+          ""
+      end
+
+    unescape_json_text(raw)
   end
 
   defp extract_assistant_content(_), do: ""
+
+  # The SDK's fallback JSON parser may return text with literal escape sequences
+  # (e.g. two-char "\n" instead of a real newline). Unescape common JSON sequences.
+  # Order matters: escaped backslash (\\) must be sheltered first so that \\n
+  # (literal backslash + n) isn't misread as a newline escape.
+  defp unescape_json_text(text) do
+    text
+    |> String.replace("\\\\", "\x00")
+    |> String.replace("\\n", "\n")
+    |> String.replace("\\t", "\t")
+    |> String.replace("\\\"", "\"")
+    |> String.replace("\x00", "\\")
+  end
 
   defp extract_tool_calls(%ClaudeAgentSDK.Message{data: %{message: message}}) do
     case message do

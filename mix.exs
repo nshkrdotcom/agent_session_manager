@@ -152,7 +152,7 @@ defmodule AgentSessionManager.MixProject do
     [
       name: "agent_session_manager",
       description: description(),
-      files: ~w(lib guides mix.exs README.md CHANGELOG.md LICENSE assets),
+      files: ~w(lib mix.exs README.md CHANGELOG.md LICENSE),
       licenses: ["MIT"],
       links: %{
         "GitHub" => @source_url,

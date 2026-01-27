@@ -529,4 +529,128 @@ defmodule AgentSessionManager.TelemetryTest do
       assert metadata.error_code == :provider_error
     end
   end
+
+  # ============================================================================
+  # Adapter Event Tests
+  # ============================================================================
+
+  describe "Telemetry.emit_adapter_event/4" do
+    test "emits adapter event with provider namespace" do
+      session = create_test_session()
+      run = create_test_run(session)
+      event_data = %{type: :message_streamed, data: %{content: "Hello"}, provider: :claude}
+
+      {_handler_id, ref} =
+        attach_test_handler([:agent_session_manager, :adapter, :message_streamed])
+
+      Telemetry.emit_adapter_event(run, session, event_data)
+
+      assert {:ok, event, _measurements, _metadata} = receive_event(ref, session.id)
+      assert event == [:agent_session_manager, :adapter, :message_streamed]
+    end
+
+    test "includes provider in metadata" do
+      session = create_test_session()
+      run = create_test_run(session)
+      event_data = %{type: :run_started, data: %{model: "claude-sonnet"}, provider: :claude}
+
+      {_handler_id, ref} = attach_test_handler([:agent_session_manager, :adapter, :run_started])
+
+      Telemetry.emit_adapter_event(run, session, event_data)
+
+      assert {:ok, _event, _measurements, metadata} = receive_event(ref, session.id)
+      assert metadata.provider == :claude
+    end
+
+    test "includes run_id and session_id in metadata" do
+      session = create_test_session()
+      run = create_test_run(session)
+      event_data = %{type: :run_completed, data: %{}, provider: :codex}
+
+      {_handler_id, ref} = attach_test_handler([:agent_session_manager, :adapter, :run_completed])
+
+      Telemetry.emit_adapter_event(run, session, event_data)
+
+      assert {:ok, _event, _measurements, metadata} = receive_event(ref, session.id)
+      assert metadata.run_id == run.id
+      assert metadata.session_id == session.id
+    end
+
+    test "includes event data in measurements" do
+      session = create_test_session()
+      run = create_test_run(session)
+
+      event_data = %{
+        type: :token_usage_updated,
+        data: %{input_tokens: 100, output_tokens: 50},
+        provider: :claude
+      }
+
+      {_handler_id, ref} =
+        attach_test_handler([:agent_session_manager, :adapter, :token_usage_updated])
+
+      Telemetry.emit_adapter_event(run, session, event_data)
+
+      assert {:ok, _event, measurements, _metadata} = receive_event(ref, session.id)
+      assert measurements.input_tokens == 100
+      assert measurements.output_tokens == 50
+    end
+
+    test "emits tool_call_started event" do
+      session = create_test_session()
+      run = create_test_run(session)
+
+      event_data = %{
+        type: :tool_call_started,
+        data: %{tool_name: "read_file", tool_use_id: "call-123"},
+        provider: :claude
+      }
+
+      {_handler_id, ref} =
+        attach_test_handler([:agent_session_manager, :adapter, :tool_call_started])
+
+      Telemetry.emit_adapter_event(run, session, event_data)
+
+      assert {:ok, event, _measurements, metadata} = receive_event(ref, session.id)
+      assert event == [:agent_session_manager, :adapter, :tool_call_started]
+      assert metadata.tool_name == "read_file"
+    end
+
+    test "emits tool_call_completed event" do
+      session = create_test_session()
+      run = create_test_run(session)
+
+      event_data = %{
+        type: :tool_call_completed,
+        data: %{tool_name: "write_file", tool_use_id: "call-456"},
+        provider: :codex
+      }
+
+      {_handler_id, ref} =
+        attach_test_handler([:agent_session_manager, :adapter, :tool_call_completed])
+
+      Telemetry.emit_adapter_event(run, session, event_data)
+
+      assert {:ok, event, _measurements, metadata} = receive_event(ref, session.id)
+      assert event == [:agent_session_manager, :adapter, :tool_call_completed]
+      assert metadata.tool_name == "write_file"
+    end
+
+    test "does not emit event when telemetry is disabled" do
+      session = create_test_session()
+      run = create_test_run(session)
+      event_data = %{type: :message_streamed, data: %{}, provider: :claude}
+
+      Telemetry.set_enabled(false)
+
+      {_handler_id, ref} =
+        attach_test_handler([:agent_session_manager, :adapter, :message_streamed])
+
+      Telemetry.emit_adapter_event(run, session, event_data)
+
+      refute_event(ref)
+
+      Telemetry.set_enabled(true)
+    end
+  end
 end

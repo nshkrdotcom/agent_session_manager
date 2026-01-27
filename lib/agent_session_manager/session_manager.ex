@@ -55,6 +55,7 @@ defmodule AgentSessionManager.SessionManager do
 
   alias AgentSessionManager.Core.{CapabilityResolver, Error, Event, Run, Session}
   alias AgentSessionManager.Ports.{ProviderAdapter, SessionStore}
+  alias AgentSessionManager.Telemetry
 
   @type store :: SessionStore.store()
   @type adapter :: ProviderAdapter.adapter()
@@ -90,10 +91,19 @@ defmodule AgentSessionManager.SessionManager do
 
   """
   @spec start_session(store(), adapter(), map()) :: {:ok, Session.t()} | {:error, Error.t()}
-  def start_session(store, _adapter, attrs) do
-    with {:ok, session} <- Session.new(attrs),
+  def start_session(store, adapter, attrs) do
+    provider_name = ProviderAdapter.name(adapter)
+
+    # Merge provider metadata into user-provided metadata
+    provider_metadata = %{provider: provider_name}
+
+    user_metadata = Map.get(attrs, :metadata, %{})
+    merged_metadata = Map.merge(user_metadata, provider_metadata)
+    attrs_with_provider = Map.put(attrs, :metadata, merged_metadata)
+
+    with {:ok, session} <- Session.new(attrs_with_provider),
          :ok <- SessionStore.save_session(store, session),
-         :ok <- emit_event(store, :session_created, session) do
+         :ok <- emit_event(store, :session_created, session, %{provider: provider_name}) do
       {:ok, session}
     end
   end
@@ -300,26 +310,83 @@ defmodule AgentSessionManager.SessionManager do
   # ============================================================================
 
   defp execute_with_adapter(store, adapter, run, session) do
+    provider_name = ProviderAdapter.name(adapter)
+
     event_callback = fn event_data ->
-      handle_adapter_event(store, run, event_data)
+      handle_adapter_event(store, run, session, event_data)
     end
 
     case ProviderAdapter.execute(adapter, run, session, event_callback: event_callback) do
       {:ok, result} ->
-        finalize_successful_run(store, run, result)
+        # Extract provider metadata from stored events
+        provider_metadata = extract_provider_metadata_from_events(store, run)
+
+        finalize_successful_run(store, run, session, result, provider_name, provider_metadata)
 
       {:error, error} ->
         finalize_failed_run(store, run, error)
     end
   end
 
-  defp finalize_successful_run(store, run, result) do
+  defp extract_provider_metadata_from_events(store, run) do
+    {:ok, events} = SessionStore.get_events(store, run.session_id, run_id: run.id)
+
+    # Find the run_started event and extract provider metadata
+    case Enum.find(events, &(&1.type == :run_started)) do
+      nil ->
+        %{}
+
+      event ->
+        data = event.data
+
+        %{
+          provider_session_id:
+            data[:provider_session_id] || data[:session_id] || data[:thread_id],
+          model: data[:model],
+          tools: data[:tools]
+        }
+    end
+  end
+
+  defp finalize_successful_run(store, run, session, result, provider_name, provider_metadata) do
+    # Build run metadata with provider info
+    run_provider_metadata =
+      %{provider: provider_name}
+      |> maybe_put(:provider_session_id, provider_metadata[:provider_session_id])
+      |> maybe_put(:model, provider_metadata[:model])
+
     with {:ok, updated_run} <- Run.set_output(run, result.output),
-         {:ok, final_run} <- Run.update_token_usage(updated_run, result.token_usage),
-         :ok <- SessionStore.save_run(store, final_run) do
+         {:ok, run_with_usage} <- Run.update_token_usage(updated_run, result.token_usage),
+         final_run = update_run_metadata(run_with_usage, run_provider_metadata),
+         :ok <- SessionStore.save_run(store, final_run),
+         :ok <- update_session_provider_metadata(store, session, provider_metadata) do
       {:ok, result}
     end
   end
+
+  defp update_run_metadata(run, new_metadata) do
+    merged_metadata = Map.merge(run.metadata, new_metadata)
+    %{run | metadata: merged_metadata}
+  end
+
+  defp update_session_provider_metadata(store, session, provider_metadata) do
+    # Only update if we have provider metadata to add
+    metadata_to_add =
+      %{}
+      |> maybe_put(:provider_session_id, provider_metadata[:provider_session_id])
+      |> maybe_put(:model, provider_metadata[:model])
+
+    if map_size(metadata_to_add) > 0 do
+      merged_metadata = Map.merge(session.metadata, metadata_to_add)
+      updated_session = %{session | metadata: merged_metadata, updated_at: DateTime.utc_now()}
+      SessionStore.save_session(store, updated_session)
+    else
+      :ok
+    end
+  end
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
   defp finalize_failed_run(store, run, error) do
     error_map = %{code: error.code, message: error.message}
@@ -331,7 +398,7 @@ defmodule AgentSessionManager.SessionManager do
     end
   end
 
-  defp handle_adapter_event(store, run, event_data) do
+  defp handle_adapter_event(store, run, session, event_data) do
     # Normalize and store adapter events
     {:ok, event} =
       Event.new(%{
@@ -342,6 +409,9 @@ defmodule AgentSessionManager.SessionManager do
       })
 
     SessionStore.append_event(store, event)
+
+    # Emit telemetry event for observability
+    Telemetry.emit_adapter_event(run, session, event_data)
   end
 
   defp check_capabilities(adapter, opts) do

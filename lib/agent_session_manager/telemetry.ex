@@ -300,6 +300,85 @@ defmodule AgentSessionManager.Telemetry do
   end
 
   # ============================================================================
+  # Adapter Events
+  # ============================================================================
+
+  @doc """
+  Emits an adapter event with the proper telemetry namespace.
+
+  Events are emitted as `[:agent_session_manager, :adapter, event_type]`.
+
+  ## Event Types
+
+  Common adapter event types include:
+  - `:run_started` - Execution begins
+  - `:message_streamed` - Content chunk received
+  - `:message_received` - Full message ready
+  - `:tool_call_started` - Tool invocation begins
+  - `:tool_call_completed` - Tool completes
+  - `:token_usage_updated` - Usage stats update
+  - `:run_completed` - Execution finishes
+  - `:error_occurred` - Error during execution
+  - `:run_failed` - Execution failed
+  - `:run_cancelled` - Execution was cancelled
+
+  ## Measurements
+
+  Numeric values from the event data are included as measurements.
+
+  ## Metadata
+
+  - `run_id` - The run identifier
+  - `session_id` - The session identifier
+  - `agent_id` - The agent identifier
+  - `provider` - The provider name (:claude, :codex, etc.)
+  - `tool_name` - Tool name for tool events (if present)
+  - `event_data` - The full event data map
+
+  """
+  @spec emit_adapter_event(Run.t(), Session.t(), map()) :: :ok
+  def emit_adapter_event(%Run{} = run, %Session{} = session, event_data) do
+    if enabled?() do
+      event_type = Map.get(event_data, :type)
+      data = Map.get(event_data, :data, %{})
+      provider = Map.get(event_data, :provider)
+
+      # Extract numeric values for measurements
+      measurements =
+        data
+        |> Enum.filter(fn {_k, v} -> is_number(v) end)
+        |> Enum.into(%{})
+        |> Map.put(:system_time, System.system_time())
+
+      # Build metadata
+      metadata =
+        %{
+          run_id: run.id,
+          session_id: session.id,
+          agent_id: session.agent_id,
+          provider: provider,
+          event_data: data
+        }
+        |> maybe_add_tool_name(data)
+
+      :telemetry.execute(
+        [:agent_session_manager, :adapter, event_type],
+        measurements,
+        metadata
+      )
+    end
+
+    :ok
+  end
+
+  defp maybe_add_tool_name(metadata, data) do
+    case Map.get(data, :tool_name) do
+      nil -> metadata
+      tool_name -> Map.put(metadata, :tool_name, tool_name)
+    end
+  end
+
+  # ============================================================================
   # Private Functions
   # ============================================================================
 

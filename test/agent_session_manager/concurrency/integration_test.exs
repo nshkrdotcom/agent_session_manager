@@ -98,6 +98,10 @@ defmodule AgentSessionManager.Concurrency.IntegrationTest do
     end
 
     @impl GenServer
+    def handle_call(:name, _from, state) do
+      {:reply, "mock_integration", state}
+    end
+
     def handle_call(:capabilities, _from, state) do
       {:reply, {:ok, state.capabilities}, state}
     end

@@ -183,11 +183,24 @@ defmodule AgentSessionManager.SessionManagerTest do
     end
 
     defp build_event(type, run, data \\ %{}) do
+      base_data =
+        case type do
+          :run_started ->
+            %{
+              provider_session_id: "mock-provider-session-123",
+              model: "mock-model-v1",
+              tools: ["chat", "search"]
+            }
+
+          _ ->
+            %{}
+        end
+
       %{
         type: type,
         session_id: run.session_id,
         run_id: run.id,
-        data: data,
+        data: Map.merge(base_data, data),
         timestamp: DateTime.utc_now()
       }
     end
@@ -616,6 +629,117 @@ defmodule AgentSessionManager.SessionManagerTest do
       {:ok, runs} = SessionManager.get_session_runs(store, session.id)
 
       assert length(runs) == 2
+    end
+  end
+
+  # ============================================================================
+  # Provider Metadata Preservation Tests
+  # ============================================================================
+
+  describe "provider metadata preservation" do
+    test "start_session stores provider name in session metadata", %{
+      store: store,
+      adapter: adapter
+    } do
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+
+      assert session.metadata.provider == "mock"
+    end
+
+    test "start_session preserves user-provided metadata alongside provider metadata", %{
+      store: store,
+      adapter: adapter
+    } do
+      {:ok, session} =
+        SessionManager.start_session(store, adapter, %{
+          agent_id: "test-agent",
+          metadata: %{user_id: "user-123", custom_field: "custom_value"}
+        })
+
+      assert session.metadata.provider == "mock"
+      assert session.metadata.user_id == "user-123"
+      assert session.metadata.custom_field == "custom_value"
+    end
+
+    test "execute_run updates session with provider_session_id from run_started event", %{
+      store: store,
+      adapter: adapter
+    } do
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+      {:ok, run} = SessionManager.start_run(store, adapter, session.id, %{prompt: "Hello"})
+      {:ok, _result} = SessionManager.execute_run(store, adapter, run.id)
+
+      # Retrieve updated session
+      {:ok, updated_session} = SessionStore.get_session(store, session.id)
+
+      assert updated_session.metadata.provider_session_id == "mock-provider-session-123"
+    end
+
+    test "execute_run updates session with model info from run_started event", %{
+      store: store,
+      adapter: adapter
+    } do
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+      {:ok, run} = SessionManager.start_run(store, adapter, session.id, %{prompt: "Hello"})
+      {:ok, _result} = SessionManager.execute_run(store, adapter, run.id)
+
+      # Retrieve updated session
+      {:ok, updated_session} = SessionStore.get_session(store, session.id)
+
+      assert updated_session.metadata.model == "mock-model-v1"
+    end
+
+    test "execute_run stores provider metadata in run metadata", %{
+      store: store,
+      adapter: adapter
+    } do
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+      {:ok, run} = SessionManager.start_run(store, adapter, session.id, %{prompt: "Hello"})
+      {:ok, _result} = SessionManager.execute_run(store, adapter, run.id)
+
+      {:ok, updated_run} = SessionStore.get_run(store, run.id)
+
+      assert updated_run.metadata.provider == "mock"
+      assert updated_run.metadata.provider_session_id == "mock-provider-session-123"
+    end
+
+    test "subsequent runs preserve existing provider_session_id", %{
+      store: store,
+      adapter: adapter
+    } do
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+
+      # First run
+      {:ok, run1} = SessionManager.start_run(store, adapter, session.id, %{prompt: "First"})
+      {:ok, _} = SessionManager.execute_run(store, adapter, run1.id)
+
+      # Second run
+      {:ok, run2} = SessionManager.start_run(store, adapter, session.id, %{prompt: "Second"})
+      {:ok, _} = SessionManager.execute_run(store, adapter, run2.id)
+
+      # Session should still have the provider_session_id
+      {:ok, updated_session} = SessionStore.get_session(store, session.id)
+      assert updated_session.metadata.provider_session_id == "mock-provider-session-123"
+
+      # Both runs should have provider metadata
+      {:ok, updated_run1} = SessionStore.get_run(store, run1.id)
+      {:ok, updated_run2} = SessionStore.get_run(store, run2.id)
+
+      assert updated_run1.metadata.provider_session_id == "mock-provider-session-123"
+      assert updated_run2.metadata.provider_session_id == "mock-provider-session-123"
+    end
+
+    test "session_created event includes provider in data", %{store: store, adapter: adapter} do
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+
+      {:ok, events} = SessionStore.get_events(store, session.id)
+      created_event = Enum.find(events, &(&1.type == :session_created))
+
+      assert created_event.data.provider == "mock"
     end
   end
 end

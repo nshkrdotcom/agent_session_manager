@@ -36,6 +36,10 @@ defmodule AgentSessionManager.MixProject do
       {:telemetry, "~> 1.2"},
       {:jason, "~> 1.4"},
 
+      # Agent SDKs
+      {:codex_sdk, "~> 0.6.0"},
+      {:claude_agent_sdk, "~> 0.9.1"},
+
       # Development and documentation
       {:ex_doc, "~> 0.38", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
@@ -64,7 +68,8 @@ defmodule AgentSessionManager.MixProject do
       logo: "assets/agent_session_manager.svg",
       extras: [
         "README.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "LICENSE"
       ],
       groups_for_modules: [
         Core: [AgentSessionManager]

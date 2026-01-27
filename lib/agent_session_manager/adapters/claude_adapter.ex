@@ -275,18 +275,276 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
       content_blocks: %{},
       tool_calls: [],
       token_usage: %{input_tokens: 0, output_tokens: 0},
-      events: []
+      events: [],
+      session_id: nil
     }
 
-    # Use mock SDK if configured, otherwise would use real SDK
-    case state.sdk_module do
-      nil ->
-        # Real SDK implementation would go here
-        {:error, Error.new(:internal_error, "Real SDK not implemented")}
+    # Determine which SDK interface to use
+    cond do
+      # New ClaudeAgentSDK-compatible interface (query/3 returning Message stream)
+      state.sdk_module && function_exported?(state.sdk_module, :query, 3) ->
+        execute_with_agent_sdk(state.sdk_module, state.sdk_pid, ctx, state)
 
-      sdk_module ->
-        execute_with_mock_sdk(sdk_module, state.sdk_pid, ctx, state)
+      # Legacy mock SDK interface (subscribe/create_message)
+      state.sdk_module && function_exported?(state.sdk_module, :subscribe, 2) ->
+        execute_with_mock_sdk(state.sdk_module, state.sdk_pid, ctx, state)
+
+      # Real ClaudeAgentSDK (not mocked)
+      is_nil(state.sdk_module) ->
+        execute_with_real_sdk(ctx, state)
+
+      true ->
+        {:error, Error.new(:internal_error, "Unknown SDK interface")}
     end
+  end
+
+  defp execute_with_real_sdk(ctx, state) do
+    # Build options for ClaudeAgentSDK
+    sdk_opts = build_sdk_options(state)
+
+    # Use the real ClaudeAgentSDK.Query.run/3
+    try do
+      stream = ClaudeAgentSDK.Query.run(ctx.run.input, sdk_opts)
+      process_agent_sdk_stream(stream, ctx)
+    rescue
+      e ->
+        error_message = Exception.message(e)
+
+        emit_event(ctx, :error_occurred, %{
+          error_code: :sdk_error,
+          error_message: error_message
+        })
+
+        {:error, Error.new(:provider_error, error_message)}
+    end
+  end
+
+  defp execute_with_agent_sdk(sdk_module, sdk_pid, ctx, _state) do
+    # Use the ClaudeAgentSDK-compatible interface
+    stream = sdk_module.query(sdk_pid, ctx.run.input, %{})
+    process_agent_sdk_stream(stream, ctx)
+  end
+
+  defp build_sdk_options(_state) do
+    # ClaudeAgentSDK uses environment variables for auth (ANTHROPIC_API_KEY)
+    # Model is determined by the CLI or can be configured via settings
+    %ClaudeAgentSDK.Options{
+      output_format: :stream_json,
+      verbose: true
+    }
+  end
+
+  defp process_agent_sdk_stream(stream, ctx) do
+    result =
+      stream
+      |> Enum.reduce_while(ctx, &process_sdk_message/2)
+      |> handle_sdk_stream_result()
+
+    result
+  end
+
+  defp process_sdk_message(message, ctx) do
+    # Check for cancellation
+    if cancelled?() do
+      emit_event(ctx, :run_cancelled, %{})
+      {:halt, {:cancelled, ctx}}
+    else
+      process_sdk_message_uncancelled(message, ctx)
+    end
+  end
+
+  defp cancelled? do
+    receive do
+      {:cancelled_notification, _run_id} -> true
+    after
+      0 -> false
+    end
+  end
+
+  defp process_sdk_message_uncancelled(%ClaudeAgentSDK.Message{} = message, ctx) do
+    new_ctx = handle_sdk_message(message, ctx)
+
+    case message do
+      %{type: :result, subtype: :error_during_execution} ->
+        {:halt, {:error, message, new_ctx}}
+
+      %{type: :result, subtype: :error_max_turns} ->
+        {:halt, {:error, message, new_ctx}}
+
+      %{type: :result} ->
+        {:halt, new_ctx}
+
+      _ ->
+        {:cont, new_ctx}
+    end
+  end
+
+  defp handle_sdk_message(%ClaudeAgentSDK.Message{type: :system, subtype: :init} = msg, ctx) do
+    session_id = msg.data[:session_id] || msg.data["session_id"]
+
+    emit_event(ctx, :run_started, %{
+      session_id: session_id,
+      model: msg.data[:model],
+      tools: msg.data[:tools] || []
+    })
+
+    %{ctx | session_id: session_id}
+  end
+
+  defp handle_sdk_message(%ClaudeAgentSDK.Message{type: :assistant} = msg, ctx) do
+    content = extract_assistant_content(msg)
+    tool_calls = extract_tool_calls(msg)
+
+    # Emit message_streamed for each content chunk
+    if content != "" do
+      emit_event(ctx, :message_streamed, %{
+        content: content,
+        delta: content,
+        session_id: ctx.session_id
+      })
+    end
+
+    # Emit tool call events
+    Enum.each(tool_calls, fn tool_call ->
+      emit_event(ctx, :tool_call_started, %{
+        tool_use_id: tool_call.id,
+        tool_name: tool_call.name,
+        arguments: tool_call.input
+      })
+
+      emit_event(ctx, :tool_call_completed, %{
+        tool_use_id: tool_call.id,
+        tool_name: tool_call.name,
+        input: tool_call.input
+      })
+    end)
+
+    new_tool_calls =
+      Enum.map(tool_calls, fn tc ->
+        %{id: tc.id, name: tc.name, input: tc.input}
+      end)
+
+    %{
+      ctx
+      | accumulated_content: ctx.accumulated_content <> content,
+        tool_calls: ctx.tool_calls ++ new_tool_calls
+    }
+  end
+
+  defp handle_sdk_message(%ClaudeAgentSDK.Message{type: :result, subtype: :success} = msg, ctx) do
+    usage = msg.data[:usage] || %{}
+    input_tokens = usage["input_tokens"] || usage[:input_tokens] || 0
+    output_tokens = usage["output_tokens"] || usage[:output_tokens] || 0
+
+    emit_event(ctx, :message_received, %{
+      content: ctx.accumulated_content,
+      role: "assistant"
+    })
+
+    emit_event(ctx, :token_usage_updated, %{
+      input_tokens: input_tokens,
+      output_tokens: output_tokens
+    })
+
+    emit_event(ctx, :run_completed, %{
+      stop_reason: "end_turn",
+      session_id: ctx.session_id,
+      num_turns: msg.data[:num_turns],
+      total_cost_usd: msg.data[:total_cost_usd]
+    })
+
+    %{
+      ctx
+      | token_usage: %{input_tokens: input_tokens, output_tokens: output_tokens}
+    }
+  end
+
+  defp handle_sdk_message(%ClaudeAgentSDK.Message{type: :result} = msg, ctx) do
+    # Error result types
+    error_message = msg.data[:error] || "Unknown error"
+
+    emit_event(ctx, :error_occurred, %{
+      error_code: :provider_error,
+      error_message: error_message
+    })
+
+    emit_event(ctx, :run_failed, %{
+      error_code: :provider_error,
+      error_message: error_message
+    })
+
+    ctx
+  end
+
+  defp handle_sdk_message(_message, ctx) do
+    # Unknown message type, ignore
+    ctx
+  end
+
+  defp handle_sdk_stream_result({:error, _message, _ctx}) do
+    error_message = "Execution failed"
+    {:error, Error.new(:provider_error, error_message)}
+  end
+
+  defp handle_sdk_stream_result({:cancelled, ctx}) do
+    emit_event(ctx, :run_cancelled, %{})
+    {:error, Error.new(:cancelled, "Run was cancelled")}
+  end
+
+  defp handle_sdk_stream_result(ctx) do
+    build_claude_result(ctx)
+  end
+
+  defp extract_assistant_content(%ClaudeAgentSDK.Message{data: %{message: message}}) do
+    case message do
+      %{"content" => content} when is_list(content) ->
+        content
+        |> Enum.filter(&(&1["type"] == "text"))
+        |> Enum.map_join("", &(&1["text"] || ""))
+
+      %{"content" => content} when is_binary(content) ->
+        content
+
+      _ ->
+        ""
+    end
+  end
+
+  defp extract_assistant_content(_), do: ""
+
+  defp extract_tool_calls(%ClaudeAgentSDK.Message{data: %{message: message}}) do
+    case message do
+      %{"content" => content} when is_list(content) ->
+        content
+        |> Enum.filter(&(&1["type"] == "tool_use"))
+        |> Enum.map(fn block ->
+          %{
+            id: block["id"],
+            name: block["name"],
+            input: block["input"] || %{}
+          }
+        end)
+
+      _ ->
+        []
+    end
+  end
+
+  defp extract_tool_calls(_), do: []
+
+  defp build_claude_result(ctx) do
+    output = %{
+      content: ctx.accumulated_content,
+      stop_reason: "end_turn",
+      tool_calls: ctx.tool_calls
+    }
+
+    {:ok,
+     %{
+       output: output,
+       token_usage: ctx.token_usage,
+       events: ctx.events
+     }}
   end
 
   defp execute_with_mock_sdk(sdk_module, sdk_pid, ctx, state) do

@@ -43,6 +43,9 @@ defmodule LiveSession do
     Session
   }
 
+  alias AgentSessionManager.SessionManager
+  alias AgentSessionManager.Adapters.{ClaudeAdapter, CodexAdapter, InMemorySessionStore}
+
   # Provider configurations
   @claude_manifest %{
     name: "claude-provider",
@@ -452,9 +455,11 @@ defmodule LiveSession do
   end
 
   defp check_sdk_available("codex") do
-    # In a real scenario, we'd check for the openai_ex or similar package
-    # For now, return error as we don't have a codex adapter implemented
-    sdk_not_available_error("codex")
+    # Check if the Codex adapter is available
+    case Code.ensure_loaded(AgentSessionManager.Adapters.CodexAdapter) do
+      {:module, _} -> :ok
+      {:error, _} -> sdk_not_available_error("codex")
+    end
   end
 
   defp sdk_not_available_error(provider) do
@@ -497,20 +502,102 @@ defmodule LiveSession do
   end
 
   defp execute_live(run, session, config) do
-    # Note: The ClaudeAdapter currently requires a mock SDK for full functionality
-    # This is a placeholder for real SDK integration
-    #
-    # When real SDK integration is complete, this would use:
-    # adapter_opts = [api_key: config.api_key, model: config.model]
-    # {:ok, adapter} = ClaudeAdapter.start_link(adapter_opts)
-    # ClaudeAdapter.execute(adapter, run, session, event_callback: &log_event/1)
+    # Start the appropriate adapter based on provider
+    adapter_result =
+      case config.provider do
+        "claude" ->
+          AgentSessionManager.Adapters.ClaudeAdapter.start_link(
+            api_key: config.api_key,
+            model: config.model
+          )
 
-    print_warning("Live SDK integration is in development")
-    print_info("Falling back to mock execution for demonstration")
+        "codex" ->
+          AgentSessionManager.Adapters.CodexAdapter.start_link(
+            model: config.model,
+            working_directory: File.cwd!()
+          )
+      end
 
-    # Fall back to mock for now
-    execute_mock(run, session, config)
+    case adapter_result do
+      {:ok, adapter} ->
+        # Set up store for session management
+        {:ok, store} = AgentSessionManager.Adapters.InMemorySessionStore.start_link()
+
+        # Update run with the message input
+        run = %{run | input: "Hello! What can you tell me about Elixir?"}
+
+        start_time = System.monotonic_time(:millisecond)
+
+        # Execute through SessionManager with event callback for streaming output
+        event_callback = fn event_data ->
+          handle_live_event(event_data)
+        end
+
+        result =
+          AgentSessionManager.SessionManager.execute_run(
+            store,
+            adapter,
+            run.id,
+            event_callback: event_callback
+          )
+
+        end_time = System.monotonic_time(:millisecond)
+        duration_ms = end_time - start_time
+
+        case result do
+          {:ok, adapter_result} ->
+            IO.puts("")
+            IO.puts("")
+
+            {:ok,
+             %{
+               output:
+                 adapter_result.output || %{content: "", stop_reason: "end_turn", tool_calls: []},
+               token_usage: adapter_result.token_usage || %{input_tokens: 0, output_tokens: 0},
+               events: [],
+               duration_ms: duration_ms
+             }}
+
+          {:error, error} ->
+            {:error, error}
+        end
+
+      {:error, reason} ->
+        print_warning("Failed to start adapter: #{inspect(reason)}")
+        print_info("Falling back to mock execution for demonstration")
+        execute_mock(run, session, config)
+    end
   end
+
+  defp handle_live_event(%{type: :message_streamed, data: data}) do
+    content = data[:delta] || data[:content] || ""
+    IO.write(IO.ANSI.cyan() <> content <> IO.ANSI.reset())
+  end
+
+  defp handle_live_event(%{type: type, data: data}) do
+    timestamp = format_timestamp(DateTime.utc_now())
+    type_str = format_event_type(type)
+
+    case type do
+      :run_started ->
+        model = data[:model] || "unknown"
+        IO.puts(:stderr, "#{timestamp} #{type_str} model=#{model}")
+
+      :run_completed ->
+        stop_reason = data[:stop_reason] || "unknown"
+        IO.puts(:stderr, "#{timestamp} #{type_str} stop_reason=#{stop_reason}")
+
+      :token_usage_updated ->
+        input = data[:input_tokens] || 0
+        output = data[:output_tokens] || 0
+        IO.puts(:stderr, "#{timestamp} #{type_str} input=#{input} output=#{output}")
+
+      _ ->
+        IO.puts(:stderr, "#{timestamp} #{type_str}")
+    end
+  end
+
+  defp handle_live_event(_event), do: :ok
 
   # ============================================================================
   # Event Logging

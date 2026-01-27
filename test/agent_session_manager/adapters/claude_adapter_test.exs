@@ -17,6 +17,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
   alias AgentSessionManager.Adapters.Claude.MockSDK
   alias AgentSessionManager.Adapters.ClaudeAdapter
   alias AgentSessionManager.Core.{Capability, Error, NormalizedEvent, Run, Session}
+  alias AgentSessionManager.Test.ClaudeAgentSDKMock
 
   # ============================================================================
   # Test Setup
@@ -992,6 +993,440 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
 
         assert {:ok, %NormalizedEvent{}} = result
       end)
+    end
+  end
+
+  # ============================================================================
+  # ClaudeAgentSDK Integration Tests
+  # ============================================================================
+
+  describe "execute/4 with ClaudeAgentSDK (query/3 interface)" do
+    setup context do
+      {:ok, mock} = ClaudeAgentSDKMock.start_link(scenario: :simple_response)
+
+      {:ok, adapter} =
+        ClaudeAdapter.start_link(
+          api_key: "test-key",
+          sdk_module: ClaudeAgentSDKMock,
+          sdk_pid: mock
+        )
+
+      on_exit(fn ->
+        if Process.alive?(mock), do: ClaudeAgentSDKMock.stop(mock)
+        if Process.alive?(adapter), do: ClaudeAdapter.stop(adapter)
+      end)
+
+      Map.merge(context, %{mock: mock, adapter: adapter})
+    end
+
+    test "maps system init message to run_started event", %{
+      adapter: adapter,
+      session: session,
+      run: run
+    } do
+      test_pid = self()
+
+      callback = fn event ->
+        send(test_pid, {:event, event})
+      end
+
+      {:ok, _result} =
+        ClaudeAdapter.execute(adapter, run, session, event_callback: callback)
+
+      events = collect_events(test_pid, 500)
+
+      run_started = Enum.find(events, &(&1.type == :run_started))
+      assert run_started != nil
+      assert run_started.provider == :claude
+      assert run_started.session_id == session.id
+      assert run_started.run_id == run.id
+      assert run_started.data.session_id != nil
+    end
+
+    test "maps assistant messages to message_streamed events", %{
+      adapter: adapter,
+      session: session,
+      run: run
+    } do
+      test_pid = self()
+
+      callback = fn event ->
+        send(test_pid, {:event, event})
+      end
+
+      {:ok, _result} =
+        ClaudeAdapter.execute(adapter, run, session, event_callback: callback)
+
+      events = collect_events(test_pid, 500)
+
+      streamed = Enum.filter(events, &(&1.type == :message_streamed))
+      refute Enum.empty?(streamed)
+
+      first_streamed = hd(streamed)
+      assert first_streamed.data.content != nil
+      assert first_streamed.data.delta != nil
+    end
+
+    test "maps result success to run_completed event", %{
+      adapter: adapter,
+      session: session,
+      run: run
+    } do
+      test_pid = self()
+
+      callback = fn event ->
+        send(test_pid, {:event, event})
+      end
+
+      {:ok, _result} =
+        ClaudeAdapter.execute(adapter, run, session, event_callback: callback)
+
+      events = collect_events(test_pid, 500)
+
+      completed = Enum.find(events, &(&1.type == :run_completed))
+      assert completed != nil
+      assert completed.data.stop_reason == "end_turn"
+    end
+
+    test "returns result with output content", %{
+      adapter: adapter,
+      session: session,
+      run: run
+    } do
+      {:ok, result} = ClaudeAdapter.execute(adapter, run, session, timeout: 5_000)
+
+      assert result.output.content =~ "Hello"
+      assert result.output.stop_reason == "end_turn"
+    end
+
+    test "includes token_usage in result", %{
+      adapter: adapter,
+      session: session,
+      run: run
+    } do
+      {:ok, result} = ClaudeAdapter.execute(adapter, run, session, timeout: 5_000)
+
+      assert result.token_usage.input_tokens >= 0
+      assert result.token_usage.output_tokens >= 0
+    end
+
+    test "emits token_usage_updated event", %{
+      adapter: adapter,
+      session: session,
+      run: run
+    } do
+      test_pid = self()
+
+      callback = fn event ->
+        send(test_pid, {:event, event})
+      end
+
+      {:ok, _result} =
+        ClaudeAdapter.execute(adapter, run, session, event_callback: callback)
+
+      events = collect_events(test_pid, 500)
+
+      usage_event = Enum.find(events, &(&1.type == :token_usage_updated))
+      assert usage_event != nil
+      assert Map.has_key?(usage_event.data, :input_tokens)
+      assert Map.has_key?(usage_event.data, :output_tokens)
+    end
+
+    test "emits message_received with accumulated content", %{
+      adapter: adapter,
+      session: session,
+      run: run
+    } do
+      test_pid = self()
+
+      callback = fn event ->
+        send(test_pid, {:event, event})
+      end
+
+      {:ok, _result} =
+        ClaudeAdapter.execute(adapter, run, session, event_callback: callback)
+
+      events = collect_events(test_pid, 500)
+
+      received = Enum.find(events, &(&1.type == :message_received))
+      assert received != nil
+      assert received.data.content =~ "Hello"
+      assert received.data.role == "assistant"
+    end
+  end
+
+  describe "execute/4 with ClaudeAgentSDK streaming" do
+    setup context do
+      {:ok, mock} =
+        ClaudeAgentSDKMock.start_link(
+          scenario: :streaming,
+          chunks: ["Part 1", " ", "Part 2", " ", "Part 3"]
+        )
+
+      {:ok, adapter} =
+        ClaudeAdapter.start_link(
+          api_key: "test-key",
+          sdk_module: ClaudeAgentSDKMock,
+          sdk_pid: mock
+        )
+
+      on_exit(fn ->
+        if Process.alive?(mock), do: ClaudeAgentSDKMock.stop(mock)
+        if Process.alive?(adapter), do: ClaudeAdapter.stop(adapter)
+      end)
+
+      Map.merge(context, %{mock: mock, adapter: adapter})
+    end
+
+    test "emits multiple message_streamed events for streaming chunks", %{
+      adapter: adapter,
+      session: session,
+      run: run
+    } do
+      test_pid = self()
+
+      callback = fn event ->
+        send(test_pid, {:event, event})
+      end
+
+      {:ok, _result} =
+        ClaudeAdapter.execute(adapter, run, session, event_callback: callback)
+
+      events = collect_events(test_pid, 500)
+
+      streamed_events = Enum.filter(events, &(&1.type == :message_streamed))
+      assert length(streamed_events) >= 3
+    end
+
+    test "accumulates all chunks in final content", %{
+      adapter: adapter,
+      session: session,
+      run: run
+    } do
+      {:ok, result} = ClaudeAdapter.execute(adapter, run, session, timeout: 5_000)
+
+      assert result.output.content =~ "Part 1"
+      assert result.output.content =~ "Part 2"
+      assert result.output.content =~ "Part 3"
+    end
+  end
+
+  describe "execute/4 with ClaudeAgentSDK tool use" do
+    setup context do
+      {:ok, mock} =
+        ClaudeAgentSDKMock.start_link(
+          scenario: :with_tool_use,
+          tool_name: "read_file",
+          tool_id: "toolu_test_abc123",
+          tool_input: %{"path" => "/test/file.txt"}
+        )
+
+      {:ok, adapter} =
+        ClaudeAdapter.start_link(
+          api_key: "test-key",
+          sdk_module: ClaudeAgentSDKMock,
+          sdk_pid: mock
+        )
+
+      on_exit(fn ->
+        if Process.alive?(mock), do: ClaudeAgentSDKMock.stop(mock)
+        if Process.alive?(adapter), do: ClaudeAdapter.stop(adapter)
+      end)
+
+      Map.merge(context, %{mock: mock, adapter: adapter})
+    end
+
+    test "emits tool_call_started event", %{
+      adapter: adapter,
+      session: session,
+      run: run
+    } do
+      test_pid = self()
+
+      callback = fn event ->
+        send(test_pid, {:event, event})
+      end
+
+      {:ok, _result} =
+        ClaudeAdapter.execute(adapter, run, session, event_callback: callback)
+
+      events = collect_events(test_pid, 500)
+
+      started = Enum.find(events, &(&1.type == :tool_call_started))
+      assert started != nil
+      assert started.data.tool_name == "read_file"
+      assert started.data.tool_use_id == "toolu_test_abc123"
+    end
+
+    test "emits tool_call_completed event", %{
+      adapter: adapter,
+      session: session,
+      run: run
+    } do
+      test_pid = self()
+
+      callback = fn event ->
+        send(test_pid, {:event, event})
+      end
+
+      {:ok, _result} =
+        ClaudeAdapter.execute(adapter, run, session, event_callback: callback)
+
+      events = collect_events(test_pid, 500)
+
+      completed = Enum.find(events, &(&1.type == :tool_call_completed))
+      assert completed != nil
+      assert completed.data.tool_name == "read_file"
+      assert completed.data.input == %{"path" => "/test/file.txt"}
+    end
+
+    test "includes tool_calls in result output", %{
+      adapter: adapter,
+      session: session,
+      run: run
+    } do
+      {:ok, result} = ClaudeAdapter.execute(adapter, run, session, timeout: 5_000)
+
+      assert [tool_call | _] = result.output.tool_calls
+      assert tool_call.name == "read_file"
+      assert tool_call.id == "toolu_test_abc123"
+      assert tool_call.input == %{"path" => "/test/file.txt"}
+    end
+  end
+
+  describe "execute/4 with ClaudeAgentSDK error" do
+    setup context do
+      {:ok, mock} =
+        ClaudeAgentSDKMock.start_link(
+          scenario: :error,
+          error_message: "Rate limit exceeded"
+        )
+
+      {:ok, adapter} =
+        ClaudeAdapter.start_link(
+          api_key: "test-key",
+          sdk_module: ClaudeAgentSDKMock,
+          sdk_pid: mock
+        )
+
+      on_exit(fn ->
+        if Process.alive?(mock), do: ClaudeAgentSDKMock.stop(mock)
+        if Process.alive?(adapter), do: ClaudeAdapter.stop(adapter)
+      end)
+
+      Map.merge(context, %{mock: mock, adapter: adapter})
+    end
+
+    test "returns error for failed execution", %{
+      adapter: adapter,
+      session: session,
+      run: run
+    } do
+      result = ClaudeAdapter.execute(adapter, run, session, timeout: 5_000)
+
+      assert {:error, %Error{code: :provider_error}} = result
+    end
+
+    test "emits error_occurred event", %{
+      adapter: adapter,
+      session: session,
+      run: run
+    } do
+      test_pid = self()
+
+      callback = fn event ->
+        send(test_pid, {:event, event})
+      end
+
+      ClaudeAdapter.execute(adapter, run, session, event_callback: callback)
+
+      events = collect_events(test_pid, 500)
+
+      error_event = Enum.find(events, &(&1.type == :error_occurred))
+      assert error_event != nil
+      assert error_event.data.error_code == :provider_error
+    end
+
+    test "emits run_failed event", %{
+      adapter: adapter,
+      session: session,
+      run: run
+    } do
+      test_pid = self()
+
+      callback = fn event ->
+        send(test_pid, {:event, event})
+      end
+
+      ClaudeAdapter.execute(adapter, run, session, event_callback: callback)
+
+      events = collect_events(test_pid, 500)
+
+      failed_event = Enum.find(events, &(&1.type == :run_failed))
+      assert failed_event != nil
+    end
+  end
+
+  describe "ClaudeAgentSDK event provider attribution" do
+    setup context do
+      {:ok, mock} = ClaudeAgentSDKMock.start_link(scenario: :with_tool_use)
+
+      {:ok, adapter} =
+        ClaudeAdapter.start_link(
+          api_key: "test-key",
+          sdk_module: ClaudeAgentSDKMock,
+          sdk_pid: mock
+        )
+
+      on_exit(fn ->
+        if Process.alive?(mock), do: ClaudeAgentSDKMock.stop(mock)
+        if Process.alive?(adapter), do: ClaudeAdapter.stop(adapter)
+      end)
+
+      Map.merge(context, %{mock: mock, adapter: adapter})
+    end
+
+    test "all events include provider: :claude", %{
+      adapter: adapter,
+      session: session,
+      run: run
+    } do
+      test_pid = self()
+
+      callback = fn event ->
+        send(test_pid, {:event, event})
+      end
+
+      {:ok, _result} =
+        ClaudeAdapter.execute(adapter, run, session, event_callback: callback)
+
+      events = collect_events(test_pid, 500)
+
+      for event <- events do
+        assert event.provider == :claude, "Event #{event.type} missing provider :claude"
+      end
+    end
+
+    test "all events include correct session_id and run_id", %{
+      adapter: adapter,
+      session: session,
+      run: run
+    } do
+      test_pid = self()
+
+      callback = fn event ->
+        send(test_pid, {:event, event})
+      end
+
+      {:ok, _result} =
+        ClaudeAdapter.execute(adapter, run, session, event_callback: callback)
+
+      events = collect_events(test_pid, 500)
+
+      for event <- events do
+        assert event.session_id == session.id
+        assert event.run_id == run.id
+      end
     end
   end
 

@@ -21,134 +21,168 @@ AgentSessionManager uses a provider adapter pattern to abstract SDK differences.
             :ok | {:error, Error.t()}
 ```
 
-## Claude (Anthropic) Integration
+## Claude SDK Integration (`claude_agent_sdk`)
 
-### API Overview
+### SDK Overview
 
-Claude uses the Messages API with Server-Sent Events (SSE) for streaming.
+The ClaudeAdapter integrates with `claude_agent_sdk`, which wraps the Claude Code CLI and provides a typed Message stream interface.
 
-**Endpoint**: `POST https://api.anthropic.com/v1/messages`
+**SDK Entry Point**: `ClaudeAgentSDK.Query.run/3`
 
-**Headers**:
-```
-x-api-key: {ANTHROPIC_API_KEY}
-anthropic-version: 2023-06-01
-content-type: application/json
-```
+Returns a stream of `ClaudeAgentSDK.Message` structs.
 
 ### Event Mapping
 
-| Claude API Event | Normalized Event | Notes |
-|------------------|------------------|-------|
-| `message_start` | `run_started` | Contains initial usage stats |
-| `content_block_start` | (internal) | Tracks content block type |
-| `content_block_delta` | `message_streamed` | Text deltas |
-| `content_block_delta` (tool_use) | (internal) | Accumulates JSON input |
-| `content_block_stop` | `tool_call_completed` | For tool_use blocks |
-| `message_delta` | `token_usage_updated` | Final usage stats |
-| `message_stop` | `message_received`, `run_completed` | Final events |
+| Claude SDK Message Type | Subtype | Normalized Event | Notes |
+|------------------------|---------|------------------|-------|
+| `:system` | `:init` | `run_started` | Session initialization with model, tools |
+| `:assistant` | - | `message_streamed` | Content deltas from Claude |
+| `:assistant` (tool_use) | - | `tool_call_started`, `tool_call_completed` | Tool invocations |
+| `:result` | `:success` | `run_completed`, `token_usage_updated` | Final result with usage stats |
+| `:result` | `:error_*` | `error_occurred`, `run_failed` | Error conditions |
 
-### Claude Event Shapes
+### Claude SDK Message Shape
 
-#### message_start
-```json
-{
-  "type": "message_start",
-  "message": {
-    "id": "msg_01...",
-    "type": "message",
-    "role": "assistant",
-    "content": [],
-    "model": "claude-sonnet-4-20250514",
-    "stop_reason": null,
-    "usage": {"input_tokens": 25, "output_tokens": 1}
-  }
+#### System Init Message
+```elixir
+%ClaudeAgentSDK.Message{
+  type: :system,
+  subtype: :init,
+  data: %{
+    session_id: "session-abc123",
+    cwd: "/working/directory",
+    tools: ["Read", "Write", "Bash"],
+    mcp_servers: [],
+    model: "claude-sonnet-4-20250514",
+    permission_mode: "default",
+    api_key_source: "env"
+  },
+  raw: %{}
 }
 ```
 
-#### content_block_delta (text)
-```json
-{
-  "type": "content_block_delta",
-  "index": 0,
-  "delta": {"type": "text_delta", "text": "Hello"}
+#### Assistant Message
+```elixir
+%ClaudeAgentSDK.Message{
+  type: :assistant,
+  subtype: nil,
+  data: %{
+    message: %{
+      "role" => "assistant",
+      "content" => [
+        %{"type" => "text", "text" => "Hello! How can I help?"},
+        %{"type" => "tool_use", "id" => "toolu_123", "name" => "Read", "input" => %{"path" => "/file.txt"}}
+      ]
+    },
+    session_id: "session-abc123"
+  },
+  raw: %{}
 }
 ```
 
-#### content_block_delta (tool input)
-```json
-{
-  "type": "content_block_delta",
-  "index": 1,
-  "delta": {"type": "input_json_delta", "partial_json": "{\"location\":"}
-}
-```
-
-#### message_delta
-```json
-{
-  "type": "message_delta",
-  "delta": {"stop_reason": "end_turn"},
-  "usage": {"output_tokens": 15}
+#### Result Success Message
+```elixir
+%ClaudeAgentSDK.Message{
+  type: :result,
+  subtype: :success,
+  data: %{
+    session_id: "session-abc123",
+    result: "Final response text",
+    total_cost_usd: 0.003,
+    duration_ms: 2500,
+    duration_api_ms: 2100,
+    num_turns: 2,
+    is_error: false,
+    usage: %{"input_tokens" => 150, "output_tokens" => 75}
+  },
+  raw: %{}
 }
 ```
 
 ### Capabilities
 
-Claude provides these capabilities:
-
 | Capability | Type | Description |
 |------------|------|-------------|
 | `streaming` | `:sampling` | Real-time response streaming |
-| `tool_use` | `:tool` | Function calling |
+| `tool_use` | `:tool` | Function/tool calling |
 | `vision` | `:resource` | Image understanding |
 | `system_prompts` | `:prompt` | System prompt support |
 | `interrupt` | `:sampling` | Request cancellation |
 
 ### Implementation Notes
 
-1. **Streaming**: Use `stream: true` in request body
-2. **Tool Results**: Send as user message with `tool_result` content
-3. **Cancellation**: Close HTTP connection to abort stream
-4. **Rate Limits**: Respect `retry-after` header on 429
+1. **Session ID Preservation**: The Claude SDK provides its own session_id which is preserved in session metadata as `provider_session_id`
+2. **Tool Handling**: Tool use blocks in assistant messages trigger both `tool_call_started` and `tool_call_completed` events
+3. **Cancellation**: Implemented via interrupt signal to the underlying CLI process
+4. **Testing**: Use `ClaudeAgentSDKMock` for testing without CLI/network dependencies
 
-## OpenAI / Codex Integration
+## Codex SDK Integration (`codex_sdk`)
 
-### API Overview
+### SDK Overview
 
-OpenAI uses the Chat Completions API with SSE streaming.
+The CodexAdapter integrates with `codex_sdk`, which provides the OpenAI-compatible Codex/GPT API with thread-based conversations.
 
-**Endpoint**: `POST https://api.openai.com/v1/chat/completions`
+**SDK Entry Point**: `Codex.Thread.run_streamed/3`
 
-**Headers**:
-```
-Authorization: Bearer {OPENAI_API_KEY}
-content-type: application/json
-```
+Returns a `RunResultStreaming` struct with an events stream accessed via `raw_events/1`.
 
 ### Event Mapping
 
-| OpenAI Event | Normalized Event | Notes |
-|--------------|------------------|-------|
-| First chunk | `run_started` | Extract model info |
-| `delta.content` | `message_streamed` | Text chunks |
-| `delta.function_call` | Tool events | Function calling |
-| `[DONE]` | `run_completed` | Stream end |
-| Usage response | `token_usage_updated` | If `stream_options.include_usage` |
+| Codex SDK Event | Normalized Event | Notes |
+|-----------------|------------------|-------|
+| `ThreadStarted` | `run_started` | Thread initialization |
+| `TurnStarted` | (internal) | Turn lifecycle |
+| `ItemAgentMessageDelta` | `message_streamed` | Content chunks |
+| `ToolCallRequested` | `tool_call_started` | Tool invocation begins |
+| `ToolCallCompleted` | `tool_call_completed` | Tool result received |
+| `ThreadTokenUsageUpdated` | `token_usage_updated` | Usage statistics |
+| `TurnCompleted` | `run_completed` | Turn/run finished |
+| `TurnFailed` | `run_failed` | Error during turn |
+| `TurnAborted` | `run_cancelled` | Cancellation |
+| `Error` | `error_occurred` | Error event |
 
-### OpenAI Event Shape
+### Codex SDK Event Shapes
 
-```json
-{
-  "id": "chatcmpl-...",
-  "object": "chat.completion.chunk",
-  "created": 1234567890,
-  "model": "gpt-4",
-  "choices": [{
-    "index": 0,
-    "delta": {"content": "Hello"},
-    "finish_reason": null
-  }]
+#### ThreadStarted
+```elixir
+%Codex.Events.ThreadStarted{
+  thread_id: "thread-xyz789",
+  metadata: %{}
+}
+```
+
+#### ItemAgentMessageDelta
+```elixir
+%Codex.Events.ItemAgentMessageDelta{
+  thread_id: "thread-xyz789",
+  turn_id: "turn-001",
+  item: %{
+    "id" => "item-1",
+    "type" => "agentMessage",
+    "content" => [%{"type" => "text", "text" => "Partial content..."}]
+  }
+}
+```
+
+#### ToolCallRequested
+```elixir
+%Codex.Events.ToolCallRequested{
+  thread_id: "thread-xyz789",
+  turn_id: "turn-001",
+  call_id: "call-123",
+  tool_name: "read_file",
+  arguments: %{"path" => "/test.txt"},
+  requires_approval: false
+}
+```
+
+#### TurnCompleted
+```elixir
+%Codex.Events.TurnCompleted{
+  thread_id: "thread-xyz789",
+  turn_id: "turn-001",
+  status: "completed",
+  usage: %{"input_tokens" => 50, "output_tokens" => 25}
 }
 ```
 
@@ -158,7 +192,55 @@ content-type: application/json
 |------------|------|-------------|
 | `streaming` | `:sampling` | Response streaming |
 | `tool_use` | `:tool` | Function calling |
-| `code_completion` | `:sampling` | Code-specific models |
+| `interrupt` | `:sampling` | Request cancellation |
+| `mcp` | `:tool` | MCP server support |
+| `file_operations` | `:tool` | File read/write |
+| `bash` | `:tool` | Shell execution |
+
+### Implementation Notes
+
+1. **Thread ID Preservation**: The Codex SDK thread_id is preserved in session metadata as `provider_session_id`
+2. **Cancellation**: Implemented via `RunResultStreaming.cancel/1`
+3. **Testing**: Use `CodexMockSDK` for testing without network dependencies
+
+## Provider Metadata
+
+Both adapters preserve provider-specific metadata in session and run records:
+
+```elixir
+# Session metadata after execution
+session.metadata = %{
+  provider: "claude",           # or "codex"
+  provider_session_id: "...",   # Claude's session_id or Codex's thread_id
+  model: "claude-sonnet-4-20250514"
+}
+
+# Run metadata
+run.metadata = %{
+  provider: "claude",
+  provider_session_id: "...",
+  model: "claude-sonnet-4-20250514"
+}
+```
+
+## Telemetry Integration
+
+Adapter events are automatically emitted to telemetry:
+
+```elixir
+# Event namespace: [:agent_session_manager, :adapter, event_type]
+# Example: [:agent_session_manager, :adapter, :message_streamed]
+
+:telemetry.attach(
+  "my-handler",
+  [:agent_session_manager, :adapter, :message_streamed],
+  fn _event, measurements, metadata, _config ->
+    # measurements: %{system_time: ..., input_tokens: ..., output_tokens: ...}
+    # metadata: %{run_id: ..., session_id: ..., provider: :claude, ...}
+  end,
+  nil
+)
+```
 
 ## Error Handling
 
@@ -167,10 +249,9 @@ content-type: application/json
 Errors from providers are normalized to `AgentSessionManager.Core.Error`:
 
 ```elixir
-Error.new(:provider_rate_limited, "Rate limit exceeded",
+Error.new(:provider_error, "Execution failed",
   provider_error: %{
-    status_code: 429,
-    retry_after: 30
+    original_error: error_details
   }
 )
 ```
@@ -179,20 +260,19 @@ Error.new(:provider_rate_limited, "Rate limit exceeded",
 
 | Code | Description | Recovery |
 |------|-------------|----------|
-| `:provider_rate_limited` | Rate limit hit | Wait and retry |
-| `:provider_timeout` | Request timeout | Retry with backoff |
-| `:provider_error` | Generic API error | Check error details |
-| `:provider_unavailable` | Service down | Retry later |
-| `:invalid_api_key` | Auth failure | Check credentials |
+| `:provider_error` | Generic provider error | Check error details |
+| `:cancelled` | Operation cancelled | Expected, no recovery needed |
+| `:run_not_found` | Unknown run ID | Check run exists |
+| `:validation_error` | Config validation failed | Fix configuration |
 
 ## Configuration
 
 ### Environment Variables
 
-| Provider | Variable | Format |
-|----------|----------|--------|
-| Claude | `ANTHROPIC_API_KEY` | `sk-ant-api03-...` |
-| OpenAI | `OPENAI_API_KEY` | `sk-...` |
+| Provider | Variable | Description |
+|----------|----------|-------------|
+| Claude | `ANTHROPIC_API_KEY` | API key for Claude |
+| Codex | `OPENAI_API_KEY` | API key for OpenAI/Codex |
 
 ### Adapter Options
 
@@ -200,53 +280,86 @@ Error.new(:provider_rate_limited, "Rate limit exceeded",
 # Claude Adapter
 {:ok, adapter} = ClaudeAdapter.start_link(
   api_key: "sk-ant-...",
-  model: "claude-sonnet-4-20250514",
+  working_directory: "/path/to/project",
   # For testing:
-  sdk_module: MockSDK,
+  sdk_module: ClaudeAgentSDKMock,
   sdk_pid: mock_pid
 )
 
-# Execute with options
-ClaudeAdapter.execute(adapter, run, session,
-  event_callback: &handle_event/1,
-  timeout: 60_000
+# Codex Adapter
+{:ok, adapter} = CodexAdapter.start_link(
+  working_directory: "/path/to/project",
+  model: "claude-sonnet-4-20250514",
+  # For testing:
+  sdk_module: CodexMockSDK,
+  sdk_pid: mock_pid
 )
 ```
 
 ## Testing SDK Integration
 
-### Mock SDK Usage
+### Claude Mock SDK Usage
 
 ```elixir
 # Start mock with scenario
-{:ok, mock} = MockSDK.start_link(scenario: :successful_stream)
+{:ok, mock} = ClaudeAgentSDKMock.start_link(scenario: :simple_response)
+
+# Or with custom content
+{:ok, mock} = ClaudeAgentSDKMock.start_link(
+  scenario: :simple_response,
+  content: "Custom response",
+  session_id: "test-session-123"
+)
 
 # Configure adapter to use mock
 {:ok, adapter} = ClaudeAdapter.start_link(
   api_key: "test-key",
-  sdk_module: MockSDK,
+  sdk_module: ClaudeAgentSDKMock,
   sdk_pid: mock
 )
-
-# Control event emission
-MockSDK.emit_next(mock)  # Emit one event
-MockSDK.complete(mock)   # Emit all remaining
 ```
 
-### Scenario Testing
+### Codex Mock SDK Usage
 
-Available mock scenarios:
-- `:successful_stream` - Normal completion
-- `:tool_use_response` - Tool call with input
-- `:rate_limit_error` - 429 error
-- `:network_timeout` - Timeout simulation
-- `:partial_disconnect` - Mid-stream disconnect
+```elixir
+# Start mock with scenario
+{:ok, mock} = CodexMockSDK.start_link(scenario: :simple_response)
+
+# Or with tool call scenario
+{:ok, mock} = CodexMockSDK.start_link(
+  scenario: :with_tool_call,
+  tool_name: "read_file",
+  tool_args: %{"path" => "/test.txt"}
+)
+
+# Configure adapter to use mock
+{:ok, adapter} = CodexAdapter.start_link(
+  working_directory: "/tmp",
+  sdk_module: CodexMockSDK,
+  sdk_pid: mock
+)
+```
+
+### Available Mock Scenarios
+
+**Claude SDK Mock**:
+- `:simple_response` - Basic assistant response with success result
+- `:streaming` - Multiple assistant messages (chunked content)
+- `:with_tool_use` - Tool invocation with result
+- `:error` - Error result
+
+**Codex SDK Mock**:
+- `:simple_response` - Basic turn completion
+- `:streaming` - Multiple delta events
+- `:with_tool_call` - Tool request and completion
+- `:error` - Error and TurnFailed events
+- `:cancelled` - TurnAborted event
 
 ## Best Practices
 
 1. **Always check capabilities** before session creation
 2. **Handle streaming errors** with proper cleanup
 3. **Track token usage** for cost management
-4. **Implement backoff** for rate limits
-5. **Log events** for debugging and audit
-6. **Use mock mode** in CI/CD pipelines
+4. **Use provider metadata** for debugging and correlation
+5. **Monitor telemetry events** for observability
+6. **Use mock mode** in CI/CD pipelines - never make real API calls in tests

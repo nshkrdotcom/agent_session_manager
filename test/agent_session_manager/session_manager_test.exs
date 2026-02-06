@@ -740,4 +740,202 @@ defmodule AgentSessionManager.SessionManagerTest do
       assert created_event.data.provider == "mock"
     end
   end
+
+  # ============================================================================
+  # run_once/4 Tests
+  # ============================================================================
+
+  describe "run_once/4" do
+    test "returns {:ok, result} with output and token_usage", %{store: store, adapter: adapter} do
+      {:ok, result} =
+        SessionManager.run_once(store, adapter, %{
+          messages: [%{role: "user", content: "Hello"}]
+        })
+
+      assert is_map(result.output)
+      assert result.token_usage.input_tokens == 10
+      assert result.token_usage.output_tokens == 20
+    end
+
+    test "includes session_id and run_id in result", %{store: store, adapter: adapter} do
+      {:ok, result} =
+        SessionManager.run_once(store, adapter, %{
+          messages: [%{role: "user", content: "Hello"}]
+        })
+
+      assert is_binary(result.session_id)
+      assert is_binary(result.run_id)
+    end
+
+    test "uses adapter provider name as default agent_id", %{store: store, adapter: adapter} do
+      {:ok, result} =
+        SessionManager.run_once(store, adapter, %{
+          messages: [%{role: "user", content: "Hello"}]
+        })
+
+      {:ok, session} = SessionStore.get_session(store, result.session_id)
+      assert session.agent_id == "mock"
+    end
+
+    test "uses custom agent_id when provided", %{store: store, adapter: adapter} do
+      {:ok, result} =
+        SessionManager.run_once(
+          store,
+          adapter,
+          %{
+            messages: [%{role: "user", content: "Hello"}]
+          },
+          agent_id: "custom-agent"
+        )
+
+      {:ok, session} = SessionStore.get_session(store, result.session_id)
+      assert session.agent_id == "custom-agent"
+    end
+
+    test "session is completed after successful run", %{store: store, adapter: adapter} do
+      {:ok, result} =
+        SessionManager.run_once(store, adapter, %{
+          messages: [%{role: "user", content: "Hello"}]
+        })
+
+      {:ok, session} = SessionStore.get_session(store, result.session_id)
+      assert session.status == :completed
+    end
+
+    test "run is completed after successful execution", %{store: store, adapter: adapter} do
+      {:ok, result} =
+        SessionManager.run_once(store, adapter, %{
+          messages: [%{role: "user", content: "Hello"}]
+        })
+
+      {:ok, run} = SessionStore.get_run(store, result.run_id)
+      assert run.status == :completed
+    end
+
+    test "forwards metadata, context, and tags to session", %{store: store, adapter: adapter} do
+      {:ok, result} =
+        SessionManager.run_once(store, adapter, %{prompt: "Hello"},
+          metadata: %{user_id: "u-1"},
+          context: %{system_prompt: "Be helpful"},
+          tags: ["test"]
+        )
+
+      {:ok, session} = SessionStore.get_session(store, result.session_id)
+      assert session.metadata.user_id == "u-1"
+      assert session.context.system_prompt == "Be helpful"
+      assert session.tags == ["test"]
+    end
+
+    test "returns {:error, error} on adapter failure", %{store: store, adapter: adapter} do
+      error = Error.new(:provider_error, "Boom")
+      MockAdapter.set_fail_with(adapter, error)
+
+      assert {:error, %Error{code: :provider_error}} =
+               SessionManager.run_once(store, adapter, %{prompt: "Hello"})
+    end
+
+    test "marks session as failed on adapter error", %{store: store} do
+      # Use a fresh adapter with fail_with set. MockAdapter.name/1 doesn't check
+      # fail_with, and run_once without capability opts skips capabilities check,
+      # so only execute_run will fail.
+      {:ok, fail_adapter} = MockAdapter.start_link()
+      cleanup_on_exit(fn -> safe_stop(fail_adapter) end)
+
+      error = Error.new(:provider_error, "Boom")
+      MockAdapter.set_fail_with(fail_adapter, error)
+
+      {:error, _} = SessionManager.run_once(store, fail_adapter, %{prompt: "Hello"})
+
+      {:ok, sessions} = SessionStore.list_sessions(store)
+      failed = Enum.find(sessions, &(&1.status == :failed))
+      assert failed != nil
+      assert failed.status == :failed
+    end
+
+    test "delivers events to user callback in real-time", %{store: store, adapter: adapter} do
+      test_pid = self()
+
+      callback = fn event_data ->
+        send(test_pid, {:event, event_data.type})
+      end
+
+      {:ok, _result} =
+        SessionManager.run_once(store, adapter, %{prompt: "Hello"}, event_callback: callback)
+
+      assert_received {:event, :run_started}
+      assert_received {:event, :message_received}
+      assert_received {:event, :run_completed}
+    end
+
+    test "passes required_capabilities to start_run", %{store: store, adapter: adapter} do
+      # Adapter has :tool and :sampling by default, so :tool should work
+      {:ok, _result} =
+        SessionManager.run_once(store, adapter, %{prompt: "Hello"},
+          required_capabilities: [:tool]
+        )
+
+      assert MockAdapter.get_execute_count(adapter) == 1
+    end
+  end
+
+  # ============================================================================
+  # execute_run/4 with event_callback Tests
+  # ============================================================================
+
+  describe "execute_run/4 with event_callback" do
+    test "calls user event_callback with adapter events", %{store: store, adapter: adapter} do
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+      {:ok, run} = SessionManager.start_run(store, adapter, session.id, %{prompt: "Hello"})
+
+      test_pid = self()
+
+      callback = fn event_data ->
+        send(test_pid, {:user_event, event_data.type})
+      end
+
+      {:ok, _result} =
+        SessionManager.execute_run(store, adapter, run.id, event_callback: callback)
+
+      assert_received {:user_event, :run_started}
+      assert_received {:user_event, :message_received}
+      assert_received {:user_event, :run_completed}
+    end
+
+    test "persists events to store AND calls user callback", %{store: store, adapter: adapter} do
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+      {:ok, run} = SessionManager.start_run(store, adapter, session.id, %{prompt: "Hello"})
+
+      test_pid = self()
+
+      callback = fn event_data ->
+        send(test_pid, {:user_event, event_data.type})
+      end
+
+      {:ok, _result} =
+        SessionManager.execute_run(store, adapter, run.id, event_callback: callback)
+
+      # Verify events were persisted to store
+      {:ok, events} = SessionStore.get_events(store, session.id, run_id: run.id)
+      types = Enum.map(events, & &1.type)
+      assert :run_started in types
+      assert :message_received in types
+
+      # Verify user callback was also called
+      assert_received {:user_event, :run_started}
+      assert_received {:user_event, :message_received}
+    end
+
+    test "works without event_callback (backward compat)", %{store: store, adapter: adapter} do
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+      {:ok, run} = SessionManager.start_run(store, adapter, session.id, %{prompt: "Hello"})
+
+      # Call with no opts (arity 3 still works)
+      {:ok, result} = SessionManager.execute_run(store, adapter, run.id)
+
+      assert is_map(result.output)
+    end
+  end
 end

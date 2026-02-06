@@ -42,6 +42,8 @@ run_example() {
 }
 
 # Run each example
+run_example "One-Shot (Claude)" "examples/oneshot.exs" --provider claude
+run_example "One-Shot (Codex)"  "examples/oneshot.exs" --provider codex
 run_example "Live Session (Claude)" "examples/live_session.exs" --provider claude
 run_example "Live Session (Codex)"  "examples/live_session.exs" --provider codex
 run_example "Common Surface (Claude)" "examples/common_surface.exs" --provider claude

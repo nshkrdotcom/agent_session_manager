@@ -9,7 +9,7 @@ Add `agent_session_manager` to your `mix.exs` dependencies:
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.1.1"}
+    {:agent_session_manager, "~> 0.2.0"}
   ]
 end
 ```
@@ -26,7 +26,32 @@ AgentSessionManager pulls in a small set of runtime dependencies:
 - `jason` -- for JSON encoding/decoding
 - `codex_sdk` and `claude_agent_sdk` -- the underlying provider SDKs
 
-## Your First Session
+## Quick One-Shot Usage
+
+For simple request/response workflows, `run_once/4` handles the entire lifecycle in one call:
+
+```elixir
+alias AgentSessionManager.SessionManager
+alias AgentSessionManager.Adapters.{ClaudeAdapter, InMemorySessionStore}
+
+{:ok, store} = InMemorySessionStore.start_link()
+{:ok, adapter} = ClaudeAdapter.start_link(api_key: System.get_env("ANTHROPIC_API_KEY"))
+
+{:ok, result} = SessionManager.run_once(store, adapter, %{
+  messages: [%{role: "user", content: "What is Elixir?"}]
+},
+  context: %{system_prompt: "You are a helpful assistant."},
+  event_callback: fn event -> IO.write(event.data[:delta] || "") end
+)
+
+IO.puts(result.output.content)
+IO.inspect(result.token_usage)
+# result also includes :session_id, :run_id, and :events
+```
+
+This creates a session, activates it, starts a run, executes it, and completes the session. On error, the session is automatically marked as failed.
+
+## Your First Session (Full Lifecycle)
 
 The fundamental workflow is: **create a session, create a run inside it, execute the run, inspect the result.**
 

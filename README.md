@@ -53,7 +53,7 @@ Add `agent_session_manager` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.1.1"}
+    {:agent_session_manager, "~> 0.2.0"}
   ]
 end
 ```
@@ -66,8 +66,27 @@ mix deps.get
 
 ## Quick Start
 
+### One-shot (simplest)
+
 ```elixir
-alias AgentSessionManager.Core.{Session, Run, Event, Manifest, Registry, CapabilityResolver}
+alias AgentSessionManager.SessionManager
+alias AgentSessionManager.Adapters.{ClaudeAdapter, InMemorySessionStore}
+
+{:ok, store} = InMemorySessionStore.start_link()
+{:ok, adapter} = ClaudeAdapter.start_link(api_key: System.get_env("ANTHROPIC_API_KEY"))
+
+{:ok, result} = SessionManager.run_once(store, adapter, %{
+  messages: [%{role: "user", content: "Hello!"}]
+}, event_callback: fn e -> IO.inspect(e.type) end)
+
+IO.puts(result.output.content)
+IO.inspect(result.token_usage)
+# result also includes :session_id and :run_id
+```
+
+### Full lifecycle
+
+```elixir
 alias AgentSessionManager.SessionManager
 alias AgentSessionManager.Adapters.{ClaudeAdapter, InMemorySessionStore}
 
@@ -188,6 +207,9 @@ mix run examples/live_session.exs --provider claude --mock
 
 # Run with real API
 ANTHROPIC_API_KEY=sk-ant-... mix run examples/live_session.exs --provider claude
+
+# One-shot execution (simplest example)
+mix run examples/oneshot.exs --provider claude
 
 # Provider-agnostic common surface (works with either provider)
 mix run examples/common_surface.exs --provider claude

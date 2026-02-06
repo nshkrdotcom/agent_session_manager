@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-02-05
+
+### Added
+
+- `SessionManager.run_once/4` convenience function that collapses the full session lifecycle (create, activate, start run, execute, complete/fail) into a single call
+- `execute_run/4` now accepts an `:event_callback` option for real-time event streaming alongside internal persistence
+- `examples/oneshot.exs` one-shot execution example using `run_once/4`
+
 ## [0.1.1] - 2026-01-27
 
 ### Added
@@ -39,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic project structure with mix.exs configuration
 - Project logo and assets
 
-[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/nshkrdotcom/agent_session_manager/releases/tag/v0.1.0

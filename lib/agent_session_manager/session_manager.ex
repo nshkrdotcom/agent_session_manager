@@ -240,20 +240,113 @@ defmodule AgentSessionManager.SessionManager do
   3. Handles events emitted by the adapter
   4. Updates the run with results or error
 
+  ## Options
+
+  - `:event_callback` - A function `(event_data -> any())` that receives each
+    adapter event in real time, in addition to the internal persistence callback.
+
   ## Returns
 
   - `{:ok, result}` - Execution completed successfully
   - `{:error, Error.t()}` - Execution failed
 
   """
-  @spec execute_run(store(), adapter(), String.t()) ::
+  @spec execute_run(store(), adapter(), String.t(), keyword()) ::
           {:ok, map()} | {:error, Error.t()}
-  def execute_run(store, adapter, run_id) do
+  def execute_run(store, adapter, run_id, opts \\ []) do
     with {:ok, run} <- SessionStore.get_run(store, run_id),
          {:ok, session} <- SessionStore.get_session(store, run.session_id),
          {:ok, running_run} <- Run.update_status(run, :running),
          :ok <- SessionStore.save_run(store, running_run) do
-      execute_with_adapter(store, adapter, running_run, session)
+      execute_with_adapter(store, adapter, running_run, session, opts)
+    end
+  end
+
+  @doc """
+  Runs a one-shot session: creates a session, activates it, starts a run,
+  executes it, and completes (or fails) the session — all in a single call.
+
+  This is a convenience function that collapses the full session lifecycle
+  into one function call, ideal for simple request/response workflows.
+
+  ## Parameters
+
+  - `store` - The session store instance
+  - `adapter` - The provider adapter instance
+  - `input` - Input data for the run (e.g. `%{messages: [...]}`)
+  - `opts` - Options:
+    - `:agent_id` - Agent identifier (defaults to provider name)
+    - `:metadata` - Session metadata map
+    - `:context` - Session context (system prompts, etc.)
+    - `:tags` - Session tags
+    - `:event_callback` - `(event_data -> any())` for real-time events
+    - `:required_capabilities` - Required capability types
+    - `:optional_capabilities` - Optional capability types
+
+  ## Returns
+
+  - `{:ok, result}` - A map with `:output`, `:token_usage`, `:events`,
+    `:session_id`, and `:run_id`
+  - `{:error, Error.t()}` - If any step fails
+
+  ## Examples
+
+      {:ok, result} = SessionManager.run_once(store, adapter, %{
+        messages: [%{role: "user", content: "Hello!"}]
+      }, event_callback: fn e -> IO.inspect(e.type) end)
+
+      IO.puts(result.output.content)
+
+  """
+  @spec run_once(store(), adapter(), map(), keyword()) :: {:ok, map()} | {:error, Error.t()}
+  def run_once(store, adapter, input, opts \\ []) do
+    agent_id = Keyword.get(opts, :agent_id, ProviderAdapter.name(adapter))
+
+    session_attrs =
+      %{agent_id: agent_id}
+      |> maybe_put(:metadata, Keyword.get(opts, :metadata))
+      |> maybe_put(:context, Keyword.get(opts, :context))
+      |> maybe_put(:tags, Keyword.get(opts, :tags))
+
+    cap_opts =
+      []
+      |> maybe_put_keyword(:required_capabilities, Keyword.get(opts, :required_capabilities))
+      |> maybe_put_keyword(:optional_capabilities, Keyword.get(opts, :optional_capabilities))
+
+    exec_opts =
+      []
+      |> maybe_put_keyword(:event_callback, Keyword.get(opts, :event_callback))
+
+    with {:ok, session} <- start_session(store, adapter, session_attrs),
+         {:ok, _active} <- activate_session(store, session.id) do
+      run_once_execute(store, adapter, session, input, cap_opts, exec_opts)
+    end
+  end
+
+  defp run_once_execute(store, adapter, session, input, cap_opts, exec_opts) do
+    case start_run(store, adapter, session.id, input, cap_opts) do
+      {:ok, run} ->
+        case execute_run(store, adapter, run.id, exec_opts) do
+          {:ok, result} ->
+            {:ok, _} = complete_session(store, session.id)
+
+            {:ok,
+             %{
+               output: result.output,
+               token_usage: result.token_usage,
+               events: result.events,
+               session_id: session.id,
+               run_id: run.id
+             }}
+
+          {:error, %Error{} = error} ->
+            fail_session(store, session.id, error)
+            {:error, error}
+        end
+
+      {:error, %Error{} = error} ->
+        fail_session(store, session.id, error)
+        {:error, error}
     end
   end
 
@@ -309,11 +402,13 @@ defmodule AgentSessionManager.SessionManager do
   # Private Functions
   # ============================================================================
 
-  defp execute_with_adapter(store, adapter, run, session) do
+  defp execute_with_adapter(store, adapter, run, session, opts) do
     provider_name = ProviderAdapter.name(adapter)
+    user_callback = Keyword.get(opts, :event_callback)
 
     event_callback = fn event_data ->
       handle_adapter_event(store, run, session, event_data)
+      if user_callback, do: user_callback.(event_data)
     end
 
     case ProviderAdapter.execute(adapter, run, session, event_callback: event_callback) do
@@ -387,6 +482,9 @@ defmodule AgentSessionManager.SessionManager do
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
+
+  defp maybe_put_keyword(keyword, _key, nil), do: keyword
+  defp maybe_put_keyword(keyword, key, value), do: Keyword.put(keyword, key, value)
 
   defp finalize_failed_run(store, run, error) do
     error_map = %{code: error.code, message: error.message}

@@ -17,6 +17,19 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
   alias AgentSessionManager.Core.Error
   alias AgentSessionManager.Test.CodexMockSDK
 
+  describe "start_link/1 validation" do
+    test "returns validation error when working_directory is missing" do
+      assert {:error, %Error{code: :validation_error, message: "working_directory is required"}} =
+               CodexAdapter.start_link([])
+    end
+
+    test "returns validation error when working_directory is empty" do
+      assert {:error,
+              %Error{code: :validation_error, message: "working_directory cannot be empty"}} =
+               CodexAdapter.start_link(working_directory: "")
+    end
+  end
+
   describe "ProviderAdapter behaviour compliance" do
     test "name/1 returns 'codex'" do
       {:ok, adapter} = start_test_adapter()

@@ -4,6 +4,23 @@ This directory contains runnable examples that demonstrate AgentSessionManager f
 
 ## Available Examples
 
+### `oneshot.exs` -- One-Shot Execution
+
+Demonstrates `SessionManager.run_once/4` for the simplest possible usage:
+
+- Provider selection (Claude or Codex) via command line
+- Single-call session lifecycle (create, activate, run, complete)
+- Real-time event streaming via `:event_callback`
+- Output and token usage display
+- Automatic session failure handling on error
+
+**Prerequisites:** Claude or Codex authentication.
+
+```bash
+mix run examples/oneshot.exs --provider claude
+mix run examples/oneshot.exs --provider codex
+```
+
 ### `live_session.exs` -- Live Session with Streaming
 
 Demonstrates the full session lifecycle with a real AI provider:

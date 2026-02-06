@@ -83,12 +83,14 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
-    {name, opts} = Keyword.pop(opts, :name)
+    with {:ok, _working_directory} <- extract_working_directory(opts) do
+      {name, opts} = Keyword.pop(opts, :name)
 
-    if name do
-      GenServer.start_link(__MODULE__, opts, name: name)
-    else
-      GenServer.start_link(__MODULE__, opts)
+      if name do
+        GenServer.start_link(__MODULE__, opts, name: name)
+      else
+        GenServer.start_link(__MODULE__, opts)
+      end
     end
   end
 
@@ -143,23 +145,28 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
 
   @impl GenServer
   def init(opts) do
-    working_directory = Keyword.fetch!(opts, :working_directory)
-    model = Keyword.get(opts, :model)
-    sdk_module = Keyword.get(opts, :sdk_module)
-    sdk_pid = Keyword.get(opts, :sdk_pid)
+    case extract_working_directory(opts) do
+      {:ok, working_directory} ->
+        model = Keyword.get(opts, :model)
+        sdk_module = Keyword.get(opts, :sdk_module)
+        sdk_pid = Keyword.get(opts, :sdk_pid)
 
-    capabilities = build_capabilities()
+        capabilities = build_capabilities()
 
-    state = %{
-      working_directory: working_directory,
-      model: model,
-      sdk_module: sdk_module,
-      sdk_pid: sdk_pid,
-      active_runs: %{},
-      capabilities: capabilities
-    }
+        state = %{
+          working_directory: working_directory,
+          model: model,
+          sdk_module: sdk_module,
+          sdk_pid: sdk_pid,
+          active_runs: %{},
+          capabilities: capabilities
+        }
 
-    {:ok, state}
+        {:ok, state}
+
+      {:error, reason} ->
+        {:stop, reason}
+    end
   end
 
   @impl GenServer
@@ -263,6 +270,22 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
   # ============================================================================
   # Private Implementation
   # ============================================================================
+
+  defp extract_working_directory(opts) do
+    case Keyword.fetch(opts, :working_directory) do
+      {:ok, working_directory} when is_binary(working_directory) and working_directory != "" ->
+        {:ok, working_directory}
+
+      {:ok, ""} ->
+        {:error, Error.new(:validation_error, "working_directory cannot be empty")}
+
+      {:ok, _} ->
+        {:error, Error.new(:validation_error, "working_directory must be a non-empty string")}
+
+      :error ->
+        {:error, Error.new(:validation_error, "working_directory is required")}
+    end
+  end
 
   defp do_execute(state, run, session, opts, adapter_pid) do
     event_callback = Keyword.get(opts, :event_callback)

@@ -1,7 +1,7 @@
 defmodule AgentSessionManager.MixProject do
   use Mix.Project
 
-  @version "0.2.0"
+  @version "0.2.1"
   @source_url "https://github.com/nshkrdotcom/agent_session_manager"
 
   def project do
@@ -38,7 +38,7 @@ defmodule AgentSessionManager.MixProject do
 
       # Agent SDKs
       {:codex_sdk, "~> 0.6.0"},
-      {:claude_agent_sdk, "~> 0.9.2"},
+      {:claude_agent_sdk, "~> 0.10.0"},
 
       # Development and documentation
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},

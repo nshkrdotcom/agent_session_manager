@@ -93,13 +93,14 @@ defmodule Oneshot do
       event_callback = fn event ->
         case event.type do
           :message_streamed ->
-            IO.write(:stderr, ".")
+            content = event.data[:delta] || event.data[:content] || ""
+            IO.write(content)
 
           :run_started ->
-            IO.puts(:stderr, "Streaming...")
+            IO.puts("Streaming...\n")
 
           :run_completed ->
-            IO.puts(:stderr, " done")
+            IO.puts("\n")
 
           _ ->
             :ok

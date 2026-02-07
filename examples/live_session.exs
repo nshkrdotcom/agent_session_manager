@@ -205,7 +205,7 @@ defmodule LiveSession do
     {:ok, config}
   end
 
-  defp get_default_model("claude"), do: "claude-sonnet-4-20250514"
+  defp get_default_model("claude"), do: "claude-haiku-4-5-20251001"
   defp get_default_model("codex"), do: nil
 
   # ============================================================================

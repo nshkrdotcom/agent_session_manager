@@ -11,7 +11,7 @@ The Claude adapter integrates with Anthropic's API via the ClaudeAgentSDK.
 ```elixir
 {:ok, adapter} = AgentSessionManager.Adapters.ClaudeAdapter.start_link(
   api_key: System.get_env("ANTHROPIC_API_KEY"),
-  model: "claude-sonnet-4-20250514"  # optional, this is the default
+  model: "claude-haiku-4-5-20251001"  # optional, this is the default
 )
 ```
 
@@ -22,14 +22,13 @@ The Claude adapter integrates with Anthropic's API via the ClaudeAgentSDK.
 - `system_prompts` (`:prompt`) -- system prompt support
 - `interrupt` (`:sampling`) -- cancel in-progress requests
 
-**Event mapping from Claude API:**
+**Event mapping from Claude Streaming API:**
 
-| Claude API Event | Normalized Event |
+| Streaming Event | Normalized Event |
 |---|---|
 | `message_start` | `:run_started` |
-| `content_block_delta` (text) | `:message_streamed` |
-| `content_block_start` (tool_use) | `:tool_call_started` |
-| `content_block_stop` (tool_use) | `:tool_call_completed` |
+| `text_delta` | `:message_streamed` |
+| `tool_use_start` | `:tool_call_started` |
 | `message_delta` | `:token_usage_updated` |
 | `message_stop` | `:message_received`, `:run_completed` |
 

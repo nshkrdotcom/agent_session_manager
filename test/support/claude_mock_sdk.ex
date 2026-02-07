@@ -18,7 +18,7 @@ defmodule AgentSessionManager.Adapters.Claude.MockSDK do
       "type": "message",
       "role": "assistant",
       "content": [],
-      "model": "claude-sonnet-4-20250514",
+      "model": "claude-haiku-4-5-20251001",
       "stop_reason": null,
       "stop_sequence": null,
       "usage": {"input_tokens": 25, "output_tokens": 1}
@@ -146,7 +146,7 @@ defmodule AgentSessionManager.Adapters.Claude.MockSDK do
   ## Options
 
   - `:scenario` - The scenario to simulate (default: `:successful_stream`)
-  - `:model` - The model name to use (default: "claude-sonnet-4-20250514")
+  - `:model` - The model name to use (default: "claude-haiku-4-5-20251001")
   - `:name` - Optional GenServer name
   """
   @spec start_link(keyword()) :: GenServer.on_start()
@@ -259,7 +259,7 @@ defmodule AgentSessionManager.Adapters.Claude.MockSDK do
   @impl GenServer
   def init(opts) do
     scenario = Keyword.get(opts, :scenario, :successful_stream)
-    model = Keyword.get(opts, :model, "claude-sonnet-4-20250514")
+    model = Keyword.get(opts, :model, "claude-haiku-4-5-20251001")
     message_id = generate_message_id()
 
     state = %{

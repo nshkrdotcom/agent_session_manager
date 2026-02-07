@@ -102,7 +102,7 @@ defmodule AgentSessionManager.Test.ClaudeAgentSDKMock do
           cwd: "/tmp/test",
           tools: [],
           mcp_servers: [],
-          model: "claude-sonnet-4-20250514",
+          model: "claude-haiku-4-5-20251001",
           permission_mode: "default",
           api_key_source: "test"
         },
@@ -155,7 +155,7 @@ defmodule AgentSessionManager.Test.ClaudeAgentSDKMock do
           cwd: "/tmp/test",
           tools: [],
           mcp_servers: [],
-          model: "claude-sonnet-4-20250514",
+          model: "claude-haiku-4-5-20251001",
           permission_mode: "default",
           api_key_source: "test"
         },
@@ -212,7 +212,7 @@ defmodule AgentSessionManager.Test.ClaudeAgentSDKMock do
           cwd: "/tmp/test",
           tools: [tool_name],
           mcp_servers: [],
-          model: "claude-sonnet-4-20250514",
+          model: "claude-haiku-4-5-20251001",
           permission_mode: "default",
           api_key_source: "test"
         },
@@ -287,7 +287,7 @@ defmodule AgentSessionManager.Test.ClaudeAgentSDKMock do
           cwd: "/tmp/test",
           tools: [],
           mcp_servers: [],
-          model: "claude-sonnet-4-20250514",
+          model: "claude-haiku-4-5-20251001",
           permission_mode: "default",
           api_key_source: "test"
         },

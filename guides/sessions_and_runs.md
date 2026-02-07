@@ -213,5 +213,5 @@ When runs execute through `SessionManager`, provider-specific metadata is automa
 {:ok, updated_run} = SessionStore.get_run(store, run.id)
 
 updated_run.metadata
-# => %{provider: "claude", provider_session_id: "sess_...", model: "claude-sonnet-4-..."}
+# => %{provider: "claude", provider_session_id: "sess_...", model: "claude-haiku-4-5-..."}
 ```

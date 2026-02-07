@@ -11,21 +11,16 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
 
   ## Event Mapping
 
-  Claude API events are mapped to normalized events as follows:
+  Claude Streaming API events are mapped to normalized events as follows:
 
-  | Claude Event          | Normalized Event       | Notes                              |
+  | Streaming Event       | Normalized Event       | Notes                              |
   |-----------------------|------------------------|------------------------------------|
   | message_start         | run_started            | Signals execution has begun        |
-  | content_block_start   | (internal)             | Tracked for content accumulation   |
-  | content_block_delta   | message_streamed       | Each text delta emits a stream     |
-  | content_block_stop    | (internal/tool events) | May emit tool_call_completed       |
-  | message_delta         | token_usage_updated    | Final usage stats                  |
+  | text_delta            | message_streamed       | Each token-level delta streams out |
+  | tool_use_start        | tool_call_started      | Tool invocation begins             |
+  | message_delta         | token_usage_updated    | Final usage stats and stop reason  |
   | message_stop          | message_received,      | Emits full message then completion |
   |                       | run_completed          |                                    |
-
-  For tool use content blocks:
-  - content_block_start (tool_use) -> tool_call_started
-  - content_block_stop (tool_use)  -> tool_call_completed
 
   ## Usage
 
@@ -44,7 +39,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
   ## Configuration
 
   Optional:
-  - `:model` - Model to use (default: "claude-sonnet-4-20250514")
+  - `:model` - Model to use (default: "claude-haiku-4-5-20251001")
   - `:api_key` - Anthropic API key (optional; the SDK authenticates via
     `claude login` session or the `ANTHROPIC_API_KEY` environment variable)
   - `:sdk_module` - SDK module for testing (default: real SDK)
@@ -57,7 +52,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
 
   alias AgentSessionManager.Core.{Capability, Error}
 
-  @default_model "claude-sonnet-4-20250514"
+  @default_model "claude-haiku-4-5-20251001"
 
   @type state :: %{
           api_key: String.t(),
@@ -147,6 +142,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
     model = Keyword.get(opts, :model, @default_model)
     sdk_module = Keyword.get(opts, :sdk_module)
     sdk_pid = Keyword.get(opts, :sdk_pid)
+    tools = Keyword.get(opts, :tools)
 
     capabilities = build_capabilities()
 
@@ -155,6 +151,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
       model: model,
       sdk_module: sdk_module,
       sdk_pid: sdk_pid,
+      tools: tools,
       active_runs: %{},
       capabilities: capabilities
     }
@@ -297,14 +294,37 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
   end
 
   defp execute_with_real_sdk(ctx, state) do
-    # Build options for ClaudeAgentSDK
     sdk_opts = build_sdk_options(state)
     prompt = extract_prompt(ctx.run.input)
 
-    # Use the real ClaudeAgentSDK.Query.run/3
+    # Use ClaudeAgentSDK.Streaming for real token-level streaming deltas.
+    # Query.run/3 delivers complete Message structs (no incremental output).
     try do
-      stream = ClaudeAgentSDK.Query.run(prompt, sdk_opts)
-      process_agent_sdk_stream(stream, ctx)
+      case ClaudeAgentSDK.Streaming.start_session(sdk_opts) do
+        {:ok, session} ->
+          try do
+            session_id =
+              case ClaudeAgentSDK.Streaming.get_session_id(session) do
+                {:ok, id} -> id
+                _ -> nil
+              end
+
+            stream = ClaudeAgentSDK.Streaming.send_message(session, prompt)
+            process_streaming_events(stream, %{ctx | session_id: session_id})
+          after
+            ClaudeAgentSDK.Streaming.close_session(session)
+          end
+
+        {:error, reason} ->
+          error_message = "Failed to start streaming session: #{inspect(reason)}"
+
+          emit_event(ctx, :error_occurred, %{
+            error_code: :sdk_error,
+            error_message: error_message
+          })
+
+          {:error, Error.new(:provider_error, error_message)}
+      end
     rescue
       e ->
         error_message = Exception.message(e)
@@ -328,6 +348,111 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
     end
   end
 
+  defp process_streaming_events(stream, ctx) do
+    result =
+      stream
+      |> Enum.reduce_while(ctx, fn event, acc ->
+        if cancelled?() do
+          emit_event(acc, :run_cancelled, %{})
+          {:halt, {:cancelled, acc}}
+        else
+          handle_streaming_event(event, acc)
+        end
+      end)
+
+    case result do
+      {:cancelled, _ctx} ->
+        {:error, Error.new(:cancelled, "Run was cancelled")}
+
+      {:error, error_msg} ->
+        {:error, Error.new(:provider_error, error_msg)}
+
+      final_ctx when is_map(final_ctx) ->
+        build_claude_result(final_ctx)
+    end
+  end
+
+  defp handle_streaming_event(%{type: :message_start} = event, ctx) do
+    model = event[:model]
+
+    # The parsed event's :usage is typically empty; fall back to the raw CLI event
+    usage = event[:usage] || %{}
+    raw_usage = get_in(event, [:raw_event, "message", "usage"]) || %{}
+    input_tokens = usage[:input_tokens] || raw_usage["input_tokens"] || 0
+
+    emit_event(ctx, :run_started, %{
+      session_id: ctx.session_id,
+      model: model
+    })
+
+    new_token_usage = %{ctx.token_usage | input_tokens: input_tokens}
+    {:cont, %{ctx | token_usage: new_token_usage}}
+  end
+
+  defp handle_streaming_event(%{type: :text_delta, text: text}, ctx) do
+    emit_event(ctx, :message_streamed, %{
+      content: text,
+      delta: text,
+      session_id: ctx.session_id
+    })
+
+    {:cont, %{ctx | accumulated_content: ctx.accumulated_content <> text}}
+  end
+
+  defp handle_streaming_event(%{type: :tool_use_start} = event, ctx) do
+    emit_event(ctx, :tool_call_started, %{
+      tool_use_id: event[:id],
+      tool_name: event[:name]
+    })
+
+    {:cont, ctx}
+  end
+
+  defp handle_streaming_event(%{type: :message_delta} = event, ctx) do
+    stop_reason = event[:stop_reason]
+
+    # The parsed event omits usage; fall back to the raw CLI event
+    raw_usage = get_in(event, [:raw_event, "usage"]) || %{}
+    output_tokens = raw_usage["output_tokens"] || ctx.token_usage.output_tokens
+
+    new_token_usage = %{ctx.token_usage | output_tokens: output_tokens}
+    {:cont, ctx |> Map.put(:stop_reason, stop_reason) |> Map.put(:token_usage, new_token_usage)}
+  end
+
+  defp handle_streaming_event(%{type: :message_stop}, ctx) do
+    emit_event(ctx, :message_received, %{
+      content: ctx.accumulated_content,
+      role: "assistant"
+    })
+
+    emit_event(ctx, :token_usage_updated, %{
+      input_tokens: ctx.token_usage.input_tokens,
+      output_tokens: ctx.token_usage.output_tokens
+    })
+
+    emit_event(ctx, :run_completed, %{
+      stop_reason: Map.get(ctx, :stop_reason, "end_turn"),
+      session_id: ctx.session_id
+    })
+
+    {:halt, ctx}
+  end
+
+  defp handle_streaming_event(%{type: :error, error: reason}, ctx) do
+    error_message = inspect(reason)
+
+    emit_event(ctx, :error_occurred, %{
+      error_code: :provider_error,
+      error_message: error_message
+    })
+
+    {:halt, {:error, error_message}}
+  end
+
+  defp handle_streaming_event(_event, ctx) do
+    {:cont, ctx}
+  end
+
   defp execute_with_agent_sdk(sdk_module, sdk_pid, ctx, _state) do
     # Use the ClaudeAgentSDK-compatible interface
     stream = sdk_module.query(sdk_pid, ctx.run.input, %{})
@@ -346,12 +471,17 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
 
   defp build_sdk_options(state) do
     # ClaudeAgentSDK handles auth via `claude login` session or ANTHROPIC_API_KEY env var.
-    # Do NOT set output_format: :stream_json here — that causes escaped text (\n instead
-    # of newlines). The SDK already returns a stream of Message structs via Query.run/3.
-    %ClaudeAgentSDK.Options{
+    opts = %ClaudeAgentSDK.Options{
       model: state.model,
+      max_turns: 1,
       setting_sources: ["user"]
     }
+
+    if state.tools do
+      %{opts | tools: state.tools}
+    else
+      opts
+    end
   end
 
   defp process_agent_sdk_stream(stream, ctx) do

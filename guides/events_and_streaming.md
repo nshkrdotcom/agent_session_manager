@@ -58,7 +58,7 @@ alias AgentSessionManager.Core.Event
   session_id: session.id,
   run_id: run.id,
   data: %{content: "Hello!", role: "assistant"},
-  metadata: %{model: "claude-sonnet-4-20250514"}
+  metadata: %{model: "claude-haiku-4-5-20251001"}
 })
 
 event.id         # => "evt_a1b2c3..."  (auto-generated)
@@ -114,7 +114,7 @@ alias AgentSessionManager.Core.EventNormalizer
 raw_event = %{
   "type" => "assistant_message",
   "content" => "Hello!",
-  "model" => "claude-sonnet-4-20250514"
+  "model" => "claude-haiku-4-5-20251001"
 }
 
 context = %{

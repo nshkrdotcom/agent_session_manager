@@ -363,7 +363,7 @@ defmodule AgentSessionManager.Test.Fixtures do
         timestamp: base_time,
         session_id: session_id,
         run_id: run_id,
-        data: %{model: "claude-sonnet-4-20250514"},
+        data: %{model: "claude-haiku-4-5-20251001"},
         metadata: %{provider: :claude}
       },
       %Event{
@@ -408,7 +408,7 @@ defmodule AgentSessionManager.Test.Fixtures do
         timestamp: base_time,
         session_id: session_id,
         run_id: run_id,
-        data: %{model: "claude-sonnet-4-20250514"},
+        data: %{model: "claude-haiku-4-5-20251001"},
         metadata: %{provider: :claude}
       },
       %Event{
@@ -480,7 +480,7 @@ defmodule AgentSessionManager.Test.Fixtures do
         timestamp: base_time,
         session_id: session_id,
         run_id: run_id,
-        data: %{model: "claude-sonnet-4-20250514"},
+        data: %{model: "claude-haiku-4-5-20251001"},
         metadata: %{provider: :claude}
       },
       %Event{
@@ -563,7 +563,7 @@ defmodule AgentSessionManager.Test.Fixtures do
         timestamp: base_time,
         session_id: session_id,
         run_id: run_id_1,
-        data: %{model: "claude-sonnet-4-20250514"},
+        data: %{model: "claude-haiku-4-5-20251001"},
         metadata: %{provider: :claude}
       },
       %Event{
@@ -591,7 +591,7 @@ defmodule AgentSessionManager.Test.Fixtures do
         timestamp: DateTime.add(base_time, 500, :millisecond),
         session_id: session_id,
         run_id: run_id_2,
-        data: %{model: "claude-sonnet-4-20250514"},
+        data: %{model: "claude-haiku-4-5-20251001"},
         metadata: %{provider: :claude}
       },
       %Event{
@@ -636,7 +636,7 @@ defmodule AgentSessionManager.Test.Fixtures do
         timestamp: base_time,
         session_id: session_id,
         run_id: run_id,
-        data: %{model: "claude-sonnet-4-20250514"},
+        data: %{model: "claude-haiku-4-5-20251001"},
         metadata: %{provider: :claude}
       },
       %Event{
@@ -690,7 +690,7 @@ defmodule AgentSessionManager.Test.Fixtures do
         timestamp: base_time,
         session_id: session_id,
         run_id: run_id,
-        data: %{model: "claude-sonnet-4-20250514"},
+        data: %{model: "claude-haiku-4-5-20251001"},
         metadata: %{provider: :claude}
       },
       %Event{
@@ -777,7 +777,7 @@ defmodule AgentSessionManager.Test.Fixtures do
         timestamp: DateTime.add(base_time, 50, :millisecond),
         session_id: session_id,
         run_id: run_id,
-        data: %{model: "claude-sonnet-4-20250514"},
+        data: %{model: "claude-haiku-4-5-20251001"},
         metadata: %{provider: :claude}
       },
       %Event{

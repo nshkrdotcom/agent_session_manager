@@ -149,7 +149,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
       {:ok, adapter} = ClaudeAdapter.start_link(api_key: "test-key")
       cleanup_on_exit(fn -> safe_stop(adapter) end)
 
-      config = %{model: "claude-sonnet-4-20250514"}
+      config = %{model: "claude-haiku-4-5-20251001"}
       assert :ok = ClaudeAdapter.validate_config(adapter, config)
     end
 
@@ -165,7 +165,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
       {:ok, adapter} = ClaudeAdapter.start_link(api_key: "test-key")
       cleanup_on_exit(fn -> safe_stop(adapter) end)
 
-      config = %{api_key: "sk-xxx", model: "claude-sonnet-4-20250514"}
+      config = %{api_key: "sk-xxx", model: "claude-haiku-4-5-20251001"}
       assert :ok = ClaudeAdapter.validate_config(adapter, config)
     end
   end

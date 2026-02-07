@@ -132,7 +132,7 @@ defmodule CommonSurface do
   end
 
   defp start_adapter("claude") do
-    case ClaudeAdapter.start_link(model: "claude-sonnet-4-20250514") do
+    case ClaudeAdapter.start_link(model: "claude-haiku-4-5-20251001", tools: []) do
       {:ok, adapter} ->
         {:ok, adapter}
 

@@ -63,7 +63,7 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
       assert :ok =
                CodexAdapter.validate_config(adapter, %{
                  working_directory: "/tmp",
-                 model: "claude-sonnet-4-20250514"
+                 model: "claude-haiku-4-5-20251001"
                })
     end
   end

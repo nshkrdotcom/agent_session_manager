@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-02-06
+
+### Changed
+
+- Switch ClaudeAdapter from `ClaudeAgentSDK.Query.run/3` to `ClaudeAgentSDK.Streaming` for real token-level streaming deltas
+- Simplify event mapping: replace `content_block_start/delta/stop` with `text_delta` and `tool_use_start` events
+- Change default model from `claude-sonnet-4-20250514` to `claude-haiku-4-5-20251001`
+- Add `tools` option passthrough to ClaudeAdapter `start_link/1` and SDK options
+- Set `max_turns: 1` in SDK options for single-turn execution
+- Update oneshot example to stream content deltas to stdout instead of progress dots to stderr
+- Bump claude_agent_sdk dependency from ~> 0.10.0 to ~> 0.11.0
+- Bump codex_sdk dependency from ~> 0.6.0 to ~> 0.7.1
+
 ## [0.2.1] - 2026-02-05
 
 ### Changed
@@ -53,7 +66,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic project structure with mix.exs configuration
 - Project logo and assets
 
-[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.1.0...v0.1.1

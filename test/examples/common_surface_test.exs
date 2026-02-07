@@ -49,7 +49,7 @@ defmodule AgentSessionManager.Examples.CommonSurfaceTest do
         store = ctx.store
 
         {:ok, adapter} =
-          ClaudeAdapter.start_link(model: "claude-sonnet-4-20250514")
+          ClaudeAdapter.start_link(model: "claude-haiku-4-5-20251001")
 
         cleanup_on_exit(fn -> safe_stop(adapter) end)
 
@@ -91,7 +91,7 @@ defmodule AgentSessionManager.Examples.CommonSurfaceTest do
         store = ctx.store
 
         {:ok, adapter} =
-          ClaudeAdapter.start_link(model: "claude-sonnet-4-20250514")
+          ClaudeAdapter.start_link(model: "claude-haiku-4-5-20251001")
 
         cleanup_on_exit(fn -> safe_stop(adapter) end)
 

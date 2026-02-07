@@ -51,18 +51,31 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
   use GenServer
 
   alias AgentSessionManager.Core.{Capability, Error}
+  alias AgentSessionManager.Ports.ProviderAdapter
 
   @default_model "claude-haiku-4-5-20251001"
   @emitted_events_key {__MODULE__, :emitted_events}
 
-  @type state :: %{
-          api_key: String.t(),
-          model: String.t(),
-          sdk_module: module(),
-          sdk_pid: pid() | nil,
-          active_runs: %{String.t() => map()},
-          capabilities: [Capability.t()]
-        }
+  defmodule RunState do
+    @moduledoc false
+    @enforce_keys [:run, :from, :task_ref, :task_pid]
+    @type t :: %__MODULE__{
+            run: map(),
+            from: GenServer.from(),
+            stream_ref: term(),
+            cancelled: boolean(),
+            task_ref: reference(),
+            task_pid: pid()
+          }
+    defstruct [
+      :run,
+      :from,
+      :stream_ref,
+      :task_ref,
+      :task_pid,
+      cancelled: false
+    ]
+  end
 
   # ============================================================================
   # Public API
@@ -116,8 +129,8 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
 
   @impl AgentSessionManager.Ports.ProviderAdapter
   def execute(adapter, run, session, opts \\ []) do
-    timeout = Keyword.get(opts, :timeout, 60_000)
-    GenServer.call(adapter, {:execute, run, session, opts}, timeout + 5_000)
+    timeout = ProviderAdapter.resolve_execute_timeout(opts)
+    GenServer.call(adapter, {:execute, run, session, opts}, timeout)
   end
 
   @impl AgentSessionManager.Ports.ProviderAdapter
@@ -144,6 +157,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
     sdk_module = Keyword.get(opts, :sdk_module)
     sdk_pid = Keyword.get(opts, :sdk_pid)
     tools = Keyword.get(opts, :tools)
+    {:ok, task_supervisor} = Task.Supervisor.start_link()
 
     capabilities = build_capabilities()
 
@@ -152,8 +166,10 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
       model: model,
       sdk_module: sdk_module,
       sdk_pid: sdk_pid,
+      task_supervisor: task_supervisor,
       tools: tools,
       active_runs: %{},
+      task_refs: %{},
       capabilities: capabilities
     }
 
@@ -172,26 +188,27 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
 
   @impl GenServer
   def handle_call({:execute, run, session, opts}, from, state) do
-    # Execute in a separate process to not block the GenServer
-    parent = self()
+    adapter_pid = self()
 
-    worker_pid =
-      spawn_link(fn ->
-        result = do_execute(state, run, session, opts)
-        GenServer.cast(parent, {:execution_complete, run.id, from, result})
+    task =
+      Task.Supervisor.async_nolink(state.task_supervisor, fn ->
+        safe_do_execute(state, run, session, opts, adapter_pid)
       end)
 
-    # Track the active run with worker pid
-    run_state = %{
+    run_state = %RunState{
       run: run,
-      session: session,
       from: from,
       stream_ref: nil,
       cancelled: false,
-      worker_pid: worker_pid
+      task_pid: task.pid,
+      task_ref: task.ref
     }
 
-    new_state = put_in(state.active_runs[run.id], run_state)
+    new_state = %{
+      state
+      | active_runs: Map.put(state.active_runs, run.id, run_state),
+        task_refs: Map.put(state.task_refs, task.ref, {run.id, from})
+    }
 
     {:noreply, new_state}
   end
@@ -205,7 +222,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
       run_state ->
         # Mark as cancelled
         new_run_state = %{run_state | cancelled: true}
-        new_state = put_in(state.active_runs[run_id], new_run_state)
+        new_state = %{state | active_runs: Map.put(state.active_runs, run_id, new_run_state)}
 
         # Try to cancel the stream if we have a mock SDK
         if state.sdk_module && state.sdk_pid && run_state.stream_ref do
@@ -213,19 +230,12 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
         end
 
         # Send cancellation notification to the worker process
-        if run_state.worker_pid do
-          send(run_state.worker_pid, {:cancelled_notification, run_id})
+        if run_state.task_pid do
+          send(run_state.task_pid, {:cancelled_notification, run_id})
         end
 
-        {:reply, {:ok, run_state.run}, new_state}
+        {:reply, {:ok, run_id}, new_state}
     end
-  end
-
-  @impl GenServer
-  def handle_cast({:execution_complete, run_id, from, result}, state) do
-    GenServer.reply(from, result)
-    new_state = %{state | active_runs: Map.delete(state.active_runs, run_id)}
-    {:noreply, new_state}
   end
 
   @impl GenServer
@@ -253,13 +263,57 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
     {:noreply, state}
   end
 
+  @impl GenServer
+  def handle_info({task_ref, result}, state) when is_reference(task_ref) do
+    case Map.pop(state.task_refs, task_ref) do
+      {nil, _refs} ->
+        {:noreply, state}
+
+      {{run_id, from}, new_task_refs} ->
+        Process.demonitor(task_ref, [:flush])
+        GenServer.reply(from, result)
+
+        new_active_runs =
+          case Map.get(state.active_runs, run_id) do
+            %RunState{task_ref: ^task_ref} -> Map.delete(state.active_runs, run_id)
+            _ -> state.active_runs
+          end
+
+        {:noreply, %{state | active_runs: new_active_runs, task_refs: new_task_refs}}
+    end
+  end
+
+  @impl GenServer
+  def handle_info({:DOWN, task_ref, :process, _pid, reason}, state) do
+    case Map.pop(state.task_refs, task_ref) do
+      {nil, _refs} ->
+        {:noreply, state}
+
+      {{run_id, from}, new_task_refs} ->
+        error =
+          Error.new(
+            :internal_error,
+            "Execution worker exited before returning a result: #{inspect(reason)}"
+          )
+
+        GenServer.reply(from, {:error, error})
+
+        new_active_runs =
+          case Map.get(state.active_runs, run_id) do
+            %RunState{task_ref: ^task_ref} -> Map.delete(state.active_runs, run_id)
+            _ -> state.active_runs
+          end
+
+        {:noreply, %{state | active_runs: new_active_runs, task_refs: new_task_refs}}
+    end
+  end
+
   # ============================================================================
   # Private Implementation
   # ============================================================================
 
-  defp do_execute(state, run, session, opts) do
+  defp do_execute(state, run, session, opts, adapter_pid) do
     event_callback = Keyword.get(opts, :event_callback)
-    adapter_pid = self()
     reset_emitted_events()
 
     # Build execution context
@@ -292,6 +346,16 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
       true ->
         {:error, Error.new(:internal_error, "Unknown SDK interface")}
     end
+  end
+
+  defp safe_do_execute(state, run, session, opts, adapter_pid) do
+    do_execute(state, run, session, opts, adapter_pid)
+  rescue
+    exception ->
+      {:error, Error.new(:internal_error, Exception.message(exception))}
+  catch
+    kind, reason ->
+      {:error, Error.new(:internal_error, "Execution failed (#{kind}): #{inspect(reason)}")}
   end
 
   defp execute_with_real_sdk(ctx, state) do

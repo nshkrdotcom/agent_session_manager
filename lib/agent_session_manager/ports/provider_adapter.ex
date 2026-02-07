@@ -54,6 +54,9 @@ defmodule AgentSessionManager.Ports.ProviderAdapter do
 
   alias AgentSessionManager.Core.{Capability, Error, Run, Session}
 
+  @default_execute_timeout 60_000
+  @execute_grace_timeout 5_000
+
   @type adapter :: GenServer.server() | pid() | atom() | module()
   @type run_result :: %{
           output: map(),
@@ -217,12 +220,9 @@ defmodule AgentSessionManager.Ports.ProviderAdapter do
   """
   @spec capabilities(adapter()) :: {:ok, [Capability.t()]} | {:error, Error.t()}
   def capabilities(adapter) when is_atom(adapter) and not is_nil(adapter) do
-    # Check if it's a registered name or a module
-    if Process.whereis(adapter) do
-      GenServer.call(adapter, :capabilities)
-    else
+    call_registered_or_fallback(adapter, :capabilities, fn ->
       adapter.capabilities(adapter)
-    end
+    end)
   end
 
   def capabilities(adapter) do
@@ -237,16 +237,18 @@ defmodule AgentSessionManager.Ports.ProviderAdapter do
   def execute(adapter, run, session, opts \\ [])
 
   def execute(adapter, run, session, opts) when is_atom(adapter) and not is_nil(adapter) do
-    if Process.whereis(adapter) do
-      timeout = Keyword.get(opts, :timeout, 60_000)
-      GenServer.call(adapter, {:execute, run, session, opts}, timeout)
-    else
-      adapter.execute(adapter, run, session, opts)
-    end
+    call_registered_or_fallback(
+      adapter,
+      {:execute, run, session, opts},
+      fn ->
+        adapter.execute(adapter, run, session, opts)
+      end,
+      resolve_execute_timeout(opts)
+    )
   end
 
   def execute(adapter, run, session, opts) do
-    timeout = Keyword.get(opts, :timeout, 60_000)
+    timeout = resolve_execute_timeout(opts)
     GenServer.call(adapter, {:execute, run, session, opts}, timeout)
   end
 
@@ -255,11 +257,9 @@ defmodule AgentSessionManager.Ports.ProviderAdapter do
   """
   @spec cancel(adapter(), String.t()) :: {:ok, String.t()} | {:error, Error.t()}
   def cancel(adapter, run_id) when is_atom(adapter) and not is_nil(adapter) do
-    if Process.whereis(adapter) do
-      GenServer.call(adapter, {:cancel, run_id})
-    else
+    call_registered_or_fallback(adapter, {:cancel, run_id}, fn ->
       adapter.cancel(adapter, run_id)
-    end
+    end)
   end
 
   def cancel(adapter, run_id) do
@@ -276,5 +276,21 @@ defmodule AgentSessionManager.Ports.ProviderAdapter do
 
   def validate_config(adapter, config) do
     GenServer.call(adapter, {:validate_config, config})
+  end
+
+  @doc """
+  Resolves execute call timeout from options, including a grace period for
+  asynchronous result handoff back to callers.
+  """
+  @spec resolve_execute_timeout(keyword()) :: pos_integer()
+  def resolve_execute_timeout(opts) do
+    Keyword.get(opts, :timeout, @default_execute_timeout) + @execute_grace_timeout
+  end
+
+  defp call_registered_or_fallback(adapter, request, fallback, timeout \\ 5_000) do
+    GenServer.call(adapter, request, timeout)
+  catch
+    :exit, {:noproc, _} ->
+      fallback.()
   end
 end

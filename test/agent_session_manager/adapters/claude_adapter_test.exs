@@ -19,6 +19,14 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
   alias AgentSessionManager.Core.{Capability, Error, NormalizedEvent, Run, Session}
   alias AgentSessionManager.Test.ClaudeAgentSDKMock
 
+  defmodule FailingAgentSDK do
+    @moduledoc false
+
+    def query(_sdk_pid, _input, _opts) do
+      raise "boom in query"
+    end
+  end
+
   # ============================================================================
   # Test Setup
   # ============================================================================
@@ -716,8 +724,9 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
       MockSDK.emit_next(mock)
 
       # Cancel the run
+      run_id = run.id
       result = ClaudeAdapter.cancel(adapter, run.id)
-      assert {:ok, ^run} = result
+      assert {:ok, ^run_id} = result
 
       # Task should complete (with cancellation)
       result = Task.await(task, 1000)
@@ -753,6 +762,25 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
       result = ClaudeAdapter.cancel(adapter, "non-existent-run-id")
 
       assert {:error, %Error{code: :run_not_found}} = result
+    end
+  end
+
+  describe "worker failure isolation" do
+    test "returns internal_error and keeps adapter alive", %{session: session, run: run} do
+      {:ok, adapter} =
+        ClaudeAdapter.start_link(
+          api_key: "test-key",
+          sdk_module: FailingAgentSDK,
+          sdk_pid: self()
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      assert {:error, %Error{code: :internal_error}} =
+               ClaudeAdapter.execute(adapter, run, session)
+
+      assert Process.alive?(adapter)
+      assert {:ok, _caps} = ClaudeAdapter.capabilities(adapter)
     end
   end
 

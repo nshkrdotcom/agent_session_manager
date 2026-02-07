@@ -114,6 +114,7 @@ defmodule MyApp.Adapters.CustomAdapter do
   use GenServer
 
   alias AgentSessionManager.Core.{Capability, Error}
+  alias AgentSessionManager.Ports.ProviderAdapter
 
   # -- Public API --
 
@@ -133,8 +134,8 @@ defmodule MyApp.Adapters.CustomAdapter do
 
   @impl true
   def execute(adapter, run, session, opts \\ []) do
-    timeout = Keyword.get(opts, :timeout, 60_000)
-    GenServer.call(adapter, {:execute, run, session, opts}, timeout + 5_000)
+    timeout = ProviderAdapter.resolve_execute_timeout(opts)
+    GenServer.call(adapter, {:execute, run, session, opts}, timeout)
   end
 
   @impl true
@@ -150,8 +151,13 @@ defmodule MyApp.Adapters.CustomAdapter do
 
   @impl GenServer
   def init(opts) do
+    {:ok, task_supervisor} = Task.Supervisor.start_link()
+
     {:ok, %{
       api_key: Keyword.fetch!(opts, :api_key),
+      task_supervisor: task_supervisor,
+      run_refs: %{},      # task_ref => GenServer.from()
+      active_runs: %{},   # run_id => task_ref
       capabilities: [
         %Capability{name: "streaming", type: :sampling, enabled: true,
                      description: "Real-time streaming"}
@@ -165,18 +171,55 @@ defmodule MyApp.Adapters.CustomAdapter do
   end
 
   def handle_call({:execute, run, session, opts}, from, state) do
-    # Spawn a worker so we don't block the GenServer
-    parent = self()
-    spawn_link(fn ->
-      result = do_execute(state, run, session, opts)
-      GenServer.reply(from, result)
-    end)
-    {:noreply, state}
+    task =
+      Task.Supervisor.async_nolink(state.task_supervisor, fn ->
+        do_execute(state, run, session, opts)
+      end)
+
+    new_state = %{
+      state
+      | run_refs: Map.put(state.run_refs, task.ref, from),
+        active_runs: Map.put(state.active_runs, run.id, task.ref)
+    }
+
+    {:noreply, new_state}
   end
 
-  def handle_call({:cancel, _run_id}, _from, state) do
-    # Implement cancellation logic
-    {:reply, {:ok, "cancelled"}, state}
+  def handle_call({:cancel, run_id}, _from, state) do
+    case Map.fetch(state.active_runs, run_id) do
+      {:ok, _task_ref} ->
+        # Implement provider-specific cancellation logic here.
+        {:reply, {:ok, run_id}, state}
+
+      :error ->
+        {:reply, {:error, Error.new(:run_not_found, "Run not found: #{run_id}")}, state}
+    end
+  end
+
+  def handle_info({task_ref, result}, state) when is_reference(task_ref) do
+    case Map.pop(state.run_refs, task_ref) do
+      {nil, _run_refs} ->
+        {:noreply, state}
+
+      {from, run_refs} ->
+        Process.demonitor(task_ref, [:flush])
+        GenServer.reply(from, result)
+        active_runs = remove_task_ref(state.active_runs, task_ref)
+        {:noreply, %{state | run_refs: run_refs, active_runs: active_runs}}
+    end
+  end
+
+  def handle_info({:DOWN, task_ref, :process, _pid, reason}, state) do
+    case Map.pop(state.run_refs, task_ref) do
+      {nil, _run_refs} ->
+        {:noreply, state}
+
+      {from, run_refs} ->
+        error = Error.new(:internal_error, "Execution task failed: #{inspect(reason)}")
+        GenServer.reply(from, {:error, error})
+        active_runs = remove_task_ref(state.active_runs, task_ref)
+        {:noreply, %{state | run_refs: run_refs, active_runs: active_runs}}
+    end
   end
 
   defp do_execute(state, run, session, opts) do
@@ -216,6 +259,12 @@ defmodule MyApp.Adapters.CustomAdapter do
       provider: :custom
     })
   end
+
+  defp remove_task_ref(active_runs, task_ref) do
+    active_runs
+    |> Enum.reject(fn {_run_id, ref} -> ref == task_ref end)
+    |> Map.new()
+  end
 end
 ```
 
@@ -224,14 +273,14 @@ end
 Both built-in adapters use the same execution model:
 
 1. `execute/4` is called on the GenServer
-2. The GenServer spawns a linked worker process
-3. The worker performs the actual API call and event streaming
-4. The worker sends completion back via `GenServer.cast`
-5. The GenServer replies to the original caller
+2. The GenServer starts a supervised **nolink** task (`Task.Supervisor.async_nolink/2`)
+3. The task performs the actual API call and event streaming
+4. The GenServer handles task result and `:DOWN` messages for deterministic reply + cleanup
+5. Cancellation marks run state and forwards provider-specific cancel signals to the active task/stream
 
 This design allows:
 - Multiple concurrent executions through one adapter process
-- Cancellation via messages to the worker process
+- Cancellation via messages/signals to the task/stream
 - The GenServer to remain responsive during long-running executions
 
 ## Testing with Mock Adapters

@@ -68,6 +68,14 @@ defmodule AgentSessionManager.Core.ErrorTest do
     test "invalid_capability_type is a valid code" do
       assert Error.valid_code?(:invalid_capability_type)
     end
+
+    test "stream/event cursor errors are valid codes" do
+      assert Error.valid_code?(:stream_closed)
+      assert Error.valid_code?(:context_mismatch)
+      assert Error.valid_code?(:invalid_cursor)
+      assert Error.valid_code?(:session_mismatch)
+      assert Error.valid_code?(:run_mismatch)
+    end
   end
 
   describe "Error codes - Resource errors" do

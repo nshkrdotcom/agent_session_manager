@@ -44,8 +44,7 @@ defmodule AgentSessionManager.Core.NormalizedEvent do
 
   """
 
-  alias AgentSessionManager.Core.Error
-  alias AgentSessionManager.Core.Event
+  alias AgentSessionManager.Core.{Error, Event, Serialization}
 
   @type t :: %__MODULE__{
           id: String.t() | nil,
@@ -162,8 +161,8 @@ defmodule AgentSessionManager.Core.NormalizedEvent do
       "run_id" => event.run_id,
       "sequence_number" => event.sequence_number,
       "parent_event_id" => event.parent_event_id,
-      "data" => stringify_keys(event.data),
-      "metadata" => stringify_keys(event.metadata),
+      "data" => Serialization.stringify_keys(event.data),
+      "metadata" => Serialization.stringify_keys(event.metadata),
       "provider" => maybe_to_string(event.provider),
       "provider_event_id" => event.provider_event_id
     }
@@ -187,8 +186,8 @@ defmodule AgentSessionManager.Core.NormalizedEvent do
         run_id: run_id,
         sequence_number: map["sequence_number"],
         parent_event_id: map["parent_event_id"],
-        data: atomize_keys(map["data"] || %{}),
-        metadata: atomize_keys(map["metadata"] || %{}),
+        data: Serialization.atomize_keys(map["data"] || %{}),
+        metadata: Serialization.atomize_keys(map["metadata"] || %{}),
         provider: parse_provider(map["provider"]),
         provider_event_id: map["provider_event_id"]
       }
@@ -276,29 +275,16 @@ defmodule AgentSessionManager.Core.NormalizedEvent do
   defp parse_datetime(_), do: {:error, Error.new(:validation_error, "timestamp must be a string")}
 
   defp parse_provider(nil), do: nil
-  defp parse_provider(provider) when is_binary(provider), do: String.to_atom(provider)
+
+  defp parse_provider(provider) when is_binary(provider) do
+    case Serialization.maybe_to_existing_atom(provider) do
+      atom when is_atom(atom) -> atom
+      _ -> :generic
+    end
+  end
+
   defp parse_provider(provider) when is_atom(provider), do: provider
 
   defp maybe_to_string(nil), do: nil
   defp maybe_to_string(atom) when is_atom(atom), do: Atom.to_string(atom)
-
-  defp stringify_keys(map) when is_map(map) do
-    Map.new(map, fn
-      {k, v} when is_atom(k) -> {Atom.to_string(k), stringify_value(v)}
-      {k, v} -> {k, stringify_value(v)}
-    end)
-  end
-
-  defp stringify_value(v) when is_map(v), do: stringify_keys(v)
-  defp stringify_value(v), do: v
-
-  defp atomize_keys(map) when is_map(map) do
-    Map.new(map, fn
-      {k, v} when is_binary(k) -> {String.to_atom(k), atomize_value(v)}
-      {k, v} -> {k, atomize_value(v)}
-    end)
-  end
-
-  defp atomize_value(v) when is_map(v), do: atomize_keys(v)
-  defp atomize_value(v), do: v
 end

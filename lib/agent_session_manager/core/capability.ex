@@ -38,7 +38,7 @@ defmodule AgentSessionManager.Core.Capability do
 
   """
 
-  alias AgentSessionManager.Core.Error
+  alias AgentSessionManager.Core.{Error, Serialization}
 
   @valid_types [
     :tool,
@@ -157,7 +157,7 @@ defmodule AgentSessionManager.Core.Capability do
       "type" => Atom.to_string(capability.type),
       "enabled" => capability.enabled,
       "description" => capability.description,
-      "config" => stringify_keys(capability.config),
+      "config" => Serialization.stringify_keys(capability.config),
       "permissions" => capability.permissions
     }
   end
@@ -174,7 +174,7 @@ defmodule AgentSessionManager.Core.Capability do
         type: type,
         enabled: Map.get(map, "enabled", true),
         description: map["description"],
-        config: atomize_keys(map["config"] || %{}),
+        config: Serialization.atomize_keys(map["config"] || %{}),
         permissions: map["permissions"] || []
       }
 
@@ -231,24 +231,4 @@ defmodule AgentSessionManager.Core.Capability do
   end
 
   defp parse_type(_), do: {:error, Error.new(:validation_error, "type must be a string")}
-
-  defp stringify_keys(map) when is_map(map) do
-    Map.new(map, fn
-      {k, v} when is_atom(k) -> {Atom.to_string(k), stringify_value(v)}
-      {k, v} -> {k, stringify_value(v)}
-    end)
-  end
-
-  defp stringify_value(v) when is_map(v), do: stringify_keys(v)
-  defp stringify_value(v), do: v
-
-  defp atomize_keys(map) when is_map(map) do
-    Map.new(map, fn
-      {k, v} when is_binary(k) -> {String.to_atom(k), atomize_value(v)}
-      {k, v} -> {k, atomize_value(v)}
-    end)
-  end
-
-  defp atomize_value(v) when is_map(v), do: atomize_keys(v)
-  defp atomize_value(v), do: v
 end

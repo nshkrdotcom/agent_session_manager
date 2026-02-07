@@ -57,7 +57,7 @@ defmodule AgentSessionManager.Core.Event do
 
   """
 
-  alias AgentSessionManager.Core.Error
+  alias AgentSessionManager.Core.{Error, Serialization}
 
   # Session lifecycle events
   @session_events [
@@ -256,8 +256,8 @@ defmodule AgentSessionManager.Core.Event do
       "timestamp" => DateTime.to_iso8601(event.timestamp),
       "session_id" => event.session_id,
       "run_id" => event.run_id,
-      "data" => stringify_keys(event.data),
-      "metadata" => stringify_keys(event.metadata),
+      "data" => Serialization.stringify_keys(event.data),
+      "metadata" => Serialization.stringify_keys(event.metadata),
       "sequence_number" => event.sequence_number
     }
   end
@@ -277,8 +277,8 @@ defmodule AgentSessionManager.Core.Event do
         timestamp: timestamp,
         session_id: session_id,
         run_id: map["run_id"],
-        data: atomize_keys(map["data"] || %{}),
-        metadata: atomize_keys(map["metadata"] || %{}),
+        data: Serialization.atomize_keys(map["data"] || %{}),
+        metadata: Serialization.atomize_keys(map["metadata"] || %{}),
         sequence_number: map["sequence_number"]
       }
 
@@ -352,24 +352,4 @@ defmodule AgentSessionManager.Core.Event do
   end
 
   defp parse_datetime(_), do: {:error, Error.new(:validation_error, "timestamp must be a string")}
-
-  defp stringify_keys(map) when is_map(map) do
-    Map.new(map, fn
-      {k, v} when is_atom(k) -> {Atom.to_string(k), stringify_value(v)}
-      {k, v} -> {k, stringify_value(v)}
-    end)
-  end
-
-  defp stringify_value(v) when is_map(v), do: stringify_keys(v)
-  defp stringify_value(v), do: v
-
-  defp atomize_keys(map) when is_map(map) do
-    Map.new(map, fn
-      {k, v} when is_binary(k) -> {String.to_atom(k), atomize_value(v)}
-      {k, v} -> {k, atomize_value(v)}
-    end)
-  end
-
-  defp atomize_value(v) when is_map(v), do: atomize_keys(v)
-  defp atomize_value(v), do: v
 end

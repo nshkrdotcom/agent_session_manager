@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-02-06
+
+### Changed
+
+- Harden adapter execution lifecycle in Claude and Codex adapters by replacing linked worker processes with supervised `Task.Supervisor.async_nolink/2` tasks
+- Add deterministic task result and `:DOWN` handling so adapter calls always resolve with tuple results, including worker-failure paths
+- Fix concurrent execution reply routing to avoid reply loss when run IDs collide
+- Standardize adapter cancellation success return shape to `{:ok, run_id}` and align control operations with this contract
+- Normalize `ControlOperations.interrupt/2` to use provider `cancel/2` semantics, avoiding unsafe provider-specific interrupt calls
+- Remove `Process.whereis` check-then-act dispatch race in `ProviderAdapter` and use call-first fallback behavior on `:noproc`
+- Replace dynamic atom creation in core deserialization paths with safe existing-atom conversion via shared serialization utilities
+- Expand `Core.Error` taxonomy for stream/state mismatch cases (`:stream_closed`, `:context_mismatch`, `:invalid_cursor`, `:session_mismatch`, `:run_mismatch`)
+
+### Added
+
+- A shared core serialization utility for safe key conversion and map helpers
+- Serialization safety tests and adapter worker-failure isolation tests
+
+### Documentation
+
+- Update provider and architecture guides to document supervised nolink adapter task execution model
+- Document interrupt-to-cancel behavior in the concurrency guide
+- Bump installation snippets in `README.md` and `guides/getting_started.md` to `~> 0.4.1`
+
 ## [0.4.0] - 2026-02-06
 
 ### Changed
@@ -90,7 +114,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic project structure with mix.exs configuration
 - Project logo and assets
 
-[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.2.0...v0.2.1

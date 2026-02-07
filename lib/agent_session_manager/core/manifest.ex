@@ -38,7 +38,7 @@ defmodule AgentSessionManager.Core.Manifest do
 
   """
 
-  alias AgentSessionManager.Core.{Capability, Error}
+  alias AgentSessionManager.Core.{Capability, Error, Serialization}
 
   @type t :: %__MODULE__{
           name: String.t() | nil,
@@ -173,8 +173,8 @@ defmodule AgentSessionManager.Core.Manifest do
       "description" => manifest.description,
       "provider" => manifest.provider,
       "capabilities" => Enum.map(manifest.capabilities, &Capability.to_map/1),
-      "config" => stringify_keys(manifest.config),
-      "metadata" => stringify_keys(manifest.metadata)
+      "config" => Serialization.stringify_keys(manifest.config),
+      "metadata" => Serialization.stringify_keys(manifest.metadata)
     }
   end
 
@@ -192,8 +192,8 @@ defmodule AgentSessionManager.Core.Manifest do
         description: map["description"],
         provider: map["provider"],
         capabilities: capabilities,
-        config: atomize_keys(map["config"] || %{}),
-        metadata: atomize_keys(map["metadata"] || %{})
+        config: Serialization.atomize_keys(map["config"] || %{}),
+        metadata: Serialization.atomize_keys(map["metadata"] || %{})
       }
 
       {:ok, manifest}
@@ -267,24 +267,4 @@ defmodule AgentSessionManager.Core.Manifest do
       [{:error, error} | _] -> {:error, error}
     end
   end
-
-  defp stringify_keys(map) when is_map(map) do
-    Map.new(map, fn
-      {k, v} when is_atom(k) -> {Atom.to_string(k), stringify_value(v)}
-      {k, v} -> {k, stringify_value(v)}
-    end)
-  end
-
-  defp stringify_value(v) when is_map(v), do: stringify_keys(v)
-  defp stringify_value(v), do: v
-
-  defp atomize_keys(map) when is_map(map) do
-    Map.new(map, fn
-      {k, v} when is_binary(k) -> {String.to_atom(k), atomize_value(v)}
-      {k, v} -> {k, atomize_value(v)}
-    end)
-  end
-
-  defp atomize_value(v) when is_map(v), do: atomize_keys(v)
-  defp atomize_value(v), do: v
 end

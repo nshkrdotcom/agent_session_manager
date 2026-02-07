@@ -38,6 +38,8 @@ defmodule AgentSessionManager.Core.Error do
 
   """
 
+  alias AgentSessionManager.Core.Serialization
+
   # Validation errors
   @validation_codes [
     :validation_error,
@@ -52,7 +54,12 @@ defmodule AgentSessionManager.Core.Error do
     :invalid_transition,
     :invalid_event_type,
     :invalid_capability_type,
-    :missing_required_capability
+    :missing_required_capability,
+    :stream_closed,
+    :context_mismatch,
+    :invalid_cursor,
+    :session_mismatch,
+    :run_mismatch
   ]
 
   # Resource errors
@@ -134,6 +141,11 @@ defmodule AgentSessionManager.Core.Error do
     invalid_event_type: "Invalid event type",
     invalid_capability_type: "Invalid capability type",
     missing_required_capability: "Required capability is missing",
+    stream_closed: "Stream is closed",
+    context_mismatch: "Event context does not match stream context",
+    invalid_cursor: "Invalid cursor operation",
+    session_mismatch: "Session IDs do not match",
+    run_mismatch: "Run IDs do not match",
     not_found: "Resource not found",
     session_not_found: "Session not found",
     run_not_found: "Run not found",
@@ -174,6 +186,11 @@ defmodule AgentSessionManager.Core.Error do
           | :invalid_event_type
           | :invalid_capability_type
           | :missing_required_capability
+          | :stream_closed
+          | :context_mismatch
+          | :invalid_cursor
+          | :session_mismatch
+          | :run_mismatch
           | :not_found
           | :session_not_found
           | :run_not_found
@@ -404,10 +421,10 @@ defmodule AgentSessionManager.Core.Error do
     %{
       "code" => Atom.to_string(error.code),
       "message" => error.message,
-      "details" => stringify_keys(error.details),
+      "details" => Serialization.stringify_keys(error.details),
       "provider_error" => stringify_provider_error(error.provider_error),
       "stacktrace" => format_stacktrace(error.stacktrace),
-      "context" => stringify_keys(error.context),
+      "context" => Serialization.stringify_keys(error.context),
       "timestamp" => DateTime.to_iso8601(error.timestamp)
     }
   end
@@ -423,10 +440,10 @@ defmodule AgentSessionManager.Core.Error do
       error = %__MODULE__{
         code: code,
         message: message,
-        details: atomize_keys(map["details"] || %{}),
+        details: Serialization.atomize_keys(map["details"] || %{}),
         provider_error: map["provider_error"],
         stacktrace: map["stacktrace"],
-        context: atomize_keys(map["context"] || %{}),
+        context: Serialization.atomize_keys(map["context"] || %{}),
         timestamp: timestamp
       }
 
@@ -469,39 +486,11 @@ defmodule AgentSessionManager.Core.Error do
 
   defp parse_timestamp(_), do: {:error, new(:validation_error, "Invalid timestamp format")}
 
-  defp stringify_keys(map) when is_map(map) do
-    Map.new(map, fn
-      {k, v} when is_atom(k) -> {Atom.to_string(k), stringify_value(v)}
-      {k, v} -> {k, stringify_value(v)}
-    end)
-  end
-
-  defp stringify_keys(other), do: other
-
-  defp stringify_value(v) when is_map(v), do: stringify_keys(v)
-
-  defp stringify_value(v) when is_atom(v) and not is_nil(v) and not is_boolean(v),
-    do: Atom.to_string(v)
-
-  defp stringify_value(v), do: v
-
   defp stringify_provider_error(nil), do: nil
-  defp stringify_provider_error(error) when is_map(error), do: stringify_keys(error)
+  defp stringify_provider_error(error) when is_map(error), do: Serialization.stringify_keys(error)
 
   defp format_stacktrace(nil), do: nil
   defp format_stacktrace(stacktrace), do: stacktrace
-
-  defp atomize_keys(map) when is_map(map) do
-    Map.new(map, fn
-      {k, v} when is_binary(k) -> {String.to_atom(k), atomize_value(v)}
-      {k, v} -> {k, atomize_value(v)}
-    end)
-  end
-
-  defp atomize_keys(other), do: other
-
-  defp atomize_value(v) when is_map(v), do: atomize_keys(v)
-  defp atomize_value(v), do: v
 end
 
 defimpl String.Chars, for: AgentSessionManager.Core.Error do

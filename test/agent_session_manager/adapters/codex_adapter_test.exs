@@ -17,6 +17,14 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
   alias AgentSessionManager.Core.Error
   alias AgentSessionManager.Test.CodexMockSDK
 
+  defmodule FailingMockCodexSDK do
+    @moduledoc false
+
+    def run_streamed(_sdk_pid, _thread, _input, _opts) do
+      raise "boom in run_streamed"
+    end
+  end
+
   describe "start_link/1 validation" do
     test "returns validation error when working_directory is missing" do
       assert {:error, %Error{code: :validation_error, message: "working_directory is required"}} =
@@ -400,7 +408,8 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
       Process.sleep(50)
 
       # Cancel the run
-      {:ok, _} = CodexAdapter.cancel(adapter, run.id)
+      run_id = run.id
+      {:ok, ^run_id} = CodexAdapter.cancel(adapter, run.id)
 
       # The task should complete (either with error or partial result)
       result = Task.await(task, 5_000)
@@ -419,6 +428,26 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
       result = CodexAdapter.cancel(adapter, "non-existent-run-id")
 
       assert {:error, %Error{code: :run_not_found}} = result
+    end
+  end
+
+  describe "worker failure isolation" do
+    test "returns internal_error and keeps adapter alive" do
+      {:ok, adapter} =
+        CodexAdapter.start_link(
+          working_directory: "/tmp/test",
+          sdk_module: FailingMockCodexSDK,
+          sdk_pid: self()
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      session = build_test_session()
+      run = build_test_run(session_id: session.id, input: "Hello")
+
+      assert {:error, %Error{code: :internal_error}} = CodexAdapter.execute(adapter, run, session)
+      assert Process.alive?(adapter)
+      assert {:ok, _caps} = CodexAdapter.capabilities(adapter)
     end
   end
 

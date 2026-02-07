@@ -51,7 +51,7 @@ defmodule AgentSessionManager.Core.Registry do
 
   """
 
-  alias AgentSessionManager.Core.{Capability, Error, Manifest}
+  alias AgentSessionManager.Core.{Capability, Error, Manifest, Serialization}
 
   @type t :: %__MODULE__{
           manifests: %{String.t() => Manifest.t()},
@@ -333,7 +333,7 @@ defmodule AgentSessionManager.Core.Registry do
         registry.manifests
         |> Map.values()
         |> Enum.map(&Manifest.to_map/1),
-      "metadata" => stringify_keys(registry.metadata)
+      "metadata" => Serialization.stringify_keys(registry.metadata)
     }
   end
 
@@ -350,7 +350,7 @@ defmodule AgentSessionManager.Core.Registry do
     with {:ok, manifests} <- parse_manifests(map["manifests"]) do
       registry = %__MODULE__{
         manifests: manifests,
-        metadata: atomize_keys(map["metadata"] || %{})
+        metadata: Serialization.atomize_keys(map["metadata"] || %{})
       }
 
       {:ok, registry}
@@ -398,28 +398,4 @@ defmodule AgentSessionManager.Core.Registry do
 
     results
   end
-
-  defp stringify_keys(map) when is_map(map) do
-    Map.new(map, fn
-      {k, v} when is_atom(k) -> {Atom.to_string(k), stringify_value(v)}
-      {k, v} -> {k, stringify_value(v)}
-    end)
-  end
-
-  defp stringify_keys(other), do: other
-
-  defp stringify_value(v) when is_map(v), do: stringify_keys(v)
-  defp stringify_value(v), do: v
-
-  defp atomize_keys(map) when is_map(map) do
-    Map.new(map, fn
-      {k, v} when is_binary(k) -> {String.to_atom(k), atomize_value(v)}
-      {k, v} -> {k, atomize_value(v)}
-    end)
-  end
-
-  defp atomize_keys(other), do: other
-
-  defp atomize_value(v) when is_map(v), do: atomize_keys(v)
-  defp atomize_value(v), do: v
 end

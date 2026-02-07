@@ -17,6 +17,7 @@ defmodule AgentSessionManager.Concurrency.ControlOperationsTest do
 
   alias AgentSessionManager.Concurrency.ControlOperations
   alias AgentSessionManager.Core.{Capability, Error}
+  alias AgentSessionManager.Test.MockProviderAdapter
 
   # ============================================================================
   # Mock Adapter for Control Operations Tests
@@ -204,17 +205,31 @@ defmodule AgentSessionManager.Concurrency.ControlOperationsTest do
       # Second interrupt should also succeed (idempotent)
       assert {:ok, "run-1"} = ControlOperations.interrupt(ops, "run-1")
 
-      # Should have been called twice at adapter level (or just once depending on implementation)
-      calls = MockControlAdapter.get_calls(adapter, :interrupt)
+      # Interrupt delegates to provider cancel operation.
+      calls = MockControlAdapter.get_calls(adapter, :cancel)
       refute Enum.empty?(calls)
     end
 
     test "returns error when adapter fails to interrupt", %{ops: ops, adapter: adapter} do
-      MockControlAdapter.set_fail_on(adapter, [:interrupt])
+      MockControlAdapter.set_fail_on(adapter, [:cancel])
 
       result = ControlOperations.interrupt(ops, "run-1")
 
       assert {:error, %Error{}} = result
+    end
+
+    test "falls back to cancel when adapter has no interrupt callback" do
+      {:ok, adapter} =
+        MockProviderAdapter.start_link(
+          capabilities: [%Capability{name: "interrupt", type: :sampling, enabled: true}]
+        )
+
+      {:ok, ops} = ControlOperations.start_link(adapter: adapter)
+      cleanup_on_exit(fn -> safe_stop(ops) end)
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      assert {:ok, "run-1"} = ControlOperations.interrupt(ops, "run-1")
+      assert "run-1" in MockProviderAdapter.get_cancelled_runs(adapter)
     end
 
     test "tracks interrupt operation status", %{ops: ops, adapter: adapter} do

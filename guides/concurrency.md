@@ -108,6 +108,7 @@ alias AgentSessionManager.Concurrency.ControlOperations
 ```elixir
 {:ok, run_id} = ControlOperations.interrupt(ops, run_id)
 ```
+`interrupt/2` uses the provider `cancel/2` contract under the hood, so adapters only need to implement `cancel/2`.
 
 **Cancel** -- permanently cancel an operation (terminal state):
 ```elixir

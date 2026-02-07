@@ -326,26 +326,38 @@ defmodule AgentSessionManager.SessionManager do
   defp run_once_execute(store, adapter, session, input, cap_opts, exec_opts) do
     case start_run(store, adapter, session.id, input, cap_opts) do
       {:ok, run} ->
-        case execute_run(store, adapter, run.id, exec_opts) do
-          {:ok, result} ->
-            {:ok, _} = complete_session(store, session.id)
-
-            {:ok,
-             %{
-               output: result.output,
-               token_usage: result.token_usage,
-               events: result.events,
-               session_id: session.id,
-               run_id: run.id
-             }}
-
-          {:error, %Error{} = error} ->
-            fail_session(store, session.id, error)
-            {:error, error}
-        end
+        run_once_execute_started_run(store, adapter, session, run, exec_opts)
 
       {:error, %Error{} = error} ->
-        fail_session(store, session.id, error)
+        _ = fail_session(store, session.id, error)
+        {:error, error}
+    end
+  end
+
+  defp run_once_execute_started_run(store, adapter, session, run, exec_opts) do
+    case execute_run(store, adapter, run.id, exec_opts) do
+      {:ok, result} ->
+        finalize_run_once_execution(store, session.id, run.id, result)
+
+      {:error, %Error{} = error} ->
+        _ = fail_session(store, session.id, error)
+        {:error, error}
+    end
+  end
+
+  defp finalize_run_once_execution(store, session_id, run_id, result) do
+    case complete_session(store, session_id) do
+      {:ok, _} ->
+        {:ok,
+         %{
+           output: result.output,
+           token_usage: result.token_usage,
+           events: result.events,
+           session_id: session_id,
+           run_id: run_id
+         }}
+
+      {:error, error} ->
         {:error, error}
     end
   end
@@ -424,22 +436,22 @@ defmodule AgentSessionManager.SessionManager do
   end
 
   defp extract_provider_metadata_from_events(store, run) do
-    {:ok, events} = SessionStore.get_events(store, run.session_id, run_id: run.id)
+    case SessionStore.get_events(store, run.session_id, run_id: run.id) do
+      {:ok, events} ->
+        case Enum.find(events, &(&1.type == :run_started)) do
+          nil ->
+            %{}
 
-    # Find the run_started event and extract provider metadata
-    case Enum.find(events, &(&1.type == :run_started)) do
-      nil ->
-        %{}
+          event ->
+            data = event.data
 
-      event ->
-        data = event.data
-
-        %{
-          provider_session_id:
-            data[:provider_session_id] || data[:session_id] || data[:thread_id],
-          model: data[:model],
-          tools: data[:tools]
-        }
+            %{
+              provider_session_id:
+                data[:provider_session_id] || data[:session_id] || data[:thread_id],
+              model: data[:model],
+              tools: data[:tools]
+            }
+        end
     end
   end
 
@@ -487,11 +499,13 @@ defmodule AgentSessionManager.SessionManager do
   defp maybe_put_keyword(keyword, key, value), do: Keyword.put(keyword, key, value)
 
   defp finalize_failed_run(store, run, error) do
-    error_map = %{code: error.code, message: error.message}
+    error_code = Map.get(error, :code, :internal_error)
+    error_message = Map.get(error, :message, inspect(error))
+    error_map = %{code: error_code, message: error_message}
 
     with {:ok, failed_run} <- Run.set_error(run, error_map),
          :ok <- SessionStore.save_run(store, failed_run),
-         :ok <- emit_run_event(store, :run_failed, failed_run, %{error_code: error.code}) do
+         :ok <- emit_run_event(store, :run_failed, failed_run, %{error_code: error_code}) do
       {:error, error}
     end
   end
@@ -501,15 +515,18 @@ defmodule AgentSessionManager.SessionManager do
     normalized_event_data = Map.put(event_data, :type, normalized_type)
     event_payload = ensure_map(Map.get(event_data, :data))
 
-    {:ok, event} =
-      Event.new(%{
-        type: normalized_type,
-        session_id: run.session_id,
-        run_id: run.id,
-        data: event_payload
-      })
+    case Event.new(%{
+           type: normalized_type,
+           session_id: run.session_id,
+           run_id: run.id,
+           data: event_payload
+         }) do
+      {:ok, event} ->
+        _ = SessionStore.append_event(store, event)
 
-    SessionStore.append_event(store, event)
+      {:error, _} ->
+        :ok
+    end
 
     # Emit telemetry event for observability
     Telemetry.emit_adapter_event(run, session, normalized_event_data)
@@ -572,25 +589,25 @@ defmodule AgentSessionManager.SessionManager do
   end
 
   defp emit_event(store, type, session, data \\ %{}) do
-    {:ok, event} =
-      Event.new(%{
-        type: type,
-        session_id: session.id,
-        data: data
-      })
-
-    SessionStore.append_event(store, event)
+    with {:ok, event} <-
+           Event.new(%{
+             type: type,
+             session_id: session.id,
+             data: data
+           }) do
+      SessionStore.append_event(store, event)
+    end
   end
 
   defp emit_run_event(store, type, run, data \\ %{}) do
-    {:ok, event} =
-      Event.new(%{
-        type: type,
-        session_id: run.session_id,
-        run_id: run.id,
-        data: data
-      })
-
-    SessionStore.append_event(store, event)
+    with {:ok, event} <-
+           Event.new(%{
+             type: type,
+             session_id: run.session_id,
+             run_id: run.id,
+             data: data
+           }) do
+      SessionStore.append_event(store, event)
+    end
   end
 end

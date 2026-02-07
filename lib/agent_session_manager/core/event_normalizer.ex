@@ -36,8 +36,7 @@ defmodule AgentSessionManager.Core.EventNormalizer do
 
   """
 
-  alias AgentSessionManager.Core.Error
-  alias AgentSessionManager.Core.NormalizedEvent
+  alias AgentSessionManager.Core.{Error, NormalizedEvent, Serialization}
 
   # Type mappings from common provider patterns to canonical types
   @type_mappings %{
@@ -241,7 +240,7 @@ defmodule AgentSessionManager.Core.EventNormalizer do
     end
   end
 
-  defp has_key?(map, key), do: Map.has_key?(map, key) or Map.has_key?(map, String.to_atom(key))
+  defp has_key?(map, key), do: Serialization.has_key?(map, key)
 
   defp maybe_refine_type(:run_completed, raw_event) do
     status = raw_event["status"] || raw_event[:status]

@@ -108,9 +108,9 @@ SessionManager.execute_run(store, adapter, run_id)
 Both `ClaudeAdapter` and `CodexAdapter` follow the same GenServer pattern:
 
 1. The GenServer handles the public API (`execute`, `cancel`, `capabilities`)
-2. Execution happens in a spawned worker process to avoid blocking the GenServer
-3. The worker process streams events and notifies the GenServer on completion
-4. Cancellation sends a message to the worker process, which checks for it between events
+2. Execution happens in supervised **nolink** tasks to avoid blocking the GenServer
+3. Task results and `:DOWN` messages are handled for deterministic replies and cleanup
+4. Cancellation signals the active task/stream and updates tracked run state
 
 This design allows multiple runs to execute concurrently through a single adapter process, and supports cancellation without blocking.
 
@@ -120,7 +120,7 @@ This design allows multiple runs to execute concurrently through a single adapte
 - **Registry** uses immutable data structures; each operation returns a new registry
 - **InMemorySessionStore** uses a GenServer for writes and ETS for concurrent reads
 - **ConcurrencyLimiter** uses a GenServer to serialize slot acquire/release operations
-- **Adapters** use GenServers with spawned workers for concurrent execution
+- **Adapters** use GenServers with supervised nolink tasks for concurrent execution
 
 ## Extending the System
 

@@ -41,7 +41,7 @@ defmodule AgentSessionManager.Core.Run do
 
   """
 
-  alias AgentSessionManager.Core.Error
+  alias AgentSessionManager.Core.{Error, Serialization}
 
   @valid_statuses [:pending, :running, :completed, :failed, :cancelled, :timeout]
   @terminal_statuses [:completed, :failed, :cancelled, :timeout]
@@ -209,12 +209,12 @@ defmodule AgentSessionManager.Core.Run do
       "id" => run.id,
       "session_id" => run.session_id,
       "status" => Atom.to_string(run.status),
-      "input" => stringify_keys(run.input),
-      "output" => stringify_keys(run.output),
-      "error" => stringify_keys(run.error),
-      "metadata" => stringify_keys(run.metadata),
+      "input" => Serialization.stringify_keys(run.input),
+      "output" => Serialization.stringify_keys(run.output),
+      "error" => Serialization.stringify_keys(run.error),
+      "metadata" => Serialization.stringify_keys(run.metadata),
       "turn_count" => run.turn_count,
-      "token_usage" => stringify_keys(run.token_usage),
+      "token_usage" => Serialization.stringify_keys(run.token_usage),
       "started_at" => format_datetime(run.started_at),
       "ended_at" => format_datetime(run.ended_at)
     }
@@ -233,12 +233,12 @@ defmodule AgentSessionManager.Core.Run do
         id: id,
         session_id: session_id,
         status: status,
-        input: atomize_keys(map["input"]),
-        output: atomize_keys(map["output"]),
-        error: atomize_keys(map["error"]),
-        metadata: atomize_keys(map["metadata"] || %{}),
+        input: Serialization.atomize_keys(map["input"]),
+        output: Serialization.atomize_keys(map["output"]),
+        error: Serialization.atomize_keys(map["error"]),
+        metadata: Serialization.atomize_keys(map["metadata"] || %{}),
         turn_count: map["turn_count"] || 0,
-        token_usage: atomize_keys(map["token_usage"] || %{}),
+        token_usage: Serialization.atomize_keys(map["token_usage"] || %{}),
         started_at: started_at,
         ended_at: parse_optional_datetime(map["ended_at"])
       }
@@ -315,28 +315,4 @@ defmodule AgentSessionManager.Core.Run do
 
   defp format_datetime(nil), do: nil
   defp format_datetime(datetime), do: DateTime.to_iso8601(datetime)
-
-  defp stringify_keys(nil), do: nil
-
-  defp stringify_keys(map) when is_map(map) do
-    Map.new(map, fn
-      {k, v} when is_atom(k) -> {Atom.to_string(k), stringify_value(v)}
-      {k, v} -> {k, stringify_value(v)}
-    end)
-  end
-
-  defp stringify_value(v) when is_map(v), do: stringify_keys(v)
-  defp stringify_value(v), do: v
-
-  defp atomize_keys(nil), do: nil
-
-  defp atomize_keys(map) when is_map(map) do
-    Map.new(map, fn
-      {k, v} when is_binary(k) -> {String.to_atom(k), atomize_value(v)}
-      {k, v} -> {k, atomize_value(v)}
-    end)
-  end
-
-  defp atomize_value(v) when is_map(v), do: atomize_keys(v)
-  defp atomize_value(v), do: v
 end

@@ -40,7 +40,7 @@ defmodule AgentSessionManager.Core.Session do
 
   """
 
-  alias AgentSessionManager.Core.Error
+  alias AgentSessionManager.Core.{Error, Serialization}
 
   @valid_statuses [:pending, :active, :paused, :completed, :failed, :cancelled]
 
@@ -161,8 +161,8 @@ defmodule AgentSessionManager.Core.Session do
       "agent_id" => session.agent_id,
       "status" => Atom.to_string(session.status),
       "parent_session_id" => session.parent_session_id,
-      "metadata" => stringify_keys(session.metadata),
-      "context" => stringify_keys(session.context),
+      "metadata" => Serialization.stringify_keys(session.metadata),
+      "context" => Serialization.stringify_keys(session.context),
       "tags" => session.tags,
       "created_at" => DateTime.to_iso8601(session.created_at),
       "updated_at" => DateTime.to_iso8601(session.updated_at)
@@ -184,8 +184,8 @@ defmodule AgentSessionManager.Core.Session do
         agent_id: agent_id,
         status: status,
         parent_session_id: map["parent_session_id"],
-        metadata: atomize_keys(map["metadata"] || %{}),
-        context: atomize_keys(map["context"] || %{}),
+        metadata: Serialization.atomize_keys(map["metadata"] || %{}),
+        context: Serialization.atomize_keys(map["context"] || %{}),
         tags: map["tags"] || [],
         created_at: created_at,
         updated_at: updated_at
@@ -251,24 +251,4 @@ defmodule AgentSessionManager.Core.Session do
   end
 
   defp parse_datetime(_), do: {:error, Error.new(:validation_error, "datetime must be a string")}
-
-  defp stringify_keys(map) when is_map(map) do
-    Map.new(map, fn
-      {k, v} when is_atom(k) -> {Atom.to_string(k), stringify_value(v)}
-      {k, v} -> {k, stringify_value(v)}
-    end)
-  end
-
-  defp stringify_value(v) when is_map(v), do: stringify_keys(v)
-  defp stringify_value(v), do: v
-
-  defp atomize_keys(map) when is_map(map) do
-    Map.new(map, fn
-      {k, v} when is_binary(k) -> {String.to_atom(k), atomize_value(v)}
-      {k, v} -> {k, atomize_value(v)}
-    end)
-  end
-
-  defp atomize_value(v) when is_map(v), do: atomize_keys(v)
-  defp atomize_value(v), do: v
 end

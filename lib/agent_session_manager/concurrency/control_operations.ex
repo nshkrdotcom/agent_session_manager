@@ -49,6 +49,7 @@ defmodule AgentSessionManager.Concurrency.ControlOperations do
   use GenServer
 
   alias AgentSessionManager.Core.Error
+  alias AgentSessionManager.Ports.ProviderAdapter
 
   @terminal_states [:cancelled, :completed, :failed, :timeout]
 
@@ -373,18 +374,20 @@ defmodule AgentSessionManager.Concurrency.ControlOperations do
   end
 
   defp do_pause_with_capability_check(run_id, state) do
-    with :ok <- check_capability(state.adapter, "pause"),
-         {:ok, _} <- call_adapter_pause(state.adapter, run_id) do
-      new_state = record_operation(state, run_id, :pause, :ok, :paused)
-      {{:ok, run_id}, new_state}
-    else
-      {:error, error} ->
-        if check_capability(state.adapter, "pause") == :ok do
-          new_state = record_operation(state, run_id, :pause, {:error, error}, nil)
-          {{:error, error}, new_state}
-        else
-          {{:error, error}, state}
+    case check_capability(state.adapter, "pause") do
+      :ok ->
+        case call_adapter_pause(state.adapter, run_id) do
+          {:ok, _} ->
+            new_state = record_operation(state, run_id, :pause, :ok, :paused)
+            {{:ok, run_id}, new_state}
+
+          {:error, error} ->
+            new_state = record_operation(state, run_id, :pause, {:error, error}, nil)
+            {{:error, error}, new_state}
         end
+
+      {:error, error} ->
+        {{:error, error}, state}
     end
   end
 
@@ -409,18 +412,20 @@ defmodule AgentSessionManager.Concurrency.ControlOperations do
   end
 
   defp do_resume_with_capability_check(run_id, state) do
-    with :ok <- check_capability(state.adapter, "resume"),
-         {:ok, _} <- call_adapter_resume(state.adapter, run_id) do
-      new_state = record_operation(state, run_id, :resume, :ok, :running)
-      {{:ok, run_id}, new_state}
-    else
-      {:error, error} ->
-        if check_capability(state.adapter, "resume") == :ok do
-          new_state = record_operation(state, run_id, :resume, {:error, error}, nil)
-          {{:error, error}, new_state}
-        else
-          {{:error, error}, state}
+    case check_capability(state.adapter, "resume") do
+      :ok ->
+        case call_adapter_resume(state.adapter, run_id) do
+          {:ok, _} ->
+            new_state = record_operation(state, run_id, :resume, :ok, :running)
+            {{:ok, run_id}, new_state}
+
+          {:error, error} ->
+            new_state = record_operation(state, run_id, :resume, {:error, error}, nil)
+            {{:error, error}, new_state}
         end
+
+      {:error, error} ->
+        {{:error, error}, state}
     end
   end
 
@@ -471,55 +476,39 @@ defmodule AgentSessionManager.Concurrency.ControlOperations do
   end
 
   defp get_capabilities(adapter) do
-    # Try to get capabilities from adapter
-    if function_exported?(adapter.__struct__, :capabilities, 1) do
-      adapter.__struct__.capabilities(adapter)
-    else
-      GenServer.call(adapter, :capabilities)
-    end
-  rescue
-    _ -> GenServer.call(adapter, :capabilities)
+    ProviderAdapter.capabilities(adapter)
   end
 
   defp call_adapter_interrupt(adapter, run_id) do
-    # Try using the module function first
-    if function_exported?(adapter.__struct__, :interrupt, 2) do
-      adapter.__struct__.interrupt(adapter, run_id)
-    else
-      # Fall back to GenServer call
-      GenServer.call(adapter, {:interrupt, run_id})
-    end
-  rescue
-    _ -> GenServer.call(adapter, {:interrupt, run_id})
+    # Provider adapters model "interrupt" as a cancellation operation.
+    # Calling provider-specific {:interrupt, run_id} GenServer messages is unsafe
+    # because not all adapters implement that callback and unknown calls can crash
+    # the adapter process.
+    call_adapter_cancel(adapter, run_id)
   end
 
   defp call_adapter_cancel(adapter, run_id) do
-    if function_exported?(adapter.__struct__, :cancel, 2) do
-      adapter.__struct__.cancel(adapter, run_id)
-    else
-      GenServer.call(adapter, {:cancel, run_id})
-    end
-  rescue
-    _ -> GenServer.call(adapter, {:cancel, run_id})
+    ProviderAdapter.cancel(adapter, run_id)
   end
 
   defp call_adapter_pause(adapter, run_id) do
-    if function_exported?(adapter.__struct__, :pause, 2) do
-      adapter.__struct__.pause(adapter, run_id)
-    else
-      GenServer.call(adapter, {:pause, run_id})
+    case invoke_adapter_call(adapter, {:pause, run_id}, :pause) do
+      {:unsupported, error} -> {:error, error}
+      other -> other
     end
-  rescue
-    _ -> GenServer.call(adapter, {:pause, run_id})
   end
 
   defp call_adapter_resume(adapter, run_id) do
-    if function_exported?(adapter.__struct__, :resume, 2) do
-      adapter.__struct__.resume(adapter, run_id)
-    else
-      GenServer.call(adapter, {:resume, run_id})
+    case invoke_adapter_call(adapter, {:resume, run_id}, :resume) do
+      {:unsupported, error} -> {:error, error}
+      other -> other
     end
-  rescue
-    _ -> GenServer.call(adapter, {:resume, run_id})
+  end
+
+  defp invoke_adapter_call(adapter, request, operation) do
+    GenServer.call(adapter, request, 5_000)
+  catch
+    :exit, _ ->
+      {:unsupported, Error.new(:provider_error, "Adapter does not support #{operation}")}
   end
 end

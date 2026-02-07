@@ -97,18 +97,18 @@ defmodule AgentSessionManager.AuditLogger do
   @spec log_run_started(SessionStore.store(), Run.t(), Session.t()) :: :ok
   def log_run_started(store, %Run{} = run, %Session{} = session) do
     if enabled?() do
-      {:ok, event} =
-        Event.new(%{
-          type: :run_started,
-          session_id: session.id,
-          run_id: run.id,
-          data: %{
-            agent_id: session.agent_id,
-            run_status: run.status
-          }
-        })
-
-      SessionStore.append_event(store, event)
+      with {:ok, event} <-
+             Event.new(%{
+               type: :run_started,
+               session_id: session.id,
+               run_id: run.id,
+               data: %{
+                 agent_id: session.agent_id,
+                 run_status: run.status
+               }
+             }) do
+        _ = SessionStore.append_event(store, event)
+      end
     end
 
     :ok
@@ -130,18 +130,18 @@ defmodule AgentSessionManager.AuditLogger do
     if enabled?() do
       token_usage = Map.get(result, :token_usage, %{})
 
-      {:ok, event} =
-        Event.new(%{
-          type: :run_completed,
-          session_id: session.id,
-          run_id: run.id,
-          data: %{
-            agent_id: session.agent_id,
-            token_usage: token_usage
-          }
-        })
-
-      SessionStore.append_event(store, event)
+      with {:ok, event} <-
+             Event.new(%{
+               type: :run_completed,
+               session_id: session.id,
+               run_id: run.id,
+               data: %{
+                 agent_id: session.agent_id,
+                 token_usage: token_usage
+               }
+             }) do
+        _ = SessionStore.append_event(store, event)
+      end
     end
 
     :ok
@@ -161,19 +161,19 @@ defmodule AgentSessionManager.AuditLogger do
   @spec log_run_failed(SessionStore.store(), Run.t(), Session.t(), map()) :: :ok
   def log_run_failed(store, %Run{} = run, %Session{} = session, error) do
     if enabled?() do
-      {:ok, event} =
-        Event.new(%{
-          type: :run_failed,
-          session_id: session.id,
-          run_id: run.id,
-          data: %{
-            agent_id: session.agent_id,
-            error_code: Map.get(error, :code),
-            error_message: Map.get(error, :message)
-          }
-        })
-
-      SessionStore.append_event(store, event)
+      with {:ok, event} <-
+             Event.new(%{
+               type: :run_failed,
+               session_id: session.id,
+               run_id: run.id,
+               data: %{
+                 agent_id: session.agent_id,
+                 error_code: Map.get(error, :code),
+                 error_message: Map.get(error, :message)
+               }
+             }) do
+        _ = SessionStore.append_event(store, event)
+      end
     end
 
     :ok
@@ -193,19 +193,19 @@ defmodule AgentSessionManager.AuditLogger do
   @spec log_error(SessionStore.store(), Run.t(), Session.t(), map()) :: :ok
   def log_error(store, %Run{} = run, %Session{} = session, error) do
     if enabled?() do
-      {:ok, event} =
-        Event.new(%{
-          type: :error_occurred,
-          session_id: session.id,
-          run_id: run.id,
-          data: %{
-            agent_id: session.agent_id,
-            error_code: Map.get(error, :code),
-            error_message: Map.get(error, :message)
-          }
-        })
-
-      SessionStore.append_event(store, event)
+      with {:ok, event} <-
+             Event.new(%{
+               type: :error_occurred,
+               session_id: session.id,
+               run_id: run.id,
+               data: %{
+                 agent_id: session.agent_id,
+                 error_code: Map.get(error, :code),
+                 error_message: Map.get(error, :message)
+               }
+             }) do
+        _ = SessionStore.append_event(store, event)
+      end
     end
 
     :ok
@@ -228,15 +228,15 @@ defmodule AgentSessionManager.AuditLogger do
     if enabled?() do
       run_id = Keyword.get(opts, :run_id)
 
-      {:ok, event} =
-        Event.new(%{
-          type: :token_usage_updated,
-          session_id: session.id,
-          run_id: run_id,
-          data: metrics
-        })
-
-      SessionStore.append_event(store, event)
+      with {:ok, event} <-
+             Event.new(%{
+               type: :token_usage_updated,
+               session_id: session.id,
+               run_id: run_id,
+               data: metrics
+             }) do
+        _ = SessionStore.append_event(store, event)
+      end
     end
 
     :ok

@@ -53,7 +53,7 @@ Add `agent_session_manager` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.3.0"}
+    {:agent_session_manager, "~> 0.4.0"}
   ]
 end
 ```
@@ -202,11 +202,9 @@ Error codes are grouped into categories: validation, resource, provider, storage
 The `examples/` directory contains runnable scripts:
 
 ```bash
-# Run with mock mode (no API key needed)
-mix run examples/live_session.exs --provider claude --mock
-
-# Run with real API
-ANTHROPIC_API_KEY=sk-ant-... mix run examples/live_session.exs --provider claude
+# Run with live providers
+mix run examples/live_session.exs --provider claude
+mix run examples/live_session.exs --provider codex
 
 # One-shot execution (simplest example)
 mix run examples/oneshot.exs --provider claude
@@ -214,6 +212,10 @@ mix run examples/oneshot.exs --provider claude
 # Provider-agnostic common surface (works with either provider)
 mix run examples/common_surface.exs --provider claude
 mix run examples/common_surface.exs --provider codex
+
+# Contract-surface verification (events + completion payload guarantees)
+mix run examples/contract_surface_live.exs --provider claude
+mix run examples/contract_surface_live.exs --provider codex
 
 # Claude-specific SDK features (Orchestrator, Streaming, Hooks, Agent profiles)
 mix run examples/claude_direct.exs
@@ -231,6 +233,7 @@ See `examples/README.md` for full documentation.
 The guides cover each subsystem in depth:
 
 - [Getting Started](guides/getting_started.md) -- Installation, first session, and core workflow
+- [Live Examples](guides/live_examples.md) -- Running all live examples and validating contract surfaces
 - [Architecture](guides/architecture.md) -- Ports & adapters design, module map, data flow
 - [Configuration](guides/configuration.md) -- Layered config system, process-local overrides
 - [Sessions and Runs](guides/sessions_and_runs.md) -- Lifecycle state machines, metadata, context

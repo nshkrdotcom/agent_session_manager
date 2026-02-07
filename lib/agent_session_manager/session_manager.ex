@@ -53,7 +53,7 @@ defmodule AgentSessionManager.SessionManager do
 
   """
 
-  alias AgentSessionManager.Core.{CapabilityResolver, Error, Event, Run, Session}
+  alias AgentSessionManager.Core.{CapabilityResolver, Error, Event, EventNormalizer, Run, Session}
   alias AgentSessionManager.Ports.{ProviderAdapter, SessionStore}
   alias AgentSessionManager.Telemetry
 
@@ -497,20 +497,64 @@ defmodule AgentSessionManager.SessionManager do
   end
 
   defp handle_adapter_event(store, run, session, event_data) do
-    # Normalize and store adapter events
+    normalized_type = normalize_event_type(event_data, run)
+    normalized_event_data = Map.put(event_data, :type, normalized_type)
+    event_payload = ensure_map(Map.get(event_data, :data))
+
     {:ok, event} =
       Event.new(%{
-        type: event_data.type,
+        type: normalized_type,
         session_id: run.session_id,
         run_id: run.id,
-        data: Map.get(event_data, :data, %{})
+        data: event_payload
       })
 
     SessionStore.append_event(store, event)
 
     # Emit telemetry event for observability
-    Telemetry.emit_adapter_event(run, session, event_data)
+    Telemetry.emit_adapter_event(run, session, normalized_event_data)
   end
+
+  defp normalize_event_type(event_data, run) do
+    case Map.get(event_data, :type) do
+      type when is_atom(type) ->
+        if Event.valid_type?(type) do
+          type
+        else
+          fallback_event_type(type)
+        end
+
+      _ ->
+        payload =
+          event_data
+          |> Map.get(:data)
+          |> ensure_map()
+          |> Map.put(:type, Map.get(event_data, :type))
+
+        context = %{
+          session_id: run.session_id,
+          run_id: run.id,
+          provider: Map.get(event_data, :provider, :generic)
+        }
+
+        case EventNormalizer.normalize(payload, context) do
+          {:ok, normalized} ->
+            normalized.type
+
+          {:error, _} ->
+            fallback_event_type(Map.get(event_data, :type))
+        end
+    end
+  end
+
+  defp fallback_event_type(type) when is_atom(type) do
+    if Event.valid_type?(type), do: type, else: :error_occurred
+  end
+
+  defp fallback_event_type(_), do: :error_occurred
+
+  defp ensure_map(value) when is_map(value), do: value
+  defp ensure_map(_), do: %{}
 
   defp check_capabilities(adapter, opts) do
     required = Keyword.get(opts, :required_capabilities, [])

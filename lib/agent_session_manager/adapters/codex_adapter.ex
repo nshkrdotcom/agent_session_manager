@@ -57,6 +57,8 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
   alias AgentSessionManager.Core.{Capability, Error}
   alias Codex.Events
 
+  @emitted_events_key {__MODULE__, :emitted_events}
+
   @type state :: %{
           working_directory: String.t(),
           model: String.t() | nil,
@@ -289,6 +291,7 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
 
   defp do_execute(state, run, session, opts, adapter_pid) do
     event_callback = Keyword.get(opts, :event_callback)
+    reset_emitted_events()
 
     # Build execution context
     ctx = %{
@@ -300,7 +303,6 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
       accumulated_content: "",
       tool_calls: [],
       token_usage: %{input_tokens: 0, output_tokens: 0},
-      events: [],
       thread_id: nil
     }
 
@@ -695,6 +697,7 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
       ctx.event_callback.(event)
     end
 
+    append_emitted_event(event)
     event
   end
 
@@ -708,8 +711,23 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
      %{
        output: output,
        token_usage: ctx.token_usage,
-       events: ctx.events
+       events: emitted_events()
      }}
+  end
+
+  defp reset_emitted_events do
+    Process.put(@emitted_events_key, [])
+  end
+
+  defp append_emitted_event(event) do
+    events = Process.get(@emitted_events_key, [])
+    Process.put(@emitted_events_key, [event | events])
+  end
+
+  defp emitted_events do
+    @emitted_events_key
+    |> Process.get([])
+    |> Enum.reverse()
   end
 
   defp build_capabilities do

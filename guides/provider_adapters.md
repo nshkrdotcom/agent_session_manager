@@ -93,6 +93,8 @@ The main execution function. It receives a run, session, and options (including 
 4. Emit `:run_completed` or `:run_failed`
 5. Return `{:ok, %{output: ..., token_usage: ..., events: ...}}`
 
+`events` should contain the emitted event sequence for that execution (not an empty placeholder list).
+
 ### `cancel/2`
 
 Attempts to cancel an in-progress run. Should emit `:run_cancelled` on success.
@@ -191,12 +193,15 @@ defmodule MyApp.Adapters.CustomAdapter do
 
     # Emit completion
     emit(callback, run, session, :message_received, %{content: content, role: "assistant"})
-    emit(callback, run, session, :run_completed, %{stop_reason: "end_turn"})
+    emit(callback, run, session, :run_completed, %{
+      stop_reason: "end_turn",
+      token_usage: %{input_tokens: 10, output_tokens: 20}
+    })
 
     {:ok, %{
       output: %{content: content, stop_reason: "end_turn", tool_calls: []},
       token_usage: %{input_tokens: 10, output_tokens: 20},
-      events: []
+      events: [%{type: :run_started}, %{type: :message_received}, %{type: :run_completed}]
     }}
   end
 

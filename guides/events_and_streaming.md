@@ -134,6 +134,12 @@ The normalizer handles type mapping, sequence numbering, and metadata extraction
 - `"tool_use"`, `"tool_call"`, `"function_call"` -> `:tool_call_started`
 - `"error"`, `"exception"` -> `:error_occurred`
 
+### SessionManager Ingest Normalization
+
+`SessionManager.execute_run/4` applies event-type normalization on adapter callback events before persistence.
+This means alias event types such as `"run_start"`, `"run_end"`, and `"delta"` are stored as canonical
+`Event.type` atoms (`:run_started`, `:run_completed`, `:message_streamed`).
+
 ### Batch Normalization
 
 ```elixir

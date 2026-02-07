@@ -82,6 +82,20 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
       assert result.output.content =~ "Test response"
     end
 
+    test "returns result.events with emitted events" do
+      {:ok, adapter} = start_test_adapter(scenario: :simple_response)
+
+      session = build_test_session()
+      run = build_test_run(session_id: session.id, input: "Hello")
+
+      {:ok, result} = CodexAdapter.execute(adapter, run, session, timeout: 5_000)
+
+      assert is_list(result.events)
+      refute Enum.empty?(result.events)
+      assert Enum.any?(result.events, &(&1.type == :run_started))
+      assert Enum.any?(result.events, &(&1.type == :run_completed))
+    end
+
     test "emits events via callback" do
       {:ok, adapter} = start_test_adapter(scenario: :simple_response)
 

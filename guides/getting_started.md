@@ -9,7 +9,7 @@ Add `agent_session_manager` to your `mix.exs` dependencies:
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.3.0"}
+    {:agent_session_manager, "~> 0.4.0"}
   ]
 end
 ```
@@ -160,14 +160,15 @@ event_map = Event.to_map(event)
 The `examples/` directory has runnable scripts that demonstrate the library end-to-end:
 
 ```bash
-# Mock mode -- no API key needed
-mix run examples/live_session.exs --provider claude --mock
-
-# Live mode with real API
-ANTHROPIC_API_KEY=sk-ant-... mix run examples/live_session.exs --provider claude
+# Live mode with real providers
+mix run examples/live_session.exs --provider claude
+mix run examples/live_session.exs --provider codex
 
 # Provider-agnostic common surface (identical code for both providers)
 mix run examples/common_surface.exs --provider claude
+
+# Contract-surface verification (events + completion payload)
+mix run examples/contract_surface_live.exs --provider claude
 
 # Claude-specific SDK features (Orchestrator, Streaming, Hooks, Agent profiles)
 mix run examples/claude_direct.exs --section orchestrator
@@ -178,6 +179,7 @@ mix run examples/codex_direct.exs --section threads
 
 ## Next Steps
 
+- [Live Examples](live_examples.md) -- run the full live example suite and validate contract behavior
 - [Architecture](architecture.md) -- understand the ports & adapters design
 - [Configuration](configuration.md) -- layered config with process-local overrides
 - [Sessions and Runs](sessions_and_runs.md) -- deep dive into lifecycle management

@@ -53,6 +53,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
   alias AgentSessionManager.Core.{Capability, Error}
 
   @default_model "claude-haiku-4-5-20251001"
+  @emitted_events_key {__MODULE__, :emitted_events}
 
   @type state :: %{
           api_key: String.t(),
@@ -259,6 +260,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
   defp do_execute(state, run, session, opts) do
     event_callback = Keyword.get(opts, :event_callback)
     adapter_pid = self()
+    reset_emitted_events()
 
     # Build execution context
     ctx = %{
@@ -270,7 +272,6 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
       content_blocks: %{},
       tool_calls: [],
       token_usage: %{input_tokens: 0, output_tokens: 0},
-      events: [],
       session_id: nil
     }
 
@@ -432,7 +433,8 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
 
     emit_event(ctx, :run_completed, %{
       stop_reason: Map.get(ctx, :stop_reason, "end_turn"),
-      session_id: ctx.session_id
+      session_id: ctx.session_id,
+      token_usage: ctx.token_usage
     })
 
     {:halt, ctx}
@@ -601,7 +603,8 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
       stop_reason: "end_turn",
       session_id: ctx.session_id,
       num_turns: msg.data[:num_turns],
-      total_cost_usd: msg.data[:total_cost_usd]
+      total_cost_usd: msg.data[:total_cost_usd],
+      token_usage: %{input_tokens: input_tokens, output_tokens: output_tokens}
     })
 
     %{
@@ -710,7 +713,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
      %{
        output: output,
        token_usage: ctx.token_usage,
-       events: ctx.events
+       events: emitted_events()
      }}
   end
 
@@ -1030,6 +1033,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
       ctx.event_callback.(event)
     end
 
+    append_emitted_event(event)
     event
   end
 
@@ -1043,8 +1047,23 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
     %{
       output: output,
       token_usage: ctx.token_usage,
-      events: ctx.events
+      events: emitted_events()
     }
+  end
+
+  defp reset_emitted_events do
+    Process.put(@emitted_events_key, [])
+  end
+
+  defp append_emitted_event(event) do
+    events = Process.get(@emitted_events_key, [])
+    Process.put(@emitted_events_key, [event | events])
+  end
+
+  defp emitted_events do
+    @emitted_events_key
+    |> Process.get([])
+    |> Enum.reverse()
   end
 
   defp build_capabilities do

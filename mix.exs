@@ -1,7 +1,7 @@
 defmodule AgentSessionManager.MixProject do
   use Mix.Project
 
-  @version "0.3.0"
+  @version "0.4.0"
   @source_url "https://github.com/nshkrdotcom/agent_session_manager"
 
   def project do
@@ -37,7 +37,7 @@ defmodule AgentSessionManager.MixProject do
       {:jason, "~> 1.4"},
 
       # Agent SDKs
-      {:codex_sdk, "~> 0.7.1"},
+      {:codex_sdk, "~> 0.7.2"},
       {:claude_agent_sdk, "~> 0.11.0"},
 
       # Development and documentation
@@ -69,6 +69,7 @@ defmodule AgentSessionManager.MixProject do
       extras: [
         "README.md",
         "guides/getting_started.md",
+        "guides/live_examples.md",
         "guides/architecture.md",
         "guides/configuration.md",
         "guides/sessions_and_runs.md",
@@ -86,6 +87,7 @@ defmodule AgentSessionManager.MixProject do
         Introduction: [
           "README.md",
           "guides/getting_started.md",
+          "guides/live_examples.md",
           "guides/architecture.md",
           "guides/configuration.md"
         ],

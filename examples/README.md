@@ -53,6 +53,22 @@ mix run examples/common_surface.exs --provider claude
 mix run examples/common_surface.exs --provider codex
 ```
 
+### `contract_surface_live.exs` -- Contract Surface Verification
+
+Demonstrates the runtime contract guarantees on live providers:
+
+- `result.events` is populated from emitted adapter events
+- `:run_completed` event includes `token_usage` payload
+- Callback stream and returned result can be inspected side-by-side
+- Works with both Claude and Codex adapters
+
+**Prerequisites:** Claude or Codex authentication.
+
+```bash
+mix run examples/contract_surface_live.exs --provider claude
+mix run examples/contract_surface_live.exs --provider codex
+```
+
 ### `claude_direct.exs` -- Claude SDK Direct Features
 
 Demonstrates Claude-specific features accessed directly via `ClaudeAgentSDK`:

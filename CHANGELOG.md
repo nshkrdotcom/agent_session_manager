@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-02-06
+
+### Changed
+
+- Ensure adapter `execute/4` results include emitted execution events in `result.events` for both Claude and Codex adapters
+- Ensure Claude `:run_completed` events include `token_usage` on both streaming and `ClaudeAgentSDK` query execution paths
+- Normalize adapter callback event aliases (for example `"run_start"`, `"delta"`, `"run_end"`) to canonical `Event.type` values before persistence in `SessionManager`
+- Update SessionManager telemetry emission to use normalized event types on ingest
+- Bump codex_sdk dependency from ~> 0.7.1 to ~> 0.7.2
+
+### Added
+
+- New live example: `examples/contract_surface_live.exs` to verify runtime contract guarantees across Claude and Codex
+- New live example test: `test/examples/contract_surface_live_test.exs`
+- New guide: `guides/live_examples.md`
+- Add live contract-surface example runs to `examples/run_all.sh`
+- Add HexDocs extras/menu entry for `guides/live_examples.md`
+
+### Documentation
+
+- Update `README.md` and `guides/getting_started.md` dependency snippets to `~> 0.4.0`
+- Remove stale mock-mode example commands from top-level docs and guide snippets
+- Expand provider/events docs to reflect current `execute/4` events contract and ingest normalization behavior
+
 ## [0.3.0] - 2026-02-06
 
 ### Changed
@@ -66,7 +90,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic project structure with mix.exs configuration
 - Project logo and assets
 
-[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.1.1...v0.2.0

@@ -382,6 +382,28 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
       assert result.token_usage.input_tokens == 25
       assert result.token_usage.output_tokens == 15
     end
+
+    test "returns result.events with emitted events", %{
+      adapter: adapter,
+      mock: mock,
+      session: session,
+      run: run
+    } do
+      task =
+        Task.async(fn ->
+          ClaudeAdapter.execute(adapter, run, session)
+        end)
+
+      Process.sleep(50)
+      MockSDK.complete(mock)
+
+      {:ok, result} = Task.await(task)
+
+      assert is_list(result.events)
+      refute Enum.empty?(result.events)
+      assert Enum.any?(result.events, &(&1.type == :run_started))
+      assert Enum.any?(result.events, &(&1.type == :run_completed))
+    end
   end
 
   # ============================================================================
@@ -1052,6 +1074,8 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
       completed = Enum.find(events, &(&1.type == :run_completed))
       assert completed != nil
       assert completed.data.stop_reason == "end_turn"
+      assert completed.data.token_usage.input_tokens >= 0
+      assert completed.data.token_usage.output_tokens >= 0
     end
 
     test "returns result with output content", %{
@@ -1074,6 +1098,19 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
 
       assert result.token_usage.input_tokens >= 0
       assert result.token_usage.output_tokens >= 0
+    end
+
+    test "returns result.events with emitted events", %{
+      adapter: adapter,
+      session: session,
+      run: run
+    } do
+      {:ok, result} = ClaudeAdapter.execute(adapter, run, session, timeout: 5_000)
+
+      assert is_list(result.events)
+      refute Enum.empty?(result.events)
+      assert Enum.any?(result.events, &(&1.type == :run_started))
+      assert Enum.any?(result.events, &(&1.type == :run_completed))
     end
 
     test "emits token_usage_updated event", %{

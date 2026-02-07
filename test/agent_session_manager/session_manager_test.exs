@@ -164,22 +164,52 @@ defmodule AgentSessionManager.SessionManagerTest do
       response = Map.get(state.responses, :execute, %{content: "Mock response"})
       event_callback = Keyword.get(opts, :event_callback)
 
-      events = [
-        build_event(:run_started, run),
-        build_event(:message_received, run, %{content: response.content}),
-        build_event(:run_completed, run)
-      ]
+      events = build_execute_events(response, run)
 
       if event_callback do
         Enum.each(events, event_callback)
       end
 
+      output =
+        response
+        |> Map.drop([:events, :token_usage])
+        |> case do
+          %{} = map when map_size(map) > 0 -> map
+          _ -> %{content: "Mock response"}
+        end
+
+      token_usage = Map.get(response, :token_usage, %{input_tokens: 10, output_tokens: 20})
+
       {:ok,
        %{
-         output: response,
-         token_usage: %{input_tokens: 10, output_tokens: 20},
+         output: output,
+         token_usage: token_usage,
          events: events
        }}
+    end
+
+    defp build_execute_events(response, run) do
+      case Map.get(response, :events) do
+        events when is_list(events) and events != [] ->
+          Enum.map(events, &normalize_mock_event(&1, run))
+
+        _ ->
+          [
+            build_event(:run_started, run),
+            build_event(:message_received, run, %{content: response.content}),
+            build_event(:run_completed, run)
+          ]
+      end
+    end
+
+    defp normalize_mock_event(%{type: _type} = event, run) do
+      %{
+        type: event.type,
+        session_id: Map.get(event, :session_id, run.session_id),
+        run_id: Map.get(event, :run_id, run.id),
+        data: Map.get(event, :data, %{}),
+        timestamp: Map.get(event, :timestamp, DateTime.utc_now())
+      }
     end
 
     defp build_event(type, run, data \\ %{}) do
@@ -395,6 +425,31 @@ defmodule AgentSessionManager.SessionManagerTest do
 
       assert :run_started in types
       assert :message_received in types
+      assert :run_completed in types
+    end
+
+    test "normalizes alias event types from adapters", %{store: store, adapter: adapter} do
+      MockAdapter.set_response(adapter, :execute, %{
+        content: "Normalized response",
+        token_usage: %{input_tokens: 7, output_tokens: 11},
+        events: [
+          %{type: "run_start", data: %{provider_session_id: "prov-123", model: "mock-v2"}},
+          %{type: "delta", data: %{content: "part-1"}},
+          %{type: "run_end", data: %{status: "success"}}
+        ]
+      })
+
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+      {:ok, run} = SessionManager.start_run(store, adapter, session.id, %{prompt: "Hello"})
+
+      {:ok, _} = SessionManager.execute_run(store, adapter, run.id)
+
+      {:ok, events} = SessionStore.get_events(store, session.id, run_id: run.id)
+      types = Enum.map(events, & &1.type)
+
+      assert :run_started in types
+      assert :message_streamed in types
       assert :run_completed in types
     end
 

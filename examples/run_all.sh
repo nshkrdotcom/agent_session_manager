@@ -48,6 +48,8 @@ run_example "Live Session (Claude)" "examples/live_session.exs" --provider claud
 run_example "Live Session (Codex)"  "examples/live_session.exs" --provider codex
 run_example "Common Surface (Claude)" "examples/common_surface.exs" --provider claude
 run_example "Common Surface (Codex)"  "examples/common_surface.exs" --provider codex
+run_example "Contract Surface (Claude)" "examples/contract_surface_live.exs" --provider claude
+run_example "Contract Surface (Codex)"  "examples/contract_surface_live.exs" --provider codex
 run_example "Claude Direct Features"  "examples/claude_direct.exs"
 run_example "Codex Direct Features"   "examples/codex_direct.exs"
 

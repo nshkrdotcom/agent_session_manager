@@ -23,7 +23,7 @@ AgentSessionManager provides the infrastructure layer for building applications 
 **Key features:**
 
 - **Session & run lifecycle** -- Create sessions, execute runs, and track state transitions with a well-defined state machine
-- **Multi-provider support** -- Built-in adapters for Claude Code (Anthropic) and Codex, with a behaviour for adding your own
+- **Multi-provider support** -- Built-in adapters for Claude Code (Anthropic), Codex, and Amp (Sourcegraph), with a behaviour for adding your own
 - **Streaming events** -- Normalized event pipeline that maps provider-specific events to a canonical format
 - **Capability negotiation** -- Declare required and optional capabilities; the resolver checks provider support before execution
 - **Concurrency controls** -- Configurable limits on parallel sessions and runs with slot-based tracking
@@ -41,7 +41,7 @@ Your Application
   |         |
 Store    Adapter          -- ports (interfaces / behaviours)
   |         |
-ETS/DB   Claude/Codex     -- adapters (implementations)
+ETS/DB   Claude/Codex/Amp -- adapters (implementations)
 ```
 
 The core domain types (`Session`, `Run`, `Event`, `Capability`, `Manifest`) are pure data structures with no side effects. The `SessionManager` coordinates between the storage port and the provider adapter port.
@@ -156,6 +156,7 @@ Adapters implement the `ProviderAdapter` behaviour to integrate with AI provider
 |---------|----------|-----------|----------|--------|
 | `ClaudeAdapter` | Anthropic | Yes | Yes | Yes |
 | `CodexAdapter` | Codex CLI | Yes | Yes | Yes |
+| `AmpAdapter` | Amp (Sourcegraph) | Yes | Yes | Yes |
 
 ### Capability Negotiation
 
@@ -209,13 +210,15 @@ mix run examples/live_session.exs --provider codex
 # One-shot execution (simplest example)
 mix run examples/oneshot.exs --provider claude
 
-# Provider-agnostic common surface (works with either provider)
+# Provider-agnostic common surface (works with any provider)
 mix run examples/common_surface.exs --provider claude
 mix run examples/common_surface.exs --provider codex
+mix run examples/common_surface.exs --provider amp
 
 # Contract-surface verification (events + completion payload guarantees)
 mix run examples/contract_surface_live.exs --provider claude
 mix run examples/contract_surface_live.exs --provider codex
+mix run examples/contract_surface_live.exs --provider amp
 
 # Claude-specific SDK features (Orchestrator, Streaming, Hooks, Agent profiles)
 mix run examples/claude_direct.exs
@@ -224,6 +227,10 @@ mix run examples/claude_direct.exs --section orchestrator
 # Codex-specific SDK features (Threads, Options, Sessions)
 mix run examples/codex_direct.exs
 mix run examples/codex_direct.exs --section threads
+
+# Amp-specific SDK features (Threads, Permissions, MCP, Modes)
+mix run examples/amp_direct.exs
+mix run examples/amp_direct.exs --section threads
 ```
 
 See `examples/README.md` for full documentation.

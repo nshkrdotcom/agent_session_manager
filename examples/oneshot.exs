@@ -6,7 +6,13 @@ defmodule Oneshot do
   # This collapses the full session lifecycle (create, activate, run, execute,
   # complete/fail) into a single function call.
 
-  alias AgentSessionManager.Adapters.{ClaudeAdapter, CodexAdapter, InMemorySessionStore}
+  alias AgentSessionManager.Adapters.{
+    AmpAdapter,
+    ClaudeAdapter,
+    CodexAdapter,
+    InMemorySessionStore
+  }
+
   alias AgentSessionManager.SessionManager
 
   @prompt "What is the BEAM virtual machine? Keep your answer to two sentences."
@@ -52,7 +58,7 @@ defmodule Oneshot do
 
     provider = opts[:provider] || "claude"
 
-    unless provider in ["claude", "codex"] do
+    unless provider in ["claude", "codex", "amp"] do
       IO.puts(:stderr, "Unknown provider: #{provider}")
       print_usage()
       System.halt(1)
@@ -67,16 +73,18 @@ defmodule Oneshot do
     Usage: mix run examples/oneshot.exs [options]
 
     Options:
-      --provider, -p <name>  Provider to use (claude or codex). Default: claude
+      --provider, -p <name>  Provider to use (claude, codex, or amp). Default: claude
       --help, -h             Show this help message
 
     Authentication:
       Claude: Run `claude login` or set ANTHROPIC_API_KEY
       Codex:  Run `codex login` or set CODEX_API_KEY
+      Amp:    Run `amp login` or set AMP_API_KEY
 
     Examples:
       mix run examples/oneshot.exs --provider claude
       mix run examples/oneshot.exs --provider codex
+      mix run examples/oneshot.exs --provider amp
     """)
   end
 
@@ -135,6 +143,10 @@ defmodule Oneshot do
 
   defp start_adapter("codex") do
     CodexAdapter.start_link(working_directory: File.cwd!())
+  end
+
+  defp start_adapter("amp") do
+    AmpAdapter.start_link(cwd: File.cwd!())
   end
 end
 

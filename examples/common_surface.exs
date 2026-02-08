@@ -6,7 +6,13 @@ defmodule CommonSurface do
   # Demonstrates that the same code works identically across Claude and Codex
   # providers via the ProviderAdapter behaviour.
 
-  alias AgentSessionManager.Adapters.{ClaudeAdapter, CodexAdapter, InMemorySessionStore}
+  alias AgentSessionManager.Adapters.{
+    AmpAdapter,
+    ClaudeAdapter,
+    CodexAdapter,
+    InMemorySessionStore
+  }
+
   alias AgentSessionManager.Core.Error
   alias AgentSessionManager.Ports.SessionStore
   alias AgentSessionManager.SessionManager
@@ -56,7 +62,7 @@ defmodule CommonSurface do
 
     provider = opts[:provider] || "claude"
 
-    unless provider in ["claude", "codex"] do
+    unless provider in ["claude", "codex", "amp"] do
       print_error("Unknown provider: #{provider}")
       print_usage()
       System.halt(1)
@@ -71,16 +77,18 @@ defmodule CommonSurface do
     Usage: mix run examples/common_surface.exs [options]
 
     Options:
-      --provider, -p <name>  Provider to use (claude or codex). Default: claude
+      --provider, -p <name>  Provider to use (claude, codex, or amp). Default: claude
       --help, -h             Show this help message
 
     Authentication:
       Claude: Run `claude login` or set ANTHROPIC_API_KEY
       Codex:  Run `codex login` or set CODEX_API_KEY
+      Amp:    Run `amp login` or set AMP_API_KEY
 
     Examples:
       mix run examples/common_surface.exs --provider claude
       mix run examples/common_surface.exs --provider codex
+      mix run examples/common_surface.exs --provider amp
     """)
   end
 
@@ -148,6 +156,16 @@ defmodule CommonSurface do
 
       {:error, reason} ->
         {:error, Error.new(:sdk_not_available, "Codex adapter failed: #{inspect(reason)}")}
+    end
+  end
+
+  defp start_adapter("amp") do
+    case AmpAdapter.start_link(cwd: File.cwd!()) do
+      {:ok, adapter} ->
+        {:ok, adapter}
+
+      {:error, reason} ->
+        {:error, Error.new(:sdk_not_available, "Amp adapter failed: #{inspect(reason)}")}
     end
   end
 

@@ -3,7 +3,13 @@
 defmodule ContractSurfaceLive do
   @moduledoc false
 
-  alias AgentSessionManager.Adapters.{ClaudeAdapter, CodexAdapter, InMemorySessionStore}
+  alias AgentSessionManager.Adapters.{
+    AmpAdapter,
+    ClaudeAdapter,
+    CodexAdapter,
+    InMemorySessionStore
+  }
+
   alias AgentSessionManager.Core.Error
   alias AgentSessionManager.SessionManager
 
@@ -39,7 +45,7 @@ defmodule ContractSurfaceLive do
 
     provider = opts[:provider] || "claude"
 
-    unless provider in ["claude", "codex"] do
+    unless provider in ["claude", "codex", "amp"] do
       IO.puts(:stderr, "Unknown provider: #{provider}")
       print_usage()
       System.halt(1)
@@ -54,16 +60,18 @@ defmodule ContractSurfaceLive do
     Usage: mix run examples/contract_surface_live.exs [options]
 
     Options:
-      --provider, -p <name>  Provider to use (claude or codex). Default: claude
+      --provider, -p <name>  Provider to use (claude, codex, or amp). Default: claude
       --help, -h             Show this help message
 
     Authentication:
       Claude: Run `claude login` or set ANTHROPIC_API_KEY
       Codex:  Run `codex login` or set CODEX_API_KEY
+      Amp:    Run `amp login` or set AMP_API_KEY
 
     Examples:
       mix run examples/contract_surface_live.exs --provider claude
       mix run examples/contract_surface_live.exs --provider codex
+      mix run examples/contract_surface_live.exs --provider amp
     """)
   end
 
@@ -148,6 +156,7 @@ defmodule ContractSurfaceLive do
 
   defp start_adapter("claude"), do: ClaudeAdapter.start_link([])
   defp start_adapter("codex"), do: CodexAdapter.start_link(working_directory: File.cwd!())
+  defp start_adapter("amp"), do: AmpAdapter.start_link(cwd: File.cwd!())
 
   defp format_error(%Error{code: code, message: message}), do: "#{code}: #{message}"
   defp format_error(other), do: inspect(other)

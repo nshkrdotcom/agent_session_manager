@@ -37,8 +37,9 @@ defmodule AgentSessionManager.MixProject do
       {:jason, "~> 1.4"},
 
       # Agent SDKs
-      {:codex_sdk, "~> 0.7.2"},
-      {:claude_agent_sdk, "~> 0.11.0"},
+      {:codex_sdk, "~> 0.7"},
+      {:claude_agent_sdk, "~> 0.11"},
+      {:amp_sdk, "~> 0.2"},
 
       # Development and documentation
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},
@@ -138,6 +139,7 @@ defmodule AgentSessionManager.MixProject do
         "Adapters (Implementations)": [
           AgentSessionManager.Adapters.ClaudeAdapter,
           AgentSessionManager.Adapters.CodexAdapter,
+          AgentSessionManager.Adapters.AmpAdapter,
           AgentSessionManager.Adapters.InMemorySessionStore
         ],
         Concurrency: [

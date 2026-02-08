@@ -6,10 +6,12 @@
 #
 #   - Claude: `claude login` or ANTHROPIC_API_KEY env var
 #   - Codex:  `codex login` or CODEX_API_KEY env var
+#   - Amp:    `amp login` or AMP_API_KEY env var
 #
 # Usage:
 #   mix run examples/live_session.exs --provider claude
 #   mix run examples/live_session.exs --provider codex
+#   mix run examples/live_session.exs --provider amp
 
 defmodule LiveSession do
   @moduledoc """
@@ -34,7 +36,7 @@ defmodule LiveSession do
   }
 
   alias AgentSessionManager.Ports.ProviderAdapter
-  alias AgentSessionManager.Adapters.{ClaudeAdapter, CodexAdapter}
+  alias AgentSessionManager.Adapters.{AmpAdapter, ClaudeAdapter, CodexAdapter}
 
   # Provider configurations
   @claude_manifest %{
@@ -61,6 +63,21 @@ defmodule LiveSession do
       %{name: "tool_use", type: :tool, description: "Tool/function calling capability"},
       %{name: "system_prompts", type: :prompt, description: "System prompt support"},
       %{name: "code_completion", type: :sampling, description: "Code completion capability"}
+    ]
+  }
+
+  @amp_manifest %{
+    name: "amp-provider",
+    version: "1.0.0",
+    description: "Amp AI by Sourcegraph",
+    provider: "sourcegraph",
+    capabilities: [
+      %{name: "streaming", type: :sampling, description: "Real-time streaming of responses"},
+      %{name: "tool_use", type: :tool, description: "Tool/function calling capability"},
+      %{name: "mcp", type: :tool, description: "MCP server integration"},
+      %{name: "file_operations", type: :tool, description: "File read/write operations"},
+      %{name: "bash", type: :tool, description: "Command execution capability"},
+      %{name: "interrupt", type: :sampling, description: "Ability to interrupt/cancel requests"}
     ]
   }
 
@@ -102,7 +119,7 @@ defmodule LiveSession do
 
     provider = opts[:provider] || "claude"
 
-    unless provider in ["claude", "codex"] do
+    unless provider in ["claude", "codex", "amp"] do
       print_error("Unknown provider: #{provider}")
       print_usage()
       System.halt(1)
@@ -117,16 +134,18 @@ defmodule LiveSession do
     Usage: mix run examples/live_session.exs [options]
 
     Options:
-      --provider, -p <name>  Provider to use (claude or codex). Default: claude
+      --provider, -p <name>  Provider to use (claude, codex, or amp). Default: claude
       --help, -h             Show this help message
 
     Authentication:
       Claude: Run `claude login` or set ANTHROPIC_API_KEY
       Codex:  Run `codex login` or set CODEX_API_KEY
+      Amp:    Run `amp login` or set AMP_API_KEY
 
     Examples:
       mix run examples/live_session.exs --provider claude
       mix run examples/live_session.exs --provider codex
+      mix run examples/live_session.exs --provider amp
     """)
   end
 
@@ -184,6 +203,7 @@ defmodule LiveSession do
       case provider do
         "claude" -> @claude_manifest
         "codex" -> @codex_manifest
+        "amp" -> @amp_manifest
       end
 
     with {:ok, manifest} <- Manifest.new(manifest_attrs),
@@ -207,6 +227,7 @@ defmodule LiveSession do
 
   defp get_default_model("claude"), do: "claude-haiku-4-5-20251001"
   defp get_default_model("codex"), do: nil
+  defp get_default_model("amp"), do: nil
 
   # ============================================================================
   # Capability Checking
@@ -269,6 +290,16 @@ defmodule LiveSession do
     end
   end
 
+  defp start_adapter(%{provider: "amp"}) do
+    case check_sdk_available("amp") do
+      :ok ->
+        AmpAdapter.start_link(cwd: File.cwd!())
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
   defp check_sdk_available("claude") do
     case Code.ensure_loaded(AgentSessionManager.Adapters.ClaudeAdapter) do
       {:module, _} -> :ok
@@ -280,6 +311,13 @@ defmodule LiveSession do
     case Code.ensure_loaded(AgentSessionManager.Adapters.CodexAdapter) do
       {:module, _} -> :ok
       {:error, _} -> sdk_not_available_error("codex")
+    end
+  end
+
+  defp check_sdk_available("amp") do
+    case Code.ensure_loaded(AgentSessionManager.Adapters.AmpAdapter) do
+      {:module, _} -> :ok
+      {:error, _} -> sdk_not_available_error("amp")
     end
   end
 
@@ -304,6 +342,17 @@ defmodule LiveSession do
           To install, add to your mix.exs:
 
               {:openai, "~> 0.5"}
+
+          Then run: mix deps.get
+          """
+
+        "amp" ->
+          """
+          The Amp SDK adapter requires the Amp SDK.
+
+          To install, add to your mix.exs:
+
+              {:amp_sdk, "~> 0.1.0"}
 
           Then run: mix deps.get
           """

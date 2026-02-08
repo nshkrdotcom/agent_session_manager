@@ -10,6 +10,9 @@ Cursor examples are also available and use real provider execution:
 - `examples/workspace_snapshot.exs --provider <claude|codex|amp>`
 - `examples/provider_routing.exs --provider <claude|codex|amp>`
 - `examples/policy_enforcement.exs --provider <claude|codex|amp>`
+- `examples/session_runtime.exs --provider <claude|codex|amp>`
+- `examples/session_subscription.exs --provider <claude|codex|amp>`
+- `examples/session_limiter.exs --provider <claude|codex|amp>`
 
 ## Authentication
 
@@ -50,6 +53,21 @@ mix run examples/provider_routing.exs --provider amp
 mix run examples/policy_enforcement.exs --provider claude
 mix run examples/policy_enforcement.exs --provider codex
 mix run examples/policy_enforcement.exs --provider amp
+
+# Session runtime (Feature 6)
+mix run examples/session_runtime.exs --provider claude
+mix run examples/session_runtime.exs --provider codex
+mix run examples/session_runtime.exs --provider amp
+
+# Session subscriptions (Feature 6)
+mix run examples/session_subscription.exs --provider claude
+mix run examples/session_subscription.exs --provider codex
+mix run examples/session_subscription.exs --provider amp
+
+# Session limiter integration (Feature 6)
+mix run examples/session_limiter.exs --provider claude
+mix run examples/session_limiter.exs --provider codex
+mix run examples/session_limiter.exs --provider amp
 
 # Existing live lifecycle examples
 mix run examples/oneshot.exs --provider claude

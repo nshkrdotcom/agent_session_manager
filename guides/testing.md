@@ -98,7 +98,7 @@ end
 
 ## Mock Adapters for Provider Testing
 
-Both built-in adapters accept `:sdk_module` and `:sdk_pid` options for injecting mock SDKs:
+All three built-in adapters accept `:sdk_module` and `:sdk_pid` options for injecting mock SDKs:
 
 ### Testing ClaudeAdapter
 

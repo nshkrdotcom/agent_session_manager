@@ -29,11 +29,18 @@ lib/agent_session_manager/
   adapters/                               -- Implementations
     claude_adapter.ex                     -- Anthropic Claude integration
     codex_adapter.ex                      -- Codex CLI integration
+    amp_adapter.ex                        -- Sourcegraph Amp integration
     in_memory_session_store.ex            -- ETS-backed store for dev/test
 
   concurrency/                            -- Concurrency controls
     concurrency_limiter.ex                -- Session/run slot management
     control_operations.ex                 -- Interrupt, cancel, pause, resume
+
+  runtime/                                -- Optional per-session runtime (Feature 6)
+    session_server.ex                     -- Per-session GenServer queue + subscriptions
+    session_supervisor.ex                 -- Registry + DynamicSupervisor wrapper
+    session_registry.ex                   -- Registry helper
+    run_queue.ex                          -- Pure FIFO queue
 
   config.ex                               -- Centralized config with process-local overrides
   telemetry.ex                            -- Telemetry event emission
@@ -61,6 +68,7 @@ The `adapters/` directory contains concrete implementations:
 
 - **`ClaudeAdapter`** -- a GenServer that talks to the Anthropic API via ClaudeAgentSDK
 - **`CodexAdapter`** -- a GenServer that talks to the Codex CLI via the Codex SDK
+- **`AmpAdapter`** -- a GenServer that talks to the Sourcegraph Amp API via the Amp SDK
 - **`InMemorySessionStore`** -- a GenServer backed by ETS tables, suitable for development and testing
 
 ### SessionManager Orchestrates
@@ -105,7 +113,7 @@ SessionManager.execute_run(store, adapter, run_id)
 
 ## Adapter GenServer Pattern
 
-Both `ClaudeAdapter` and `CodexAdapter` follow the same GenServer pattern:
+All three adapters (`ClaudeAdapter`, `CodexAdapter`, `AmpAdapter`) follow the same GenServer pattern:
 
 1. The GenServer handles the public API (`execute`, `cancel`, `capabilities`)
 2. Execution happens in supervised **nolink** tasks to avoid blocking the GenServer

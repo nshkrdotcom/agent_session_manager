@@ -9,7 +9,7 @@ Add `agent_session_manager` to your `mix.exs` dependencies:
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.4.1"}
+    {:agent_session_manager, "~> 0.5.0"}
   ]
 end
 ```
@@ -24,7 +24,7 @@ AgentSessionManager pulls in a small set of runtime dependencies:
 
 - `telemetry` -- for observability hooks
 - `jason` -- for JSON encoding/decoding
-- `codex_sdk` and `claude_agent_sdk` -- the underlying provider SDKs
+- `claude_agent_sdk`, `codex_sdk`, and `amp_sdk` -- the underlying provider SDKs
 
 ## Quick One-Shot Usage
 
@@ -183,4 +183,10 @@ mix run examples/codex_direct.exs --section threads
 - [Architecture](architecture.md) -- understand the ports & adapters design
 - [Configuration](configuration.md) -- layered config with process-local overrides
 - [Sessions and Runs](sessions_and_runs.md) -- deep dive into lifecycle management
-- [Provider Adapters](provider_adapters.md) -- configure Claude or Codex, or write your own
+- [Session Server Runtime](session_server_runtime.md) -- per-session FIFO queueing and subscriptions
+- [Cursor Streaming](cursor_streaming_and_migration.md) -- durable sequence numbers and cursor queries
+- [Session Continuity](session_continuity.md) -- transcript reconstruction and cross-run context
+- [Workspace Snapshots](workspace_snapshots.md) -- pre/post snapshots, diffs, and rollback
+- [Provider Routing](provider_routing.md) -- capability-based selection and failover
+- [Policy Enforcement](policy_enforcement.md) -- budget/tool governance per execution
+- [Provider Adapters](provider_adapters.md) -- configure Claude, Codex, or Amp, or write your own

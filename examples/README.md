@@ -94,6 +94,46 @@ mix run examples/policy_enforcement.exs --provider codex
 mix run examples/policy_enforcement.exs --provider amp
 ```
 
+## Session Server Runtime Examples
+
+These examples demonstrate Feature 6 using live provider execution.
+
+### `session_runtime.exs` -- Session Runtime (Feature 6)
+
+- Starts a `SessionServer` per session
+- Submits multiple runs quickly
+- Awaits results to demonstrate strict sequential FIFO execution (MVP)
+
+```bash
+mix run examples/session_runtime.exs --provider claude
+mix run examples/session_runtime.exs --provider codex
+mix run examples/session_runtime.exs --provider amp
+```
+
+### `session_subscription.exs` -- Session Subscriptions (Feature 6)
+
+- Subscribes to stored events via `SessionServer.subscribe/2`
+- Prints `{:session_event, session_id, %Core.Event{}}` messages as runs execute
+- Uses `type:` filtering to keep output readable
+
+```bash
+mix run examples/session_subscription.exs --provider claude
+mix run examples/session_subscription.exs --provider codex
+mix run examples/session_subscription.exs --provider amp
+```
+
+### `session_limiter.exs` -- Session Limiter Integration (Feature 6)
+
+- Starts a real `ConcurrencyLimiter`
+- Configures `SessionServer` with `limiter:`
+- Prints limiter status near run start and after completion (acquire/release)
+
+```bash
+mix run examples/session_limiter.exs --provider claude
+mix run examples/session_limiter.exs --provider codex
+mix run examples/session_limiter.exs --provider amp
+```
+
 ## Other Live Provider Examples
 
 ### `oneshot.exs` -- One-Shot Execution

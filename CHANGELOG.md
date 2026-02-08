@@ -7,6 +7,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-02-07
+
+### Added
+
+- **AmpAdapter** for Sourcegraph Amp provider integration, bringing the adapter count to three (Claude, Codex, Amp)
+  - Streaming execution, tool call handling, and cancel support via transport close
+  - Amp SDK message types mapped to canonical normalized events
+  - `amp_direct.exs` example demonstrating threads, permissions, MCP, and modes
+- **Cursor-backed event streaming** with durable per-session sequence numbers
+  - `append_event_with_sequence/2` and `get_latest_sequence/2` callbacks on the `SessionStore` port
+  - `:after` and `:before` cursor filters on `get_events/3` for sequence-based pagination
+  - `SessionManager.stream_session_events/3` for resumable follow/poll consumption across reconnects
+  - `cursor_pagination.exs` and `cursor_follow_stream.exs` live provider examples
+- **Session continuity** with provider-agnostic transcript reconstruction
+  - `Transcript` struct and `TranscriptBuilder` with `from_events/2`, `from_store/3`, and `update_from_store/2`
+  - Sequence-based ordering with timestamp and deterministic tie-breaker fallbacks
+  - Streaming chunk collapse into single assistant messages
+  - Tool call ID normalization across `tool_call_id`, `tool_use_id`, and `call_id` variants
+  - `continuation: true` and `continuation_opts` support in `execute_run/4` and `run_once/4`
+  - Transcript-aware prompt building in all three adapters
+  - `session_continuity.exs` live provider example
+- **Workspace snapshots** with pre/post snapshot, diff, and optional rollback instrumentation
+  - `Workspace` service with `GitBackend` (snapshots, diffs, patch capture, rollback) and `HashBackend` (snapshots and diffs only)
+  - `Snapshot` and `Diff` structs with `to_map` and summary helpers
+  - `:workspace_snapshot_taken` and `:workspace_diff_computed` event types
+  - Run metadata enrichment with compact diff summaries
+  - `workspace: [...]` option support in `execute_run/4` and `run_once/4`
+  - `workspace_snapshot.exs` live provider example
+- **Provider routing** via `ProviderRouter` implementing the `ProviderAdapter` behaviour
+  - Capability-driven adapter selection with type+name and type-only matching
+  - `RoutingPolicy` with prefer/exclude ordering and attempt limiting
+  - Simple in-process health tracking with consecutive-failure counts and cooldown-based temporary skipping
+  - Retryable failover up to configured attempt limit (only for `Error.retryable?/1` errors)
+  - Cancel routing to the adapter currently handling the active run
+  - Routing metadata (`routed_provider`, `routing_attempt`, `failover_from`, `failover_reason`) attached to results and events
+  - `provider_routing.exs` live provider example
+- **Policy enforcement** opt-in per execution via `:policy` in `execute_run/4` and `run_once/4`
+  - `Policy` struct with limits (`max_total_tokens`, `max_duration_ms`, `max_tool_calls`, `max_cost_usd`), tool rules (allow/deny), and `on_violation` action (`:cancel` or `:warn`)
+  - `Evaluator` for pure policy checks against runtime state snapshots
+  - `Runtime` GenServer for mutable per-run counters and single-cancel semantics
+  - `:policy_violation` event type and error code
+  - Cancel mode overrides provider success; warn mode preserves success with violation metadata
+  - Optional cost-limit enforcement using configured provider token rates
+  - `policy_enforcement.exs` live provider example
+- **SessionServer** opt-in per-session runtime GenServer with FIFO queueing and subscriptions
+  - `submit_run/3`, `await_run/3`, `execute_run/3`, `cancel_run/2`, `subscribe/2`, `unsubscribe/2`, `status/1` API
+  - Strict sequential execution (MVP constraint: `max_concurrent_runs` must be `1`)
+  - `RunQueue` pure FIFO data structure with enqueue/dequeue/remove and max size enforcement
+  - Queued run cancellation marks `:cancelled` in store with `:run_cancelled` event without reaching adapter
+  - Store-backed subscriptions delivering `{:session_event, session_id, event}` with `from_sequence` cursor replay, `run_id` filtering, and `type` filtering
+  - Optional `ConcurrencyLimiter` integration via `:limiter` option for run slot acquire/release
+  - Task crash handling via `Process.monitor` with automatic limiter release and awaiter notification
+- **SessionSupervisor** with `DynamicSupervisor` and `Registry` child tree for per-session process lifecycle
+- **SessionRegistry** with `via_tuple/2` and `lookup/2` helpers for named registration
+- `AmpMockSDK` with scenario-based event stream generation for adapter testing without network
+- `BlockingTestAdapter` for deterministic sequential execution testing
+- `RouterTestAdapter` with configurable outcomes, sleep/cancel support, and scripted event emission
+- `session_runtime.exs`, `session_subscription.exs`, and `session_limiter.exs` live provider examples
+- Input messages persisted as `:message_sent` events before adapter execution
+
+### Changed
+
+- **SessionStore port** now requires `append_event_with_sequence/2` and `get_latest_sequence/2` callbacks (breaking for custom store implementations)
+- **SessionManager** routes all event persistence through sequenced appends with monotonic per-session sequence numbers
+- Sequence numbers included in telemetry event data for adapter callback events
+- All three adapters (Claude, Codex, Amp) prepare transcript-aware prompts when session transcript context is present
+- `InMemorySessionStore` tracks per-session sequence counters with full sequenced event storage and idempotent duplicate detection
+- `amp_sdk` added as a dependency
+- Existing examples (`oneshot`, `live_session`, `common_surface`, `contract_surface_live`) updated to support the `amp` provider
+- `run_all.sh` refactored with argument parsing, `--provider` filtering, and run plan display
+
+### Documentation
+
+- Add `guides/cursor_streaming_and_migration.md` with migration checklist for custom stores
+- Add `guides/session_continuity.md` and `guides/workspace_snapshots.md`
+- Add `guides/provider_routing.md` and `guides/policy_enforcement.md`
+- Add `guides/session_server_runtime.md` and `guides/session_server_subscriptions.md`
+- Update `guides/architecture.md` module map with all new subsystems (routing, policy, workspace, runtime)
+- Update `guides/concurrency.md` with runtime limiter integration
+- Update `guides/events_and_streaming.md` with cursor APIs and workspace/policy event types
+- Update `guides/sessions_and_runs.md` with feature options and sequence assignment
+- Update `guides/live_examples.md` with all new example scripts
+- Update `guides/provider_adapters.md` with AmpAdapter documentation
+- Update `README.md` with SessionServer usage, cursor streaming, continuity, workspace, routing, and policy sections
+- Update `examples/README.md` for three-provider support and all new examples
+- Add Routing, Policy, Runtime, and Workspace modules to HexDocs group listings and extras menu
+- Bump installation snippets in `README.md` and `guides/getting_started.md` to `~> 0.5.0`
+
 ## [0.4.1] - 2026-02-06
 
 ### Changed
@@ -114,7 +202,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic project structure with mix.exs configuration
 - Project logo and assets
 
-[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.2.1...v0.3.0

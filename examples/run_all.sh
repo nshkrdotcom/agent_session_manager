@@ -108,6 +108,18 @@ for p in "${PROVIDERS[@]}"; do
   PLAN_FILES+=("examples/policy_enforcement.exs")
   PLAN_ARGS+=("--provider $p")
 
+  PLAN_NAMES+=("Session Runtime ($label)")
+  PLAN_FILES+=("examples/session_runtime.exs")
+  PLAN_ARGS+=("--provider $p")
+
+  PLAN_NAMES+=("Session Subscriptions ($label)")
+  PLAN_FILES+=("examples/session_subscription.exs")
+  PLAN_ARGS+=("--provider $p")
+
+  PLAN_NAMES+=("Session Limiter ($label)")
+  PLAN_FILES+=("examples/session_limiter.exs")
+  PLAN_ARGS+=("--provider $p")
+
   PLAN_NAMES+=("One-Shot ($label)")
   PLAN_FILES+=("examples/oneshot.exs")
   PLAN_ARGS+=("--provider $p")

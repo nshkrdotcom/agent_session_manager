@@ -189,3 +189,12 @@ status = ControlOperations.get_operation_status(ops, run_id)
 history = ControlOperations.get_operation_history(ops, run_id)
 # => [%{operation: :interrupt, ...}, %{operation: :cancel, ...}]
 ```
+
+## Runtime Integration (Feature 6)
+
+When using `AgentSessionManager.Runtime.SessionServer`, you can pass a limiter via `limiter:`. The runtime will:
+
+- acquire a run slot before starting execution
+- release the run slot after completion or cancellation
+
+This makes limiter enforcement a single configuration point for queued session runtimes.

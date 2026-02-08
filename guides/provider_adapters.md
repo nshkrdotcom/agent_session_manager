@@ -63,6 +63,34 @@ The Codex adapter integrates with the Codex CLI SDK.
 | `TurnCompleted` | `:message_received`, `:run_completed` |
 | `TurnFailed` / `Error` | `:error_occurred`, `:run_failed` |
 
+### AmpAdapter (Sourcegraph)
+
+The Amp adapter integrates with the Sourcegraph Amp API via the Amp SDK.
+
+```elixir
+{:ok, adapter} = AgentSessionManager.Adapters.AmpAdapter.start_link(
+  api_key: System.get_env("AMP_API_KEY")
+)
+```
+
+**Capabilities advertised:**
+- `streaming` (`:sampling`) -- real-time response streaming
+- `tool_use` (`:tool`) -- tool calling
+- `interrupt` (`:sampling`) -- cancel in-progress requests
+- `mcp` (`:tool`) -- MCP server integration
+- `bash` (`:tool`) -- command execution
+- `file_operations` (`:tool`) -- file read/write
+
+**Event mapping from Amp SDK:**
+
+| Amp SDK Event | Normalized Event |
+|---|---|
+| `SystemMessage` | `:run_started` |
+| `AssistantMessage` (text) | `:message_streamed`, `:message_received` |
+| `AssistantMessage` (tool use) | `:tool_call_started` |
+| `ResultMessage` | `:tool_call_completed`, `:run_completed` |
+| `ErrorResultMessage` | `:tool_call_failed`, `:run_failed` |
+
 ## The ProviderAdapter Behaviour
 
 All adapters must implement these callbacks:
@@ -270,7 +298,7 @@ end
 
 ## Adapter Execution Model
 
-Both built-in adapters use the same execution model:
+All three built-in adapters use the same execution model:
 
 1. `execute/4` is called on the GenServer
 2. The GenServer starts a supervised **nolink** task (`Task.Supervisor.async_nolink/2`)
@@ -299,6 +327,13 @@ For testing, you can inject mock SDK modules into the adapters:
 {:ok, adapter} = CodexAdapter.start_link(
   working_directory: "/tmp",
   sdk_module: MyMockCodexSDK,
+  sdk_pid: mock_pid
+)
+
+# AmpAdapter accepts :sdk_module and :sdk_pid
+{:ok, adapter} = AmpAdapter.start_link(
+  api_key: "test-key",
+  sdk_module: MyMockAmpSDK,
   sdk_pid: mock_pid
 )
 ```

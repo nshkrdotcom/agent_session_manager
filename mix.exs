@@ -1,7 +1,7 @@
 defmodule AgentSessionManager.MixProject do
   use Mix.Project
 
-  @version "0.4.1"
+  @version "0.5.0"
   @source_url "https://github.com/nshkrdotcom/agent_session_manager"
 
   def project do
@@ -74,6 +74,8 @@ defmodule AgentSessionManager.MixProject do
         "guides/architecture.md",
         "guides/configuration.md",
         "guides/sessions_and_runs.md",
+        "guides/session_server_runtime.md",
+        "guides/session_server_subscriptions.md",
         "guides/session_continuity.md",
         "guides/events_and_streaming.md",
         "guides/cursor_streaming_and_migration.md",
@@ -99,6 +101,8 @@ defmodule AgentSessionManager.MixProject do
         ],
         "Core Concepts": [
           "guides/sessions_and_runs.md",
+          "guides/session_server_runtime.md",
+          "guides/session_server_subscriptions.md",
           "guides/session_continuity.md",
           "guides/events_and_streaming.md",
           "guides/cursor_streaming_and_migration.md",
@@ -165,6 +169,12 @@ defmodule AgentSessionManager.MixProject do
         Concurrency: [
           AgentSessionManager.Concurrency.ConcurrencyLimiter,
           AgentSessionManager.Concurrency.ControlOperations
+        ],
+        Runtime: [
+          AgentSessionManager.Runtime.RunQueue,
+          AgentSessionManager.Runtime.SessionRegistry,
+          AgentSessionManager.Runtime.SessionServer,
+          AgentSessionManager.Runtime.SessionSupervisor
         ],
         Workspace: [
           AgentSessionManager.Workspace.Workspace,

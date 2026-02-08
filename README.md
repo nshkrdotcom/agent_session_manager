@@ -32,6 +32,7 @@ AgentSessionManager provides the infrastructure layer for building applications 
 - **Policy enforcement** -- Real-time budget/tool governance with cancel or warn actions and `:policy_violation` events
 - **Capability negotiation** -- Declare required and optional capabilities; the resolver checks provider support before execution
 - **Concurrency controls** -- Configurable limits on parallel sessions and runs with slot-based tracking
+- **Session server runtime** -- Optional per-session `SessionServer` with FIFO queueing, subscriptions, and strict sequential MVP execution (`max_concurrent_runs: 1`)
 - **Observability** -- Telemetry integration, audit logging, and append-only event stores
 - **Ports & adapters architecture** -- Clean separation between core logic and external dependencies
 
@@ -58,7 +59,7 @@ Add `agent_session_manager` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.4.1"}
+    {:agent_session_manager, "~> 0.5.0"}
   ]
 end
 ```
@@ -118,6 +119,36 @@ IO.inspect(result.token_usage)
 
 # 5. Complete the session
 {:ok, _} = SessionManager.complete_session(store, session.id)
+```
+
+### Session runtime (queued, sequential)
+
+If you need a per-session runtime that queues runs and provides await/cancel and subscriptions, use `AgentSessionManager.Runtime.SessionServer`.
+
+**MVP behavior:** strict sequential execution only (`max_concurrent_runs: 1`).
+
+```elixir
+alias AgentSessionManager.Adapters.{ClaudeAdapter, InMemorySessionStore}
+alias AgentSessionManager.Runtime.SessionServer
+
+{:ok, store} = InMemorySessionStore.start_link()
+{:ok, adapter} = ClaudeAdapter.start_link(model: "claude-haiku-4-5-20251001", tools: [])
+
+{:ok, server} =
+  SessionServer.start_link(
+    store: store,
+    adapter: adapter,
+    session_opts: %{agent_id: "runtime-session"},
+    max_concurrent_runs: 1
+  )
+
+{:ok, run_id} =
+  SessionServer.submit_run(server, %{
+    messages: [%{role: "user", content: "Hello!"}]
+  })
+
+{:ok, result} = SessionServer.await_run(server, run_id, 120_000)
+IO.inspect(result.output)
 ```
 
 ## Core Concepts
@@ -381,13 +412,15 @@ The guides cover each subsystem in depth:
 - [Architecture](guides/architecture.md) -- Ports & adapters design, module map, data flow
 - [Configuration](guides/configuration.md) -- Layered config system, process-local overrides
 - [Sessions and Runs](guides/sessions_and_runs.md) -- Lifecycle state machines, metadata, context
+- [Session Server Runtime](guides/session_server_runtime.md) -- Per-session FIFO queueing, submit/await/cancel, and limiter integration
+- [Session Server Subscriptions](guides/session_server_subscriptions.md) -- Store-backed event subscriptions with cursor replay and filtering
 - [Session Continuity](guides/session_continuity.md) -- Transcript reconstruction, continuation options, adapter replay behavior
 - [Events and Streaming](guides/events_and_streaming.md) -- Event types, normalization, EventStream cursor
 - [Cursor Streaming and Migration](guides/cursor_streaming_and_migration.md) -- Sequence assignment, cursor APIs, and custom store migration
 - [Workspace Snapshots](guides/workspace_snapshots.md) -- Workspace options, snapshot/diff events, metadata, and rollback scope
 - [Provider Routing](guides/provider_routing.md) -- Router-as-adapter setup, capability matching, health, failover, cancel routing
 - [Policy Enforcement](guides/policy_enforcement.md) -- Policy model, runtime enforcement, final result semantics, cost checks
-- [Provider Adapters](guides/provider_adapters.md) -- Using Claude/Codex adapters, writing your own
+- [Provider Adapters](guides/provider_adapters.md) -- Using Claude/Codex/Amp adapters, writing your own
 - [Capabilities](guides/capabilities.md) -- Defining capabilities, negotiation, manifests, registry
 - [Concurrency](guides/concurrency.md) -- Session/run limits, slot management, control operations
 - [Telemetry and Observability](guides/telemetry_and_observability.md) -- Telemetry events, audit logging, metrics

@@ -164,6 +164,24 @@ run.turn_count  # => 2
 {:ok, _} = SessionManager.cancel_run(store, adapter, run.id)
 ```
 
+Feature options are available through the same `execute_run/4` API:
+
+```elixir
+{:ok, result} = SessionManager.execute_run(store, adapter, run.id,
+  continuation: true,
+  continuation_opts: [max_messages: 100],
+  adapter_opts: [timeout: 120_000],
+  workspace: [
+    enabled: true,
+    path: File.cwd!(),
+    strategy: :auto,
+    capture_patch: true,
+    max_patch_bytes: 1_048_576,
+    rollback_on_failure: false
+  ]
+)
+```
+
 ## Querying Sessions and Runs
 
 The `SessionStore` port supports filtering:

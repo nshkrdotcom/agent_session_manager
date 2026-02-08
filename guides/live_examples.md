@@ -6,6 +6,8 @@ Cursor examples are also available and use real provider execution:
 
 - `examples/cursor_pagination.exs --provider <claude|codex|amp>`
 - `examples/cursor_follow_stream.exs --provider <claude|codex|amp>`
+- `examples/session_continuity.exs --provider <claude|codex|amp>`
+- `examples/workspace_snapshot.exs --provider <claude|codex|amp>`
 
 ## Authentication
 
@@ -26,6 +28,16 @@ mix run examples/cursor_pagination.exs --provider amp
 mix run examples/cursor_follow_stream.exs --provider claude
 mix run examples/cursor_follow_stream.exs --provider codex
 mix run examples/cursor_follow_stream.exs --provider amp
+
+# Session continuity (Feature 2)
+mix run examples/session_continuity.exs --provider claude
+mix run examples/session_continuity.exs --provider codex
+mix run examples/session_continuity.exs --provider amp
+
+# Workspace snapshots and rollback (Feature 3)
+mix run examples/workspace_snapshot.exs --provider claude
+mix run examples/workspace_snapshot.exs --provider codex
+mix run examples/workspace_snapshot.exs --provider amp
 
 # Existing live lifecycle examples
 mix run examples/oneshot.exs --provider claude
@@ -56,7 +68,7 @@ mix run examples/amp_direct.exs
 ## Run the Full Suite
 
 ```bash
-# Full suite: cursor examples + live providers
+# Full suite: cursor + continuity + workspace + live providers
 bash examples/run_all.sh
 
 # Full suite with a single live provider

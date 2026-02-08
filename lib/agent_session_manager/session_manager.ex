@@ -53,9 +53,19 @@ defmodule AgentSessionManager.SessionManager do
 
   """
 
-  alias AgentSessionManager.Core.{CapabilityResolver, Error, Event, EventNormalizer, Run, Session}
+  alias AgentSessionManager.Core.{
+    CapabilityResolver,
+    Error,
+    Event,
+    EventNormalizer,
+    Run,
+    Session,
+    TranscriptBuilder
+  }
+
   alias AgentSessionManager.Ports.{ProviderAdapter, SessionStore}
   alias AgentSessionManager.Telemetry
+  alias AgentSessionManager.Workspace.{Diff, Snapshot, Workspace}
 
   @type store :: SessionStore.store()
   @type adapter :: ProviderAdapter.adapter()
@@ -202,7 +212,7 @@ defmodule AgentSessionManager.SessionManager do
   @doc """
   Creates a new run for a session.
 
-  The run is created with `:pending` status. Use `execute_run/3` to execute it.
+  The run is created with `:pending` status. Use `execute_run/4` to execute it.
 
   ## Parameters
 
@@ -244,6 +254,15 @@ defmodule AgentSessionManager.SessionManager do
 
   - `:event_callback` - A function `(event_data -> any())` that receives each
     adapter event in real time, in addition to the internal persistence callback.
+  - `:continuation` - When `true`, reconstruct and inject a transcript into
+    `session.context[:transcript]` before adapter execution.
+  - `:continuation_opts` - Options forwarded to `TranscriptBuilder.from_store/3`
+    (for example: `:limit`, `:after`, `:since`, `:max_messages`).
+  - `:adapter_opts` - Additional adapter-specific options passed through to
+    `ProviderAdapter.execute/4`.
+  - `:workspace` - Workspace snapshot/diff options:
+    `enabled`, `path`, `strategy`, `capture_patch`, `max_patch_bytes`,
+    and `rollback_on_failure` (git backend only in MVP).
 
   ## Returns
 
@@ -279,9 +298,13 @@ defmodule AgentSessionManager.SessionManager do
     - `:metadata` - Session metadata map
     - `:context` - Session context (system prompts, etc.)
     - `:tags` - Session tags
-    - `:event_callback` - `(event_data -> any())` for real-time events
-    - `:required_capabilities` - Required capability types
-    - `:optional_capabilities` - Optional capability types
+  - `:event_callback` - `(event_data -> any())` for real-time events
+  - `:continuation` - Enable transcript reconstruction and continuity replay
+  - `:continuation_opts` - Transcript builder options
+  - `:adapter_opts` - Adapter-specific passthrough options
+  - `:workspace` - Workspace snapshot/diff options
+  - `:required_capabilities` - Required capability types
+  - `:optional_capabilities` - Optional capability types
 
   ## Returns
 
@@ -316,6 +339,10 @@ defmodule AgentSessionManager.SessionManager do
     exec_opts =
       []
       |> maybe_put_keyword(:event_callback, Keyword.get(opts, :event_callback))
+      |> maybe_put_keyword(:continuation, Keyword.get(opts, :continuation))
+      |> maybe_put_keyword(:continuation_opts, Keyword.get(opts, :continuation_opts))
+      |> maybe_put_keyword(:adapter_opts, Keyword.get(opts, :adapter_opts))
+      |> maybe_put_keyword(:workspace, Keyword.get(opts, :workspace))
 
     with {:ok, session} <- start_session(store, adapter, session_attrs),
          {:ok, _active} <- activate_session(store, session.id) do
@@ -463,21 +490,338 @@ defmodule AgentSessionManager.SessionManager do
     provider_name = ProviderAdapter.name(adapter)
     user_callback = Keyword.get(opts, :event_callback)
 
-    event_callback = fn event_data ->
-      handle_adapter_event(store, run, session, event_data)
-      if user_callback, do: user_callback.(event_data)
-    end
+    with {:ok, execution_session} <- maybe_attach_transcript(store, session, opts),
+         {:ok, workspace_state} <- maybe_prepare_workspace(store, run, opts),
+         :ok <- persist_input_messages(store, run) do
+      event_callback = build_event_callback(store, run, execution_session, user_callback)
 
-    case ProviderAdapter.execute(adapter, run, session, event_callback: event_callback) do
-      {:ok, result} ->
-        # Extract provider metadata from stored events
+      adapter_opts =
+        opts
+        |> Keyword.get(:adapter_opts, [])
+        |> Keyword.put(:event_callback, event_callback)
+
+      case ProviderAdapter.execute(adapter, run, execution_session, adapter_opts) do
+        {:ok, result} ->
+          finalize_provider_success(
+            store,
+            run,
+            session,
+            provider_name,
+            result,
+            workspace_state
+          )
+
+        {:error, error} ->
+          finalize_provider_failure(store, run, error, workspace_state)
+      end
+    else
+      {:error, error} ->
+        finalize_failed_run(store, run, error, %{})
+    end
+  end
+
+  defp build_event_callback(store, run, execution_session, nil) do
+    fn event_data ->
+      handle_adapter_event(store, run, execution_session, event_data)
+    end
+  end
+
+  defp build_event_callback(store, run, execution_session, user_callback)
+       when is_function(user_callback, 1) do
+    fn event_data ->
+      handle_adapter_event(store, run, execution_session, event_data)
+      user_callback.(event_data)
+    end
+  end
+
+  defp finalize_provider_success(store, run, session, provider_name, result, workspace_state) do
+    case maybe_finalize_workspace_success(store, run, result, workspace_state) do
+      {:ok, result_with_workspace, workspace_metadata} ->
         provider_metadata = extract_provider_metadata_from_events(store, run)
 
-        finalize_successful_run(store, run, session, result, provider_name, provider_metadata)
+        finalize_successful_run(
+          store,
+          run,
+          session,
+          result_with_workspace,
+          provider_name,
+          provider_metadata,
+          workspace_metadata
+        )
 
       {:error, error} ->
-        finalize_failed_run(store, run, error)
+        finalize_failed_run(store, run, error, %{})
     end
+  end
+
+  defp finalize_provider_failure(store, run, error, workspace_state) do
+    case maybe_finalize_workspace_failure(store, run, workspace_state, error) do
+      {:ok, workspace_metadata} ->
+        finalize_failed_run(store, run, error, workspace_metadata)
+
+      {:error, workspace_error} ->
+        finalize_failed_run(store, run, workspace_error, %{})
+    end
+  end
+
+  defp maybe_attach_transcript(store, session, opts) do
+    if Keyword.get(opts, :continuation, false) do
+      continuation_opts = Keyword.get(opts, :continuation_opts, [])
+
+      with {:ok, transcript} <- TranscriptBuilder.from_store(store, session.id, continuation_opts) do
+        context =
+          session.context
+          |> ensure_map()
+          |> Map.put(:transcript, transcript)
+
+        {:ok, %{session | context: context}}
+      end
+    else
+      {:ok, session}
+    end
+  end
+
+  defp persist_input_messages(store, run) do
+    run.input
+    |> extract_input_messages()
+    |> Enum.reduce_while(:ok, fn message_data, :ok ->
+      case emit_run_event(store, :message_sent, run, message_data) do
+        :ok -> {:cont, :ok}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp extract_input_messages(%{messages: messages}) when is_list(messages) do
+    normalize_run_input_messages(messages)
+  end
+
+  defp extract_input_messages(%{"messages" => messages}) when is_list(messages) do
+    normalize_run_input_messages(messages)
+  end
+
+  defp extract_input_messages(%{prompt: prompt}) when is_binary(prompt) and prompt != "" do
+    [%{role: "user", content: prompt}]
+  end
+
+  defp extract_input_messages(%{"prompt" => prompt}) when is_binary(prompt) and prompt != "" do
+    [%{role: "user", content: prompt}]
+  end
+
+  defp extract_input_messages(_), do: []
+
+  defp normalize_run_input_messages(messages) do
+    messages
+    |> Enum.map(&normalize_run_input_message/1)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp normalize_run_input_message(message) when is_map(message) do
+    role = Map.get(message, :role) || Map.get(message, "role")
+    content = Map.get(message, :content) || Map.get(message, "content")
+    build_input_message_event(role, content)
+  end
+
+  defp normalize_run_input_message(_), do: nil
+
+  defp build_input_message_event(role, content) do
+    normalized_content = normalize_input_message_content(content)
+
+    if normalized_content == "" do
+      nil
+    else
+      %{
+        role: normalize_input_message_role(role),
+        content: normalized_content
+      }
+    end
+  end
+
+  defp normalize_input_message_role(role) when role in [:system, :user, :assistant, :tool] do
+    Atom.to_string(role)
+  end
+
+  defp normalize_input_message_role(role) when is_binary(role) and role != "" do
+    String.downcase(role)
+  end
+
+  defp normalize_input_message_role(_), do: "user"
+
+  defp normalize_input_message_content(nil), do: ""
+  defp normalize_input_message_content(content) when is_binary(content), do: content
+  defp normalize_input_message_content(content), do: inspect(content)
+
+  defp maybe_prepare_workspace(store, run, opts) do
+    workspace_opts =
+      opts
+      |> Keyword.get(:workspace, [])
+      |> normalize_workspace_opts()
+
+    case workspace_enabled?(workspace_opts) do
+      true -> prepare_workspace_enabled(store, run, workspace_opts)
+      false -> {:ok, %{enabled: false}}
+    end
+  end
+
+  defp prepare_workspace_enabled(store, run, workspace_opts) do
+    path = Keyword.get(workspace_opts, :path, File.cwd!())
+    strategy = Keyword.get(workspace_opts, :strategy, :auto)
+    backend = Workspace.backend_for_path(path, strategy: strategy)
+
+    case Keyword.get(workspace_opts, :rollback_on_failure, false) and backend == :hash do
+      true ->
+        {:error,
+         Error.new(
+           :validation_error,
+           "rollback_on_failure is only supported for git backend in MVP"
+         )}
+
+      false ->
+        with {:ok, pre_snapshot} <-
+               Workspace.take_snapshot(path, strategy: strategy, label: :before),
+             :ok <-
+               emit_run_event(store, :workspace_snapshot_taken, run, %{
+                 label: :before,
+                 backend: pre_snapshot.backend,
+                 ref: pre_snapshot.ref
+               }) do
+          {:ok,
+           %{
+             enabled: true,
+             opts: workspace_opts,
+             pre_snapshot: pre_snapshot
+           }}
+        end
+    end
+  end
+
+  defp maybe_finalize_workspace_success(_store, _run, result, %{enabled: false}) do
+    {:ok, result, %{}}
+  end
+
+  defp maybe_finalize_workspace_success(store, run, result, workspace_state) do
+    with {:ok, post_snapshot} <- take_post_snapshot(store, run, workspace_state, :after),
+         {:ok, diff} <-
+           compute_workspace_diff(
+             store,
+             run,
+             workspace_state.pre_snapshot,
+             post_snapshot,
+             workspace_state.opts
+           ) do
+      workspace_result = build_workspace_result(workspace_state.pre_snapshot, post_snapshot, diff)
+
+      workspace_metadata =
+        build_workspace_metadata(workspace_state.pre_snapshot, post_snapshot, diff)
+
+      {:ok, Map.put(result, :workspace, workspace_result), %{workspace: workspace_metadata}}
+    end
+  end
+
+  defp maybe_finalize_workspace_failure(_store, _run, %{enabled: false}, _error) do
+    {:ok, %{}}
+  end
+
+  defp maybe_finalize_workspace_failure(store, run, workspace_state, _error) do
+    with {:ok, post_snapshot} <- take_post_snapshot(store, run, workspace_state, :after_failure),
+         {:ok, diff} <-
+           compute_workspace_diff(
+             store,
+             run,
+             workspace_state.pre_snapshot,
+             post_snapshot,
+             workspace_state.opts
+           ),
+         :ok <- maybe_rollback_workspace(workspace_state) do
+      workspace_metadata =
+        build_workspace_metadata(workspace_state.pre_snapshot, post_snapshot, diff)
+
+      {:ok, %{workspace: workspace_metadata}}
+    end
+  end
+
+  defp take_post_snapshot(store, run, workspace_state, label) do
+    path = Keyword.get(workspace_state.opts, :path, workspace_state.pre_snapshot.path)
+    strategy = Keyword.get(workspace_state.opts, :strategy, :auto)
+
+    with {:ok, post_snapshot} <- Workspace.take_snapshot(path, strategy: strategy, label: label),
+         :ok <-
+           emit_run_event(store, :workspace_snapshot_taken, run, %{
+             label: label,
+             backend: post_snapshot.backend,
+             ref: post_snapshot.ref
+           }) do
+      {:ok, post_snapshot}
+    end
+  end
+
+  defp compute_workspace_diff(
+         store,
+         run,
+         %Snapshot{} = before_snapshot,
+         %Snapshot{} = after_snapshot,
+         workspace_opts
+       ) do
+    diff_opts = [
+      capture_patch: Keyword.get(workspace_opts, :capture_patch, true),
+      max_patch_bytes: Keyword.get(workspace_opts, :max_patch_bytes, 1_048_576)
+    ]
+
+    with {:ok, %Diff{} = diff} <- Workspace.diff(before_snapshot, after_snapshot, diff_opts),
+         :ok <-
+           emit_run_event(store, :workspace_diff_computed, run, %{
+             files_changed: diff.files_changed,
+             insertions: diff.insertions,
+             deletions: diff.deletions,
+             has_patch: is_binary(diff.patch)
+           }) do
+      {:ok, diff}
+    end
+  end
+
+  defp maybe_rollback_workspace(workspace_state) do
+    if Keyword.get(workspace_state.opts, :rollback_on_failure, false) do
+      Workspace.rollback(workspace_state.pre_snapshot)
+    else
+      :ok
+    end
+  end
+
+  defp build_workspace_result(
+         %Snapshot{} = before_snapshot,
+         %Snapshot{} = after_snapshot,
+         %Diff{} = diff
+       ) do
+    %{
+      backend: diff.backend,
+      before_snapshot: Snapshot.to_map(before_snapshot),
+      after_snapshot: Snapshot.to_map(after_snapshot),
+      diff: Diff.to_map(diff)
+    }
+  end
+
+  defp build_workspace_metadata(
+         %Snapshot{} = before_snapshot,
+         %Snapshot{} = after_snapshot,
+         %Diff{} = diff
+       ) do
+    compact_diff =
+      Diff.summary(diff)
+      |> maybe_put(:patch, diff.patch)
+
+    %{
+      backend: diff.backend,
+      before_ref: before_snapshot.ref,
+      after_ref: after_snapshot.ref,
+      diff: compact_diff
+    }
+  end
+
+  defp normalize_workspace_opts(opts) when is_list(opts), do: opts
+  defp normalize_workspace_opts(_), do: []
+
+  defp workspace_enabled?(opts) do
+    Keyword.get(opts, :enabled, false)
   end
 
   defp extract_provider_metadata_from_events(store, run) do
@@ -500,12 +844,21 @@ defmodule AgentSessionManager.SessionManager do
     end
   end
 
-  defp finalize_successful_run(store, run, session, result, provider_name, provider_metadata) do
+  defp finalize_successful_run(
+         store,
+         run,
+         session,
+         result,
+         provider_name,
+         provider_metadata,
+         extra_run_metadata
+       ) do
     # Build run metadata with provider info
     run_provider_metadata =
       %{provider: provider_name}
       |> maybe_put(:provider_session_id, provider_metadata[:provider_session_id])
       |> maybe_put(:model, provider_metadata[:model])
+      |> Map.merge(extra_run_metadata)
 
     with {:ok, updated_run} <- Run.set_output(run, result.output),
          {:ok, run_with_usage} <- Run.update_token_usage(updated_run, result.token_usage),
@@ -543,14 +896,15 @@ defmodule AgentSessionManager.SessionManager do
   defp maybe_put_keyword(keyword, _key, nil), do: keyword
   defp maybe_put_keyword(keyword, key, value), do: Keyword.put(keyword, key, value)
 
-  defp finalize_failed_run(store, run, error) do
+  defp finalize_failed_run(store, run, error, extra_run_metadata) do
     error_code = Map.get(error, :code, :internal_error)
     error_message = Map.get(error, :message, inspect(error))
     error_map = %{code: error_code, message: error_message}
 
     with {:ok, failed_run} <- Run.set_error(run, error_map),
-         :ok <- SessionStore.save_run(store, failed_run),
-         :ok <- emit_run_event(store, :run_failed, failed_run, %{error_code: error_code}) do
+         run_with_metadata = update_run_metadata(failed_run, extra_run_metadata),
+         :ok <- SessionStore.save_run(store, run_with_metadata),
+         :ok <- emit_run_event(store, :run_failed, run_with_metadata, %{error_code: error_code}) do
       {:error, error}
     end
   end

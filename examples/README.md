@@ -34,6 +34,35 @@ mix run examples/cursor_follow_stream.exs --provider codex
 mix run examples/cursor_follow_stream.exs --provider amp
 ```
 
+## Session Continuity and Workspace Examples
+
+These examples demonstrate Feature 2 and Feature 3 using live provider execution.
+
+### `session_continuity.exs` -- Session Continuity (Feature 2)
+
+- Runs two sequential turns in a single session
+- Executes turn 2 with `continuation: true`
+- Reconstructs and prints transcript context from persisted events
+
+```bash
+mix run examples/session_continuity.exs --provider claude
+mix run examples/session_continuity.exs --provider codex
+mix run examples/session_continuity.exs --provider amp
+```
+
+### `workspace_snapshot.exs` -- Workspace Snapshot + Diff + Rollback (Feature 3)
+
+- Creates a temporary git workspace and enables workspace instrumentation
+- Prints emitted workspace events (`:workspace_snapshot_taken`, `:workspace_diff_computed`)
+- Prints compact diff summary and patch presence
+- Demonstrates git rollback-on-failure behavior (`rollback_on_failure: true`)
+
+```bash
+mix run examples/workspace_snapshot.exs --provider claude
+mix run examples/workspace_snapshot.exs --provider codex
+mix run examples/workspace_snapshot.exs --provider amp
+```
+
 ## Other Live Provider Examples
 
 ### `oneshot.exs` -- One-Shot Execution
@@ -79,7 +108,7 @@ mix run examples/amp_direct.exs
 ## Run All Examples
 
 ```bash
-# Default: all providers (claude, codex, amp)
+# Default: all examples across all providers (claude, codex, amp)
 bash examples/run_all.sh
 
 # Single provider

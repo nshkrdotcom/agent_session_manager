@@ -14,7 +14,7 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
   use AgentSessionManager.SupertesterCase, async: true
 
   alias AgentSessionManager.Adapters.CodexAdapter
-  alias AgentSessionManager.Core.Error
+  alias AgentSessionManager.Core.{Error, Transcript}
   alias AgentSessionManager.Test.CodexMockSDK
 
   defmodule FailingMockCodexSDK do
@@ -23,6 +23,41 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
     def run_streamed(_sdk_pid, _thread, _input, _opts) do
       raise "boom in run_streamed"
     end
+  end
+
+  defmodule CapturingPromptSDK do
+    @moduledoc false
+
+    alias Codex.Events
+
+    def run_streamed(test_pid, _thread, input, _opts) do
+      send(test_pid, {:captured_prompt, input})
+
+      events = [
+        %Events.ThreadStarted{thread_id: "thread-1", metadata: %{}},
+        %Events.ItemAgentMessageDelta{
+          thread_id: "thread-1",
+          turn_id: "turn-1",
+          item: %{"content" => [%{"type" => "text", "text" => "ok"}]}
+        },
+        %Events.ThreadTokenUsageUpdated{
+          thread_id: "thread-1",
+          turn_id: "turn-1",
+          usage: %{"input_tokens" => 1, "output_tokens" => 1}
+        },
+        %Events.TurnCompleted{
+          thread_id: "thread-1",
+          turn_id: "turn-1",
+          status: "completed",
+          usage: %{"input_tokens" => 1, "output_tokens" => 1}
+        }
+      ]
+
+      {:ok, %{raw_events_fn: fn -> events end}}
+    end
+
+    def raw_events(%{raw_events_fn: fun}), do: fun.()
+    def cancel(_pid), do: :ok
   end
 
   describe "start_link/1 validation" do
@@ -494,6 +529,50 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
         assert event.session_id == session.id
         assert event.run_id == run.id
       end
+    end
+  end
+
+  describe "transcript continuity input" do
+    test "replays transcript context in prompt when session transcript is present" do
+      {:ok, adapter} =
+        CodexAdapter.start_link(
+          working_directory: "/tmp/test",
+          sdk_module: CapturingPromptSDK,
+          sdk_pid: self()
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      session =
+        build_test_session(
+          context: %{
+            transcript: %Transcript{
+              session_id: "ses-transcript",
+              messages: [
+                %{
+                  role: :assistant,
+                  content: "Earlier assistant reply",
+                  tool_call_id: nil,
+                  tool_name: nil,
+                  tool_input: nil,
+                  tool_output: nil,
+                  metadata: %{}
+                }
+              ],
+              last_sequence: 3,
+              last_timestamp: DateTime.utc_now(),
+              metadata: %{}
+            }
+          }
+        )
+
+      run = build_test_run(session_id: session.id, input: "Current question")
+
+      assert {:ok, _result} = CodexAdapter.execute(adapter, run, session, timeout: 5_000)
+      assert_receive {:captured_prompt, prompt}, 1_000
+      assert is_binary(prompt)
+      assert prompt =~ "Earlier assistant reply"
+      assert prompt =~ "Current question"
     end
   end
 

@@ -14,7 +14,7 @@ defmodule AgentSessionManager.Adapters.AmpAdapterTest do
   use AgentSessionManager.SupertesterCase, async: true
 
   alias AgentSessionManager.Adapters.AmpAdapter
-  alias AgentSessionManager.Core.Error
+  alias AgentSessionManager.Core.{Error, Transcript}
   alias AgentSessionManager.Test.AmpMockSDK
 
   defmodule FailingMockAmpSDK do
@@ -23,6 +23,19 @@ defmodule AgentSessionManager.Adapters.AmpAdapterTest do
     def execute(_sdk_pid, _prompt, _opts) do
       raise "boom in execute"
     end
+  end
+
+  defmodule CapturingPromptSDK do
+    @moduledoc false
+
+    alias AgentSessionManager.Test.AmpMockSDK
+
+    def execute(test_pid, prompt, _opts) do
+      send(test_pid, {:captured_prompt, prompt})
+      AmpMockSDK.build_event_stream(:simple_response)
+    end
+
+    def cancel(_pid), do: :ok
   end
 
   describe "start_link/1 validation" do
@@ -644,6 +657,50 @@ defmodule AgentSessionManager.Adapters.AmpAdapterTest do
         assert event.session_id == session.id
         assert event.run_id == run.id
       end
+    end
+  end
+
+  describe "transcript continuity input" do
+    test "replays transcript context in prompt when session transcript is present" do
+      {:ok, adapter} =
+        AmpAdapter.start_link(
+          cwd: "/tmp/test",
+          sdk_module: CapturingPromptSDK,
+          sdk_pid: self()
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      session =
+        build_test_session(
+          context: %{
+            transcript: %Transcript{
+              session_id: "ses-transcript",
+              messages: [
+                %{
+                  role: :assistant,
+                  content: "Earlier assistant reply",
+                  tool_call_id: nil,
+                  tool_name: nil,
+                  tool_input: nil,
+                  tool_output: nil,
+                  metadata: %{}
+                }
+              ],
+              last_sequence: 3,
+              last_timestamp: DateTime.utc_now(),
+              metadata: %{}
+            }
+          }
+        )
+
+      run = build_test_run(session_id: session.id, input: "Current question")
+
+      assert {:ok, _result} = AmpAdapter.execute(adapter, run, session, timeout: 5_000)
+      assert_receive {:captured_prompt, prompt}, 1_000
+      assert is_binary(prompt)
+      assert prompt =~ "Earlier assistant reply"
+      assert prompt =~ "Current question"
     end
   end
 

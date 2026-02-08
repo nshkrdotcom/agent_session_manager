@@ -92,6 +92,14 @@ for p in "${PROVIDERS[@]}"; do
   PLAN_FILES+=("examples/cursor_follow_stream.exs")
   PLAN_ARGS+=("--provider $p")
 
+  PLAN_NAMES+=("Session Continuity ($label)")
+  PLAN_FILES+=("examples/session_continuity.exs")
+  PLAN_ARGS+=("--provider $p")
+
+  PLAN_NAMES+=("Workspace Snapshot ($label)")
+  PLAN_FILES+=("examples/workspace_snapshot.exs")
+  PLAN_ARGS+=("--provider $p")
+
   PLAN_NAMES+=("One-Shot ($label)")
   PLAN_FILES+=("examples/oneshot.exs")
   PLAN_ARGS+=("--provider $p")

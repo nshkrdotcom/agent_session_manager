@@ -315,11 +315,13 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
   defp do_execute(state, run, session, opts, adapter_pid) do
     event_callback = Keyword.get(opts, :event_callback)
     reset_emitted_events()
+    prepared_input = prepare_input(run.input, session)
 
     # Build execution context
     ctx = %{
       run: run,
       session: session,
+      prepared_input: prepared_input,
       event_callback: event_callback,
       adapter_pid: adapter_pid,
       accumulated_content: "",
@@ -360,7 +362,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
 
   defp execute_with_real_sdk(ctx, state) do
     sdk_opts = build_sdk_options(state)
-    prompt = extract_prompt(ctx.run.input)
+    prompt = extract_prompt(ctx.prepared_input)
 
     # Use ClaudeAgentSDK.Streaming for real token-level streaming deltas.
     # Query.run/3 delivers complete Message structs (no incremental output).
@@ -521,7 +523,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
 
   defp execute_with_agent_sdk(sdk_module, sdk_pid, ctx, _state) do
     # Use the ClaudeAgentSDK-compatible interface
-    stream = sdk_module.query(sdk_pid, ctx.run.input, %{})
+    stream = sdk_module.query(sdk_pid, ctx.prepared_input, %{})
     process_agent_sdk_stream(stream, ctx)
   end
 
@@ -529,11 +531,101 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
 
   defp extract_prompt(%{messages: messages}) when is_list(messages) do
     messages
-    |> Enum.filter(fn msg -> msg[:role] == "user" || msg["role"] == "user" end)
-    |> Enum.map_join("\n", fn msg -> msg[:content] || msg["content"] || "" end)
+    |> Enum.map(&message_to_prompt_line/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n")
   end
 
   defp extract_prompt(input), do: inspect(input)
+
+  defp message_to_prompt_line(message) when is_map(message) do
+    role = Map.get(message, :role) || Map.get(message, "role")
+    content = Map.get(message, :content) || Map.get(message, "content") || ""
+
+    if is_binary(content) and content != "" do
+      "#{role_to_string(role)}: #{content}"
+    else
+      ""
+    end
+  end
+
+  defp message_to_prompt_line(_), do: ""
+
+  defp prepare_input(input, session) do
+    transcript_messages =
+      session
+      |> Map.get(:context, %{})
+      |> Map.get(:transcript)
+      |> transcript_to_input_messages()
+
+    if transcript_messages == [] do
+      input
+    else
+      current_messages = normalize_input_messages(input)
+
+      %{
+        messages: transcript_messages ++ current_messages
+      }
+    end
+  end
+
+  defp normalize_input_messages(%{messages: messages}) when is_list(messages), do: messages
+
+  defp normalize_input_messages(input) when is_binary(input) do
+    [%{role: "user", content: input}]
+  end
+
+  defp normalize_input_messages(input) do
+    [%{role: "user", content: inspect(input)}]
+  end
+
+  defp transcript_to_input_messages(nil), do: []
+
+  defp transcript_to_input_messages(%{messages: messages}) when is_list(messages) do
+    messages
+    |> Enum.map(&transcript_message_to_input/1)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp transcript_to_input_messages(_), do: []
+
+  defp transcript_message_to_input(%{role: role, content: content})
+       when is_binary(content) and content != "" do
+    %{role: role_to_string(role), content: content}
+  end
+
+  defp transcript_message_to_input(%{
+         role: :assistant,
+         tool_name: tool_name,
+         tool_call_id: tool_call_id,
+         tool_input: tool_input
+       })
+       when is_binary(tool_name) do
+    tool_id = if is_binary(tool_call_id), do: tool_call_id, else: "unknown"
+    input = if is_map(tool_input), do: inspect(tool_input), else: "{}"
+    %{role: "assistant", content: "tool_call(#{tool_id}): #{tool_name} #{input}"}
+  end
+
+  defp transcript_message_to_input(%{
+         role: :tool,
+         tool_name: tool_name,
+         tool_call_id: tool_call_id,
+         tool_output: tool_output
+       })
+       when is_binary(tool_name) do
+    tool_id = if is_binary(tool_call_id), do: tool_call_id, else: "unknown"
+    output = if is_nil(tool_output), do: "", else: inspect(tool_output)
+    %{role: "tool", content: "tool_result(#{tool_id}): #{tool_name} #{output}"}
+  end
+
+  defp transcript_message_to_input(_), do: nil
+
+  defp role_to_string(:system), do: "system"
+  defp role_to_string(:user), do: "user"
+  defp role_to_string(:assistant), do: "assistant"
+  defp role_to_string(:tool), do: "tool"
+  defp role_to_string(role) when is_binary(role), do: role
+  defp role_to_string(_), do: "assistant"
 
   defp build_sdk_options(state) do
     # ClaudeAgentSDK handles auth via `claude login` session or ANTHROPIC_API_KEY env var.

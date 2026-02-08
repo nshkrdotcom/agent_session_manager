@@ -42,6 +42,10 @@ defmodule AgentSessionManager.Core.Event do
   - `:token_usage_updated` - Token usage was updated
   - `:turn_completed` - A conversation turn completed
 
+  ### Workspace Events
+  - `:workspace_snapshot_taken` - Workspace snapshot was taken
+  - `:workspace_diff_computed` - Workspace diff was computed
+
   ## Usage
 
       # Create an event
@@ -105,12 +109,19 @@ defmodule AgentSessionManager.Core.Event do
     :turn_completed
   ]
 
+  # Workspace events
+  @workspace_events [
+    :workspace_snapshot_taken,
+    :workspace_diff_computed
+  ]
+
   @all_types @session_events ++
                @run_events ++
                @message_events ++
                @tool_events ++
                @error_events ++
-               @usage_events
+               @usage_events ++
+               @workspace_events
 
   @type event_type ::
           :session_created
@@ -135,6 +146,8 @@ defmodule AgentSessionManager.Core.Event do
           | :error_recovered
           | :token_usage_updated
           | :turn_completed
+          | :workspace_snapshot_taken
+          | :workspace_diff_computed
 
   @type t :: %__MODULE__{
           id: String.t() | nil,
@@ -200,6 +213,12 @@ defmodule AgentSessionManager.Core.Event do
   """
   @spec error_events() :: [event_type()]
   def error_events, do: @error_events
+
+  @doc """
+  Returns workspace event types.
+  """
+  @spec workspace_events() :: [event_type()]
+  def workspace_events, do: @workspace_events
 
   @doc """
   Creates a new event with the given attributes.

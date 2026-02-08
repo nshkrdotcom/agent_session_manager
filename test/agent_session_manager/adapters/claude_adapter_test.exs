@@ -16,7 +16,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
 
   alias AgentSessionManager.Adapters.Claude.MockSDK
   alias AgentSessionManager.Adapters.ClaudeAdapter
-  alias AgentSessionManager.Core.{Capability, Error, NormalizedEvent, Run, Session}
+  alias AgentSessionManager.Core.{Capability, Error, NormalizedEvent, Run, Session, Transcript}
   alias AgentSessionManager.Test.ClaudeAgentSDKMock
 
   defmodule FailingAgentSDK do
@@ -24,6 +24,42 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
 
     def query(_sdk_pid, _input, _opts) do
       raise "boom in query"
+    end
+  end
+
+  defmodule CapturingAgentSDK do
+    @moduledoc false
+
+    alias ClaudeAgentSDK.Message
+
+    def query(test_pid, input, _opts) do
+      send(test_pid, {:captured_input, input})
+
+      [
+        %Message{
+          type: :system,
+          subtype: :init,
+          data: %{session_id: "claude-session", model: "claude-haiku-4-5-20251001", tools: []},
+          raw: %{}
+        },
+        %Message{
+          type: :assistant,
+          subtype: nil,
+          data: %{
+            message: %{
+              "role" => "assistant",
+              "content" => [%{"type" => "text", "text" => "ok"}]
+            }
+          },
+          raw: %{}
+        },
+        %Message{
+          type: :result,
+          subtype: :success,
+          data: %{usage: %{"input_tokens" => 1, "output_tokens" => 1}},
+          raw: %{}
+        }
+      ]
     end
   end
 
@@ -1453,6 +1489,53 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
     end
   end
 
+  describe "transcript continuity input" do
+    test "replays transcript context in adapter input when session transcript is present", %{
+      session: session,
+      run: run
+    } do
+      {:ok, adapter} =
+        ClaudeAdapter.start_link(
+          api_key: "test-key",
+          sdk_module: CapturingAgentSDK,
+          sdk_pid: self()
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      session_with_transcript = %{
+        session
+        | context: %{
+            transcript: %Transcript{
+              session_id: session.id,
+              messages: [
+                %{
+                  role: :assistant,
+                  content: "Earlier assistant reply",
+                  tool_call_id: nil,
+                  tool_name: nil,
+                  tool_input: nil,
+                  tool_output: nil,
+                  metadata: %{}
+                }
+              ],
+              last_sequence: 5,
+              last_timestamp: DateTime.utc_now(),
+              metadata: %{}
+            }
+          }
+      }
+
+      assert {:ok, _result} =
+               ClaudeAdapter.execute(adapter, run, session_with_transcript, timeout: 5_000)
+
+      assert_receive {:captured_input, input}, 1_000
+
+      assert contains_text?(input, "Earlier assistant reply")
+      assert contains_text?(input, "Hello")
+    end
+  end
+
   # ============================================================================
   # Helpers
   # ============================================================================
@@ -1484,5 +1567,22 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
       timeout ->
         acc
     end
+  end
+
+  defp contains_text?(input, text) when is_binary(input) do
+    String.contains?(input, text)
+  end
+
+  defp contains_text?(%{messages: messages}, text) when is_list(messages) do
+    Enum.any?(messages, fn message ->
+      content = Map.get(message, :content) || Map.get(message, "content")
+      is_binary(content) and String.contains?(content, text)
+    end)
+  end
+
+  defp contains_text?(other, text) do
+    other
+    |> inspect()
+    |> String.contains?(text)
   end
 end

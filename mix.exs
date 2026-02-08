@@ -74,8 +74,10 @@ defmodule AgentSessionManager.MixProject do
         "guides/architecture.md",
         "guides/configuration.md",
         "guides/sessions_and_runs.md",
+        "guides/session_continuity.md",
         "guides/events_and_streaming.md",
         "guides/cursor_streaming_and_migration.md",
+        "guides/workspace_snapshots.md",
         "guides/provider_adapters.md",
         "guides/capabilities.md",
         "guides/concurrency.md",
@@ -95,8 +97,10 @@ defmodule AgentSessionManager.MixProject do
         ],
         "Core Concepts": [
           "guides/sessions_and_runs.md",
+          "guides/session_continuity.md",
           "guides/events_and_streaming.md",
           "guides/cursor_streaming_and_migration.md",
+          "guides/workspace_snapshots.md",
           "guides/capabilities.md"
         ],
         Integration: [
@@ -117,6 +121,7 @@ defmodule AgentSessionManager.MixProject do
           AgentSessionManager.Core.Session,
           AgentSessionManager.Core.Run,
           AgentSessionManager.Core.Event,
+          AgentSessionManager.Core.Transcript,
           AgentSessionManager.Core.NormalizedEvent,
           AgentSessionManager.Core.Capability,
           AgentSessionManager.Core.Manifest,
@@ -124,7 +129,8 @@ defmodule AgentSessionManager.MixProject do
         ],
         "Event Pipeline": [
           AgentSessionManager.Core.EventNormalizer,
-          AgentSessionManager.Core.EventStream
+          AgentSessionManager.Core.EventStream,
+          AgentSessionManager.Core.TranscriptBuilder
         ],
         "Capability System": [
           AgentSessionManager.Core.CapabilityResolver,
@@ -147,6 +153,13 @@ defmodule AgentSessionManager.MixProject do
         Concurrency: [
           AgentSessionManager.Concurrency.ConcurrencyLimiter,
           AgentSessionManager.Concurrency.ControlOperations
+        ],
+        Workspace: [
+          AgentSessionManager.Workspace.Workspace,
+          AgentSessionManager.Workspace.Snapshot,
+          AgentSessionManager.Workspace.Diff,
+          AgentSessionManager.Workspace.GitBackend,
+          AgentSessionManager.Workspace.HashBackend
         ],
         Observability: [
           AgentSessionManager.Config,

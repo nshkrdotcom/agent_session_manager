@@ -26,6 +26,8 @@ AgentSessionManager provides the infrastructure layer for building applications 
 - **Multi-provider support** -- Built-in adapters for Claude Code (Anthropic), Codex, and Amp (Sourcegraph), with a behaviour for adding your own
 - **Streaming events** -- Normalized event pipeline that maps provider-specific events to a canonical format
 - **Cursor-backed event streaming** -- Monotonic per-session sequence numbers with durable cursor queries (`after` / `before`)
+- **Session continuity** -- Provider-agnostic transcript reconstruction and optional cross-run context replay
+- **Workspace snapshots** -- Optional pre/post snapshots, diff summaries, patch capture caps, and git-only rollback on failure
 - **Capability negotiation** -- Declare required and optional capabilities; the resolver checks provider support before execution
 - **Concurrency controls** -- Configurable limits on parallel sessions and runs with slot-based tracking
 - **Observability** -- Telemetry integration, audit logging, and append-only event stores
@@ -190,6 +192,44 @@ stream =
 Enum.take(stream, 10)
 ```
 
+### Session Continuity
+
+Continuity is opt-in per run. When enabled, `SessionManager` reconstructs a
+transcript from persisted events and injects it into `session.context[:transcript]`
+before calling the adapter.
+
+```elixir
+{:ok, result} = SessionManager.execute_run(store, adapter, run.id,
+  continuation: true,
+  continuation_opts: [max_messages: 200]
+)
+```
+
+Adapters consume transcript context when present. If provider-native handle reuse
+is unavailable, transcript replay is the fallback path.
+
+### Workspace Snapshots
+
+Workspace instrumentation is also opt-in per run:
+
+```elixir
+{:ok, result} = SessionManager.execute_run(store, adapter, run.id,
+  workspace: [
+    enabled: true,
+    path: "/path/to/workspace",
+    strategy: :auto,
+    capture_patch: true,
+    max_patch_bytes: 1_048_576,
+    rollback_on_failure: false
+  ]
+)
+```
+
+When enabled, `SessionManager` takes pre/post snapshots, computes diffs,
+emits workspace events, and enriches run metadata with compact diff summaries.
+MVP rollback is git-only. Requesting `rollback_on_failure: true` with hash backend
+returns a configuration error.
+
 ### Provider Adapters
 
 Adapters implement the `ProviderAdapter` behaviour to integrate with AI providers. Each adapter handles streaming, tool calls, and cancellation for its provider.
@@ -225,6 +265,8 @@ Each provider emits events in its own format. The adapters normalize these into 
 | `run_completed` | Execution finished |
 | `run_failed` | Execution failed |
 | `run_cancelled` | Execution cancelled |
+| `workspace_snapshot_taken` | Workspace snapshot captured |
+| `workspace_diff_computed` | Workspace diff summary computed |
 
 ## Error Handling
 
@@ -249,10 +291,14 @@ The `examples/` directory contains runnable scripts:
 mix run examples/cursor_pagination.exs --provider claude
 mix run examples/cursor_follow_stream.exs --provider codex
 
-# Default run-all mode executes cursor examples plus all live provider examples
+# Feature 2 and 3 examples
+mix run examples/session_continuity.exs --provider amp
+mix run examples/workspace_snapshot.exs --provider claude
+
+# Default run-all mode executes all examples for all providers
 bash examples/run_all.sh
 
-# Cursor examples plus a single live provider
+# All examples for a single live provider
 bash examples/run_all.sh --provider codex
 ```
 
@@ -267,8 +313,10 @@ The guides cover each subsystem in depth:
 - [Architecture](guides/architecture.md) -- Ports & adapters design, module map, data flow
 - [Configuration](guides/configuration.md) -- Layered config system, process-local overrides
 - [Sessions and Runs](guides/sessions_and_runs.md) -- Lifecycle state machines, metadata, context
+- [Session Continuity](guides/session_continuity.md) -- Transcript reconstruction, continuation options, adapter replay behavior
 - [Events and Streaming](guides/events_and_streaming.md) -- Event types, normalization, EventStream cursor
 - [Cursor Streaming and Migration](guides/cursor_streaming_and_migration.md) -- Sequence assignment, cursor APIs, and custom store migration
+- [Workspace Snapshots](guides/workspace_snapshots.md) -- Workspace options, snapshot/diff events, metadata, and rollback scope
 - [Provider Adapters](guides/provider_adapters.md) -- Using Claude/Codex adapters, writing your own
 - [Capabilities](guides/capabilities.md) -- Defining capabilities, negotiation, manifests, registry
 - [Concurrency](guides/concurrency.md) -- Session/run limits, slot management, control operations

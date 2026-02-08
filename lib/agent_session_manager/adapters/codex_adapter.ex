@@ -351,11 +351,13 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
   defp do_execute(state, run, session, opts, adapter_pid) do
     event_callback = Keyword.get(opts, :event_callback)
     reset_emitted_events()
+    prompt = build_prompt(run.input, session)
 
     # Build execution context
     ctx = %{
       run: run,
       session: session,
+      prompt: prompt,
       event_callback: event_callback,
       adapter_pid: adapter_pid,
       model: state.model,
@@ -390,8 +392,7 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
     with {:ok, codex_opts} <- build_codex_options(state),
          {:ok, thread_opts} <- build_thread_options(state),
          {:ok, thread} <- Codex.start_thread(codex_opts, thread_opts),
-         prompt = extract_prompt(ctx.run.input),
-         {:ok, streaming_result} <- Codex.Thread.run_streamed(thread, prompt, %{}) do
+         {:ok, streaming_result} <- Codex.Thread.run_streamed(thread, ctx.prompt, %{}) do
       # Notify the adapter about the streaming result for cancellation tracking
       GenServer.cast(ctx.adapter_pid, {:update_streaming_result, ctx.run.id, streaming_result})
 
@@ -435,6 +436,70 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
 
   defp extract_prompt(input), do: inspect(input)
 
+  defp build_prompt(input, session) do
+    transcript_prompt =
+      session
+      |> Map.get(:context, %{})
+      |> Map.get(:transcript)
+      |> transcript_to_prompt()
+
+    current_prompt = extract_prompt(input)
+
+    cond do
+      transcript_prompt == "" -> current_prompt
+      current_prompt == "" -> transcript_prompt
+      true -> transcript_prompt <> "\n\n" <> current_prompt
+    end
+  end
+
+  defp transcript_to_prompt(nil), do: ""
+
+  defp transcript_to_prompt(%{messages: messages}) when is_list(messages) do
+    messages
+    |> Enum.map(&format_transcript_message/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n")
+  end
+
+  defp transcript_to_prompt(_), do: ""
+
+  defp format_transcript_message(%{role: role, content: content}) when is_binary(content) do
+    "#{role_label(role)}: #{content}"
+  end
+
+  defp format_transcript_message(%{
+         role: :assistant,
+         tool_name: tool_name,
+         tool_call_id: tool_call_id,
+         tool_input: tool_input
+       })
+       when is_binary(tool_name) do
+    tool_id = if is_binary(tool_call_id), do: tool_call_id, else: "unknown"
+    input = if is_map(tool_input), do: inspect(tool_input), else: "{}"
+    "assistant_tool_call(#{tool_id}): #{tool_name} #{input}"
+  end
+
+  defp format_transcript_message(%{
+         role: :tool,
+         tool_name: tool_name,
+         tool_call_id: tool_call_id,
+         tool_output: tool_output
+       })
+       when is_binary(tool_name) do
+    tool_id = if is_binary(tool_call_id), do: tool_call_id, else: "unknown"
+    output = if is_nil(tool_output), do: "", else: inspect(tool_output)
+    "tool_result(#{tool_id}): #{tool_name} #{output}"
+  end
+
+  defp format_transcript_message(_), do: ""
+
+  defp role_label(:system), do: "system"
+  defp role_label(:user), do: "user"
+  defp role_label(:assistant), do: "assistant"
+  defp role_label(:tool), do: "tool"
+  defp role_label(role) when is_binary(role), do: role
+  defp role_label(_), do: "assistant"
+
   defp process_real_event_stream(events_stream, ctx, thread) do
     # Update context with thread_id once available
     ctx = Map.put(ctx, :thread_id, thread.thread_id)
@@ -465,7 +530,7 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
   end
 
   defp execute_with_mock_sdk(sdk_module, sdk_pid, ctx, _state) do
-    case sdk_module.run_streamed(sdk_pid, nil, ctx.run.input, []) do
+    case sdk_module.run_streamed(sdk_pid, nil, ctx.prompt, []) do
       {:ok, result} ->
         process_event_stream(sdk_module, result, ctx)
 

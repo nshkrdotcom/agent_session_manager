@@ -356,10 +356,12 @@ defmodule AgentSessionManager.Adapters.AmpAdapter do
   defp do_execute(state, run, session, opts, _adapter_pid) do
     event_callback = Keyword.get(opts, :event_callback)
     reset_emitted_events()
+    prompt = build_prompt(run.input, session)
 
     ctx = %{
       run: run,
       session: session,
+      prompt: prompt,
       event_callback: event_callback,
       accumulated_content: "",
       tool_calls: [],
@@ -378,8 +380,7 @@ defmodule AgentSessionManager.Adapters.AmpAdapter do
 
   defp execute_with_real_sdk(state, ctx) do
     options = build_amp_options(state)
-    prompt = extract_prompt(ctx.run.input)
-    events_stream = AmpSdk.execute(prompt, options)
+    events_stream = AmpSdk.execute(ctx.prompt, options)
 
     events_stream
     |> Enum.reduce_while(ctx, &process_single_message/2)
@@ -387,7 +388,7 @@ defmodule AgentSessionManager.Adapters.AmpAdapter do
   end
 
   defp execute_with_mock_sdk(sdk_module, sdk_pid, ctx, _state) do
-    events_stream = sdk_module.execute(sdk_pid, ctx.run.input, %{})
+    events_stream = sdk_module.execute(sdk_pid, ctx.prompt, %{})
 
     events_stream
     |> Enum.reduce_while(ctx, &process_single_message/2)
@@ -603,6 +604,70 @@ defmodule AgentSessionManager.Adapters.AmpAdapter do
   end
 
   defp extract_prompt(input), do: inspect(input)
+
+  defp build_prompt(input, session) do
+    transcript_prompt =
+      session
+      |> Map.get(:context, %{})
+      |> Map.get(:transcript)
+      |> transcript_to_prompt()
+
+    current_prompt = extract_prompt(input)
+
+    cond do
+      transcript_prompt == "" -> current_prompt
+      current_prompt == "" -> transcript_prompt
+      true -> transcript_prompt <> "\n\n" <> current_prompt
+    end
+  end
+
+  defp transcript_to_prompt(nil), do: ""
+
+  defp transcript_to_prompt(%{messages: messages}) when is_list(messages) do
+    messages
+    |> Enum.map(&format_transcript_message/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n")
+  end
+
+  defp transcript_to_prompt(_), do: ""
+
+  defp format_transcript_message(%{role: role, content: content}) when is_binary(content) do
+    "#{role_label(role)}: #{content}"
+  end
+
+  defp format_transcript_message(%{
+         role: :assistant,
+         tool_name: tool_name,
+         tool_call_id: tool_call_id,
+         tool_input: tool_input
+       })
+       when is_binary(tool_name) do
+    tool_id = if is_binary(tool_call_id), do: tool_call_id, else: "unknown"
+    input = if is_map(tool_input), do: inspect(tool_input), else: "{}"
+    "assistant_tool_call(#{tool_id}): #{tool_name} #{input}"
+  end
+
+  defp format_transcript_message(%{
+         role: :tool,
+         tool_name: tool_name,
+         tool_call_id: tool_call_id,
+         tool_output: tool_output
+       })
+       when is_binary(tool_name) do
+    tool_id = if is_binary(tool_call_id), do: tool_call_id, else: "unknown"
+    output = if is_nil(tool_output), do: "", else: inspect(tool_output)
+    "tool_result(#{tool_id}): #{tool_name} #{output}"
+  end
+
+  defp format_transcript_message(_), do: ""
+
+  defp role_label(:system), do: "system"
+  defp role_label(:user), do: "user"
+  defp role_label(:assistant), do: "assistant"
+  defp role_label(:tool), do: "tool"
+  defp role_label(role) when is_binary(role), do: role
+  defp role_label(_), do: "assistant"
 
   defp emit_event(ctx, type, data) do
     event = %{

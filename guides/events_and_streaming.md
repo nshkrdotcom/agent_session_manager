@@ -48,6 +48,12 @@ Events are grouped into categories:
 | `:token_usage_updated` | Token counts were updated |
 | `:turn_completed` | A conversation turn completed |
 
+### Workspace
+| Type | When |
+|------|------|
+| `:workspace_snapshot_taken` | A workspace snapshot was captured |
+| `:workspace_diff_computed` | A workspace diff summary was computed |
+
 ## Creating Events
 
 ```elixir

@@ -10,6 +10,8 @@ defmodule AgentSessionManager do
   - `AgentSessionManager.Core.Session` - Represents an AI agent session
   - `AgentSessionManager.Core.Run` - Represents a single execution run within a session
   - `AgentSessionManager.Core.Event` - Represents events in the session lifecycle
+  - `AgentSessionManager.Core.Transcript` - Provider-agnostic reconstructed conversation history
+  - `AgentSessionManager.Core.TranscriptBuilder` - Transcript reconstruction from events/store
   - `AgentSessionManager.Core.Capability` - Represents agent capabilities
   - `AgentSessionManager.Core.Manifest` - Represents an agent manifest
   - `AgentSessionManager.Core.CapabilityResolver` - Negotiates capabilities between requirements and providers

@@ -10,7 +10,7 @@ defmodule AgentSessionManager.SessionManagerTest do
 
   use AgentSessionManager.SupertesterCase, async: true
 
-  alias AgentSessionManager.Core.Capability
+  alias AgentSessionManager.Core.{Capability, Transcript}
   alias AgentSessionManager.SessionManager
 
   # ============================================================================
@@ -50,7 +50,9 @@ defmodule AgentSessionManager.SessionManagerTest do
         responses: Keyword.get(opts, :responses, %{}),
         fail_with: Keyword.get(opts, :fail_with),
         execute_count: 0,
-        cancelled_runs: []
+        cancelled_runs: [],
+        last_execute_session: nil,
+        last_execute_opts: []
       }
     end
 
@@ -83,8 +85,13 @@ defmodule AgentSessionManager.SessionManagerTest do
       {:reply, result, state}
     end
 
-    def handle_call({:execute, run, _session, opts}, _from, state) do
-      state = %{state | execute_count: state.execute_count + 1}
+    def handle_call({:execute, run, session, opts}, _from, state) do
+      state = %{
+        state
+        | execute_count: state.execute_count + 1,
+          last_execute_session: session,
+          last_execute_opts: opts
+      }
 
       result =
         case state.fail_with do
@@ -123,6 +130,14 @@ defmodule AgentSessionManager.SessionManagerTest do
 
     def handle_call(:get_cancelled_runs, _from, state) do
       {:reply, state.cancelled_runs, state}
+    end
+
+    def handle_call(:get_last_execute_session, _from, state) do
+      {:reply, state.last_execute_session, state}
+    end
+
+    def handle_call(:get_last_execute_opts, _from, state) do
+      {:reply, state.last_execute_opts, state}
     end
 
     def handle_call({:set_fail_with, error}, _from, state) do
@@ -242,6 +257,14 @@ defmodule AgentSessionManager.SessionManagerTest do
 
     def get_cancelled_runs(adapter) do
       GenServer.call(adapter, :get_cancelled_runs)
+    end
+
+    def get_last_execute_session(adapter) do
+      GenServer.call(adapter, :get_last_execute_session)
+    end
+
+    def get_last_execute_opts(adapter) do
+      GenServer.call(adapter, :get_last_execute_opts)
     end
 
     def set_fail_with(adapter, error) do
@@ -428,6 +451,54 @@ defmodule AgentSessionManager.SessionManagerTest do
       assert :run_completed in types
     end
 
+    test "persists message_sent events from run input messages before adapter events", %{
+      store: store,
+      adapter: adapter
+    } do
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+
+      {:ok, run} =
+        SessionManager.start_run(store, adapter, session.id, %{
+          messages: [%{role: "user", content: "Hello from user input"}]
+        })
+
+      {:ok, _} = SessionManager.execute_run(store, adapter, run.id)
+
+      {:ok, events} = SessionStore.get_events(store, session.id, run_id: run.id)
+
+      message_sent = Enum.find(events, &(&1.type == :message_sent))
+      run_started_index = Enum.find_index(events, &(&1.type == :run_started))
+      message_sent_index = Enum.find_index(events, &(&1.type == :message_sent))
+
+      assert message_sent != nil
+      assert message_sent.data.content == "Hello from user input"
+      assert message_sent.data.role in ["user", :user]
+      assert is_integer(message_sent_index)
+      assert is_integer(run_started_index)
+      assert message_sent_index < run_started_index
+    end
+
+    test "persists message_sent events from prompt input for continuity fallback", %{
+      store: store,
+      adapter: adapter
+    } do
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+
+      {:ok, run} =
+        SessionManager.start_run(store, adapter, session.id, %{prompt: "Prompt style input"})
+
+      {:ok, _} = SessionManager.execute_run(store, adapter, run.id)
+
+      {:ok, events} = SessionStore.get_events(store, session.id, run_id: run.id)
+      message_sent_events = Enum.filter(events, &(&1.type == :message_sent))
+
+      assert length(message_sent_events) == 1
+      assert hd(message_sent_events).data.content == "Prompt style input"
+      assert hd(message_sent_events).data.role in ["user", :user]
+    end
+
     test "normalizes alias event types from adapters", %{store: store, adapter: adapter} do
       MockAdapter.set_response(adapter, :execute, %{
         content: "Normalized response",
@@ -490,6 +561,91 @@ defmodule AgentSessionManager.SessionManagerTest do
 
       {:ok, events} = SessionStore.get_events(store, session.id, run_id: run.id)
       assert Enum.any?(events, &(&1.type == :run_failed))
+    end
+
+    test "injects transcript into session context when continuation is enabled", %{
+      store: store,
+      adapter: adapter
+    } do
+      MockAdapter.set_response(adapter, :execute, %{content: "first reply"})
+
+      {:ok, session} =
+        SessionManager.start_session(store, adapter, %{
+          agent_id: "test-agent",
+          context: %{system_prompt: "be concise"}
+        })
+
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+
+      {:ok, run_1} = SessionManager.start_run(store, adapter, session.id, %{prompt: "first"})
+      {:ok, _} = SessionManager.execute_run(store, adapter, run_1.id)
+
+      {:ok, run_2} = SessionManager.start_run(store, adapter, session.id, %{prompt: "second"})
+      {:ok, _} = SessionManager.execute_run(store, adapter, run_2.id, continuation: true)
+
+      execute_session = MockAdapter.get_last_execute_session(adapter)
+
+      assert execute_session.context.system_prompt == "be concise"
+      assert %Transcript{} = execute_session.context.transcript
+
+      assert Enum.any?(execute_session.context.transcript.messages, fn message ->
+               message.role == :assistant and message.content == "first reply"
+             end)
+
+      assert Enum.any?(execute_session.context.transcript.messages, fn message ->
+               message.role == :user and message.content == "first"
+             end)
+    end
+
+    test "does not inject transcript when continuation is disabled", %{
+      store: store,
+      adapter: adapter
+    } do
+      {:ok, session} =
+        SessionManager.start_session(store, adapter, %{
+          agent_id: "test-agent",
+          context: %{system_prompt: "be concise"}
+        })
+
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+      {:ok, run} = SessionManager.start_run(store, adapter, session.id, %{prompt: "hello"})
+
+      {:ok, _} = SessionManager.execute_run(store, adapter, run.id, continuation: false)
+
+      execute_session = MockAdapter.get_last_execute_session(adapter)
+      assert execute_session.context.system_prompt == "be concise"
+      refute Map.has_key?(execute_session.context, :transcript)
+    end
+
+    test "forwards adapter_opts to ProviderAdapter.execute/4 and keeps user callback", %{
+      store: store,
+      adapter: adapter
+    } do
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+      {:ok, run} = SessionManager.start_run(store, adapter, session.id, %{prompt: "Hello"})
+
+      test_pid = self()
+
+      callback = fn event_data ->
+        send(test_pid, {:user_event, event_data.type})
+      end
+
+      {:ok, _} =
+        SessionManager.execute_run(store, adapter, run.id,
+          event_callback: callback,
+          adapter_opts: [timeout: 12_345, custom_flag: :enabled]
+        )
+
+      execute_opts = MockAdapter.get_last_execute_opts(adapter)
+
+      assert execute_opts[:timeout] == 12_345
+      assert execute_opts[:custom_flag] == :enabled
+      assert is_function(execute_opts[:event_callback], 1)
+
+      assert_received {:user_event, :run_started}
+      assert_received {:user_event, :message_received}
+      assert_received {:user_event, :run_completed}
     end
   end
 
@@ -780,9 +936,9 @@ defmodule AgentSessionManager.SessionManagerTest do
       assert Enum.all?(streamed_events, &(&1.sequence_number > cursor))
 
       assert Enum.map(streamed_events, & &1.type) == [
+               :message_sent,
                :run_started,
-               :message_received,
-               :run_completed
+               :message_received
              ]
     end
   end

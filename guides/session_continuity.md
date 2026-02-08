@@ -50,6 +50,8 @@ Tool call ID normalization:
 tool_call_id = data[:tool_call_id] || data[:tool_use_id] || data[:call_id]
 ```
 
+`tool_call_id` is now emitted canonically by all built-in adapters; the fallback fields support legacy events.
+
 ## `execute_run/4` Continuation Options
 
 Continuity is opt-in:

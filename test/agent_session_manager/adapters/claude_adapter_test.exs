@@ -495,7 +495,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
 
       tool_event = hd(tool_started)
       assert tool_event.data.tool_name == "get_weather"
-      assert tool_event.data.tool_use_id != nil
+      assert tool_event.data.tool_call_id != nil
 
       Task.await(task)
     end
@@ -528,7 +528,8 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
 
       tool_event = hd(tool_completed)
       assert tool_event.data.tool_name == "get_weather"
-      assert tool_event.data.input == %{"location" => "San Francisco"}
+      assert tool_event.data.tool_call_id != nil
+      assert tool_event.data.tool_input == %{"location" => "San Francisco"}
 
       Task.await(task)
     end
@@ -1318,7 +1319,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
       started = Enum.find(events, &(&1.type == :tool_call_started))
       assert started != nil
       assert started.data.tool_name == "read_file"
-      assert started.data.tool_use_id == "toolu_test_abc123"
+      assert started.data.tool_call_id == "toolu_test_abc123"
     end
 
     test "emits tool_call_completed event", %{
@@ -1340,7 +1341,8 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
       completed = Enum.find(events, &(&1.type == :tool_call_completed))
       assert completed != nil
       assert completed.data.tool_name == "read_file"
-      assert completed.data.input == %{"path" => "/test/file.txt"}
+      assert completed.data.tool_call_id == "toolu_test_abc123"
+      assert completed.data.tool_input == %{"path" => "/test/file.txt"}
     end
 
     test "includes tool_calls in result output", %{

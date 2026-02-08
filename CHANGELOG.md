@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-02-07
+
+### Changed
+
+- **Canonical tool event payloads** across all three adapters (Claude, Codex, Amp)
+  - All `tool_call_started`, `tool_call_completed`, and `tool_call_failed` events now emit canonical keys: `tool_call_id`, `tool_name`, `tool_input`, and `tool_output`
+  - Provider-native aliases (`call_id`, `tool_use_id`, `arguments`, `input`, `output`, `content`) are still emitted alongside canonical keys for backward compatibility
+  - `normalize_tool_input/1` helper added to each adapter to guarantee `tool_input` is always a map
+  - `find_tool_call/2` helper added to AmpAdapter to enrich `tool_call_completed` and `tool_call_failed` events with `tool_name` and `tool_input` from the originating tool call
+
+### Documentation
+
+- Update `guides/provider_adapters.md` with canonical tool event payload reference
+- Update `guides/session_continuity.md` with `tool_call_id` normalization note
+- Bump installation snippets in `README.md` and `guides/getting_started.md` to `~> 0.5.1`
+
 ## [0.5.0] - 2026-02-07
 
 ### Added
@@ -202,7 +218,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic project structure with mix.exs configuration
 - Project logo and assets
 
-[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.3.0...v0.4.0

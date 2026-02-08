@@ -271,7 +271,7 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
       assert :tool_call_completed in event_types
     end
 
-    test "tool_call_started includes tool name and arguments" do
+    test "tool_call_started includes canonical tool fields" do
       {:ok, adapter} =
         start_test_adapter(
           scenario: :with_tool_call,
@@ -295,10 +295,11 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
 
       assert tool_started != nil
       assert tool_started.data.tool_name == "write_file"
-      assert tool_started.data.call_id != nil
+      assert tool_started.data.tool_call_id != nil
+      assert tool_started.data.tool_input == %{"path" => "/output.txt", "content" => "Hello"}
     end
 
-    test "tool_call_completed includes output" do
+    test "tool_call_completed includes canonical tool output fields" do
       {:ok, adapter} =
         start_test_adapter(
           scenario: :with_tool_call,
@@ -320,7 +321,8 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
       tool_completed = Enum.find(events, &(&1.type == :tool_call_completed))
 
       assert tool_completed != nil
-      assert tool_completed.data.output["result"] == "file written successfully"
+      assert tool_completed.data.tool_call_id != nil
+      assert tool_completed.data.tool_output["result"] == "file written successfully"
     end
 
     test "result includes tool_calls in output" do

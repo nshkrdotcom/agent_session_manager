@@ -467,9 +467,13 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
   end
 
   defp handle_streaming_event(%{type: :tool_use_start} = event, ctx) do
+    tool_input = normalize_tool_input(event[:input])
+
     emit_event(ctx, :tool_call_started, %{
+      tool_call_id: event[:id],
       tool_use_id: event[:id],
-      tool_name: event[:name]
+      tool_name: event[:name],
+      tool_input: tool_input
     })
 
     {:cont, ctx}
@@ -714,15 +718,21 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
 
     # Emit tool call events
     Enum.each(tool_calls, fn tool_call ->
+      tool_input = normalize_tool_input(tool_call.input)
+
       emit_event(ctx, :tool_call_started, %{
+        tool_call_id: tool_call.id,
         tool_use_id: tool_call.id,
         tool_name: tool_call.name,
+        tool_input: tool_input,
         arguments: tool_call.input
       })
 
       emit_event(ctx, :tool_call_completed, %{
+        tool_call_id: tool_call.id,
         tool_use_id: tool_call.id,
         tool_name: tool_call.name,
+        tool_input: tool_input,
         input: tool_call.input
       })
     end)
@@ -1017,8 +1027,10 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
       "tool_use" ->
         # Emit tool_call_started
         emit_event(ctx, :tool_call_started, %{
+          tool_call_id: content_block.id,
           tool_use_id: content_block.id,
           tool_name: content_block.name,
+          tool_input: %{},
           index: index
         })
 
@@ -1059,8 +1071,10 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
 
         # Emit tool_call_completed
         emit_event(ctx, :tool_call_completed, %{
+          tool_call_id: tool_block.id,
           tool_use_id: tool_block.id,
           tool_name: tool_block.name,
+          tool_input: normalize_tool_input(input),
           input: input,
           index: index
         })
@@ -1221,6 +1235,9 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
     |> Process.get([])
     |> Enum.reverse()
   end
+
+  defp normalize_tool_input(input) when is_map(input), do: input
+  defp normalize_tool_input(_), do: %{}
 
   defp build_capabilities do
     [

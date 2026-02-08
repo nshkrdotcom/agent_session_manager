@@ -310,7 +310,7 @@ defmodule AgentSessionManager.Adapters.AmpAdapterTest do
       assert :tool_call_completed in event_types
     end
 
-    test "tool_call_started includes tool name and id" do
+    test "tool_call_started includes canonical tool fields" do
       {:ok, adapter} =
         start_test_adapter(
           scenario: :with_tool_call,
@@ -335,11 +335,11 @@ defmodule AgentSessionManager.Adapters.AmpAdapterTest do
 
       assert tool_started != nil
       assert tool_started.data.tool_name == "write_file"
-      assert tool_started.data.call_id == "tool-use-42"
-      assert tool_started.data.input == %{"path" => "/output.txt", "content" => "Hello"}
+      assert tool_started.data.tool_call_id == "tool-use-42"
+      assert tool_started.data.tool_input == %{"path" => "/output.txt", "content" => "Hello"}
     end
 
-    test "tool_call_completed includes tool_use_id and content" do
+    test "tool_call_completed includes canonical tool output fields" do
       {:ok, adapter} =
         start_test_adapter(
           scenario: :with_tool_call,
@@ -362,8 +362,8 @@ defmodule AgentSessionManager.Adapters.AmpAdapterTest do
       tool_completed = Enum.find(events, &(&1.type == :tool_call_completed))
 
       assert tool_completed != nil
-      assert tool_completed.data.tool_use_id == "tool-use-99"
-      assert tool_completed.data.content == "file written successfully"
+      assert tool_completed.data.tool_call_id == "tool-use-99"
+      assert tool_completed.data.tool_output == "file written successfully"
     end
 
     test "tool_call_failed when tool result has is_error: true" do
@@ -387,8 +387,12 @@ defmodule AgentSessionManager.Adapters.AmpAdapterTest do
 
       events = collect_events()
       event_types = Enum.map(events, & &1.type)
+      tool_failed = Enum.find(events, &(&1.type == :tool_call_failed))
 
       assert :tool_call_failed in event_types
+      assert tool_failed != nil
+      assert is_binary(tool_failed.data.tool_call_id)
+      assert tool_failed.data.tool_output == "Permission denied"
     end
 
     test "result includes tool_calls in output" do

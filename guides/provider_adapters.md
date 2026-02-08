@@ -2,6 +2,17 @@
 
 Provider adapters are the bridge between AgentSessionManager's core logic and external AI providers. Each adapter implements the `ProviderAdapter` behaviour, translating provider-specific APIs into the normalized interface the rest of the system expects.
 
+## Canonical Tool Event Payloads
+
+Across all built-in adapters, tool call events now include canonical keys:
+
+- `tool_call_id`
+- `tool_name`
+- `tool_input` (for `:tool_call_started`, and when available on completion/failure)
+- `tool_output` (for `:tool_call_completed` / `:tool_call_failed`)
+
+Provider-native aliases such as `call_id`, `tool_use_id`, `arguments`, `input`, and `output` are still emitted for backward compatibility.
+
 ## Built-In Adapters
 
 ### ClaudeAdapter (Anthropic)

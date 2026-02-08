@@ -705,9 +705,13 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
   end
 
   defp handle_codex_event(%Events.ToolCallRequested{} = event, ctx) do
+    tool_input = normalize_tool_input(event.arguments)
+
     emit_event(ctx, :tool_call_started, %{
+      tool_call_id: event.call_id,
       call_id: event.call_id,
       tool_name: event.tool_name,
+      tool_input: tool_input,
       arguments: event.arguments,
       thread_id: event.thread_id,
       turn_id: event.turn_id
@@ -718,8 +722,10 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
 
   defp handle_codex_event(%Events.ToolCallCompleted{} = event, ctx) do
     emit_event(ctx, :tool_call_completed, %{
+      tool_call_id: event.call_id,
       call_id: event.call_id,
       tool_name: event.tool_name,
+      tool_output: event.output,
       output: event.output,
       thread_id: event.thread_id,
       turn_id: event.turn_id
@@ -863,6 +869,9 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
     |> Process.get([])
     |> Enum.reverse()
   end
+
+  defp normalize_tool_input(arguments) when is_map(arguments), do: arguments
+  defp normalize_tool_input(_), do: %{}
 
   defp build_capabilities do
     [

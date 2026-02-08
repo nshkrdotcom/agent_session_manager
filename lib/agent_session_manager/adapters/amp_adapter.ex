@@ -535,16 +535,20 @@ defmodule AgentSessionManager.Adapters.AmpAdapter do
   end
 
   defp handle_content_block(%ToolUseContent{} = tool, _payload, ctx) do
+    tool_input = normalize_tool_input(tool.input)
+
     emit_event(ctx, :tool_call_started, %{
+      tool_call_id: tool.id,
       call_id: tool.id,
       tool_name: tool.name,
+      tool_input: tool_input,
       input: tool.input
     })
 
     tool_call = %{
       id: tool.id,
       name: tool.name,
-      input: tool.input
+      input: tool_input
     }
 
     %{ctx | tool_calls: ctx.tool_calls ++ [tool_call]}
@@ -553,8 +557,14 @@ defmodule AgentSessionManager.Adapters.AmpAdapter do
   defp handle_content_block(_other, _payload, ctx), do: ctx
 
   defp handle_user_content_block(%ToolResultContent{is_error: true} = result, ctx) do
+    tool_call = find_tool_call(ctx.tool_calls, result.tool_use_id)
+
     emit_event(ctx, :tool_call_failed, %{
+      tool_call_id: result.tool_use_id,
       tool_use_id: result.tool_use_id,
+      tool_name: tool_call && tool_call.name,
+      tool_input: (tool_call && tool_call.input) || %{},
+      tool_output: result.content,
       content: result.content,
       is_error: true
     })
@@ -563,8 +573,14 @@ defmodule AgentSessionManager.Adapters.AmpAdapter do
   end
 
   defp handle_user_content_block(%ToolResultContent{is_error: false} = result, ctx) do
+    tool_call = find_tool_call(ctx.tool_calls, result.tool_use_id)
+
     emit_event(ctx, :tool_call_completed, %{
+      tool_call_id: result.tool_use_id,
       tool_use_id: result.tool_use_id,
+      tool_name: tool_call && tool_call.name,
+      tool_input: (tool_call && tool_call.input) || %{},
+      tool_output: result.content,
       content: result.content
     })
 
@@ -715,6 +731,16 @@ defmodule AgentSessionManager.Adapters.AmpAdapter do
     |> Process.get([])
     |> Enum.reverse()
   end
+
+  defp normalize_tool_input(input) when is_map(input), do: input
+  defp normalize_tool_input(_), do: %{}
+
+  defp find_tool_call(tool_calls, tool_call_id)
+       when is_list(tool_calls) and is_binary(tool_call_id) do
+    Enum.find(tool_calls, &(&1.id == tool_call_id))
+  end
+
+  defp find_tool_call(_tool_calls, _tool_call_id), do: nil
 
   defp build_capabilities do
     [

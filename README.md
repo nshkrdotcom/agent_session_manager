@@ -28,6 +28,8 @@ AgentSessionManager provides the infrastructure layer for building applications 
 - **Cursor-backed event streaming** -- Monotonic per-session sequence numbers with durable cursor queries (`after` / `before`)
 - **Session continuity** -- Provider-agnostic transcript reconstruction and optional cross-run context replay
 - **Workspace snapshots** -- Optional pre/post snapshots, diff summaries, patch capture caps, and git-only rollback on failure
+- **Provider routing** -- Router-as-adapter with capability-based selection, policy ordering, and retryable failover
+- **Policy enforcement** -- Real-time budget/tool governance with cancel or warn actions and `:policy_violation` events
 - **Capability negotiation** -- Declare required and optional capabilities; the resolver checks provider support before execution
 - **Concurrency controls** -- Configurable limits on parallel sessions and runs with slot-based tracking
 - **Observability** -- Telemetry integration, audit logging, and append-only event stores
@@ -230,6 +232,67 @@ emits workspace events, and enriches run metadata with compact diff summaries.
 MVP rollback is git-only. Requesting `rollback_on_failure: true` with hash backend
 returns a configuration error.
 
+### Provider Routing
+
+`ProviderRouter` is a normal `ProviderAdapter`, so no `SessionManager` branching is required.
+
+```elixir
+alias AgentSessionManager.Routing.ProviderRouter
+
+{:ok, router} =
+  ProviderRouter.start_link(
+    policy: [prefer: ["amp", "codex", "claude"], max_attempts: 3],
+    cooldown_ms: 30_000
+  )
+
+:ok = ProviderRouter.register_adapter(router, "claude", claude_adapter)
+:ok = ProviderRouter.register_adapter(router, "codex", codex_adapter)
+:ok = ProviderRouter.register_adapter(router, "amp", amp_adapter)
+
+{:ok, result} =
+  SessionManager.execute_run(store, router, run.id,
+    adapter_opts: [
+      routing: [
+        required_capabilities: [%{type: :tool, name: "bash"}]
+      ]
+    ]
+  )
+```
+
+MVP health/failover behavior:
+
+- tracks consecutive failures and last failure time per adapter
+- applies cooldown-based temporary skipping
+- retries/fails over only for retryable errors (`Error.retryable?/1`)
+- routes `cancel/2` to the adapter currently handling the active run
+
+### Policy Enforcement
+
+Policy enforcement is opt-in per execution:
+
+```elixir
+alias AgentSessionManager.Policy.Policy
+
+{:ok, policy} =
+  Policy.new(
+    name: "production",
+    limits: [{:max_total_tokens, 8_000}, {:max_duration_ms, 120_000}],
+    tool_rules: [{:deny, ["bash"]}],
+    on_violation: :cancel
+  )
+
+{:ok, result} =
+  SessionManager.execute_run(store, adapter, run.id, policy: policy)
+```
+
+Behavior:
+
+- violations emit `:policy_violation` events
+- `on_violation: :cancel` triggers one cancellation request and returns
+  `{:error, %Error{code: :policy_violation}}` even if provider returned success
+- `on_violation: :warn` preserves success and returns violation metadata in `result.policy`
+- cost limits (`{:max_cost_usd, ...}`) are optional and use configured provider token rates
+
 ### Provider Adapters
 
 Adapters implement the `ProviderAdapter` behaviour to integrate with AI providers. Each adapter handles streaming, tool calls, and cancellation for its provider.
@@ -267,6 +330,7 @@ Each provider emits events in its own format. The adapters normalize these into 
 | `run_cancelled` | Execution cancelled |
 | `workspace_snapshot_taken` | Workspace snapshot captured |
 | `workspace_diff_computed` | Workspace diff summary computed |
+| `policy_violation` | Policy violation detected |
 
 ## Error Handling
 
@@ -295,6 +359,10 @@ mix run examples/cursor_follow_stream.exs --provider codex
 mix run examples/session_continuity.exs --provider amp
 mix run examples/workspace_snapshot.exs --provider claude
 
+# Feature 4 and 5 examples
+mix run examples/provider_routing.exs --provider codex
+mix run examples/policy_enforcement.exs --provider claude
+
 # Default run-all mode executes all examples for all providers
 bash examples/run_all.sh
 
@@ -317,6 +385,8 @@ The guides cover each subsystem in depth:
 - [Events and Streaming](guides/events_and_streaming.md) -- Event types, normalization, EventStream cursor
 - [Cursor Streaming and Migration](guides/cursor_streaming_and_migration.md) -- Sequence assignment, cursor APIs, and custom store migration
 - [Workspace Snapshots](guides/workspace_snapshots.md) -- Workspace options, snapshot/diff events, metadata, and rollback scope
+- [Provider Routing](guides/provider_routing.md) -- Router-as-adapter setup, capability matching, health, failover, cancel routing
+- [Policy Enforcement](guides/policy_enforcement.md) -- Policy model, runtime enforcement, final result semantics, cost checks
 - [Provider Adapters](guides/provider_adapters.md) -- Using Claude/Codex adapters, writing your own
 - [Capabilities](guides/capabilities.md) -- Defining capabilities, negotiation, manifests, registry
 - [Concurrency](guides/concurrency.md) -- Session/run limits, slot management, control operations

@@ -114,6 +114,10 @@ defmodule AgentSessionManager.Core.EventTest do
       end
     end
 
+    test "policy violation events are valid" do
+      assert Event.valid_type?(:policy_violation)
+    end
+
     test "invalid event types are rejected" do
       refute Event.valid_type?(:invalid_event_type)
       refute Event.valid_type?(:unknown)
@@ -130,6 +134,7 @@ defmodule AgentSessionManager.Core.EventTest do
       assert :message_sent in types
       assert :tool_call_started in types
       assert :error_occurred in types
+      assert :policy_violation in types
     end
   end
 

@@ -78,6 +78,8 @@ defmodule AgentSessionManager.MixProject do
         "guides/events_and_streaming.md",
         "guides/cursor_streaming_and_migration.md",
         "guides/workspace_snapshots.md",
+        "guides/provider_routing.md",
+        "guides/policy_enforcement.md",
         "guides/provider_adapters.md",
         "guides/capabilities.md",
         "guides/concurrency.md",
@@ -101,6 +103,8 @@ defmodule AgentSessionManager.MixProject do
           "guides/events_and_streaming.md",
           "guides/cursor_streaming_and_migration.md",
           "guides/workspace_snapshots.md",
+          "guides/provider_routing.md",
+          "guides/policy_enforcement.md",
           "guides/capabilities.md"
         ],
         Integration: [
@@ -138,7 +142,15 @@ defmodule AgentSessionManager.MixProject do
           AgentSessionManager.Core.Registry
         ],
         Orchestration: [
-          AgentSessionManager.SessionManager
+          AgentSessionManager.SessionManager,
+          AgentSessionManager.Routing.ProviderRouter
+        ],
+        "Routing and Policy": [
+          AgentSessionManager.Routing.RoutingPolicy,
+          AgentSessionManager.Routing.CapabilityMatcher,
+          AgentSessionManager.Policy.Policy,
+          AgentSessionManager.Policy.Evaluator,
+          AgentSessionManager.Policy.Runtime
         ],
         "Ports (Interfaces)": [
           AgentSessionManager.Ports.ProviderAdapter,

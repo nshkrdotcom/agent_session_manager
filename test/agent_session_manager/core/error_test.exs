@@ -157,6 +157,10 @@ defmodule AgentSessionManager.Core.ErrorTest do
       assert Error.valid_code?(:cancelled)
     end
 
+    test "policy_violation is a valid code" do
+      assert Error.valid_code?(:policy_violation)
+    end
+
     test "internal_error is a valid code" do
       assert Error.valid_code?(:internal_error)
     end

@@ -8,6 +8,8 @@ Cursor examples are also available and use real provider execution:
 - `examples/cursor_follow_stream.exs --provider <claude|codex|amp>`
 - `examples/session_continuity.exs --provider <claude|codex|amp>`
 - `examples/workspace_snapshot.exs --provider <claude|codex|amp>`
+- `examples/provider_routing.exs --provider <claude|codex|amp>`
+- `examples/policy_enforcement.exs --provider <claude|codex|amp>`
 
 ## Authentication
 
@@ -38,6 +40,16 @@ mix run examples/session_continuity.exs --provider amp
 mix run examples/workspace_snapshot.exs --provider claude
 mix run examples/workspace_snapshot.exs --provider codex
 mix run examples/workspace_snapshot.exs --provider amp
+
+# Provider routing (Feature 4)
+mix run examples/provider_routing.exs --provider claude
+mix run examples/provider_routing.exs --provider codex
+mix run examples/provider_routing.exs --provider amp
+
+# Policy enforcement (Feature 5)
+mix run examples/policy_enforcement.exs --provider claude
+mix run examples/policy_enforcement.exs --provider codex
+mix run examples/policy_enforcement.exs --provider amp
 
 # Existing live lifecycle examples
 mix run examples/oneshot.exs --provider claude

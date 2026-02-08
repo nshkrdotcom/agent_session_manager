@@ -100,6 +100,14 @@ for p in "${PROVIDERS[@]}"; do
   PLAN_FILES+=("examples/workspace_snapshot.exs")
   PLAN_ARGS+=("--provider $p")
 
+  PLAN_NAMES+=("Provider Routing ($label)")
+  PLAN_FILES+=("examples/provider_routing.exs")
+  PLAN_ARGS+=("--provider $p")
+
+  PLAN_NAMES+=("Policy Enforcement ($label)")
+  PLAN_FILES+=("examples/policy_enforcement.exs")
+  PLAN_ARGS+=("--provider $p")
+
   PLAN_NAMES+=("One-Shot ($label)")
   PLAN_FILES+=("examples/oneshot.exs")
   PLAN_ARGS+=("--provider $p")

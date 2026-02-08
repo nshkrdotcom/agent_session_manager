@@ -46,6 +46,9 @@ defmodule AgentSessionManager.Core.Event do
   - `:workspace_snapshot_taken` - Workspace snapshot was taken
   - `:workspace_diff_computed` - Workspace diff was computed
 
+  ### Policy Events
+  - `:policy_violation` - Policy violation was detected during execution
+
   ## Usage
 
       # Create an event
@@ -115,13 +118,19 @@ defmodule AgentSessionManager.Core.Event do
     :workspace_diff_computed
   ]
 
+  # Policy events
+  @policy_events [
+    :policy_violation
+  ]
+
   @all_types @session_events ++
                @run_events ++
                @message_events ++
                @tool_events ++
                @error_events ++
                @usage_events ++
-               @workspace_events
+               @workspace_events ++
+               @policy_events
 
   @type event_type ::
           :session_created
@@ -148,6 +157,7 @@ defmodule AgentSessionManager.Core.Event do
           | :turn_completed
           | :workspace_snapshot_taken
           | :workspace_diff_computed
+          | :policy_violation
 
   @type t :: %__MODULE__{
           id: String.t() | nil,
@@ -219,6 +229,12 @@ defmodule AgentSessionManager.Core.Event do
   """
   @spec workspace_events() :: [event_type()]
   def workspace_events, do: @workspace_events
+
+  @doc """
+  Returns policy event types.
+  """
+  @spec policy_events() :: [event_type()]
+  def policy_events, do: @policy_events
 
   @doc """
   Creates a new event with the given attributes.

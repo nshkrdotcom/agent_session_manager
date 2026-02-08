@@ -63,6 +63,7 @@ defmodule AgentSessionManager.SessionManager do
     TranscriptBuilder
   }
 
+  alias AgentSessionManager.Policy.{Policy, Runtime}
   alias AgentSessionManager.Ports.{ProviderAdapter, SessionStore}
   alias AgentSessionManager.Telemetry
   alias AgentSessionManager.Workspace.{Diff, Snapshot, Workspace}
@@ -260,6 +261,8 @@ defmodule AgentSessionManager.SessionManager do
     (for example: `:limit`, `:after`, `:since`, `:max_messages`).
   - `:adapter_opts` - Additional adapter-specific options passed through to
     `ProviderAdapter.execute/4`.
+  - `:policy` - Policy definition (`%AgentSessionManager.Policy.Policy{}` or attributes)
+    for runtime budget/tool enforcement.
   - `:workspace` - Workspace snapshot/diff options:
     `enabled`, `path`, `strategy`, `capture_patch`, `max_patch_bytes`,
     and `rollback_on_failure` (git backend only in MVP).
@@ -302,6 +305,7 @@ defmodule AgentSessionManager.SessionManager do
   - `:continuation` - Enable transcript reconstruction and continuity replay
   - `:continuation_opts` - Transcript builder options
   - `:adapter_opts` - Adapter-specific passthrough options
+  - `:policy` - Policy definition for runtime budget/tool enforcement
   - `:workspace` - Workspace snapshot/diff options
   - `:required_capabilities` - Required capability types
   - `:optional_capabilities` - Optional capability types
@@ -342,6 +346,7 @@ defmodule AgentSessionManager.SessionManager do
       |> maybe_put_keyword(:continuation, Keyword.get(opts, :continuation))
       |> maybe_put_keyword(:continuation_opts, Keyword.get(opts, :continuation_opts))
       |> maybe_put_keyword(:adapter_opts, Keyword.get(opts, :adapter_opts))
+      |> maybe_put_keyword(:policy, Keyword.get(opts, :policy))
       |> maybe_put_keyword(:workspace, Keyword.get(opts, :workspace))
 
     with {:ok, session} <- start_session(store, adapter, session_attrs),
@@ -492,15 +497,27 @@ defmodule AgentSessionManager.SessionManager do
 
     with {:ok, execution_session} <- maybe_attach_transcript(store, session, opts),
          {:ok, workspace_state} <- maybe_prepare_workspace(store, run, opts),
-         :ok <- persist_input_messages(store, run) do
-      event_callback = build_event_callback(store, run, execution_session, user_callback)
+         :ok <- persist_input_messages(store, run),
+         {:ok, policy_runtime} <- maybe_start_policy_runtime(opts, provider_name, run.id) do
+      event_callback =
+        build_event_callback(
+          store,
+          run,
+          execution_session,
+          user_callback,
+          adapter,
+          policy_runtime
+        )
 
       adapter_opts =
         opts
         |> Keyword.get(:adapter_opts, [])
         |> Keyword.put(:event_callback, event_callback)
 
-      case ProviderAdapter.execute(adapter, run, execution_session, adapter_opts) do
+      provider_result =
+        ProviderAdapter.execute(adapter, run, execution_session, adapter_opts)
+
+      case apply_policy_result(provider_result, policy_runtime) do
         {:ok, result} ->
           finalize_provider_success(
             store,
@@ -520,17 +537,11 @@ defmodule AgentSessionManager.SessionManager do
     end
   end
 
-  defp build_event_callback(store, run, execution_session, nil) do
+  defp build_event_callback(store, run, execution_session, user_callback, adapter, policy_runtime) do
     fn event_data ->
       handle_adapter_event(store, run, execution_session, event_data)
-    end
-  end
-
-  defp build_event_callback(store, run, execution_session, user_callback)
-       when is_function(user_callback, 1) do
-    fn event_data ->
-      handle_adapter_event(store, run, execution_session, event_data)
-      user_callback.(event_data)
+      maybe_enforce_policy(store, run, adapter, policy_runtime, event_data)
+      maybe_invoke_user_callback(user_callback, event_data)
     end
   end
 
@@ -562,6 +573,105 @@ defmodule AgentSessionManager.SessionManager do
       {:error, workspace_error} ->
         finalize_failed_run(store, run, workspace_error, %{})
     end
+  end
+
+  defp maybe_start_policy_runtime(opts, provider_name, run_id) do
+    case Keyword.get(opts, :policy) do
+      nil ->
+        {:ok, nil}
+
+      policy_input ->
+        with {:ok, policy} <- normalize_policy(policy_input) do
+          Runtime.start_link(policy: policy, provider: provider_name, run_id: run_id)
+        end
+    end
+  end
+
+  defp normalize_policy(%Policy{} = policy), do: {:ok, policy}
+  defp normalize_policy(policy_input), do: Policy.new(policy_input)
+
+  defp apply_policy_result(provider_result, nil), do: provider_result
+
+  defp apply_policy_result(provider_result, policy_runtime) do
+    policy_status = Runtime.status(policy_runtime)
+    stop_policy_runtime(policy_runtime)
+
+    cond do
+      policy_status.violated? and policy_status.action == :cancel ->
+        {:error, policy_violation_error(policy_status)}
+
+      policy_status.violated? and policy_status.action == :warn ->
+        case provider_result do
+          {:ok, result} ->
+            policy_metadata = %{
+              action: :warn,
+              violations: policy_status.violations,
+              metadata: policy_status.metadata
+            }
+
+            {:ok, Map.put(result, :policy, policy_metadata)}
+
+          other ->
+            other
+        end
+
+      true ->
+        provider_result
+    end
+  end
+
+  defp stop_policy_runtime(policy_runtime) do
+    if Process.alive?(policy_runtime) do
+      GenServer.stop(policy_runtime, :normal)
+    else
+      :ok
+    end
+  catch
+    :exit, _ -> :ok
+  end
+
+  defp policy_violation_error(policy_status) do
+    Error.new(
+      :policy_violation,
+      "Policy violation triggered run cancellation",
+      details: %{
+        policy: policy_status.policy.name,
+        violations: policy_status.violations
+      }
+    )
+  end
+
+  defp maybe_enforce_policy(_store, _run, _adapter, nil, _event_data), do: :ok
+
+  defp maybe_enforce_policy(store, run, adapter, policy_runtime, event_data) do
+    case Runtime.observe_event(policy_runtime, event_data) do
+      {:ok, %{violations: violations, cancel?: cancel_now?}} ->
+        Enum.each(violations, fn violation ->
+          _ = emit_policy_violation_event(store, run, violation)
+        end)
+
+        if cancel_now? do
+          _ = ProviderAdapter.cancel(adapter, run.id)
+        end
+
+        :ok
+    end
+  end
+
+  defp emit_policy_violation_event(store, run, violation) do
+    emit_run_event(store, :policy_violation, run, %{
+      policy: violation.policy,
+      kind: violation.kind,
+      action: violation.action,
+      details: violation.details
+    })
+  end
+
+  defp maybe_invoke_user_callback(nil, _event_data), do: :ok
+
+  defp maybe_invoke_user_callback(user_callback, event_data) when is_function(user_callback, 1) do
+    user_callback.(event_data)
+    :ok
   end
 
   defp maybe_attach_transcript(store, session, opts) do

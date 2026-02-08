@@ -63,6 +63,37 @@ mix run examples/workspace_snapshot.exs --provider codex
 mix run examples/workspace_snapshot.exs --provider amp
 ```
 
+## Routing and Policy Examples
+
+These examples demonstrate Feature 4 and Feature 5 using live provider execution.
+
+### `provider_routing.exs` -- Provider Routing (Feature 4)
+
+- Configures `ProviderRouter` as a normal `ProviderAdapter`
+- Demonstrates capability-driven selection using named capability requirements
+- Demonstrates retryable failover by forcing preferred-provider unavailability
+- Prints routing metadata (`routed_provider`, `routing_attempt`, `failover_from`, `failover_reason`)
+
+```bash
+mix run examples/provider_routing.exs --provider claude
+mix run examples/provider_routing.exs --provider codex
+mix run examples/provider_routing.exs --provider amp
+```
+
+### `policy_enforcement.exs` -- Policy Enforcement (Feature 5)
+
+- Runs two executions with real providers:
+  - cancel mode (`on_violation: :cancel`)
+  - warn mode (`on_violation: :warn`)
+- Emits and verifies `:policy_violation` events
+- Demonstrates final result semantics (cancel returns policy error, warn preserves success with metadata)
+
+```bash
+mix run examples/policy_enforcement.exs --provider claude
+mix run examples/policy_enforcement.exs --provider codex
+mix run examples/policy_enforcement.exs --provider amp
+```
+
 ## Other Live Provider Examples
 
 ### `oneshot.exs` -- One-Shot Execution

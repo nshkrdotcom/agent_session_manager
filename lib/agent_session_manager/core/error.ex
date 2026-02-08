@@ -94,6 +94,7 @@ defmodule AgentSessionManager.Core.Error do
   @runtime_codes [
     :timeout,
     :cancelled,
+    :policy_violation,
     :internal_error,
     :unknown_error
   ]
@@ -164,6 +165,7 @@ defmodule AgentSessionManager.Core.Error do
     storage_read_failed: "Storage read operation failed",
     timeout: "Operation timed out",
     cancelled: "Operation was cancelled",
+    policy_violation: "Policy violation occurred",
     internal_error: "Internal error occurred",
     unknown_error: "An unknown error occurred",
     tool_error: "Tool error occurred",
@@ -209,6 +211,7 @@ defmodule AgentSessionManager.Core.Error do
           | :storage_read_failed
           | :timeout
           | :cancelled
+          | :policy_violation
           | :internal_error
           | :unknown_error
           | :tool_error

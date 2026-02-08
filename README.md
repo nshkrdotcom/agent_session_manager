@@ -25,6 +25,7 @@ AgentSessionManager provides the infrastructure layer for building applications 
 - **Session & run lifecycle** -- Create sessions, execute runs, and track state transitions with a well-defined state machine
 - **Multi-provider support** -- Built-in adapters for Claude Code (Anthropic), Codex, and Amp (Sourcegraph), with a behaviour for adding your own
 - **Streaming events** -- Normalized event pipeline that maps provider-specific events to a canonical format
+- **Cursor-backed event streaming** -- Monotonic per-session sequence numbers with durable cursor queries (`after` / `before`)
 - **Capability negotiation** -- Declare required and optional capabilities; the resolver checks provider support before execution
 - **Concurrency controls** -- Configurable limits on parallel sessions and runs with slot-based tracking
 - **Observability** -- Telemetry integration, audit logging, and append-only event stores
@@ -148,6 +149,47 @@ Events are immutable records of things that happen during execution. They provid
 })
 ```
 
+### Cursor-Backed Streaming
+
+Event sequence numbers are assigned at append time by the `SessionStore` implementation.
+This makes event ordering durable and resumable across processes.
+
+```elixir
+alias AgentSessionManager.Ports.SessionStore
+
+{:ok, stored_event} = SessionStore.append_event_with_sequence(store, event)
+stored_event.sequence_number
+# => 42
+
+{:ok, latest} = SessionStore.get_latest_sequence(store, session.id)
+# => 42
+```
+
+`SessionStore.get_events/3` supports cursor filters in addition to existing filters:
+
+```elixir
+# Cursor pagination
+{:ok, page_1} = SessionStore.get_events(store, session.id, limit: 50)
+cursor = List.last(page_1).sequence_number
+{:ok, page_2} = SessionStore.get_events(store, session.id, after: cursor, limit: 50)
+
+# Bounded window
+{:ok, window} = SessionStore.get_events(store, session.id, after: 100, before: 200)
+```
+
+For follow/poll consumption, use `SessionManager.stream_session_events/3`:
+
+```elixir
+stream =
+  SessionManager.stream_session_events(store, session.id,
+    after: 0,
+    limit: 100,
+    poll_interval_ms: 250
+  )
+
+Enum.take(stream, 10)
+```
+
 ### Provider Adapters
 
 Adapters implement the `ProviderAdapter` behaviour to integrate with AI providers. Each adapter handles streaming, tool calls, and cancellation for its provider.
@@ -203,34 +245,15 @@ Error codes are grouped into categories: validation, resource, provider, storage
 The `examples/` directory contains runnable scripts:
 
 ```bash
-# Run with live providers
-mix run examples/live_session.exs --provider claude
-mix run examples/live_session.exs --provider codex
+# Cursor examples (live providers)
+mix run examples/cursor_pagination.exs --provider claude
+mix run examples/cursor_follow_stream.exs --provider codex
 
-# One-shot execution (simplest example)
-mix run examples/oneshot.exs --provider claude
+# Default run-all mode executes cursor examples plus all live provider examples
+bash examples/run_all.sh
 
-# Provider-agnostic common surface (works with any provider)
-mix run examples/common_surface.exs --provider claude
-mix run examples/common_surface.exs --provider codex
-mix run examples/common_surface.exs --provider amp
-
-# Contract-surface verification (events + completion payload guarantees)
-mix run examples/contract_surface_live.exs --provider claude
-mix run examples/contract_surface_live.exs --provider codex
-mix run examples/contract_surface_live.exs --provider amp
-
-# Claude-specific SDK features (Orchestrator, Streaming, Hooks, Agent profiles)
-mix run examples/claude_direct.exs
-mix run examples/claude_direct.exs --section orchestrator
-
-# Codex-specific SDK features (Threads, Options, Sessions)
-mix run examples/codex_direct.exs
-mix run examples/codex_direct.exs --section threads
-
-# Amp-specific SDK features (Threads, Permissions, MCP, Modes)
-mix run examples/amp_direct.exs
-mix run examples/amp_direct.exs --section threads
+# Cursor examples plus a single live provider
+bash examples/run_all.sh --provider codex
 ```
 
 See `examples/README.md` for full documentation.
@@ -245,6 +268,7 @@ The guides cover each subsystem in depth:
 - [Configuration](guides/configuration.md) -- Layered config system, process-local overrides
 - [Sessions and Runs](guides/sessions_and_runs.md) -- Lifecycle state machines, metadata, context
 - [Events and Streaming](guides/events_and_streaming.md) -- Event types, normalization, EventStream cursor
+- [Cursor Streaming and Migration](guides/cursor_streaming_and_migration.md) -- Sequence assignment, cursor APIs, and custom store migration
 - [Provider Adapters](guides/provider_adapters.md) -- Using Claude/Codex adapters, writing your own
 - [Capabilities](guides/capabilities.md) -- Defining capabilities, negotiation, manifests, registry
 - [Concurrency](guides/concurrency.md) -- Session/run limits, slot management, control operations

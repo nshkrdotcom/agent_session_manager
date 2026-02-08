@@ -75,6 +75,7 @@ defmodule AgentSessionManager.MixProject do
         "guides/configuration.md",
         "guides/sessions_and_runs.md",
         "guides/events_and_streaming.md",
+        "guides/cursor_streaming_and_migration.md",
         "guides/provider_adapters.md",
         "guides/capabilities.md",
         "guides/concurrency.md",
@@ -95,6 +96,7 @@ defmodule AgentSessionManager.MixProject do
         "Core Concepts": [
           "guides/sessions_and_runs.md",
           "guides/events_and_streaming.md",
+          "guides/cursor_streaming_and_migration.md",
           "guides/capabilities.md"
         ],
         Integration: [

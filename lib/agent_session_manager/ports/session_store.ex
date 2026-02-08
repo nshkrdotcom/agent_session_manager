@@ -268,6 +268,25 @@ defmodule AgentSessionManager.Ports.SessionStore do
   @callback append_event(store(), Event.t()) :: :ok | {:error, Error.t()}
 
   @doc """
+  Appends an event and atomically assigns a per-session sequence number.
+
+  The returned event must include a non-nil `sequence_number`. Duplicate event IDs
+  must be handled idempotently and return the originally persisted event.
+
+  ## Parameters
+
+  - `store` - The store instance
+  - `event` - The event struct to append
+
+  ## Returns
+
+  - `{:ok, Event.t()}` on success
+  - `{:error, Error.t()}` on failure
+  """
+  @callback append_event_with_sequence(store(), Event.t()) ::
+              {:ok, Event.t()} | {:error, Error.t()}
+
+  @doc """
   Retrieves events for a session with optional filtering.
 
   Events are returned in append order (oldest first).
@@ -280,6 +299,8 @@ defmodule AgentSessionManager.Ports.SessionStore do
     - `:run_id` - Filter by run ID
     - `:type` - Filter by event type
     - `:since` - Events after this timestamp
+    - `:after` - Events with sequence number strictly greater than this value
+    - `:before` - Events with sequence number strictly less than this value
     - `:limit` - Maximum number of results
 
   ## Returns
@@ -294,6 +315,14 @@ defmodule AgentSessionManager.Ports.SessionStore do
 
   """
   @callback get_events(store(), session_id(), filter_opts()) :: {:ok, [Event.t()]}
+
+  @doc """
+  Gets the latest assigned event sequence number for a session.
+
+  Returns `0` when the session has no persisted events.
+  """
+  @callback get_latest_sequence(store(), session_id()) ::
+              {:ok, non_neg_integer()} | {:error, Error.t()}
 
   # ============================================================================
   # Default implementations via defdelegate-style functions
@@ -372,10 +401,28 @@ defmodule AgentSessionManager.Ports.SessionStore do
   end
 
   @doc """
+  Appends an event and returns the persisted event with assigned sequence_number.
+  """
+  @spec append_event_with_sequence(store(), Event.t()) ::
+          {:ok, Event.t()} | {:error, Error.t()}
+  def append_event_with_sequence(store, event) do
+    GenServer.call(store, {:append_event_with_sequence, event})
+  end
+
+  @doc """
   Gets events for a session with optional filtering.
   """
   @spec get_events(store(), session_id(), filter_opts()) :: {:ok, [Event.t()]}
   def get_events(store, session_id, opts \\ []) do
     GenServer.call(store, {:get_events, session_id, opts})
+  end
+
+  @doc """
+  Gets the highest assigned sequence number for the session, or `0` when empty.
+  """
+  @spec get_latest_sequence(store(), session_id()) ::
+          {:ok, non_neg_integer()} | {:error, Error.t()}
+  def get_latest_sequence(store, session_id) do
+    GenServer.call(store, {:get_latest_sequence, session_id})
   end
 end

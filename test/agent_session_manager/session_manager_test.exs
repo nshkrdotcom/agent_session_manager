@@ -670,6 +670,44 @@ defmodule AgentSessionManager.SessionManagerTest do
 
       assert Enum.all?(events, &(&1.run_id == run.id))
     end
+
+    test "persists sequence numbers for lifecycle and adapter events", %{
+      store: store,
+      adapter: adapter
+    } do
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+      {:ok, run} = SessionManager.start_run(store, adapter, session.id, %{prompt: "Hello"})
+      {:ok, _} = SessionManager.execute_run(store, adapter, run.id)
+      {:ok, _} = SessionManager.complete_session(store, session.id)
+
+      {:ok, events} = SessionManager.get_session_events(store, session.id)
+      sequences = Enum.map(events, & &1.sequence_number)
+
+      assert Enum.all?(sequences, &is_integer/1)
+      assert sequences == Enum.sort(sequences)
+      assert length(Enum.uniq(sequences)) == length(sequences)
+    end
+
+    test "sequence numbers continue monotonically across multiple runs", %{
+      store: store,
+      adapter: adapter
+    } do
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+
+      {:ok, run1} = SessionManager.start_run(store, adapter, session.id, %{prompt: "One"})
+      {:ok, _} = SessionManager.execute_run(store, adapter, run1.id)
+
+      {:ok, run2} = SessionManager.start_run(store, adapter, session.id, %{prompt: "Two"})
+      {:ok, _} = SessionManager.execute_run(store, adapter, run2.id)
+
+      {:ok, events} = SessionManager.get_session_events(store, session.id)
+      sequences = Enum.map(events, & &1.sequence_number)
+
+      assert sequences == Enum.sort(sequences)
+      assert List.last(sequences) == length(sequences)
+    end
   end
 
   describe "get_session_runs/2" do
@@ -682,6 +720,70 @@ defmodule AgentSessionManager.SessionManagerTest do
       {:ok, runs} = SessionManager.get_session_runs(store, session.id)
 
       assert length(runs) == 2
+    end
+  end
+
+  describe "stream_session_events/3" do
+    test "supports cursor-based pagination", %{store: store, adapter: adapter} do
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+      {:ok, run1} = SessionManager.start_run(store, adapter, session.id, %{prompt: "One"})
+      {:ok, _} = SessionManager.execute_run(store, adapter, run1.id)
+      {:ok, run2} = SessionManager.start_run(store, adapter, session.id, %{prompt: "Two"})
+      {:ok, _} = SessionManager.execute_run(store, adapter, run2.id)
+
+      first_page =
+        SessionManager.stream_session_events(store, session.id, limit: 2, poll_interval_ms: 5)
+        |> Enum.take(2)
+
+      last_sequence = List.last(first_page).sequence_number
+
+      second_page =
+        SessionManager.stream_session_events(store, session.id,
+          after: last_sequence,
+          limit: 2,
+          poll_interval_ms: 5
+        )
+        |> Enum.take(2)
+
+      assert length(first_page) == 2
+      assert length(second_page) == 2
+      assert Enum.all?(second_page, &(&1.sequence_number > last_sequence))
+    end
+
+    test "follows new events appended after stream starts", %{store: store, adapter: adapter} do
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+
+      {:ok, cursor} = SessionStore.get_latest_sequence(store, session.id)
+      test_pid = self()
+
+      Task.start(fn ->
+        events =
+          SessionManager.stream_session_events(store, session.id,
+            after: cursor,
+            limit: 3,
+            poll_interval_ms: 10
+          )
+          |> Enum.take(3)
+
+        send(test_pid, {:streamed, events})
+      end)
+
+      {:ok, run} =
+        SessionManager.start_run(store, adapter, session.id, %{prompt: "Follow stream"})
+
+      {:ok, _} = SessionManager.execute_run(store, adapter, run.id)
+
+      assert_receive {:streamed, streamed_events}, 2_000
+      assert length(streamed_events) == 3
+      assert Enum.all?(streamed_events, &(&1.sequence_number > cursor))
+
+      assert Enum.map(streamed_events, & &1.type) == [
+               :run_started,
+               :message_received,
+               :run_completed
+             ]
     end
   end
 

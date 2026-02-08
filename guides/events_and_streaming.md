@@ -74,10 +74,13 @@ Events are stored via the `SessionStore` port using append-only semantics:
 ```elixir
 alias AgentSessionManager.Ports.SessionStore
 
-:ok = SessionStore.append_event(store, event)
+{:ok, stored_event} = SessionStore.append_event_with_sequence(store, event)
+stored_event.sequence_number
+# => 1
 ```
 
 Appending is idempotent: storing the same event ID twice doesn't create a duplicate.
+Sequence assignment is also idempotent: duplicate event IDs return the originally stored sequence.
 
 ## Querying Events
 
@@ -94,8 +97,14 @@ Appending is idempotent: storing the same event ID twice doesn't create a duplic
 # Filter by time
 {:ok, events} = SessionStore.get_events(store, session.id, since: one_hour_ago)
 
+# Cursor filters
+{:ok, events} = SessionStore.get_events(store, session.id, after: 100, limit: 50)
+{:ok, events} = SessionStore.get_events(store, session.id, before: 200)
+
 # Combine filters
 {:ok, events} = SessionStore.get_events(store, session.id,
+  after: 100,
+  before: 200,
   run_id: run.id,
   type: :tool_call_completed,
   limit: 10
@@ -103,6 +112,12 @@ Appending is idempotent: storing the same event ID twice doesn't create a duplic
 ```
 
 Events are always returned in append order (oldest first).
+
+`get_latest_sequence/2` returns the latest cursor for a session:
+
+```elixir
+{:ok, cursor} = SessionStore.get_latest_sequence(store, session.id)
+```
 
 ## Event Normalization
 
@@ -249,3 +264,23 @@ end
 ```
 
 The adapter normalizes provider-specific events before invoking your callback, so you always work with the canonical event types regardless of the provider.
+
+## Durable Follow/Poll Streaming
+
+For resumable polling from persisted events, use `SessionManager.stream_session_events/3`:
+
+```elixir
+alias AgentSessionManager.SessionManager
+
+stream =
+  SessionManager.stream_session_events(store, session.id,
+    after: 0,
+    limit: 100,
+    poll_interval_ms: 250
+  )
+
+# Consume incrementally
+Enum.take(stream, 10)
+```
+
+This stream is cursor-backed by `SessionStore.get_events/3` and works across reconnects.

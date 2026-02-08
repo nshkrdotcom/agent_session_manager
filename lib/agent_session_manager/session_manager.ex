@@ -395,11 +395,56 @@ defmodule AgentSessionManager.SessionManager do
   - `:run_id` - Filter by run ID
   - `:type` - Filter by event type
   - `:since` - Events after this timestamp
+  - `:after` - Events with sequence number greater than this cursor
+  - `:before` - Events with sequence number less than this cursor
+  - `:limit` - Maximum number of events to return
 
   """
   @spec get_session_events(store(), String.t(), keyword()) :: {:ok, [Event.t()]}
   def get_session_events(store, session_id, opts \\ []) do
     SessionStore.get_events(store, session_id, opts)
+  end
+
+  @doc """
+  Streams session events by polling cursor-based reads from the store.
+
+  The returned stream is open-ended and will keep polling for new events.
+
+  ## Options
+
+  - `:after` - Starting cursor (default: `0`)
+  - `:limit` - Page size per poll (default: `100`)
+  - `:poll_interval_ms` - Poll interval when no new events (default: `250`)
+  - `:run_id` - Optional run filter
+  - `:type` - Optional event type filter
+  """
+  @spec stream_session_events(store(), String.t(), keyword()) :: Enumerable.t()
+  def stream_session_events(store, session_id, opts \\ []) do
+    initial_cursor = Keyword.get(opts, :after, 0)
+    page_limit = Keyword.get(opts, :limit, 100)
+    poll_interval_ms = Keyword.get(opts, :poll_interval_ms, 250)
+    query_filters = Keyword.take(opts, [:run_id, :type, :since, :before])
+
+    Stream.resource(
+      fn -> initial_cursor end,
+      fn cursor ->
+        query_opts =
+          query_filters
+          |> Keyword.put(:after, cursor)
+          |> Keyword.put(:limit, page_limit)
+
+        {:ok, events} = SessionStore.get_events(store, session_id, query_opts)
+
+        if events == [] do
+          Process.sleep(poll_interval_ms)
+          {[], cursor}
+        else
+          next_cursor = advance_cursor(cursor, events)
+          {events, next_cursor}
+        end
+      end,
+      fn _cursor -> :ok end
+    )
   end
 
   @doc """
@@ -515,21 +560,28 @@ defmodule AgentSessionManager.SessionManager do
     normalized_event_data = Map.put(event_data, :type, normalized_type)
     event_payload = ensure_map(Map.get(event_data, :data))
 
-    case Event.new(%{
-           type: normalized_type,
-           session_id: run.session_id,
-           run_id: run.id,
-           data: event_payload
-         }) do
-      {:ok, event} ->
-        _ = SessionStore.append_event(store, event)
+    telemetry_event_data =
+      case Event.new(%{
+             type: normalized_type,
+             session_id: run.session_id,
+             run_id: run.id,
+             data: event_payload
+           }) do
+        {:ok, event} ->
+          case append_sequenced_event(store, event) do
+            {:ok, stored_event} ->
+              Map.put(normalized_event_data, :sequence_number, stored_event.sequence_number)
 
-      {:error, _} ->
-        :ok
-    end
+            {:error, _} ->
+              normalized_event_data
+          end
+
+        {:error, _} ->
+          normalized_event_data
+      end
 
     # Emit telemetry event for observability
-    Telemetry.emit_adapter_event(run, session, normalized_event_data)
+    Telemetry.emit_adapter_event(run, session, telemetry_event_data)
   end
 
   defp normalize_event_type(event_data, run) do
@@ -594,8 +646,9 @@ defmodule AgentSessionManager.SessionManager do
              type: type,
              session_id: session.id,
              data: data
-           }) do
-      SessionStore.append_event(store, event)
+           }),
+         {:ok, _stored_event} <- append_sequenced_event(store, event) do
+      :ok
     end
   end
 
@@ -606,8 +659,23 @@ defmodule AgentSessionManager.SessionManager do
              session_id: run.session_id,
              run_id: run.id,
              data: data
-           }) do
-      SessionStore.append_event(store, event)
+           }),
+         {:ok, _stored_event} <- append_sequenced_event(store, event) do
+      :ok
     end
+  end
+
+  defp append_sequenced_event(store, %Event{} = event) do
+    SessionStore.append_event_with_sequence(store, event)
+  end
+
+  defp advance_cursor(cursor, events) do
+    Enum.reduce(events, cursor, fn event, max_cursor ->
+      if is_integer(event.sequence_number) do
+        max(max_cursor, event.sequence_number)
+      else
+        max_cursor
+      end
+    end)
   end
 end

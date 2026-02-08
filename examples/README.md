@@ -1,20 +1,42 @@
 # Examples
 
-This directory contains runnable examples that demonstrate AgentSessionManager functionality end-to-end.
+This directory contains runnable examples for AgentSessionManager.
 
-## Available Examples
+All examples use real modules and real provider adapters (no mocks/fakes/stubs).
+
+## Cursor Event Streaming Examples
+
+These examples demonstrate Feature 1 using live provider execution plus durable store cursors.
+
+### `cursor_pagination.exs` -- Cursor Pagination (Live Provider)
+
+- Runs real provider executions via `SessionManager`
+- Reads persisted events with `SessionStore.get_events/3` using `after`, `before`, `limit`
+- Verifies monotonic sequence assignment from `append_event_with_sequence/2`
+- Reads `get_latest_sequence/2`
+
+```bash
+mix run examples/cursor_pagination.exs --provider claude
+mix run examples/cursor_pagination.exs --provider codex
+mix run examples/cursor_pagination.exs --provider amp
+```
+
+### `cursor_follow_stream.exs` -- Cursor Follow Stream (Live Provider)
+
+- Captures a starting cursor with `get_latest_sequence/2`
+- Starts `SessionManager.stream_session_events/3` from `after: cursor`
+- Executes a real run and streams newly persisted events
+- Verifies streamed event sequence numbers are monotonic and after the cursor
+
+```bash
+mix run examples/cursor_follow_stream.exs --provider claude
+mix run examples/cursor_follow_stream.exs --provider codex
+mix run examples/cursor_follow_stream.exs --provider amp
+```
+
+## Other Live Provider Examples
 
 ### `oneshot.exs` -- One-Shot Execution
-
-Demonstrates `SessionManager.run_once/4` for the simplest possible usage:
-
-- Provider selection (Claude, Codex, or Amp) via command line
-- Single-call session lifecycle (create, activate, run, complete)
-- Real-time event streaming via `:event_callback`
-- Output and token usage display
-- Automatic session failure handling on error
-
-**Prerequisites:** Claude, Codex, or Amp authentication.
 
 ```bash
 mix run examples/oneshot.exs --provider claude
@@ -22,122 +44,7 @@ mix run examples/oneshot.exs --provider codex
 mix run examples/oneshot.exs --provider amp
 ```
 
-### `live_session.exs` -- Live Session with Streaming
-
-Demonstrates the full session lifecycle with a real AI provider:
-
-- Provider selection (Claude, Codex, or Amp) via command line
-- Registry initialization with provider manifests
-- Configuration and capability negotiation
-- Adapter startup and streaming execution
-- Event logging to stderr in human-readable format
-- Token usage and execution statistics
-- Clean interrupt via Ctrl+C
-
-### `common_surface.exs` -- Common Normalized Surface
-
-Demonstrates the provider-agnostic SessionManager lifecycle that works
-identically across Claude, Codex, and Amp:
-
-- InMemorySessionStore and adapter startup
-- Session creation, activation, and completion
-- Multi-run execution within a single session
-- Event streaming with real-time callback
-- Event querying filtered by run ID
-- Token usage aggregation across runs
-- Event type breakdown summary
-
-**Prerequisites:** Claude, Codex, or Amp authentication.
-
-```bash
-mix run examples/common_surface.exs --provider claude
-mix run examples/common_surface.exs --provider codex
-mix run examples/common_surface.exs --provider amp
-```
-
-### `contract_surface_live.exs` -- Contract Surface Verification
-
-Demonstrates the runtime contract guarantees on live providers:
-
-- `result.events` is populated from emitted adapter events
-- `:run_completed` event includes `token_usage` payload
-- Callback stream and returned result can be inspected side-by-side
-- Works with Claude, Codex, and Amp adapters
-
-**Prerequisites:** Claude, Codex, or Amp authentication.
-
-```bash
-mix run examples/contract_surface_live.exs --provider claude
-mix run examples/contract_surface_live.exs --provider codex
-mix run examples/contract_surface_live.exs --provider amp
-```
-
-### `claude_direct.exs` -- Claude SDK Direct Features
-
-Demonstrates Claude-specific features accessed directly via `ClaudeAgentSDK`:
-
-- **Orchestrator**: Parallel query execution and retry with backoff
-- **Streaming**: Bidirectional persistent sessions with multi-turn context
-- **Hooks**: Pre-tool-use hooks for logging and approval
-- **Agent profiles**: Constrained agent definitions with tool allowlists
-
-**Prerequisites:** Claude authentication (`claude login` or `ANTHROPIC_API_KEY`).
-
-```bash
-mix run examples/claude_direct.exs
-mix run examples/claude_direct.exs --section orchestrator
-mix run examples/claude_direct.exs --section streaming
-mix run examples/claude_direct.exs --section hooks
-mix run examples/claude_direct.exs --section agent
-```
-
-### `codex_direct.exs` -- Codex SDK Direct Features
-
-Demonstrates Codex-specific features accessed directly via `Codex`:
-
-- **Threads**: Thread lifecycle with typed event struct processing
-- **Options**: Advanced thread and global option configuration
-- **Sessions**: Listing past Codex CLI sessions
-
-**Prerequisites:** Codex authentication (`codex login` or `CODEX_API_KEY`).
-
-```bash
-mix run examples/codex_direct.exs
-mix run examples/codex_direct.exs --section threads
-mix run examples/codex_direct.exs --section options
-mix run examples/codex_direct.exs --section sessions
-```
-
-### `amp_direct.exs` -- Amp SDK Direct Features
-
-Demonstrates Amp-specific features accessed directly via `AmpSdk`:
-
-- **Threads**: Thread creation, listing, and markdown export
-- **Permissions**: Permission rule management and testing
-- **MCP**: MCP server configuration, listing, and diagnostics
-- **Modes**: Execution in different modes (smart, rush)
-
-**Prerequisites:** Amp authentication (`amp login` or `AMP_API_KEY`).
-
-```bash
-mix run examples/amp_direct.exs
-mix run examples/amp_direct.exs --section threads
-mix run examples/amp_direct.exs --section permissions
-mix run examples/amp_direct.exs --section mcp
-mix run examples/amp_direct.exs --section modes
-```
-
-## Running Examples
-
-### Prerequisites
-
-Each SDK handles authentication via its own login mechanism:
-
-- **Claude**: Run `claude login` (or set `ANTHROPIC_API_KEY`)
-- **Codex**: Run `codex login` (or set `CODEX_API_KEY`)
-- **Amp**: Run `amp login` (or set `AMP_API_KEY`)
-
-### Single Example
+### `live_session.exs` -- Full Lifecycle
 
 ```bash
 mix run examples/live_session.exs --provider claude
@@ -145,72 +52,44 @@ mix run examples/live_session.exs --provider codex
 mix run examples/live_session.exs --provider amp
 ```
 
-### Run All Examples
+### `common_surface.exs` -- Provider-Agnostic Session Flow
 
 ```bash
-# Run all providers (claude, codex, amp) -- the default
-./examples/run_all.sh
-
-# Run only a single provider
-./examples/run_all.sh --provider amp
-./examples/run_all.sh -p claude
+mix run examples/common_surface.exs --provider claude
+mix run examples/common_surface.exs --provider codex
+mix run examples/common_surface.exs --provider amp
 ```
 
-The script prints a run plan on startup showing which providers and examples will execute. Use `--help` for full usage.
+### `contract_surface_live.exs` -- Runtime Contract Checks
 
-## Command Line Options
-
-```
-Usage: mix run examples/live_session.exs [options]
-
-Options:
-  --provider, -p <name>  Provider to use (claude, codex, or amp). Default: claude
-  --help, -h             Show this help message
-
-Authentication:
-  Claude: Run `claude login` or set ANTHROPIC_API_KEY
-  Codex:  Run `codex login` or set CODEX_API_KEY
-  Amp:    Run `amp login` or set AMP_API_KEY
+```bash
+mix run examples/contract_surface_live.exs --provider claude
+mix run examples/contract_surface_live.exs --provider codex
+mix run examples/contract_surface_live.exs --provider amp
 ```
 
-## Obtaining Credentials
+### Provider-Specific SDK Examples
 
-### Anthropic (Claude)
+```bash
+mix run examples/claude_direct.exs
+mix run examples/codex_direct.exs
+mix run examples/amp_direct.exs
+```
 
-1. Install Claude Code: `npm install -g @anthropic-ai/claude-code`
-2. Run `claude login` to authenticate via browser
-3. Alternatively, set `ANTHROPIC_API_KEY` from [console.anthropic.com](https://console.anthropic.com)
+## Run All Examples
 
-### OpenAI (Codex)
+```bash
+# Default: all providers (claude, codex, amp)
+bash examples/run_all.sh
 
-1. Install Codex CLI
-2. Run `codex login` to authenticate
-3. Alternatively, set `CODEX_API_KEY` from [platform.openai.com](https://platform.openai.com)
+# Single provider
+bash examples/run_all.sh --provider codex
+```
 
-### Sourcegraph (Amp)
+Use `bash examples/run_all.sh --help` for all options.
 
-1. Install Amp CLI from [sourcegraph.com/amp](https://sourcegraph.com/amp)
-2. Run `amp login` to authenticate via browser
-3. Alternatively, set `AMP_API_KEY`
+## Provider Authentication
 
-## Troubleshooting
-
-### Authentication errors
-
-Ensure you have run `claude login`, `codex login`, or `amp login` for the provider you are using.
-If using environment variables, verify they are set in your current shell.
-
-### SDK not available
-
-The live SDK integration requires the provider SDK dependencies. See the error output for installation instructions.
-
-### Rate limiting
-
-If you see rate limit errors (HTTP 429), wait for the retry-after period or check your API usage dashboard.
-
-## Adding New Examples
-
-1. Create a new `.exs` file in this directory
-2. Include clear output formatting and error handling
-3. Add the example to `run_all.sh`
-4. Document it in this README
+- Claude: `claude login` or set `ANTHROPIC_API_KEY`
+- Codex: `codex login` or set `CODEX_API_KEY`
+- Amp: `amp login` or set `AMP_API_KEY`

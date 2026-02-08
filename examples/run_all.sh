@@ -83,6 +83,15 @@ PLAN_ARGS=()
 
 for p in "${PROVIDERS[@]}"; do
   label="$(echo "${p:0:1}" | tr '[:lower:]' '[:upper:]')${p:1}"
+
+  PLAN_NAMES+=("Cursor Pagination ($label)")
+  PLAN_FILES+=("examples/cursor_pagination.exs")
+  PLAN_ARGS+=("--provider $p")
+
+  PLAN_NAMES+=("Cursor Follow Stream ($label)")
+  PLAN_FILES+=("examples/cursor_follow_stream.exs")
+  PLAN_ARGS+=("--provider $p")
+
   PLAN_NAMES+=("One-Shot ($label)")
   PLAN_FILES+=("examples/oneshot.exs")
   PLAN_ARGS+=("--provider $p")

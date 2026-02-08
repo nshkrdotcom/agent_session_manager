@@ -308,6 +308,127 @@ defmodule AgentSessionManager.Ports.SessionStoreContractTest do
       assert stored_event.type == event.type
       assert stored_event.session_id == event.session_id
     end
+
+    test "append_event_with_sequence/2 assigns increasing sequence numbers", %{
+      store: store,
+      session: session
+    } do
+      {:ok, event1} = Event.new(%{type: :session_created, session_id: session.id})
+      {:ok, event2} = Event.new(%{type: :session_started, session_id: session.id})
+
+      assert {:ok, stored1} = SessionStore.append_event_with_sequence(store, event1)
+      assert {:ok, stored2} = SessionStore.append_event_with_sequence(store, event2)
+
+      assert stored1.sequence_number == 1
+      assert stored2.sequence_number == 2
+      assert {:ok, 2} = SessionStore.get_latest_sequence(store, session.id)
+    end
+
+    test "append_event_with_sequence/2 is idempotent for duplicate IDs", %{
+      store: store,
+      session: session
+    } do
+      {:ok, event} = Event.new(%{type: :session_created, session_id: session.id})
+
+      assert {:ok, first} = SessionStore.append_event_with_sequence(store, event)
+      assert {:ok, second} = SessionStore.append_event_with_sequence(store, event)
+
+      assert first.id == second.id
+      assert first.sequence_number == second.sequence_number
+
+      assert {:ok, events} = SessionStore.get_events(store, session.id)
+      assert length(events) == 1
+      assert {:ok, 1} = SessionStore.get_latest_sequence(store, session.id)
+    end
+
+    test "get_latest_sequence/2 returns 0 for sessions without events", %{store: store} do
+      {:ok, other_session} = Session.new(%{agent_id: "agent-other"})
+      :ok = SessionStore.save_session(store, other_session)
+
+      assert {:ok, 0} = SessionStore.get_latest_sequence(store, other_session.id)
+    end
+
+    test "get_events/3 supports :after and :before cursor filters", %{
+      store: store,
+      session: session,
+      run: run
+    } do
+      {:ok, event1} = Event.new(%{type: :run_started, session_id: session.id, run_id: run.id})
+
+      {:ok, event2} =
+        Event.new(%{type: :message_received, session_id: session.id, run_id: run.id})
+
+      {:ok, event3} = Event.new(%{type: :run_completed, session_id: session.id, run_id: run.id})
+
+      {:ok, stored_event1} = SessionStore.append_event_with_sequence(store, event1)
+      {:ok, _stored_event2} = SessionStore.append_event_with_sequence(store, event2)
+      {:ok, stored_event3} = SessionStore.append_event_with_sequence(store, event3)
+
+      assert {:ok, after_events} =
+               SessionStore.get_events(store, session.id, after: stored_event1.sequence_number)
+
+      assert Enum.map(after_events, & &1.sequence_number) == [2, 3]
+
+      assert {:ok, before_events} =
+               SessionStore.get_events(store, session.id, before: stored_event3.sequence_number)
+
+      assert Enum.map(before_events, & &1.sequence_number) == [1, 2]
+
+      assert {:ok, bounded_events} =
+               SessionStore.get_events(
+                 store,
+                 session.id,
+                 after: stored_event1.sequence_number,
+                 before: stored_event3.sequence_number
+               )
+
+      assert Enum.map(bounded_events, & &1.sequence_number) == [2]
+    end
+
+    test "cursor filters compose with run_id, type, and limit", %{
+      store: store,
+      session: session
+    } do
+      {:ok, run1} = Run.new(%{session_id: session.id})
+      {:ok, run2} = Run.new(%{session_id: session.id})
+      :ok = SessionStore.save_run(store, run1)
+      :ok = SessionStore.save_run(store, run2)
+
+      {:ok, event1} = Event.new(%{type: :run_started, session_id: session.id, run_id: run1.id})
+
+      {:ok, event2} =
+        Event.new(%{type: :message_received, session_id: session.id, run_id: run1.id})
+
+      {:ok, event3} =
+        Event.new(%{type: :message_received, session_id: session.id, run_id: run2.id})
+
+      {:ok, event4} =
+        Event.new(%{type: :message_received, session_id: session.id, run_id: run1.id})
+
+      {:ok, event5} =
+        Event.new(%{type: :message_received, session_id: session.id, run_id: run1.id})
+
+      {:ok, event1} = SessionStore.append_event_with_sequence(store, event1)
+      {:ok, event2} = SessionStore.append_event_with_sequence(store, event2)
+      {:ok, _} = SessionStore.append_event_with_sequence(store, event3)
+      {:ok, event4} = SessionStore.append_event_with_sequence(store, event4)
+      {:ok, _} = SessionStore.append_event_with_sequence(store, event5)
+
+      assert {:ok, filtered} =
+               SessionStore.get_events(
+                 store,
+                 session.id,
+                 after: event1.sequence_number,
+                 run_id: run1.id,
+                 type: :message_received,
+                 limit: 2
+               )
+
+      assert Enum.map(filtered, & &1.sequence_number) == [
+               event2.sequence_number,
+               event4.sequence_number
+             ]
+    end
   end
 
   describe "Idempotency guarantees" do

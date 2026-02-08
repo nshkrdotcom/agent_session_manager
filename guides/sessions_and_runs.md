@@ -71,6 +71,8 @@ When using `SessionManager`, session transitions also persist to the store and e
 {:ok, session} = SessionManager.fail_session(store, session.id, error)
 ```
 
+Persisted lifecycle events receive durable `sequence_number` assignment from the store at append time, enabling cursor-based replay with `SessionStore.get_events/3`.
+
 ### Hierarchical Sessions
 
 Sessions can reference a parent session for hierarchical agent workflows:

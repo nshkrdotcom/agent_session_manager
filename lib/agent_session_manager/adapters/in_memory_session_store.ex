@@ -128,8 +128,18 @@ defmodule AgentSessionManager.Adapters.InMemorySessionStore do
   end
 
   @impl SessionStore
+  def append_event_with_sequence(store, %Event{} = event) do
+    GenServer.call(store, {:append_event_with_sequence, event})
+  end
+
+  @impl SessionStore
   def get_events(store, session_id, opts \\ []) do
     GenServer.call(store, {:get_events, session_id, opts})
+  end
+
+  @impl SessionStore
+  def get_latest_sequence(store, session_id) do
+    GenServer.call(store, {:get_latest_sequence, session_id})
   end
 
   # ============================================================================
@@ -148,7 +158,9 @@ defmodule AgentSessionManager.Adapters.InMemorySessionStore do
       runs: runs_table,
       event_ids: event_ids_table,
       # Append-only event log - list of events in insertion order (newest last)
-      events: []
+      events: [],
+      # Latest assigned sequence number per session_id
+      session_sequences: %{}
     }
 
     {:ok, state}
@@ -221,18 +233,13 @@ defmodule AgentSessionManager.Adapters.InMemorySessionStore do
   end
 
   def handle_call({:append_event, event}, _from, state) do
-    # Check for duplicate event ID (idempotency)
-    case :ets.lookup(state.event_ids, event.id) do
-      [{_event_id, true}] ->
-        # Event already exists, skip (idempotent)
-        {:reply, :ok, state}
+    {:ok, _event, new_state} = append_sequenced_event(state, event)
+    {:reply, :ok, new_state}
+  end
 
-      [] ->
-        # New event, append to log
-        :ets.insert(state.event_ids, {event.id, true})
-        new_events = state.events ++ [event]
-        {:reply, :ok, %{state | events: new_events}}
-    end
+  def handle_call({:append_event_with_sequence, event}, _from, state) do
+    {:ok, stored_event, new_state} = append_sequenced_event(state, event)
+    {:reply, {:ok, stored_event}, new_state}
   end
 
   def handle_call({:get_events, session_id, opts}, _from, state) do
@@ -242,6 +249,11 @@ defmodule AgentSessionManager.Adapters.InMemorySessionStore do
       |> filter_events(opts)
 
     {:reply, {:ok, events}, state}
+  end
+
+  def handle_call({:get_latest_sequence, session_id}, _from, state) do
+    latest = Map.get(state.session_sequences, session_id, 0)
+    {:reply, {:ok, latest}, state}
   end
 
   @impl GenServer
@@ -275,6 +287,8 @@ defmodule AgentSessionManager.Adapters.InMemorySessionStore do
     |> maybe_filter_by_run_id(opts)
     |> maybe_filter_by_type(opts)
     |> maybe_filter_since(opts)
+    |> maybe_filter_after(opts)
+    |> maybe_filter_before(opts)
     |> maybe_limit(opts)
   end
 
@@ -318,11 +332,63 @@ defmodule AgentSessionManager.Adapters.InMemorySessionStore do
     end
   end
 
+  defp maybe_filter_after(events, opts) do
+    case Keyword.get(opts, :after) do
+      nil ->
+        events
+
+      after_cursor when is_integer(after_cursor) and after_cursor >= 0 ->
+        Enum.filter(events, fn event ->
+          is_integer(event.sequence_number) and event.sequence_number > after_cursor
+        end)
+
+      _ ->
+        events
+    end
+  end
+
+  defp maybe_filter_before(events, opts) do
+    case Keyword.get(opts, :before) do
+      nil ->
+        events
+
+      before_cursor when is_integer(before_cursor) and before_cursor >= 0 ->
+        Enum.filter(events, fn event ->
+          is_integer(event.sequence_number) and event.sequence_number < before_cursor
+        end)
+
+      _ ->
+        events
+    end
+  end
+
   defp maybe_limit(items, opts) do
     case Keyword.get(opts, :limit) do
       nil -> items
       limit when is_integer(limit) and limit > 0 -> Enum.take(items, limit)
       _ -> items
+    end
+  end
+
+  defp append_sequenced_event(state, %Event{} = event) do
+    case :ets.lookup(state.event_ids, event.id) do
+      [{_event_id, existing_event}] ->
+        {:ok, existing_event, state}
+
+      [] ->
+        latest_sequence = Map.get(state.session_sequences, event.session_id, 0)
+        next_sequence = latest_sequence + 1
+        sequenced_event = %{event | sequence_number: next_sequence}
+
+        :ets.insert(state.event_ids, {event.id, sequenced_event})
+
+        new_state = %{
+          state
+          | events: state.events ++ [sequenced_event],
+            session_sequences: Map.put(state.session_sequences, event.session_id, next_sequence)
+        }
+
+        {:ok, sequenced_event, new_state}
     end
   end
 end

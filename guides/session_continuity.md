@@ -74,6 +74,67 @@ session.context[:transcript]
 
 Adapters consume this context when available. If provider-native thread/session reuse is unavailable, transcript replay is the fallback.
 
+### Continuation Modes (Phase 2)
+
+The `:continuation` option accepts expanded mode values:
+
+| Value     | Behavior |
+|-----------|----------|
+| `false`   | Disabled (default). No transcript injected. |
+| `true`    | Alias for `:auto`. Backward compatible. |
+| `:auto`   | Replay transcript from persisted events (falls back from native when unavailable). |
+| `:replay` | Always replay transcript from events, even if native continuation is available. |
+| `:native` | Use provider-native session continuation. Errors if the provider doesn't support it. |
+
+```elixir
+# Explicit replay mode
+{:ok, result} = SessionManager.execute_run(store, adapter, run.id,
+  continuation: :replay,
+  continuation_opts: [max_messages: 200]
+)
+
+# Auto mode (same as true, uses replay as fallback)
+{:ok, result} = SessionManager.execute_run(store, adapter, run.id,
+  continuation: :auto
+)
+
+# Native mode (errors if unavailable)
+{:ok, result} = SessionManager.execute_run(store, adapter, run.id,
+  continuation: :native
+)
+```
+
+### Token-Aware Truncation (Phase 2)
+
+TranscriptBuilder supports character- and token-based truncation in addition to message count:
+
+```elixir
+{:ok, result} = SessionManager.execute_run(store, adapter, run.id,
+  continuation: :auto,
+  continuation_opts: [
+    max_messages: 200,
+    max_chars: 50_000,
+    max_tokens_approx: 12_000
+  ]
+)
+```
+
+- `max_chars` - hard character budget for the transcript content.
+- `max_tokens_approx` - approximate token budget, converted using a 4-chars-per-token heuristic.
+- When both are provided, the lower effective limit wins.
+- Truncation keeps the most recent messages within the budget.
+
+### Per-Provider Continuation Handles (Phase 2)
+
+After execution, provider session metadata (e.g., `provider_session_id`, `model`) is stored both at the top level of `session.metadata` (backward compat) and under a per-provider key:
+
+```elixir
+session.metadata[:provider_session_id]          # top-level (backward compat)
+session.metadata[:provider_sessions]["claude"]  # per-provider keyed map
+```
+
+This allows sessions that interact with multiple providers to track continuation handles independently.
+
 ## `run_once/4` Support
 
 `run_once/4` forwards continuity options to `execute_run/4`:
@@ -91,8 +152,8 @@ You can combine continuity with adapter-specific options:
 
 ```elixir
 {:ok, result} = SessionManager.execute_run(store, adapter, run.id,
-  continuation: true,
-  continuation_opts: [max_messages: 100],
+  continuation: :auto,
+  continuation_opts: [max_messages: 100, max_chars: 50_000],
   adapter_opts: [timeout: 120_000]
 )
 ```

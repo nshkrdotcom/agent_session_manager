@@ -13,25 +13,81 @@ defmodule AgentSessionManager.Workspace.GitBackend do
     expanded_path = Path.expand(path)
 
     with :ok <- ensure_git_repo(expanded_path),
-         {:ok, head_ref} <- git(expanded_path, ["rev-parse", "HEAD"]),
-         {:ok, stash_ref} <- git(expanded_path, ["stash", "create"]) do
-      ref =
-        stash_ref
-        |> String.trim()
-        |> case do
-          "" -> String.trim(head_ref)
-          value -> value
-        end
+         {:ok, head_ref_raw} <- git(expanded_path, ["rev-parse", "HEAD"]) do
+      head_ref = String.trim(head_ref_raw)
 
-      {:ok,
-       %Snapshot{
-         backend: :git,
-         path: expanded_path,
-         ref: ref,
-         label: Keyword.get(opts, :label),
-         captured_at: DateTime.utc_now(),
-         metadata: %{head_ref: String.trim(head_ref), dirty: ref != String.trim(head_ref)}
-       }}
+      case take_alternate_index_snapshot(expanded_path, head_ref) do
+        {:ok, commit_ref, includes_untracked} ->
+          dirty = commit_ref != head_ref
+
+          {:ok,
+           %Snapshot{
+             backend: :git,
+             path: expanded_path,
+             ref: commit_ref,
+             label: Keyword.get(opts, :label),
+             captured_at: DateTime.utc_now(),
+             metadata: %{
+               head_ref: head_ref,
+               dirty: dirty,
+               includes_untracked: includes_untracked
+             }
+           }}
+
+        {:error, _} = error ->
+          error
+      end
+    end
+  end
+
+  # Uses an alternate GIT_INDEX_FILE to snapshot full workspace state
+  # (tracked + untracked) without modifying HEAD or leaving stash entries.
+  defp take_alternate_index_snapshot(path, head_ref) do
+    tmp_index =
+      Path.join(
+        System.tmp_dir!(),
+        "asm_git_index_#{System.unique_integer([:positive, :monotonic])}"
+      )
+
+    try do
+      # Start from the current HEAD's tree in the alternate index
+      with {:ok, _} <- git_env(path, ["read-tree", head_ref], %{"GIT_INDEX_FILE" => tmp_index}),
+           # Stage all tracked + untracked files into the alternate index
+           {:ok, _} <-
+             git_env(path, ["add", "-A"], %{"GIT_INDEX_FILE" => tmp_index}),
+           {:ok, tree_output} <-
+             git_env(path, ["write-tree"], %{"GIT_INDEX_FILE" => tmp_index}) do
+        tree_ref = String.trim(tree_output)
+
+        # Check if tree matches HEAD's tree (i.e. workspace is clean)
+        case git(path, ["rev-parse", "#{head_ref}^{tree}"]) do
+          {:ok, head_tree_raw} ->
+            head_tree = String.trim(head_tree_raw)
+
+            if tree_ref == head_tree do
+              # Clean workspace - use HEAD directly
+              {:ok, head_ref, true}
+            else
+              # Dirty workspace - create a dangling commit object
+              case git_env(
+                     path,
+                     ["commit-tree", tree_ref, "-p", head_ref, "-m", "asm workspace snapshot"],
+                     %{"GIT_INDEX_FILE" => tmp_index}
+                   ) do
+                {:ok, commit_output} ->
+                  {:ok, String.trim(commit_output), true}
+
+                {:error, _} = error ->
+                  error
+              end
+            end
+
+          {:error, _} = error ->
+            error
+        end
+      end
+    after
+      File.rm(tmp_index)
     end
   end
 
@@ -186,7 +242,27 @@ defmodule AgentSessionManager.Workspace.GitBackend do
   end
 
   defp git(path, args) do
-    case System.cmd("git", ["-C", path | args], stderr_to_stdout: true) do
+    git_env(path, args, %{})
+  end
+
+  defp git_env(path, args, env) when map_size(env) == 0 do
+    case System.cmd("git", args, stderr_to_stdout: true, cd: path) do
+      {output, 0} ->
+        {:ok, output}
+
+      {output, _status} ->
+        {:error, Error.new(:storage_error, "git command failed: #{String.trim(output)}")}
+    end
+  rescue
+    exception ->
+      {:error, Error.new(:storage_error, "git command failed: #{Exception.message(exception)}")}
+  end
+
+  defp git_env(path, args, env) do
+    env_list = Enum.map(env, fn {k, v} -> {k, v} end)
+    cmd_opts = [stderr_to_stdout: true, cd: path, env: env_list]
+
+    case System.cmd("git", args, cmd_opts) do
       {output, 0} ->
         {:ok, output}
 

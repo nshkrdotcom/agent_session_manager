@@ -70,6 +70,9 @@ defmodule WorkspaceSnapshotExample do
     success_callback = fn event ->
       if event.type == :run_started do
         File.write!(workspace_file, "changed during successful run\n")
+        # Phase 2: Create an untracked file to demonstrate that git snapshots
+        # now capture untracked files without mutating HEAD
+        File.write!(Path.join(repo, "untracked_artifact.txt"), "untracked content\n")
       end
     end
 
@@ -174,6 +177,7 @@ defmodule WorkspaceSnapshotExample do
   defp print_diff_summary(result) do
     workspace = Map.get(result, :workspace, %{})
     diff = Map.get(workspace, :diff, %{})
+    before_snap = Map.get(workspace, :before_snapshot, %{})
 
     IO.puts("\nWorkspace diff summary:")
     IO.puts("  backend: #{Map.get(workspace, :backend, :unknown)}")
@@ -182,6 +186,11 @@ defmodule WorkspaceSnapshotExample do
     IO.puts("  deletions: #{Map.get(diff, :deletions, 0)}")
     IO.puts("  changed_paths: #{inspect(Map.get(diff, :changed_paths, []))}")
     IO.puts("  has_patch: #{is_binary(Map.get(diff, :patch))}")
+
+    # Phase 2: Show untracked file inclusion metadata
+    before_meta = Map.get(before_snap, :metadata, %{})
+
+    IO.puts("  includes_untracked: #{Map.get(before_meta, :includes_untracked, false)}")
   end
 
   defp create_git_repo! do

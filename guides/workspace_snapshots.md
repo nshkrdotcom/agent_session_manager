@@ -31,6 +31,8 @@ Workspace options:
 - `capture_patch` - include full patch when possible
 - `max_patch_bytes` - patch size cap
 - `rollback_on_failure` - rollback failed run changes (git only)
+- `artifact_store` - (Phase 2) artifact store pid for offloading large patches
+- `ignore` - (Phase 2) configurable ignore rules for hash backend (see below)
 
 ## Execution Flow
 
@@ -81,7 +83,74 @@ Run metadata stores a compact summary under `run.metadata.workspace`:
 
 `strategy: :auto` chooses git when repository metadata is detected, otherwise hash.
 
-## Rollback Scope (MVP)
+### Git Backend: Untracked File Support (Phase 2)
+
+Git snapshots now capture the full workspace state including untracked files. The implementation uses an alternate `GIT_INDEX_FILE` to stage all content without mutating `HEAD` or leaving stash entries.
+
+Snapshot metadata includes:
+
+- `head_ref` - the commit `HEAD` pointed to at capture time
+- `dirty` - `true` when workspace state differs from `HEAD`
+- `includes_untracked` - always `true` (untracked files are included)
+
+### Hash Backend: Configurable Ignore Rules (Phase 2)
+
+The hash backend supports configurable ignore rules via the `ignore:` option:
+
+```elixir
+{:ok, snapshot} = HashBackend.take_snapshot(path,
+  ignore: [
+    paths: ["vendor", "logs", "tmp"],
+    globs: ["*.log", "**/*.bak"]
+  ]
+)
+```
+
+- `paths` - directory names to exclude (additive to defaults: `.git`, `deps`, `_build`, `node_modules`)
+- `globs` - glob patterns to exclude files by name. Supports `*`, `**`, and `?` wildcards.
+
+The same ignore rules should be passed to both snapshot calls to ensure consistent diffs.
+
+## Artifact Store (Phase 2)
+
+`AgentSessionManager.Ports.ArtifactStore` provides a port for storing large blobs (patches, manifests) separately from run metadata.
+
+### File-Backed Adapter
+
+```elixir
+{:ok, artifact_store} = FileArtifactStore.start_link(root: "/tmp/artifacts")
+
+:ok = ArtifactStore.put(artifact_store, "patch-abc123", patch_data)
+{:ok, data} = ArtifactStore.get(artifact_store, "patch-abc123")
+:ok = ArtifactStore.delete(artifact_store, "patch-abc123")
+```
+
+### Artifact References in Workspace Metadata
+
+When an `artifact_store` is configured in workspace options, large patches are stored as artifacts and the run metadata contains a `patch_ref` key instead of the raw patch:
+
+```elixir
+{:ok, result} = SessionManager.execute_run(store, adapter, run.id,
+  workspace: [
+    enabled: true,
+    path: repo_path,
+    capture_patch: true,
+    artifact_store: artifact_store
+  ]
+)
+
+# result.workspace.diff contains:
+# - patch_ref: "patch_<from_ref>_<to_ref>_<id>"  (artifact key)
+# - patch_bytes: 1234                              (original patch size)
+# - patch: nil                                     (not embedded)
+
+# Retrieve the full patch from the artifact store:
+{:ok, full_patch} = ArtifactStore.get(artifact_store, result.workspace.diff.patch_ref)
+```
+
+Without an `artifact_store` configured, patches are embedded directly in the result (backward compatible).
+
+## Rollback Scope
 
 Rollback behavior is intentionally constrained:
 

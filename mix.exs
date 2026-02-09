@@ -158,13 +158,15 @@ defmodule AgentSessionManager.MixProject do
         ],
         "Ports (Interfaces)": [
           AgentSessionManager.Ports.ProviderAdapter,
-          AgentSessionManager.Ports.SessionStore
+          AgentSessionManager.Ports.SessionStore,
+          AgentSessionManager.Ports.ArtifactStore
         ],
         "Adapters (Implementations)": [
           AgentSessionManager.Adapters.ClaudeAdapter,
           AgentSessionManager.Adapters.CodexAdapter,
           AgentSessionManager.Adapters.AmpAdapter,
-          AgentSessionManager.Adapters.InMemorySessionStore
+          AgentSessionManager.Adapters.InMemorySessionStore,
+          AgentSessionManager.Adapters.FileArtifactStore
         ],
         Concurrency: [
           AgentSessionManager.Concurrency.ConcurrencyLimiter,

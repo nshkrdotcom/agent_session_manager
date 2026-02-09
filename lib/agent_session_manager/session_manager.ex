@@ -64,7 +64,7 @@ defmodule AgentSessionManager.SessionManager do
   }
 
   alias AgentSessionManager.Policy.{Policy, Runtime}
-  alias AgentSessionManager.Ports.{ProviderAdapter, SessionStore}
+  alias AgentSessionManager.Ports.{ArtifactStore, ProviderAdapter, SessionStore}
   alias AgentSessionManager.Telemetry
   alias AgentSessionManager.Workspace.{Diff, Snapshot, Workspace}
 
@@ -692,21 +692,41 @@ defmodule AgentSessionManager.SessionManager do
   end
 
   defp maybe_attach_transcript(store, session, opts) do
-    if Keyword.get(opts, :continuation, false) do
-      continuation_opts = Keyword.get(opts, :continuation_opts, [])
+    continuation_mode = resolve_continuation_mode(Keyword.get(opts, :continuation, false))
 
-      with {:ok, transcript} <- TranscriptBuilder.from_store(store, session.id, continuation_opts) do
-        context =
-          session.context
-          |> ensure_map()
-          |> Map.put(:transcript, transcript)
+    case continuation_mode do
+      :disabled ->
+        {:ok, session}
 
-        {:ok, %{session | context: context}}
-      end
-    else
-      {:ok, session}
+      :native ->
+        {:error,
+         Error.new(
+           :invalid_operation,
+           "Native continuation is not available for this provider. " <>
+             "Use continuation: :auto to fall back to transcript replay."
+         )}
+
+      mode when mode in [:auto, :replay] ->
+        continuation_opts = Keyword.get(opts, :continuation_opts, [])
+
+        with {:ok, transcript} <-
+               TranscriptBuilder.from_store(store, session.id, continuation_opts) do
+          context =
+            session.context
+            |> ensure_map()
+            |> Map.put(:transcript, transcript)
+
+          {:ok, %{session | context: context}}
+        end
     end
   end
+
+  defp resolve_continuation_mode(false), do: :disabled
+  defp resolve_continuation_mode(true), do: :auto
+  defp resolve_continuation_mode(:auto), do: :auto
+  defp resolve_continuation_mode(:native), do: :native
+  defp resolve_continuation_mode(:replay), do: :replay
+  defp resolve_continuation_mode(_), do: :disabled
 
   defp persist_input_messages(store, run) do
     run.input
@@ -835,7 +855,8 @@ defmodule AgentSessionManager.SessionManager do
              workspace_state.pre_snapshot,
              post_snapshot,
              workspace_state.opts
-           ) do
+           ),
+         {:ok, diff} <- maybe_store_patch_artifact(diff, workspace_state.opts) do
       workspace_result = build_workspace_result(workspace_state.pre_snapshot, post_snapshot, diff)
 
       workspace_metadata =
@@ -859,6 +880,7 @@ defmodule AgentSessionManager.SessionManager do
              post_snapshot,
              workspace_state.opts
            ),
+         {:ok, diff} <- maybe_store_patch_artifact(diff, workspace_state.opts),
          :ok <- maybe_rollback_workspace(workspace_state) do
       workspace_metadata =
         build_workspace_metadata(workspace_state.pre_snapshot, post_snapshot, diff)
@@ -914,16 +936,61 @@ defmodule AgentSessionManager.SessionManager do
     end
   end
 
+  # If an artifact_store is configured and a patch exists, store it as an artifact
+  # and replace the patch with a patch_ref + patch_bytes in the diff metadata.
+  defp maybe_store_patch_artifact(%Diff{} = diff, workspace_opts) do
+    artifact_store = Keyword.get(workspace_opts, :artifact_store)
+
+    cond do
+      is_nil(artifact_store) ->
+        {:ok, diff}
+
+      is_binary(diff.patch) and diff.patch != "" ->
+        patch_bytes = byte_size(diff.patch)
+
+        artifact_key =
+          "patch_#{diff.from_ref}_#{diff.to_ref}_#{System.unique_integer([:positive, :monotonic])}"
+
+        case ArtifactStore.put(artifact_store, artifact_key, diff.patch) do
+          :ok ->
+            updated_diff = %{
+              diff
+              | patch: nil,
+                metadata:
+                  diff.metadata
+                  |> Map.put(:patch_ref, artifact_key)
+                  |> Map.put(:patch_bytes, patch_bytes)
+            }
+
+            {:ok, updated_diff}
+
+          {:error, _} = error ->
+            error
+        end
+
+      true ->
+        {:ok, diff}
+    end
+  end
+
   defp build_workspace_result(
          %Snapshot{} = before_snapshot,
          %Snapshot{} = after_snapshot,
          %Diff{} = diff
        ) do
+    diff_map = Diff.to_map(diff)
+
+    # Promote patch_ref and patch_bytes from metadata to top level for ergonomics
+    diff_map =
+      diff_map
+      |> maybe_put(:patch_ref, diff.metadata[:patch_ref])
+      |> maybe_put(:patch_bytes, diff.metadata[:patch_bytes])
+
     %{
       backend: diff.backend,
       before_snapshot: Snapshot.to_map(before_snapshot),
       after_snapshot: Snapshot.to_map(after_snapshot),
-      diff: Diff.to_map(diff)
+      diff: diff_map
     }
   end
 
@@ -935,6 +1002,8 @@ defmodule AgentSessionManager.SessionManager do
     compact_diff =
       Diff.summary(diff)
       |> maybe_put(:patch, diff.patch)
+      |> maybe_put(:patch_ref, diff.metadata[:patch_ref])
+      |> maybe_put(:patch_bytes, diff.metadata[:patch_bytes])
 
     %{
       backend: diff.backend,
@@ -1002,6 +1071,8 @@ defmodule AgentSessionManager.SessionManager do
   end
 
   defp update_session_provider_metadata(store, session, provider_metadata) do
+    provider_name = Map.get(session.metadata, :provider)
+
     # Only update if we have provider metadata to add
     metadata_to_add =
       %{}
@@ -1009,7 +1080,21 @@ defmodule AgentSessionManager.SessionManager do
       |> maybe_put(:model, provider_metadata[:model])
 
     if map_size(metadata_to_add) > 0 do
-      merged_metadata = Map.merge(session.metadata, metadata_to_add)
+      # Phase 2: also maintain per-provider keyed map under :provider_sessions
+      existing_sessions = Map.get(session.metadata, :provider_sessions, %{})
+
+      per_provider_entry =
+        existing_sessions
+        |> Map.get(provider_name, %{})
+        |> Map.merge(metadata_to_add)
+
+      provider_sessions = Map.put(existing_sessions, provider_name, per_provider_entry)
+
+      merged_metadata =
+        session.metadata
+        |> Map.merge(metadata_to_add)
+        |> Map.put(:provider_sessions, provider_sessions)
+
       updated_session = %{session | metadata: merged_metadata, updated_at: DateTime.utc_now()}
       SessionStore.save_session(store, updated_session)
     else

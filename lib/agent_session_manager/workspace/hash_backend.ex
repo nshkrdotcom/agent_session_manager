@@ -6,12 +6,13 @@ defmodule AgentSessionManager.Workspace.HashBackend do
   alias AgentSessionManager.Core.Error
   alias AgentSessionManager.Workspace.{Diff, Snapshot}
 
-  @excluded_roots [".git", "deps", "_build", "node_modules"]
+  @default_excluded_roots [".git", "deps", "_build", "node_modules"]
 
   @spec take_snapshot(String.t(), keyword()) :: {:ok, Snapshot.t()} | {:error, Error.t()}
   def take_snapshot(path, opts \\ []) when is_binary(path) do
     with :ok <- validate_directory(path) do
-      file_hashes = collect_file_hashes(path)
+      ignore_config = Keyword.get(opts, :ignore, [])
+      file_hashes = collect_file_hashes(path, ignore_config)
       reference = digest_file_hashes(file_hashes)
 
       {:ok,
@@ -93,7 +94,11 @@ defmodule AgentSessionManager.Workspace.HashBackend do
     end
   end
 
-  defp collect_file_hashes(path) do
+  defp collect_file_hashes(path, ignore_config) do
+    extra_paths = Keyword.get(ignore_config, :paths, [])
+    globs = Keyword.get(ignore_config, :globs, [])
+    excluded_roots = @default_excluded_roots ++ extra_paths
+
     path
     |> Path.join("**/*")
     |> Path.wildcard(match_dot: true)
@@ -101,7 +106,8 @@ defmodule AgentSessionManager.Workspace.HashBackend do
     |> Enum.reduce(%{}, fn absolute_path, acc ->
       relative_path = Path.relative_to(absolute_path, path)
 
-      if excluded?(relative_path) do
+      if excluded_by_root?(relative_path, excluded_roots) or
+           excluded_by_glob?(relative_path, globs) do
         acc
       else
         Map.put(acc, relative_path, file_sha256(absolute_path))
@@ -109,14 +115,78 @@ defmodule AgentSessionManager.Workspace.HashBackend do
     end)
   end
 
-  defp excluded?(relative_path) do
+  defp excluded_by_root?(relative_path, excluded_roots) do
     relative_path
     |> String.split("/", trim: true)
     |> case do
-      [root | _] -> root in @excluded_roots
+      [root | _] -> root in excluded_roots
       _ -> false
     end
   end
+
+  defp excluded_by_glob?(_relative_path, []), do: false
+
+  defp excluded_by_glob?(relative_path, globs) do
+    Enum.any?(globs, fn glob ->
+      glob_matches?(relative_path, glob)
+    end)
+  end
+
+  # Converts a glob pattern to a regex and matches against the relative path.
+  # Supports: * (anything except /), ** (anything including /), ? (single char)
+  # For simple globs like "*.log", also tries matching against just the basename.
+  defp glob_matches?(relative_path, glob) do
+    regex = glob_to_regex(glob)
+
+    Regex.match?(regex, relative_path) or
+      (not String.contains?(glob, "/") and
+         Regex.match?(regex, Path.basename(relative_path)))
+  end
+
+  defp glob_to_regex(glob) do
+    # Build regex from glob pattern. We use a manual approach to avoid
+    # placeholder collisions with the replacement pipeline.
+    parts =
+      glob
+      |> String.graphemes()
+      |> build_regex_parts([], false)
+      |> Enum.reverse()
+      |> Enum.join()
+
+    Regex.compile!("^#{parts}$")
+  end
+
+  # Handle **/ (globstar: zero or more directories)
+  defp build_regex_parts(["*", "*", "/" | rest], acc, _prev_star) do
+    build_regex_parts(rest, ["(.+/)?" | acc], false)
+  end
+
+  # Handle ** at end of pattern (match everything)
+  defp build_regex_parts(["*", "*"], acc, _prev_star) do
+    build_regex_parts([], [".*" | acc], false)
+  end
+
+  # Handle * (match anything except /)
+  defp build_regex_parts(["*" | rest], acc, _prev_star) do
+    build_regex_parts(rest, ["[^/]*" | acc], true)
+  end
+
+  # Handle ? (match single char except /)
+  defp build_regex_parts(["?" | rest], acc, _prev_star) do
+    build_regex_parts(rest, ["[^/]" | acc], false)
+  end
+
+  # Handle . (escape for regex)
+  defp build_regex_parts(["." | rest], acc, _prev_star) do
+    build_regex_parts(rest, ["\\." | acc], false)
+  end
+
+  # Handle any other character
+  defp build_regex_parts([char | rest], acc, _prev_star) do
+    build_regex_parts(rest, [Regex.escape(char) | acc], false)
+  end
+
+  defp build_regex_parts([], acc, _prev_star), do: acc
 
   defp file_sha256(path) do
     :crypto.hash(:sha256, File.read!(path))

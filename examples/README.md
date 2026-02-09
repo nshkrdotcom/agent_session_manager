@@ -55,7 +55,8 @@ These examples demonstrate Feature 2 and Feature 3 using live provider execution
 ### `session_continuity.exs` -- Session Continuity (Feature 2)
 
 - Runs two sequential turns in a single session
-- Executes turn 2 with `continuation: true`
+- Executes turn 2 with `continuation: :auto` (Phase 2 mode)
+- Uses token-aware truncation via `max_tokens_approx: 4_000`
 - Reconstructs and prints transcript context from persisted events
 
 ```bash
@@ -67,8 +68,9 @@ mix run examples/session_continuity.exs --provider amp
 ### `workspace_snapshot.exs` -- Workspace Snapshot + Diff + Rollback (Feature 3)
 
 - Creates a temporary git workspace and enables workspace instrumentation
+- Demonstrates untracked file capture (Phase 2: git snapshots include untracked files)
 - Prints emitted workspace events (`:workspace_snapshot_taken`, `:workspace_diff_computed`)
-- Prints compact diff summary and patch presence
+- Prints compact diff summary, patch presence, and `includes_untracked` metadata
 - Demonstrates git rollback-on-failure behavior (`rollback_on_failure: true`)
 
 ```bash

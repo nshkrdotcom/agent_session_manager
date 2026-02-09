@@ -155,6 +155,108 @@ defmodule AgentSessionManager.Core.TranscriptBuilderTest do
     end
   end
 
+  describe "token-aware truncation" do
+    test "max_chars truncates messages to fit approximate character budget" do
+      events =
+        Enum.map(1..10, fn i ->
+          build_event(
+            id: "evt-#{i}",
+            session_id: "ses-trunc",
+            sequence_number: i,
+            type: :message_received,
+            data: %{content: String.duplicate("x", 100), role: "assistant"}
+          )
+        end)
+
+      # Each message has 100 chars of content.  With max_chars: 350 we expect
+      # only the last 3 messages (300 chars) to be retained — the 4th from end
+      # would push over 400 total chars.
+      assert {:ok, %Transcript{} = transcript} =
+               TranscriptBuilder.from_events(events,
+                 session_id: "ses-trunc",
+                 max_chars: 350
+               )
+
+      assert length(transcript.messages) <= 4
+      total_chars = transcript.messages |> Enum.map(&message_char_count/1) |> Enum.sum()
+      assert total_chars <= 350
+    end
+
+    test "max_tokens_approx truncates using approximate token estimate" do
+      events =
+        Enum.map(1..10, fn i ->
+          build_event(
+            id: "evt-#{i}",
+            session_id: "ses-tok",
+            sequence_number: i,
+            type: :message_received,
+            data: %{content: String.duplicate("word ", 100), role: "assistant"}
+          )
+        end)
+
+      # Each message has ~500 chars = ~125 tokens at 4 chars/token heuristic.
+      # With max_tokens_approx: 300, we expect roughly 2 messages.
+      assert {:ok, %Transcript{} = transcript} =
+               TranscriptBuilder.from_events(events,
+                 session_id: "ses-tok",
+                 max_tokens_approx: 300
+               )
+
+      assert length(transcript.messages) <= 3
+
+      total_chars = transcript.messages |> Enum.map(&message_char_count/1) |> Enum.sum()
+      # 300 tokens * 4 chars = 1200 chars max
+      assert total_chars <= 1200
+    end
+
+    test "max_chars and max_messages can be combined, most restrictive wins" do
+      events =
+        Enum.map(1..10, fn i ->
+          build_event(
+            id: "evt-#{i}",
+            session_id: "ses-combined",
+            sequence_number: i,
+            type: :message_received,
+            data: %{content: String.duplicate("a", 50), role: "assistant"}
+          )
+        end)
+
+      assert {:ok, %Transcript{} = transcript} =
+               TranscriptBuilder.from_events(events,
+                 session_id: "ses-combined",
+                 max_messages: 5,
+                 max_chars: 120
+               )
+
+      # max_messages allows 5, but max_chars of 120 with 50-char messages limits to ~2
+      assert length(transcript.messages) <= 5
+      total_chars = transcript.messages |> Enum.map(&message_char_count/1) |> Enum.sum()
+      assert total_chars <= 120
+    end
+
+    test "truncation keeps messages from the end (most recent)" do
+      events =
+        Enum.map(1..5, fn i ->
+          build_event(
+            id: "evt-#{i}",
+            session_id: "ses-recent",
+            sequence_number: i,
+            type: :message_received,
+            data: %{content: "msg-#{i}", role: "assistant"}
+          )
+        end)
+
+      assert {:ok, %Transcript{} = transcript} =
+               TranscriptBuilder.from_events(events,
+                 session_id: "ses-recent",
+                 max_messages: 2
+               )
+
+      assert length(transcript.messages) == 2
+      assert Enum.map(transcript.messages, & &1.content) == ["msg-4", "msg-5"]
+    end
+  end
+
   describe "from_store/3 and update_from_store/3" do
     test "builds and incrementally updates transcript from persisted store events" do
       {:ok, store} = InMemorySessionStore.start_link([])
@@ -213,4 +315,8 @@ defmodule AgentSessionManager.Core.TranscriptBuilderTest do
   defp build_event(opts) do
     Fixtures.build_event(opts)
   end
+
+  defp message_char_count(%{content: content}) when is_binary(content), do: String.length(content)
+  defp message_char_count(%{tool_name: name}) when is_binary(name), do: String.length(name)
+  defp message_char_count(_), do: 0
 end

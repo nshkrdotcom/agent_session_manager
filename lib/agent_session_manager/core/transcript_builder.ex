@@ -358,7 +358,15 @@ defmodule AgentSessionManager.Core.TranscriptBuilder do
   defp to_string_or_nil(value) when is_binary(value), do: value
   defp to_string_or_nil(value), do: inspect(value)
 
+  @default_chars_per_token 4
+
   defp maybe_truncate(%Transcript{} = transcript, opts) do
+    transcript
+    |> truncate_by_max_messages(opts)
+    |> truncate_by_chars(opts)
+  end
+
+  defp truncate_by_max_messages(%Transcript{} = transcript, opts) do
     case Keyword.get(opts, :max_messages) do
       max when is_integer(max) and max > 0 ->
         %{transcript | messages: Enum.take(transcript.messages, -max)}
@@ -367,6 +375,56 @@ defmodule AgentSessionManager.Core.TranscriptBuilder do
         transcript
     end
   end
+
+  defp truncate_by_chars(%Transcript{} = transcript, opts) do
+    max_chars = resolve_max_chars(opts)
+
+    case max_chars do
+      nil ->
+        transcript
+
+      budget when is_integer(budget) and budget > 0 ->
+        trimmed = trim_messages_to_char_budget(Enum.reverse(transcript.messages), budget, 0, [])
+        %{transcript | messages: trimmed}
+
+      _ ->
+        transcript
+    end
+  end
+
+  defp resolve_max_chars(opts) do
+    explicit = Keyword.get(opts, :max_chars)
+
+    approx_tokens = Keyword.get(opts, :max_tokens_approx)
+
+    cond do
+      is_integer(explicit) and explicit > 0 ->
+        explicit
+
+      is_integer(approx_tokens) and approx_tokens > 0 ->
+        approx_tokens * @default_chars_per_token
+
+      true ->
+        nil
+    end
+  end
+
+  defp trim_messages_to_char_budget([], _budget, _used, acc), do: acc
+
+  defp trim_messages_to_char_budget([msg | rest], budget, used, acc) do
+    chars = message_char_count(msg)
+    new_used = used + chars
+
+    if new_used > budget do
+      acc
+    else
+      trim_messages_to_char_budget(rest, budget, new_used, [msg | acc])
+    end
+  end
+
+  defp message_char_count(%{content: content}) when is_binary(content), do: String.length(content)
+  defp message_char_count(%{tool_name: name}) when is_binary(name), do: String.length(name)
+  defp message_char_count(_), do: 0
 
   defp apply_incremental_cursor(query_opts, %Transcript{last_sequence: sequence})
        when is_integer(sequence) and sequence >= 0 do

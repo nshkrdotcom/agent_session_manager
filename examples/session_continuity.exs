@@ -42,8 +42,8 @@ defmodule SessionContinuityExample do
            TranscriptBuilder.from_store(store, session.id, max_messages: 20),
          {:ok, second_result} <-
            execute_turn(store, adapter, session.id, @second_prompt,
-             continuation: true,
-             continuation_opts: [max_messages: 20]
+             continuation: :auto,
+             continuation_opts: [max_messages: 20, max_tokens_approx: 4_000]
            ),
          :ok <- assert_transcript_contains_token(transcript_before_second, @token),
          :ok <- assert_second_turn_output(second_result.output, @token) do
@@ -61,7 +61,7 @@ defmodule SessionContinuityExample do
 
       Enum.each(preview, fn line -> IO.puts("  #{line}") end)
 
-      IO.puts("\nRun 2 executed with continuation=true")
+      IO.puts("\nRun 2 executed with continuation=:auto, max_tokens_approx=4000")
       IO.puts("Run 2 output:")
       IO.puts("  #{compact_output(second_result.output)}")
 

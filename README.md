@@ -26,8 +26,8 @@ AgentSessionManager provides the infrastructure layer for building applications 
 - **Multi-provider support** -- Built-in adapters for Claude Code (Anthropic), Codex, and Amp (Sourcegraph), with a behaviour for adding your own
 - **Streaming events** -- Normalized event pipeline that maps provider-specific events to a canonical format
 - **Cursor-backed event streaming** -- Monotonic per-session sequence numbers with durable cursor queries (`after` / `before`) and optional long-poll support (`wait_timeout_ms`)
-- **Session continuity** -- Provider-agnostic transcript reconstruction and optional cross-run context replay
-- **Workspace snapshots** -- Optional pre/post snapshots, diff summaries, patch capture caps, and git-only rollback on failure
+- **Session continuity** -- Provider-agnostic transcript reconstruction, continuation modes (`:auto`, `:replay`, `:native`), per-provider session handles, and token-aware transcript truncation
+- **Workspace snapshots** -- Optional pre/post snapshots (including untracked files), diff summaries, patch capture caps, artifact-backed patch storage, configurable ignore rules, and git-only rollback on failure
 - **Provider routing** -- Router-as-adapter with capability-based selection, policy ordering, and retryable failover
 - **Policy enforcement** -- Real-time budget/tool governance with cancel or warn actions and `:policy_violation` events
 - **Capability negotiation** -- Declare required and optional capabilities; the resolver checks provider support before execution
@@ -256,13 +256,19 @@ before calling the adapter.
 
 ```elixir
 {:ok, result} = SessionManager.execute_run(store, adapter, run.id,
-  continuation: true,
-  continuation_opts: [max_messages: 200]
+  continuation: :auto,
+  continuation_opts: [max_messages: 200, max_tokens_approx: 12_000]
 )
 ```
 
-Adapters consume transcript context when present. If provider-native handle reuse
-is unavailable, transcript replay is the fallback path.
+Continuation modes: `false` (disabled), `true` / `:auto` (replay fallback),
+`:replay` (always replay), `:native` (provider-native, errors if unavailable).
+
+Token-aware truncation keeps the most recent messages within a character or
+approximate token budget (`max_chars`, `max_tokens_approx`).
+
+Adapters consume transcript context when present. Per-provider session handles
+are tracked under `session.metadata[:provider_sessions]`.
 
 ### Workspace Snapshots
 
@@ -276,14 +282,22 @@ Workspace instrumentation is also opt-in per run:
     strategy: :auto,
     capture_patch: true,
     max_patch_bytes: 1_048_576,
-    rollback_on_failure: false
+    rollback_on_failure: false,
+    artifact_store: artifact_store,
+    ignore: [paths: ["vendor"], globs: ["*.log"]]
   ]
 )
 ```
 
 When enabled, `SessionManager` takes pre/post snapshots, computes diffs,
 emits workspace events, and enriches run metadata with compact diff summaries.
-MVP rollback is git-only. Requesting `rollback_on_failure: true` with hash backend
+
+Git snapshots capture the full workspace state including untracked files without
+mutating `HEAD`. When an `artifact_store` is configured, large patches are stored
+as artifacts and only a `patch_ref` is kept in metadata. Hash backend supports
+configurable ignore rules via `ignore: [paths: [...], globs: [...]]`.
+
+Rollback is git-only. Requesting `rollback_on_failure: true` with hash backend
 returns a configuration error.
 
 ### Provider Routing

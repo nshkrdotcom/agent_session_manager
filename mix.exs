@@ -152,9 +152,12 @@ defmodule AgentSessionManager.MixProject do
         "Routing and Policy": [
           AgentSessionManager.Routing.RoutingPolicy,
           AgentSessionManager.Routing.CapabilityMatcher,
+          AgentSessionManager.Routing.CircuitBreaker,
           AgentSessionManager.Policy.Policy,
           AgentSessionManager.Policy.Evaluator,
-          AgentSessionManager.Policy.Runtime
+          AgentSessionManager.Policy.Runtime,
+          AgentSessionManager.Policy.AdapterCompiler,
+          AgentSessionManager.Policy.Preflight
         ],
         "Ports (Interfaces)": [
           AgentSessionManager.Ports.ProviderAdapter,

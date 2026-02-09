@@ -110,6 +110,34 @@ mix run examples/policy_enforcement.exs --provider codex
 mix run examples/policy_enforcement.exs --provider amp
 ```
 
+## Routing and Policy v2 Examples
+
+These examples demonstrate Phase 2 enhancements to Feature 4 and Feature 5.
+
+### `routing_v2.exs` -- Provider Routing v2 (Phase 2)
+
+- Demonstrates weighted routing with `strategy: :weighted` and custom `weights` map
+- Demonstrates session stickiness across two runs using `sticky_session_id`
+- Prints routing metadata (`routed_provider`, `routing_candidates`)
+
+```bash
+mix run examples/routing_v2.exs --provider claude
+mix run examples/routing_v2.exs --provider codex
+mix run examples/routing_v2.exs --provider amp
+```
+
+### `policy_v2.exs` -- Policy Enforcement v2 (Phase 2)
+
+- Demonstrates policy stacking via `policies: [org_policy, team_policy]` with deterministic merge
+- Demonstrates provider-side enforcement where supported, with reactive fallback
+- Shows merged policy semantics: tool rules concatenated, strictest `on_violation` wins
+
+```bash
+mix run examples/policy_v2.exs --provider claude
+mix run examples/policy_v2.exs --provider codex
+mix run examples/policy_v2.exs --provider amp
+```
+
 ## Session Server Runtime Examples
 
 These examples demonstrate Feature 6 using live provider execution.

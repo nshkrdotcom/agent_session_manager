@@ -80,3 +80,80 @@ config :agent_session_manager,
 
 When rates are unavailable for a provider, cost-limit enforcement is skipped and
 runtime metadata records the warning.
+
+## Policies Stack (Phase 2)
+
+Multiple policies can be stacked using `:policies` (list) instead of `:policy` (single):
+
+```elixir
+{:ok, org_policy} =
+  Policy.new(
+    name: "org",
+    limits: [{:max_total_tokens, 100_000}],
+    on_violation: :cancel
+  )
+
+{:ok, team_policy} =
+  Policy.new(
+    name: "team",
+    tool_rules: [{:deny, ["bash"]}],
+    on_violation: :warn
+  )
+
+{:ok, result} =
+  SessionManager.execute_run(store, adapter, run.id,
+    policies: [org_policy, team_policy]
+  )
+```
+
+Merge semantics (deterministic, left-to-right):
+
+- **Names**: joined with ` + ` separator (`"org + team"`)
+- **Limits**: later values override earlier values of the same type
+- **Tool rules**: concatenated from all policies
+- **on_violation**: strictest wins (`:cancel` > `:warn`)
+- **Metadata**: deep-merged (later keys override)
+
+When both `:policies` and `:policy` are provided, `:policies` takes precedence.
+
+## Provider-Side Enforcement (Phase 2)
+
+For providers that support it, policies are compiled into `adapter_opts` for
+best-effort provider-side enforcement:
+
+```elixir
+alias AgentSessionManager.Policy.AdapterCompiler
+
+# Automatic during execute_run -- no manual step needed
+# The SessionManager internally does:
+adapter_opts = AdapterCompiler.compile(policy, provider_name)
+# => [denied_tools: ["bash"], max_tokens: 100_000]
+```
+
+Tool deny rules are mapped to `:denied_tools`, tool allow rules to
+`:allowed_tools`, and `max_total_tokens` limits to `:max_tokens`.
+
+Reactive enforcement remains the safety net: even with provider-side hints,
+the policy runtime still evaluates every event and enforces violations.
+
+## Preflight Checks (Phase 2)
+
+Before adapter execution begins, the `Preflight` module validates that a
+policy is not trivially impossible:
+
+- Empty allow list (no tools permitted)
+- Zero-budget limits (`max_total_tokens: 0`, `max_duration_ms: 0`)
+- Contradictory rules (allow and deny for the same tool)
+
+If preflight fails, execution is rejected immediately with a
+`{:error, %Error{code: :policy_violation}}` without calling the adapter.
+
+```elixir
+alias AgentSessionManager.Policy.Preflight
+
+# Manual check (automatic during execute_run):
+case Preflight.check(policy) do
+  :ok -> # safe to proceed
+  {:error, %Error{code: :policy_violation}} -> # impossible policy
+end
+```

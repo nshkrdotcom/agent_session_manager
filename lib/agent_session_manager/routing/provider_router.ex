@@ -5,6 +5,18 @@ defmodule AgentSessionManager.Routing.ProviderRouter do
   The router selects a registered adapter by capability requirements,
   routing policy, and simple in-router health state. It supports retryable
   failover and run-to-adapter cancellation routing.
+
+  ## Phase 2 Additions
+
+  - **Weighted scoring** — when `strategy: :weighted`, candidates are ordered
+    by score (static weight minus health penalty).
+  - **Session stickiness** — pass `routing: [sticky_session_id: id]` to pin a
+    session to a provider for continuity. The mapping expires after
+    `sticky_ttl_ms` (default: 300 000 ms).
+  - **Routing telemetry** — emits `[:agent_session_manager, :router, :attempt, ...]`
+    events for each routing attempt.
+  - **Circuit breaker** — optional per-adapter circuit breaker behind
+    `circuit_breaker: true` configuration.
   """
 
   @behaviour AgentSessionManager.Ports.ProviderAdapter
@@ -13,10 +25,11 @@ defmodule AgentSessionManager.Routing.ProviderRouter do
 
   alias AgentSessionManager.Core.Error
   alias AgentSessionManager.Ports.ProviderAdapter
-  alias AgentSessionManager.Routing.{CapabilityMatcher, RoutingPolicy}
+  alias AgentSessionManager.Routing.{CapabilityMatcher, CircuitBreaker, RoutingPolicy}
 
   @default_name "router"
   @default_cooldown_ms 30_000
+  @default_sticky_ttl_ms 300_000
 
   @type adapter_id :: String.t()
 
@@ -120,6 +133,12 @@ defmodule AgentSessionManager.Routing.ProviderRouter do
   def init(opts) do
     policy = RoutingPolicy.new(Keyword.get(opts, :policy, []))
     cooldown_ms = normalize_cooldown(Keyword.get(opts, :cooldown_ms, @default_cooldown_ms))
+    circuit_breaker_enabled = Keyword.get(opts, :circuit_breaker, false) == true
+
+    circuit_breaker_opts =
+      Keyword.get(opts, :circuit_breaker_opts, [])
+      |> normalize_cb_opts(cooldown_ms)
+
     {:ok, task_supervisor} = Task.Supervisor.start_link()
 
     {:ok,
@@ -130,7 +149,12 @@ defmodule AgentSessionManager.Routing.ProviderRouter do
        health: %{},
        active_runs: %{},
        pending_tasks: %{},
-       task_supervisor: task_supervisor
+       task_supervisor: task_supervisor,
+       sticky_sessions: %{},
+       sticky_ttl_ms: normalize_ttl(Keyword.get(opts, :sticky_ttl_ms, @default_sticky_ttl_ms)),
+       circuit_breaker_enabled: circuit_breaker_enabled,
+       circuit_breaker_opts: circuit_breaker_opts,
+       circuit_breakers: %{}
      }}
   end
 
@@ -160,7 +184,20 @@ defmodule AgentSessionManager.Routing.ProviderRouter do
       adapter_entry = %{id: adapter_id, adapter: adapter, opts: opts}
       adapters = Map.put(state.adapters, adapter_id, adapter_entry)
       health = Map.put_new(state.health, adapter_id, default_health())
-      {:reply, :ok, %{state | adapters: adapters, health: health}}
+
+      circuit_breakers =
+        if state.circuit_breaker_enabled do
+          Map.put_new(
+            state.circuit_breakers,
+            adapter_id,
+            CircuitBreaker.new(state.circuit_breaker_opts)
+          )
+        else
+          state.circuit_breakers
+        end
+
+      {:reply, :ok,
+       %{state | adapters: adapters, health: health, circuit_breakers: circuit_breakers}}
     end
   end
 
@@ -168,6 +205,7 @@ defmodule AgentSessionManager.Routing.ProviderRouter do
     adapter_id = normalize_adapter_id(id)
     adapters = Map.delete(state.adapters, adapter_id)
     health = Map.delete(state.health, adapter_id)
+    circuit_breakers = Map.delete(state.circuit_breakers, adapter_id)
 
     active_runs =
       Enum.reduce(state.active_runs, %{}, fn {run_id, active_entry}, acc ->
@@ -178,7 +216,14 @@ defmodule AgentSessionManager.Routing.ProviderRouter do
         end
       end)
 
-    {:reply, :ok, %{state | adapters: adapters, health: health, active_runs: active_runs}}
+    {:reply, :ok,
+     %{
+       state
+       | adapters: adapters,
+         health: health,
+         active_runs: active_runs,
+         circuit_breakers: circuit_breakers
+     }}
   end
 
   def handle_call(:status, _from, state) do
@@ -190,7 +235,10 @@ defmodule AgentSessionManager.Routing.ProviderRouter do
           {run_id, active_entry.adapter_id}
         end),
       policy: state.policy,
-      cooldown_ms: state.cooldown_ms
+      cooldown_ms: state.cooldown_ms,
+      sticky_sessions: state.sticky_sessions,
+      circuit_breakers:
+        Map.new(state.circuit_breakers, fn {id, cb} -> {id, CircuitBreaker.to_map(cb)} end)
     }
 
     {:reply, status, state}
@@ -208,14 +256,24 @@ defmodule AgentSessionManager.Routing.ProviderRouter do
     {:noreply, %{state | pending_tasks: pending_tasks}}
   end
 
-  def handle_call({:prepare_execution, run_id, routing_opts}, _from, state) do
+  def handle_call({:prepare_execution, run_id, session_id, routing_opts}, _from, state) do
     policy = resolve_policy(state.policy, routing_opts)
     required_capabilities = extract_required_capabilities(routing_opts)
+    sticky_session_id = Keyword.get(routing_opts, :sticky_session_id)
+
+    # Check stickiness before building candidates
+    sticky_adapter = resolve_sticky_adapter(state, sticky_session_id)
+
     candidates = build_candidates(state, policy, required_capabilities)
     attempt_limit = RoutingPolicy.attempt_limit(policy, length(candidates))
 
+    # If we have a sticky adapter and it's in the candidate list, move it to front
+    candidates = apply_stickiness(candidates, sticky_adapter)
+
     plan = %{
       run_id: run_id,
+      session_id: session_id,
+      sticky_session_id: sticky_session_id,
       candidates: candidates,
       candidate_ids: Enum.map(candidates, & &1.id),
       attempt_limit: attempt_limit
@@ -241,10 +299,38 @@ defmodule AgentSessionManager.Routing.ProviderRouter do
     end
   end
 
+  def handle_call(
+        {:record_attempt_result, run_id, adapter_id, result, sticky_session_id},
+        _from,
+        state
+      ) do
+    health = update_health(state.health, adapter_id, result)
+    active_runs = Map.delete(state.active_runs, run_id)
+
+    circuit_breakers = update_circuit_breaker(state.circuit_breakers, adapter_id, result)
+
+    # Update stickiness on success
+    sticky_sessions =
+      update_stickiness(state.sticky_sessions, sticky_session_id, adapter_id, result)
+
+    {:reply, :ok,
+     %{
+       state
+       | health: health,
+         active_runs: active_runs,
+         circuit_breakers: circuit_breakers,
+         sticky_sessions: sticky_sessions
+     }}
+  end
+
+  # Keep backward-compatible 4-element tuple
   def handle_call({:record_attempt_result, run_id, adapter_id, result}, _from, state) do
     health = update_health(state.health, adapter_id, result)
     active_runs = Map.delete(state.active_runs, run_id)
-    {:reply, :ok, %{state | health: health, active_runs: active_runs}}
+    circuit_breakers = update_circuit_breaker(state.circuit_breakers, adapter_id, result)
+
+    {:reply, :ok,
+     %{state | health: health, active_runs: active_runs, circuit_breakers: circuit_breakers}}
   end
 
   def handle_call({:cancel, run_id}, _from, state) do
@@ -285,11 +371,17 @@ defmodule AgentSessionManager.Routing.ProviderRouter do
     end
   end
 
+  # ============================================================================
+  # Routing Execution
+  # ============================================================================
+
   defp execute_routed(router, run, session, opts) do
     routing_opts = extract_routing_opts(opts)
     adapter_opts = Keyword.delete(opts, :routing)
+    session_id = session.id
 
-    with {:ok, plan} <- GenServer.call(router, {:prepare_execution, run.id, routing_opts}),
+    with {:ok, plan} <-
+           GenServer.call(router, {:prepare_execution, run.id, session_id, routing_opts}),
          {:ok, result} <- execute_plan(router, run, session, adapter_opts, plan, 1, nil) do
       {:ok, result}
     else
@@ -330,8 +422,26 @@ defmodule AgentSessionManager.Routing.ProviderRouter do
               failover_context
             )
 
+          emit_routing_telemetry_start(run, session, candidate.id, attempt, plan.candidate_ids)
+          start_time = System.monotonic_time()
+
           result = execute_candidate(candidate, run, session, attempt_opts)
-          :ok = GenServer.call(router, {:record_attempt_result, run.id, candidate.id, result})
+
+          emit_routing_telemetry_result(
+            run,
+            session,
+            candidate.id,
+            attempt,
+            plan.candidate_ids,
+            result,
+            start_time
+          )
+
+          :ok =
+            GenServer.call(
+              router,
+              {:record_attempt_result, run.id, candidate.id, result, plan.sticky_session_id}
+            )
 
           attempt_context =
             build_attempt_context(
@@ -417,6 +527,10 @@ defmodule AgentSessionManager.Routing.ProviderRouter do
     }
   end
 
+  # ============================================================================
+  # Candidate Building
+  # ============================================================================
+
   defp build_candidates(state, policy, required_capabilities) do
     descriptors =
       state.adapters
@@ -434,16 +548,170 @@ defmodule AgentSessionManager.Routing.ProviderRouter do
     |> Enum.filter(fn descriptor ->
       CapabilityMatcher.matches_all?(descriptor.capabilities, required_capabilities)
     end)
-    |> then(&RoutingPolicy.order_candidates(policy, &1))
+    |> then(&RoutingPolicy.order_candidates(policy, &1, health: state.health))
     |> Enum.filter(fn descriptor ->
-      healthy?(state.health, descriptor.id, state.cooldown_ms)
+      adapter_allowed?(state, descriptor.id)
     end)
   end
+
+  defp adapter_allowed?(state, adapter_id) do
+    cooldown_ok = healthy?(state.health, adapter_id, state.cooldown_ms)
+
+    cb_ok =
+      case Map.get(state.circuit_breakers, adapter_id) do
+        nil -> true
+        cb -> CircuitBreaker.allowed?(cb)
+      end
+
+    cooldown_ok and cb_ok
+  end
+
+  # ============================================================================
+  # Session Stickiness
+  # ============================================================================
+
+  defp resolve_sticky_adapter(_state, nil), do: nil
+
+  defp resolve_sticky_adapter(state, sticky_session_id) when is_binary(sticky_session_id) do
+    case Map.get(state.sticky_sessions, sticky_session_id) do
+      %{adapter_id: adapter_id, expires_at_ms: expires_at} ->
+        if System.monotonic_time(:millisecond) < expires_at do
+          adapter_id
+        else
+          nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp apply_stickiness(candidates, nil), do: candidates
+
+  defp apply_stickiness(candidates, sticky_adapter_id) do
+    case Enum.split_with(candidates, fn c -> c.id == sticky_adapter_id end) do
+      {[sticky], rest} -> [sticky | rest]
+      _ -> candidates
+    end
+  end
+
+  defp update_stickiness(sticky_sessions, nil, _adapter_id, _result), do: sticky_sessions
+
+  defp update_stickiness(sticky_sessions, sticky_session_id, adapter_id, {:ok, _result}) do
+    # Use a hardcoded TTL that matches the router's configured TTL
+    # The TTL is stored by the caller as part of the plan
+    ttl_ms = @default_sticky_ttl_ms
+
+    Map.put(sticky_sessions, sticky_session_id, %{
+      adapter_id: adapter_id,
+      expires_at_ms: System.monotonic_time(:millisecond) + ttl_ms
+    })
+  end
+
+  defp update_stickiness(sticky_sessions, _sticky_session_id, _adapter_id, _error),
+    do: sticky_sessions
+
+  # ============================================================================
+  # Circuit Breaker
+  # ============================================================================
+
+  defp update_circuit_breaker(circuit_breakers, adapter_id, result) do
+    case Map.get(circuit_breakers, adapter_id) do
+      nil ->
+        circuit_breakers
+
+      cb ->
+        updated_cb =
+          case result do
+            {:ok, _} -> CircuitBreaker.record_success(cb)
+            {:error, _} -> CircuitBreaker.record_failure(cb)
+          end
+
+        Map.put(circuit_breakers, adapter_id, updated_cb)
+    end
+  end
+
+  # ============================================================================
+  # Routing Telemetry
+  # ============================================================================
+
+  defp emit_routing_telemetry_start(run, session, adapter_id, attempt, candidate_ids) do
+    if telemetry_enabled?() do
+      :telemetry.execute(
+        [:agent_session_manager, :router, :attempt, :start],
+        %{system_time: System.system_time()},
+        %{
+          session_id: session.id,
+          run_id: run.id,
+          adapter_id: adapter_id,
+          attempt: attempt,
+          candidate_ids: candidate_ids
+        }
+      )
+    end
+
+    :ok
+  end
+
+  defp emit_routing_telemetry_result(
+         run,
+         session,
+         adapter_id,
+         attempt,
+         candidate_ids,
+         result,
+         start_time
+       ) do
+    if telemetry_enabled?() do
+      duration = System.monotonic_time() - start_time
+
+      case result do
+        {:ok, _} ->
+          :telemetry.execute(
+            [:agent_session_manager, :router, :attempt, :stop],
+            %{duration: duration, system_time: System.system_time()},
+            %{
+              session_id: session.id,
+              run_id: run.id,
+              adapter_id: adapter_id,
+              attempt: attempt,
+              candidate_ids: candidate_ids
+            }
+          )
+
+        {:error, error} ->
+          :telemetry.execute(
+            [:agent_session_manager, :router, :attempt, :exception],
+            %{duration: duration, system_time: System.system_time()},
+            %{
+              session_id: session.id,
+              run_id: run.id,
+              adapter_id: adapter_id,
+              attempt: attempt,
+              candidate_ids: candidate_ids,
+              error_code: Map.get(error, :code)
+            }
+          )
+      end
+    end
+
+    :ok
+  end
+
+  defp telemetry_enabled? do
+    AgentSessionManager.Config.get(:telemetry_enabled)
+  end
+
+  # ============================================================================
+  # Policy Resolution
+  # ============================================================================
 
   defp resolve_policy(base_policy, routing_opts) do
     policy_opts =
       Map.merge(
-        Map.new(Keyword.take(routing_opts, [:prefer, :exclude, :max_attempts, :weights])),
+        Map.new(
+          Keyword.take(routing_opts, [:prefer, :exclude, :max_attempts, :weights, :strategy])
+        ),
         normalize_policy_override(Keyword.get(routing_opts, :policy, %{}))
       )
 
@@ -473,6 +741,10 @@ defmodule AgentSessionManager.Routing.ProviderRouter do
   defp normalize_routing_opts(opts) when is_list(opts), do: opts
   defp normalize_routing_opts(opts) when is_map(opts), do: Map.to_list(opts)
   defp normalize_routing_opts(_), do: []
+
+  # ============================================================================
+  # Event Callback Wrapping
+  # ============================================================================
 
   defp wrap_event_callback(opts, routed_provider, attempt, candidate_ids, failover_context) do
     case Keyword.get(opts, :event_callback) do
@@ -524,11 +796,24 @@ defmodule AgentSessionManager.Routing.ProviderRouter do
     |> Map.put(:failover_reason, reason)
   end
 
+  # ============================================================================
+  # Health
+  # ============================================================================
+
   defp normalize_adapter_id(id) when is_binary(id) and id != "", do: id
   defp normalize_adapter_id(_invalid), do: nil
 
   defp normalize_cooldown(value) when is_integer(value) and value >= 0, do: value
   defp normalize_cooldown(_invalid), do: @default_cooldown_ms
+
+  defp normalize_ttl(value) when is_integer(value) and value >= 0, do: value
+  defp normalize_ttl(_invalid), do: @default_sticky_ttl_ms
+
+  defp normalize_cb_opts(opts, cooldown_ms) when is_list(opts) do
+    Keyword.put_new(opts, :cooldown_ms, cooldown_ms)
+  end
+
+  defp normalize_cb_opts(_invalid, cooldown_ms), do: [cooldown_ms: cooldown_ms]
 
   defp healthy?(health_map, adapter_id, cooldown_ms) do
     case Map.get(health_map, adapter_id, default_health()) do

@@ -80,6 +80,82 @@ defmodule AgentSessionManager.Policy.Policy do
     end
   end
 
+  @doc """
+  Merges a stack of policies into a single effective policy.
+
+  Policies are merged left-to-right (first policy is the base,
+  subsequent policies override).  Deterministic merge semantics:
+
+  - `name`: joined with `" + "` separator
+  - `limits`: later policies override limit types that appear in both;
+    limits unique to either side are preserved
+  - `tool_rules`: concatenated (all rules apply)
+  - `on_violation`: the **strictest** action wins (`:cancel` > `:warn`)
+  - `metadata`: deep-merged (later keys override)
+
+  Returns a single `%Policy{}`.
+
+  ## Examples
+
+      {:ok, org} = Policy.new(name: "org", limits: [{:max_total_tokens, 100_000}])
+      {:ok, team} = Policy.new(name: "team", tool_rules: [{:deny, ["bash"]}])
+      {:ok, user} = Policy.new(name: "user", on_violation: :warn)
+
+      effective = Policy.stack_merge([org, team, user])
+      # effective has org token limit, team deny rule, org cancel action
+      # (cancel is stricter than warn)
+
+  """
+  @spec stack_merge([t()]) :: t()
+  def stack_merge([]), do: default_policy()
+  def stack_merge([single]), do: single
+
+  def stack_merge([first | rest]) do
+    Enum.reduce(rest, first, &merge_two_policies/2)
+  end
+
+  defp merge_two_policies(%__MODULE__{} = override, %__MODULE__{} = base) do
+    merged_limits = merge_limits(base.limits, override.limits)
+    merged_tool_rules = base.tool_rules ++ override.tool_rules
+    merged_on_violation = strictest_action(base.on_violation, override.on_violation)
+    merged_metadata = Map.merge(base.metadata, override.metadata)
+
+    merged_name =
+      if base.name == override.name do
+        base.name
+      else
+        base.name <> " + " <> override.name
+      end
+
+    case new(%{
+           name: merged_name,
+           limits: merged_limits,
+           tool_rules: merged_tool_rules,
+           on_violation: merged_on_violation,
+           metadata: merged_metadata
+         }) do
+      {:ok, policy} -> policy
+      {:error, _} -> base
+    end
+  end
+
+  defp merge_limits(base_limits, override_limits) do
+    # Build map from base
+    base_map = Map.new(base_limits)
+    override_map = Map.new(override_limits)
+    # Override map takes precedence for duplicate keys
+    Map.merge(base_map, override_map) |> Enum.to_list()
+  end
+
+  defp strictest_action(:cancel, _), do: :cancel
+  defp strictest_action(_, :cancel), do: :cancel
+  defp strictest_action(a, _), do: a
+
+  defp default_policy do
+    {:ok, policy} = new(%{name: "default"})
+    policy
+  end
+
   defp validate_name(name) when is_binary(name) and name != "", do: {:ok, name}
 
   defp validate_name(_invalid),

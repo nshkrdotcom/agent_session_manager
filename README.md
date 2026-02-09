@@ -28,8 +28,8 @@ AgentSessionManager provides the infrastructure layer for building applications 
 - **Cursor-backed event streaming** -- Monotonic per-session sequence numbers with durable cursor queries (`after` / `before`) and optional long-poll support (`wait_timeout_ms`)
 - **Session continuity** -- Provider-agnostic transcript reconstruction, continuation modes (`:auto`, `:replay`, `:native`), per-provider session handles, and token-aware transcript truncation
 - **Workspace snapshots** -- Optional pre/post snapshots (including untracked files), diff summaries, patch capture caps, artifact-backed patch storage, configurable ignore rules, and git-only rollback on failure
-- **Provider routing** -- Router-as-adapter with capability-based selection, policy ordering, and retryable failover
-- **Policy enforcement** -- Real-time budget/tool governance with cancel or warn actions and `:policy_violation` events
+- **Provider routing** -- Router-as-adapter with capability-based selection, policy ordering, retryable failover, weighted scoring, session stickiness, circuit breaker, and routing telemetry
+- **Policy enforcement** -- Real-time budget/tool governance with cancel or warn actions, `:policy_violation` events, policy stacking with deterministic merge, provider-side enforcement, and preflight checks
 - **Capability negotiation** -- Declare required and optional capabilities; the resolver checks provider support before execution
 - **Concurrency controls** -- Configurable limits on parallel sessions and runs with slot-based tracking
 - **Session server runtime** -- Optional per-session `SessionServer` with FIFO queueing, subscriptions, and strict sequential MVP execution (`max_concurrent_runs: 1`)
@@ -334,6 +334,13 @@ MVP health/failover behavior:
 - retries/fails over only for retryable errors (`Error.retryable?/1`)
 - routes `cancel/2` to the adapter currently handling the active run
 
+Phase 2 additions:
+
+- **Weighted scoring** -- `strategy: :weighted` with custom weights and health-based penalties
+- **Session stickiness** -- `sticky_session_id` binds sessions to adapters across runs with configurable TTL
+- **Circuit breaker** -- pure-functional per-adapter circuit breaker (closed/open/half-open states)
+- **Routing telemetry** -- `:telemetry` events for each routing attempt (start/stop/exception)
+
 ### Policy Enforcement
 
 Policy enforcement is opt-in per execution:
@@ -360,6 +367,12 @@ Behavior:
   `{:error, %Error{code: :policy_violation}}` even if provider returned success
 - `on_violation: :warn` preserves success and returns violation metadata in `result.policy`
 - cost limits (`{:max_cost_usd, ...}`) are optional and use configured provider token rates
+
+Phase 2 additions:
+
+- **Policies stack** -- `policies: [org, team, user]` with deterministic merge (strictest `on_violation` wins)
+- **Provider-side enforcement** -- policy rules compiled to `adapter_opts` for best-effort provider-side hints
+- **Preflight checks** -- impossible policies (empty allow lists, zero budgets) rejected before adapter execution
 
 ### Provider Adapters
 
@@ -431,6 +444,10 @@ mix run examples/workspace_snapshot.exs --provider claude
 # Feature 4 and 5 examples
 mix run examples/provider_routing.exs --provider codex
 mix run examples/policy_enforcement.exs --provider claude
+
+# Feature 4 v2 and 5 v2 examples (Phase 2)
+mix run examples/routing_v2.exs --provider amp
+mix run examples/policy_v2.exs --provider claude
 
 # Default run-all mode executes all examples for all providers
 bash examples/run_all.sh

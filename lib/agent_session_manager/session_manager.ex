@@ -63,7 +63,7 @@ defmodule AgentSessionManager.SessionManager do
     TranscriptBuilder
   }
 
-  alias AgentSessionManager.Policy.{Policy, Runtime}
+  alias AgentSessionManager.Policy.{AdapterCompiler, Policy, Preflight, Runtime}
   alias AgentSessionManager.Ports.{ArtifactStore, ProviderAdapter, SessionStore}
   alias AgentSessionManager.Telemetry
   alias AgentSessionManager.Workspace.{Diff, Snapshot, Workspace}
@@ -262,7 +262,9 @@ defmodule AgentSessionManager.SessionManager do
   - `:adapter_opts` - Additional adapter-specific options passed through to
     `ProviderAdapter.execute/4`.
   - `:policy` - Policy definition (`%AgentSessionManager.Policy.Policy{}` or attributes)
-    for runtime budget/tool enforcement.
+    for runtime budget/tool enforcement (single policy shorthand).
+  - `:policies` - A list of policies to stack-merge into one effective policy.
+    When both `:policy` and `:policies` are given, `:policies` takes precedence.
   - `:workspace` - Workspace snapshot/diff options:
     `enabled`, `path`, `strategy`, `capture_patch`, `max_patch_bytes`,
     and `rollback_on_failure` (git backend only in MVP).
@@ -347,6 +349,7 @@ defmodule AgentSessionManager.SessionManager do
       |> maybe_put_keyword(:continuation_opts, Keyword.get(opts, :continuation_opts))
       |> maybe_put_keyword(:adapter_opts, Keyword.get(opts, :adapter_opts))
       |> maybe_put_keyword(:policy, Keyword.get(opts, :policy))
+      |> maybe_put_keyword(:policies, Keyword.get(opts, :policies))
       |> maybe_put_keyword(:workspace, Keyword.get(opts, :workspace))
 
     with {:ok, session} <- start_session(store, adapter, session_attrs),
@@ -510,10 +513,17 @@ defmodule AgentSessionManager.SessionManager do
     provider_name = ProviderAdapter.name(adapter)
     user_callback = Keyword.get(opts, :event_callback)
 
-    with {:ok, execution_session} <- maybe_attach_transcript(store, session, opts),
+    with {:ok, effective_policy} <- resolve_effective_policy(opts),
+         :ok <- maybe_preflight_check(effective_policy),
+         {:ok, execution_session} <- maybe_attach_transcript(store, session, opts),
          {:ok, workspace_state} <- maybe_prepare_workspace(store, run, opts),
          :ok <- persist_input_messages(store, run),
-         {:ok, policy_runtime} <- maybe_start_policy_runtime(opts, provider_name, run.id) do
+         {:ok, policy_runtime} <-
+           maybe_start_policy_runtime_from_effective(
+             effective_policy,
+             provider_name,
+             run.id
+           ) do
       event_callback =
         build_event_callback(
           store,
@@ -528,6 +538,7 @@ defmodule AgentSessionManager.SessionManager do
         opts
         |> Keyword.get(:adapter_opts, [])
         |> Keyword.put(:event_callback, event_callback)
+        |> maybe_compile_policy_opts(effective_policy, provider_name)
 
       provider_result =
         ProviderAdapter.execute(adapter, run, execution_session, adapter_opts)
@@ -592,16 +603,59 @@ defmodule AgentSessionManager.SessionManager do
     end
   end
 
-  defp maybe_start_policy_runtime(opts, provider_name, run_id) do
-    case Keyword.get(opts, :policy) do
-      nil ->
-        {:ok, nil}
+  # Resolve the effective policy from :policies or :policy options.
+  # :policies takes precedence when both are provided.
+  defp resolve_effective_policy(opts) do
+    policies = Keyword.get(opts, :policies)
+    policy = Keyword.get(opts, :policy)
 
-      policy_input ->
-        with {:ok, policy} <- normalize_policy(policy_input) do
-          Runtime.start_link(policy: policy, provider: provider_name, run_id: run_id)
+    cond do
+      is_list(policies) and policies != [] ->
+        resolve_policies_stack(policies)
+
+      policy != nil ->
+        case normalize_policy(policy) do
+          {:ok, p} -> {:ok, p}
+          error -> error
         end
+
+      true ->
+        {:ok, nil}
     end
+  end
+
+  defp resolve_policies_stack(policies) do
+    normalized =
+      Enum.reduce_while(policies, {:ok, []}, fn policy_input, {:ok, acc} ->
+        case normalize_policy(policy_input) do
+          {:ok, policy} -> {:cont, {:ok, acc ++ [policy]}}
+          {:error, _} = error -> {:halt, error}
+        end
+      end)
+
+    case normalized do
+      {:ok, policy_list} -> {:ok, Policy.stack_merge(policy_list)}
+      error -> error
+    end
+  end
+
+  defp maybe_preflight_check(nil), do: :ok
+
+  defp maybe_preflight_check(%Policy{} = policy) do
+    Preflight.check(policy)
+  end
+
+  defp maybe_start_policy_runtime_from_effective(nil, _provider_name, _run_id), do: {:ok, nil}
+
+  defp maybe_start_policy_runtime_from_effective(%Policy{} = policy, provider_name, run_id) do
+    Runtime.start_link(policy: policy, provider: provider_name, run_id: run_id)
+  end
+
+  defp maybe_compile_policy_opts(adapter_opts, nil, _provider_name), do: adapter_opts
+
+  defp maybe_compile_policy_opts(adapter_opts, %Policy{} = policy, provider_name) do
+    compiled = AdapterCompiler.compile(policy, provider_name)
+    Keyword.merge(adapter_opts, compiled)
   end
 
   defp normalize_policy(%Policy{} = policy), do: {:ok, policy}

@@ -1694,6 +1694,379 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
     end
   end
 
+  describe "max_turns configuration" do
+    test "defaults max_turns to nil (unlimited) in adapter state" do
+      {:ok, adapter} = ClaudeAdapter.start_link(api_key: "test-key")
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      assert state.max_turns == nil
+    end
+
+    test "stores explicit max_turns in adapter state" do
+      {:ok, adapter} = ClaudeAdapter.start_link(api_key: "test-key", max_turns: 5)
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      assert state.max_turns == 5
+    end
+
+    test "default max_turns passes nil to SDK options (unlimited)", %{
+      session: session,
+      run: run
+    } do
+      {:ok, adapter} =
+        ClaudeAdapter.start_link(
+          api_key: "test-key",
+          sdk_module: OptionsCapturingSDK,
+          sdk_pid: self()
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      assert {:ok, _result} = ClaudeAdapter.execute(adapter, run, session, timeout: 5_000)
+
+      assert_receive {:captured_sdk_options, opts}, 1_000
+      assert opts.max_turns == nil
+    end
+
+    test "explicit max_turns is passed to SDK options", %{session: session, run: run} do
+      {:ok, adapter} =
+        ClaudeAdapter.start_link(
+          api_key: "test-key",
+          max_turns: 10,
+          sdk_module: OptionsCapturingSDK,
+          sdk_pid: self()
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      assert {:ok, _result} = ClaudeAdapter.execute(adapter, run, session, timeout: 5_000)
+
+      assert_receive {:captured_sdk_options, opts}, 1_000
+      assert opts.max_turns == 10
+    end
+  end
+
+  describe "sdk_opts passthrough" do
+    test "defaults sdk_opts to empty list in adapter state" do
+      {:ok, adapter} = ClaudeAdapter.start_link(api_key: "test-key")
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      assert state.sdk_opts == []
+    end
+
+    test "sdk_opts fields are merged into SDK options", %{session: session, run: run} do
+      {:ok, adapter} =
+        ClaudeAdapter.start_link(
+          api_key: "test-key",
+          sdk_opts: [verbose: true, max_budget_usd: 1.0],
+          sdk_module: OptionsCapturingSDK,
+          sdk_pid: self()
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      assert {:ok, _result} = ClaudeAdapter.execute(adapter, run, session, timeout: 5_000)
+
+      assert_receive {:captured_sdk_options, opts}, 1_000
+      assert opts.verbose == true
+      assert opts.max_budget_usd == 1.0
+    end
+
+    test "normalized options take precedence over sdk_opts", %{session: session, run: run} do
+      {:ok, adapter} =
+        ClaudeAdapter.start_link(
+          api_key: "test-key",
+          max_turns: 5,
+          sdk_opts: [max_turns: 99],
+          sdk_module: OptionsCapturingSDK,
+          sdk_pid: self()
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      assert {:ok, _result} = ClaudeAdapter.execute(adapter, run, session, timeout: 5_000)
+
+      assert_receive {:captured_sdk_options, opts}, 1_000
+      # Normalized max_turns should win over sdk_opts
+      assert opts.max_turns == 5
+    end
+
+    test "system_prompt is passed through to SDK options", %{session: session, run: run} do
+      {:ok, adapter} =
+        ClaudeAdapter.start_link(
+          api_key: "test-key",
+          system_prompt: "You are a helpful assistant.",
+          sdk_module: OptionsCapturingSDK,
+          sdk_pid: self()
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      assert {:ok, _result} = ClaudeAdapter.execute(adapter, run, session, timeout: 5_000)
+
+      assert_receive {:captured_sdk_options, opts}, 1_000
+      assert opts.system_prompt == "You are a helpful assistant."
+    end
+
+    test "cwd is passed through to SDK options", %{session: session, run: run} do
+      {:ok, adapter} =
+        ClaudeAdapter.start_link(
+          api_key: "test-key",
+          cwd: "/tmp/my-project",
+          sdk_module: OptionsCapturingSDK,
+          sdk_pid: self()
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      assert {:ok, _result} = ClaudeAdapter.execute(adapter, run, session, timeout: 5_000)
+
+      assert_receive {:captured_sdk_options, opts}, 1_000
+      assert opts.cwd == "/tmp/my-project"
+    end
+
+    test "cwd defaults to nil when not provided", %{session: session, run: run} do
+      {:ok, adapter} =
+        ClaudeAdapter.start_link(
+          api_key: "test-key",
+          sdk_module: OptionsCapturingSDK,
+          sdk_pid: self()
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      assert {:ok, _result} = ClaudeAdapter.execute(adapter, run, session, timeout: 5_000)
+
+      assert_receive {:captured_sdk_options, opts}, 1_000
+      assert opts.cwd == nil
+    end
+  end
+
+  # ============================================================================
+  # Streaming multi-turn tool use
+  # ============================================================================
+
+  describe "streaming multi-turn tool use" do
+    test "continues stream past message_stop with tool_use stop_reason", %{
+      session: session,
+      run: run
+    } do
+      test_pid = self()
+
+      ctx = %{
+        run: run,
+        session: session,
+        prepared_input: "test prompt",
+        event_callback: fn event -> send(test_pid, {:event, event}) end,
+        adapter_pid: self(),
+        accumulated_content: "",
+        content_blocks: %{},
+        tool_calls: [],
+        token_usage: %{input_tokens: 0, output_tokens: 0},
+        session_id: "test-session"
+      }
+
+      events = [
+        # Turn 1: assistant requests tool use
+        %{
+          type: :message_start,
+          model: "claude-haiku-4-5",
+          usage: %{},
+          raw_event: %{"message" => %{"usage" => %{"input_tokens" => 10}}}
+        },
+        %{type: :text_delta, text: "Let me read that file."},
+        %{
+          type: :tool_use_start,
+          id: "toolu_123",
+          name: "Bash",
+          input: %{"command" => "cat /test.txt"}
+        },
+        %{
+          type: :message_delta,
+          stop_reason: "tool_use",
+          raw_event: %{"usage" => %{"output_tokens" => 20}}
+        },
+        %{type: :message_stop},
+        # Turn 2: assistant responds after tool result
+        %{
+          type: :message_start,
+          model: "claude-haiku-4-5",
+          usage: %{},
+          raw_event: %{"message" => %{"usage" => %{"input_tokens" => 50}}}
+        },
+        %{type: :text_delta, text: "Here are the file contents."},
+        %{
+          type: :message_delta,
+          stop_reason: "end_turn",
+          raw_event: %{"usage" => %{"output_tokens" => 15}}
+        },
+        %{type: :message_stop}
+      ]
+
+      {:ok, result} = ClaudeAdapter.process_streaming_events_for_test(events, ctx)
+
+      all_events = collect_events(test_pid, 500)
+
+      # Should have two message_received events (one per turn)
+      msg_events = Enum.filter(all_events, &(&1.type == :message_received))
+      assert length(msg_events) == 2
+
+      # First message should have turn 1 content
+      assert hd(msg_events).data.content =~ "Let me read that file."
+
+      # Should have tool_call_started event
+      tool_events = Enum.filter(all_events, &(&1.type == :tool_call_started))
+      assert length(tool_events) == 1
+      assert hd(tool_events).data.tool_name == "Bash"
+
+      # Should have exactly one run_completed (at the end)
+      completed = Enum.filter(all_events, &(&1.type == :run_completed))
+      assert length(completed) == 1
+      assert hd(completed).data.stop_reason == "end_turn"
+
+      # Final result content should be the last turn's content
+      assert result.output.content =~ "Here are the file contents"
+    end
+
+    test "halts on message_stop without tool_use stop_reason", %{
+      session: session,
+      run: run
+    } do
+      test_pid = self()
+
+      ctx = %{
+        run: run,
+        session: session,
+        prepared_input: "test prompt",
+        event_callback: fn event -> send(test_pid, {:event, event}) end,
+        adapter_pid: self(),
+        accumulated_content: "",
+        content_blocks: %{},
+        tool_calls: [],
+        token_usage: %{input_tokens: 0, output_tokens: 0},
+        session_id: "test-session"
+      }
+
+      events = [
+        %{
+          type: :message_start,
+          model: "claude-haiku-4-5",
+          usage: %{},
+          raw_event: %{"message" => %{"usage" => %{"input_tokens" => 10}}}
+        },
+        %{type: :text_delta, text: "Hello, I can help!"},
+        %{
+          type: :message_delta,
+          stop_reason: "end_turn",
+          raw_event: %{"usage" => %{"output_tokens" => 5}}
+        },
+        %{type: :message_stop}
+      ]
+
+      {:ok, result} = ClaudeAdapter.process_streaming_events_for_test(events, ctx)
+
+      all_events = collect_events(test_pid, 500)
+
+      # Should have exactly one message_received
+      msg_events = Enum.filter(all_events, &(&1.type == :message_received))
+      assert length(msg_events) == 1
+
+      # Should have exactly one run_completed
+      completed = Enum.filter(all_events, &(&1.type == :run_completed))
+      assert length(completed) == 1
+      assert hd(completed).data.stop_reason == "end_turn"
+
+      assert result.output.content == "Hello, I can help!"
+    end
+
+    test "does not emit run_completed on intermediate tool_use message_stop", %{
+      session: session,
+      run: run
+    } do
+      test_pid = self()
+
+      ctx = %{
+        run: run,
+        session: session,
+        prepared_input: "test prompt",
+        event_callback: fn event -> send(test_pid, {:event, event}) end,
+        adapter_pid: self(),
+        accumulated_content: "",
+        content_blocks: %{},
+        tool_calls: [],
+        token_usage: %{input_tokens: 0, output_tokens: 0},
+        session_id: "test-session"
+      }
+
+      events = [
+        # Turn 1: tool use
+        %{
+          type: :message_start,
+          model: "claude-haiku-4-5",
+          usage: %{},
+          raw_event: %{"message" => %{"usage" => %{"input_tokens" => 10}}}
+        },
+        %{type: :text_delta, text: "Checking..."},
+        %{
+          type: :message_delta,
+          stop_reason: "tool_use",
+          raw_event: %{"usage" => %{"output_tokens" => 8}}
+        },
+        %{type: :message_stop},
+        # Turn 2: tool use again
+        %{
+          type: :message_start,
+          model: "claude-haiku-4-5",
+          usage: %{},
+          raw_event: %{"message" => %{"usage" => %{"input_tokens" => 30}}}
+        },
+        %{type: :text_delta, text: "Writing..."},
+        %{
+          type: :message_delta,
+          stop_reason: "tool_use",
+          raw_event: %{"usage" => %{"output_tokens" => 12}}
+        },
+        %{type: :message_stop},
+        # Turn 3: final response
+        %{
+          type: :message_start,
+          model: "claude-haiku-4-5",
+          usage: %{},
+          raw_event: %{"message" => %{"usage" => %{"input_tokens" => 60}}}
+        },
+        %{type: :text_delta, text: "All done!"},
+        %{
+          type: :message_delta,
+          stop_reason: "end_turn",
+          raw_event: %{"usage" => %{"output_tokens" => 5}}
+        },
+        %{type: :message_stop}
+      ]
+
+      {:ok, result} = ClaudeAdapter.process_streaming_events_for_test(events, ctx)
+
+      all_events = collect_events(test_pid, 500)
+
+      # Three message_received events (one per turn)
+      msg_events = Enum.filter(all_events, &(&1.type == :message_received))
+      assert length(msg_events) == 3
+
+      # Only ONE run_completed at the very end
+      completed = Enum.filter(all_events, &(&1.type == :run_completed))
+      assert length(completed) == 1
+      assert hd(completed).data.stop_reason == "end_turn"
+
+      # Three run_started events (one per message_start)
+      started = Enum.filter(all_events, &(&1.type == :run_started))
+      assert length(started) == 3
+
+      assert result.output.content == "All done!"
+    end
+  end
+
   # ============================================================================
   # Helpers
   # ============================================================================

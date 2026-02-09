@@ -5,12 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
 ## [0.6.0] - 2026-02-08
 
 ### Added
 
+- **Normalized `max_turns` option** for controlling agentic loop turn limits across all adapters
+  - Claude: `nil` (default) = unlimited turns, integer = pass `--max-turns N` to CLI
+  - Codex: `nil` (default) = SDK default of 10, integer = override via `RunConfig`
+  - Amp: stored but ignored (CLI-enforced, no SDK knob)
+- **Normalized `system_prompt` option** for configuring system prompts across adapters
+  - Claude: maps to `system_prompt` on `ClaudeAgentSDK.Options`
+  - Codex: maps to `base_instructions` on `Codex.Thread.Options`
+  - Amp: stored in state (no direct SDK equivalent)
+- **`sdk_opts` passthrough** for arbitrary provider-specific SDK options
+  - All adapters accept `:sdk_opts` keyword list, merged into the underlying SDK options struct
+  - Normalized options (`:permission_mode`, `:max_turns`, etc.) always take precedence over `sdk_opts`
+  - Unknown keys are silently ignored (only struct-valid fields are applied)
 - **Normalized permission modes** via `AgentSessionManager.PermissionMode` with provider-specific mapping
   - Five modes: `:default`, `:accept_edits`, `:plan`, `:full_auto`, `:dangerously_skip_permissions`
   - `PermissionMode.all/0`, `valid?/1`, and `normalize/1` for validation and string/atom coercion
@@ -76,6 +86,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Crash-safe acquire/release and cancellation routing through the runtime layer
 - New examples: `cursor_wait_follow.exs`, `routing_v2.exs`, `policy_v2.exs`, `session_concurrency.exs`
 - New guide: `guides/advanced_patterns.md` covering cross-feature integration patterns
+
+### Fixed
+
+- **ClaudeAdapter `max_turns: 1` hardcoding** -- Claude was limited to a single turn, preventing tool results from being fed back to the model. Now defaults to `nil` (unlimited).
+- **ClaudeAdapter streaming halted on tool use** -- `handle_streaming_event(%{type: :message_stop})` unconditionally halted the stream, cutting off multi-turn tool use. Now continues when `stop_reason` is `"tool_use"`, allowing the CLI to execute tools and deliver subsequent turns.
+- **ClaudeAdapter missing `cwd` passthrough** -- The adapter never passed `cwd` to `ClaudeAgentSDK.Options`, so the Claude CLI ran in the Elixir process's working directory instead of the configured project directory. Now accepts `:cwd` option and passes it through.
+- **ClaudeAdapter `setting_sources: ["user"]` hardcoding** -- removed; use `sdk_opts: [setting_sources: [...]]` to configure.
 
 ### Changed
 

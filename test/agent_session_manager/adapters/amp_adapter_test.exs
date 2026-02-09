@@ -842,6 +842,144 @@ defmodule AgentSessionManager.Adapters.AmpAdapterTest do
     end
   end
 
+  describe "max_turns configuration" do
+    test "defaults max_turns to nil in adapter state" do
+      {:ok, mock_sdk} = AmpMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        AmpAdapter.start_link(
+          cwd: "/tmp/test",
+          sdk_module: AmpMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      assert state.max_turns == nil
+    end
+
+    test "stores explicit max_turns in adapter state" do
+      {:ok, mock_sdk} = AmpMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        AmpAdapter.start_link(
+          cwd: "/tmp/test",
+          max_turns: 5,
+          sdk_module: AmpMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      assert state.max_turns == 5
+    end
+
+    test "max_turns is ignored in amp options (CLI-enforced)" do
+      {:ok, mock_sdk} = AmpMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        AmpAdapter.start_link(
+          cwd: "/tmp/test",
+          max_turns: 5,
+          sdk_module: AmpMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      opts = AmpAdapter.build_amp_options_for_state(state)
+      # Amp SDK Options struct has no max_turns field
+      refute Map.has_key?(opts, :max_turns)
+    end
+  end
+
+  describe "sdk_opts passthrough" do
+    test "defaults sdk_opts to empty list in adapter state" do
+      {:ok, mock_sdk} = AmpMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        AmpAdapter.start_link(
+          cwd: "/tmp/test",
+          sdk_module: AmpMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      assert state.sdk_opts == []
+    end
+
+    test "sdk_opts fields are merged into amp options" do
+      {:ok, mock_sdk} = AmpMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        AmpAdapter.start_link(
+          cwd: "/tmp/test",
+          sdk_opts: [visibility: "private", stream_timeout_ms: 600_000],
+          sdk_module: AmpMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      opts = AmpAdapter.build_amp_options_for_state(state)
+      assert opts.visibility == "private"
+      assert opts.stream_timeout_ms == 600_000
+    end
+
+    test "normalized options take precedence over sdk_opts" do
+      {:ok, mock_sdk} = AmpMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        AmpAdapter.start_link(
+          cwd: "/tmp/test",
+          permission_mode: :full_auto,
+          sdk_opts: [dangerously_allow_all: false],
+          sdk_module: AmpMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      opts = AmpAdapter.build_amp_options_for_state(state)
+      # Normalized permission_mode should win over sdk_opts
+      assert opts.dangerously_allow_all == true
+    end
+
+    test "system_prompt is stored but ignored for amp (no SDK equivalent)" do
+      {:ok, mock_sdk} = AmpMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        AmpAdapter.start_link(
+          cwd: "/tmp/test",
+          system_prompt: "You are a helpful assistant.",
+          sdk_module: AmpMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      assert state.system_prompt == "You are a helpful assistant."
+      # But it doesn't appear in amp options
+      opts = AmpAdapter.build_amp_options_for_state(state)
+      refute Map.has_key?(Map.from_struct(opts), :system_prompt)
+    end
+  end
+
   # ============================================================================
   # Test Helpers
   # ============================================================================

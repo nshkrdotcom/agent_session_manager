@@ -715,6 +715,159 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
     end
   end
 
+  describe "max_turns configuration" do
+    test "defaults max_turns to nil in adapter state" do
+      {:ok, mock_sdk} = CodexMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        CodexAdapter.start_link(
+          working_directory: "/tmp/test",
+          sdk_module: CodexMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      assert state.max_turns == nil
+    end
+
+    test "stores explicit max_turns in adapter state" do
+      {:ok, mock_sdk} = CodexMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        CodexAdapter.start_link(
+          working_directory: "/tmp/test",
+          max_turns: 20,
+          sdk_module: CodexMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      assert state.max_turns == 20
+    end
+
+    test "default max_turns produces empty run options (SDK default of 10 applies)" do
+      {:ok, mock_sdk} = CodexMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        CodexAdapter.start_link(
+          working_directory: "/tmp/test",
+          sdk_module: CodexMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      run_opts = CodexAdapter.build_run_options_for_state(state)
+      assert run_opts == %{}
+    end
+
+    test "explicit max_turns is included in run options" do
+      {:ok, mock_sdk} = CodexMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        CodexAdapter.start_link(
+          working_directory: "/tmp/test",
+          max_turns: 25,
+          sdk_module: CodexMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      run_opts = CodexAdapter.build_run_options_for_state(state)
+      assert run_opts == %{max_turns: 25}
+    end
+  end
+
+  describe "sdk_opts passthrough" do
+    test "defaults sdk_opts to empty list in adapter state" do
+      {:ok, mock_sdk} = CodexMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        CodexAdapter.start_link(
+          working_directory: "/tmp/test",
+          sdk_module: CodexMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      assert state.sdk_opts == []
+    end
+
+    test "sdk_opts fields are merged into thread options" do
+      {:ok, mock_sdk} = CodexMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        CodexAdapter.start_link(
+          working_directory: "/tmp/test",
+          sdk_opts: [web_search_mode: :live, show_raw_agent_reasoning: true],
+          sdk_module: CodexMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      {:ok, thread_opts} = CodexAdapter.build_thread_options_for_state(state)
+      assert thread_opts.web_search_mode == :live
+      assert thread_opts.show_raw_agent_reasoning == true
+    end
+
+    test "normalized options take precedence over sdk_opts" do
+      {:ok, mock_sdk} = CodexMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        CodexAdapter.start_link(
+          working_directory: "/tmp/test",
+          permission_mode: :full_auto,
+          sdk_opts: [full_auto: false],
+          sdk_module: CodexMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      {:ok, thread_opts} = CodexAdapter.build_thread_options_for_state(state)
+      # Normalized permission_mode should win over sdk_opts
+      assert thread_opts.full_auto == true
+    end
+
+    test "system_prompt is mapped to base_instructions in thread options" do
+      {:ok, mock_sdk} = CodexMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        CodexAdapter.start_link(
+          working_directory: "/tmp/test",
+          system_prompt: "You are a code reviewer.",
+          sdk_module: CodexMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      {:ok, thread_opts} = CodexAdapter.build_thread_options_for_state(state)
+      assert thread_opts.base_instructions == "You are a code reviewer."
+    end
+  end
+
   # ============================================================================
   # Test Helpers
   # ============================================================================

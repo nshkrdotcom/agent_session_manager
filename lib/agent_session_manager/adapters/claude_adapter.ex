@@ -159,6 +159,10 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
     sdk_pid = Keyword.get(opts, :sdk_pid)
     tools = Keyword.get(opts, :tools)
     permission_mode = Keyword.get(opts, :permission_mode)
+    max_turns = Keyword.get(opts, :max_turns)
+    system_prompt = Keyword.get(opts, :system_prompt)
+    sdk_opts = Keyword.get(opts, :sdk_opts, [])
+    cwd = Keyword.get(opts, :cwd)
     {:ok, task_supervisor} = Task.Supervisor.start_link()
 
     capabilities = build_capabilities()
@@ -171,6 +175,10 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
       task_supervisor: task_supervisor,
       tools: tools,
       permission_mode: permission_mode,
+      max_turns: max_turns,
+      system_prompt: system_prompt,
+      sdk_opts: sdk_opts,
+      cwd: cwd,
       active_runs: %{},
       task_refs: %{},
       capabilities: capabilities
@@ -418,6 +426,14 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
     end
   end
 
+  @doc false
+  @spec process_streaming_events_for_test(Enumerable.t(), map()) ::
+          {:ok, map()} | {:error, term()}
+  def process_streaming_events_for_test(stream, ctx) do
+    reset_emitted_events()
+    process_streaming_events(stream, ctx)
+  end
+
   defp process_streaming_events(stream, ctx) do
     result =
       stream
@@ -494,6 +510,8 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
   end
 
   defp handle_streaming_event(%{type: :message_stop}, ctx) do
+    stop_reason = Map.get(ctx, :stop_reason, "end_turn")
+
     emit_event(ctx, :message_received, %{
       content: ctx.accumulated_content,
       role: "assistant"
@@ -504,13 +522,19 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
       output_tokens: ctx.token_usage.output_tokens
     })
 
-    emit_event(ctx, :run_completed, %{
-      stop_reason: Map.get(ctx, :stop_reason, "end_turn"),
-      session_id: ctx.session_id,
-      token_usage: ctx.token_usage
-    })
+    if stop_reason == "tool_use" do
+      # Tool use — the CLI is executing tools and will send more events.
+      # Continue the stream, resetting accumulated content for the next turn.
+      {:cont, %{ctx | accumulated_content: "", stop_reason: nil}}
+    else
+      emit_event(ctx, :run_completed, %{
+        stop_reason: stop_reason,
+        session_id: ctx.session_id,
+        token_usage: ctx.token_usage
+      })
 
-    {:halt, ctx}
+      {:halt, ctx}
+    end
   end
 
   defp handle_streaming_event(%{type: :error, error: reason}, ctx) do
@@ -637,18 +661,30 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
 
   defp build_sdk_options(state) do
     # ClaudeAgentSDK handles auth via `claude login` session or ANTHROPIC_API_KEY env var.
-    opts = %ClaudeAgentSDK.Options{
-      model: state.model,
-      max_turns: 1,
-      setting_sources: ["user"],
-      permission_mode: map_permission_mode(state.permission_mode)
+    # Apply sdk_opts passthrough first (lowest precedence)
+    opts = apply_sdk_opts(%ClaudeAgentSDK.Options{}, state.sdk_opts)
+
+    # Then apply normalized options (higher precedence)
+    opts = %{
+      opts
+      | model: state.model,
+        max_turns: state.max_turns,
+        permission_mode: map_permission_mode(state.permission_mode)
     }
 
-    if state.tools do
-      %{opts | tools: state.tools}
-    else
-      opts
-    end
+    opts = if state.cwd, do: %{opts | cwd: state.cwd}, else: opts
+    opts = if state.tools, do: %{opts | tools: state.tools}, else: opts
+    opts = if state.system_prompt, do: %{opts | system_prompt: state.system_prompt}, else: opts
+
+    opts
+  end
+
+  defp apply_sdk_opts(opts, []), do: opts
+
+  defp apply_sdk_opts(opts, sdk_opts) do
+    Enum.reduce(sdk_opts, opts, fn {key, value}, acc ->
+      if Map.has_key?(acc, key), do: Map.put(acc, key, value), else: acc
+    end)
   end
 
   defp map_permission_mode(:full_auto), do: :bypass_permissions

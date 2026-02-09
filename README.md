@@ -398,6 +398,27 @@ All adapters accept a `:permission_mode` option to control tool-call approval be
 
 Modes: `:default`, `:accept_edits`, `:plan`, `:full_auto`, `:dangerously_skip_permissions`. See the [Provider Adapters](guides/provider_adapters.md) guide for the full mapping table.
 
+All adapters also accept `:max_turns`, `:system_prompt`, and `:sdk_opts`:
+
+```elixir
+# Claude: unlimited tool-use turns (default), with system prompt and SDK passthrough
+{:ok, adapter} = ClaudeAdapter.start_link(
+  permission_mode: :full_auto,
+  max_turns: nil,  # nil = unlimited (default). Was incorrectly hardcoded to 1 before.
+  system_prompt: "You are a code reviewer.",
+  sdk_opts: [verbose: true, max_budget_usd: 1.0]
+)
+
+# Codex: custom turn limit with system prompt
+{:ok, adapter} = CodexAdapter.start_link(
+  working_directory: ".",
+  max_turns: 25,  # nil = SDK default of 10
+  system_prompt: "You are a code reviewer."  # maps to base_instructions
+)
+```
+
+See the [Provider Adapters](guides/provider_adapters.md) guide for details on each option.
+
 ### Capability Negotiation
 
 Before starting a run, you can declare what capabilities are required. The resolver checks the provider's capabilities and fails fast if requirements aren't met.

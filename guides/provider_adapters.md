@@ -23,7 +23,10 @@ The Claude adapter integrates with Anthropic's API via the ClaudeAgentSDK.
 {:ok, adapter} = AgentSessionManager.Adapters.ClaudeAdapter.start_link(
   api_key: System.get_env("ANTHROPIC_API_KEY"),
   model: "claude-haiku-4-5-20251001",  # optional, this is the default
-  permission_mode: :full_auto           # optional, see Permission Modes below
+  permission_mode: :full_auto,          # optional, see Permission Modes below
+  max_turns: nil,                       # optional, nil = unlimited (default)
+  system_prompt: "You are a helpful assistant.",  # optional
+  sdk_opts: [verbose: true]             # optional, see SDK Options Passthrough below
 )
 ```
 
@@ -51,8 +54,11 @@ The Codex adapter integrates with the Codex CLI SDK.
 ```elixir
 {:ok, adapter} = AgentSessionManager.Adapters.CodexAdapter.start_link(
   working_directory: File.cwd!(),
-  model: "gpt-5.3-codex",     # optional, this is the SDK default
-  permission_mode: :full_auto  # optional, see Permission Modes below
+  model: "gpt-5.3-codex",      # optional, this is the SDK default
+  permission_mode: :full_auto,  # optional, see Permission Modes below
+  max_turns: 20,                # optional, nil = SDK default of 10
+  system_prompt: "You are a code reviewer.",  # optional, maps to base_instructions
+  sdk_opts: [web_search_mode: :live]          # optional, see SDK Options Passthrough below
 )
 ```
 
@@ -82,8 +88,9 @@ The Amp adapter integrates with the Sourcegraph Amp API via the Amp SDK.
 
 ```elixir
 {:ok, adapter} = AgentSessionManager.Adapters.AmpAdapter.start_link(
-  api_key: System.get_env("AMP_API_KEY"),
-  permission_mode: :full_auto  # optional, see Permission Modes below
+  cwd: File.cwd!(),
+  permission_mode: :full_auto,  # optional, see Permission Modes below
+  sdk_opts: [visibility: "private", stream_timeout_ms: 600_000]  # optional
 )
 ```
 
@@ -145,6 +152,94 @@ Each adapter maps these to its provider SDK's native semantics:
   permission_mode: :dangerously_skip_permissions
 )
 ```
+
+## Max Turns
+
+All adapters accept an optional `:max_turns` to control the agentic loop turn limit. Each provider handles this differently:
+
+| Provider | Default | Behavior |
+|---|---|---|
+| Claude | `nil` (unlimited) | Omits `--max-turns` flag, allowing the CLI to run unlimited tool-use turns |
+| Codex | `nil` (SDK default: 10) | When set, overrides the SDK's default 10-turn limit |
+| Amp | N/A | Ignored -- turn limits are CLI-enforced and not configurable via SDK |
+
+```elixir
+# Claude: unlimited turns (default)
+{:ok, adapter} = ClaudeAdapter.start_link(max_turns: nil)
+
+# Claude: limit to 5 turns
+{:ok, adapter} = ClaudeAdapter.start_link(max_turns: 5)
+
+# Codex: override SDK default of 10
+{:ok, adapter} = CodexAdapter.start_link(
+  working_directory: File.cwd!(),
+  max_turns: 25
+)
+```
+
+## System Prompt
+
+All adapters accept an optional `:system_prompt`. The mapping varies by provider:
+
+| Provider | Maps to | Notes |
+|---|---|---|
+| Claude | `system_prompt` on `ClaudeAgentSDK.Options` | Passed directly |
+| Codex | `base_instructions` on `Codex.Thread.Options` | Codex-specific name |
+| Amp | Stored in state | No direct SDK equivalent |
+
+```elixir
+{:ok, adapter} = ClaudeAdapter.start_link(
+  system_prompt: "You are a code reviewer. Focus on security issues."
+)
+
+{:ok, adapter} = CodexAdapter.start_link(
+  working_directory: File.cwd!(),
+  system_prompt: "You are a code reviewer."  # maps to base_instructions
+)
+```
+
+## SDK Options Passthrough
+
+For provider-specific SDK options not covered by the normalized interface, all adapters accept `:sdk_opts` -- a keyword list of fields to merge into the underlying SDK options struct.
+
+**Precedence:** sdk_opts are applied first, then normalized options (`:permission_mode`, `:max_turns`, etc.) are applied on top. This means normalized options always take precedence.
+
+```elixir
+# Claude: pass through arbitrary ClaudeAgentSDK.Options fields
+{:ok, adapter} = ClaudeAdapter.start_link(
+  permission_mode: :full_auto,
+  sdk_opts: [
+    verbose: true,
+    max_budget_usd: 1.0,
+    mcp_servers: %{"my-server" => %{command: "npx", args: ["-y", "my-mcp"]}},
+    add_dirs: ["/path/to/other/repo"],
+    setting_sources: ["user", "project"]
+  ]
+)
+
+# Codex: pass through arbitrary Codex.Thread.Options fields
+{:ok, adapter} = CodexAdapter.start_link(
+  working_directory: File.cwd!(),
+  sdk_opts: [
+    web_search_mode: :live,
+    additional_directories: ["/other/path"],
+    show_raw_agent_reasoning: true
+  ]
+)
+
+# Amp: pass through arbitrary AmpSdk.Types.Options fields
+{:ok, adapter} = AmpAdapter.start_link(
+  cwd: File.cwd!(),
+  sdk_opts: [
+    visibility: "private",
+    labels: ["batch-run", "v2"],
+    stream_timeout_ms: 600_000,
+    env: %{"MY_VAR" => "value"}
+  ]
+)
+```
+
+Only fields that exist on the underlying SDK options struct are applied; unknown keys are ignored.
 
 ## The ProviderAdapter Behaviour
 

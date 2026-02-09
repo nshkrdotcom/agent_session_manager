@@ -188,6 +188,9 @@ defmodule AgentSessionManager.Adapters.AmpAdapter do
           cwd: cwd,
           mode: Keyword.get(opts, :mode, "smart"),
           permission_mode: Keyword.get(opts, :permission_mode),
+          max_turns: Keyword.get(opts, :max_turns),
+          system_prompt: Keyword.get(opts, :system_prompt),
+          sdk_opts: Keyword.get(opts, :sdk_opts, []),
           permissions: Keyword.get(opts, :permissions),
           mcp_config: Keyword.get(opts, :mcp_config),
           thinking: Keyword.get(opts, :thinking, false),
@@ -608,14 +611,27 @@ defmodule AgentSessionManager.Adapters.AmpAdapter do
   def build_amp_options_for_state(state), do: build_amp_options(state)
 
   defp build_amp_options(state) do
-    %AmpSdk.Types.Options{
-      cwd: state.cwd,
-      mode: state.mode || "smart",
-      dangerously_allow_all: dangerously_allow_all?(state.permission_mode),
-      permissions: state.permissions,
-      mcp_config: state.mcp_config,
-      thinking: state.thinking || false
+    # Apply sdk_opts passthrough first (lowest precedence)
+    opts = apply_sdk_opts(%AmpSdk.Types.Options{}, state.sdk_opts)
+
+    # Then apply normalized options (higher precedence)
+    %{
+      opts
+      | cwd: state.cwd,
+        mode: state.mode || "smart",
+        dangerously_allow_all: dangerously_allow_all?(state.permission_mode),
+        permissions: state.permissions,
+        mcp_config: state.mcp_config,
+        thinking: state.thinking || false
     }
+  end
+
+  defp apply_sdk_opts(opts, []), do: opts
+
+  defp apply_sdk_opts(opts, sdk_opts) do
+    Enum.reduce(sdk_opts, opts, fn {key, value}, acc ->
+      if Map.has_key?(acc, key), do: Map.put(acc, key, value), else: acc
+    end)
   end
 
   defp dangerously_allow_all?(:full_auto), do: true

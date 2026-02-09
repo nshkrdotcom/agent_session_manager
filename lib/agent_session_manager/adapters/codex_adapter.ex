@@ -165,6 +165,9 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
       {:ok, working_directory} ->
         model = Keyword.get(opts, :model)
         permission_mode = Keyword.get(opts, :permission_mode)
+        max_turns = Keyword.get(opts, :max_turns)
+        system_prompt = Keyword.get(opts, :system_prompt)
+        sdk_opts = Keyword.get(opts, :sdk_opts, [])
         sdk_module = Keyword.get(opts, :sdk_module)
         sdk_pid = Keyword.get(opts, :sdk_pid)
         {:ok, task_supervisor} = Task.Supervisor.start_link()
@@ -175,6 +178,9 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
           working_directory: working_directory,
           model: model,
           permission_mode: permission_mode,
+          max_turns: max_turns,
+          system_prompt: system_prompt,
+          sdk_opts: sdk_opts,
           sdk_module: sdk_module,
           sdk_pid: sdk_pid,
           task_supervisor: task_supervisor,
@@ -395,7 +401,8 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
     with {:ok, codex_opts} <- build_codex_options(state),
          {:ok, thread_opts} <- build_thread_options(state),
          {:ok, thread} <- Codex.start_thread(codex_opts, thread_opts),
-         {:ok, streaming_result} <- Codex.Thread.run_streamed(thread, ctx.prompt, %{}) do
+         {:ok, streaming_result} <-
+           Codex.Thread.run_streamed(thread, ctx.prompt, build_run_options(state)) do
       # Notify the adapter about the streaming result for cancellation tracking
       GenServer.cast(ctx.adapter_pid, {:update_streaming_result, ctx.run.id, streaming_result})
 
@@ -432,23 +439,50 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
     build_thread_options(state)
   end
 
+  @doc false
+  @spec build_run_options_for_state(map()) :: map()
+  def build_run_options_for_state(state) do
+    build_run_options(state)
+  end
+
   defp build_thread_options(state) do
     attrs =
       %{working_directory: state.working_directory}
-      |> apply_permission_mode(state.permission_mode)
+      |> maybe_put(:base_instructions, state.system_prompt)
 
-    Codex.Thread.Options.new(attrs)
+    with {:ok, thread_opts} <- Codex.Thread.Options.new(attrs) do
+      # Apply sdk_opts first (lowest precedence)
+      thread_opts = apply_sdk_opts(thread_opts, state.sdk_opts)
+      # Then apply normalized options (highest precedence)
+      {:ok, apply_permission_mode_struct(thread_opts, state.permission_mode)}
+    end
   end
 
-  defp apply_permission_mode(attrs, :full_auto) do
-    Map.put(attrs, :full_auto, true)
+  defp build_run_options(state) do
+    %{}
+    |> maybe_put(:max_turns, state.max_turns)
   end
 
-  defp apply_permission_mode(attrs, :dangerously_skip_permissions) do
-    Map.put(attrs, :dangerously_bypass_approvals_and_sandbox, true)
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
+
+  defp apply_sdk_opts(opts, []), do: opts
+
+  defp apply_sdk_opts(opts, sdk_opts) do
+    Enum.reduce(sdk_opts, opts, fn {key, value}, acc ->
+      if Map.has_key?(acc, key), do: Map.put(acc, key, value), else: acc
+    end)
   end
 
-  defp apply_permission_mode(attrs, _mode), do: attrs
+  defp apply_permission_mode_struct(opts, :full_auto) do
+    %{opts | full_auto: true}
+  end
+
+  defp apply_permission_mode_struct(opts, :dangerously_skip_permissions) do
+    %{opts | dangerously_bypass_approvals_and_sandbox: true}
+  end
+
+  defp apply_permission_mode_struct(opts, _mode), do: opts
 
   defp extract_prompt(input) when is_binary(input), do: input
 

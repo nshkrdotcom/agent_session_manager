@@ -124,6 +124,10 @@ for p in "${PROVIDERS[@]}"; do
   PLAN_FILES+=("examples/session_limiter.exs")
   PLAN_ARGS+=("--provider $p")
 
+  PLAN_NAMES+=("Session Concurrency ($label)")
+  PLAN_FILES+=("examples/session_concurrency.exs")
+  PLAN_ARGS+=("--provider $p")
+
   PLAN_NAMES+=("One-Shot ($label)")
   PLAN_FILES+=("examples/oneshot.exs")
   PLAN_ARGS+=("--provider $p")

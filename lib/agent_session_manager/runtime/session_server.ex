@@ -2,17 +2,32 @@ defmodule AgentSessionManager.Runtime.SessionServer do
   @moduledoc """
   Per-session runtime server (GenServer) providing:
 
-  - FIFO run queueing with strict sequential execution (MVP)
+  - FIFO run queueing with configurable concurrency slots
   - submit/await/cancel run semantics
   - event subscriptions backed by the durable event store
   - optional `ConcurrencyLimiter` integration
+  - optional `ControlOperations` integration
+  - operational APIs: status, drain
+
+  ## Multi-Slot Concurrency (Phase 2)
+
+  The server supports `max_concurrent_runs` greater than 1, allowing
+  multiple runs to execute in parallel within a single session.
+  Bounded queue behaviour is preserved and runs never exceed the
+  configured slot count.
+
+  ## Durable Subscriptions
+
+  Subscribers receive `{:session_event, session_id, event}` messages.
+  On subscribe, the server backfills events from the store starting at
+  `:from_sequence`, then delivers live events as they are appended.
 
   The server delegates run lifecycle work to `SessionManager` APIs.
   """
 
   use GenServer
 
-  alias AgentSessionManager.Concurrency.ConcurrencyLimiter
+  alias AgentSessionManager.Concurrency.{ConcurrencyLimiter, ControlOperations}
   alias AgentSessionManager.Core.{Error, Event, Run, Session}
   alias AgentSessionManager.Ports.SessionStore
   alias AgentSessionManager.Runtime.RunQueue
@@ -39,11 +54,11 @@ defmodule AgentSessionManager.Runtime.SessionServer do
 
     max_concurrent_runs = Keyword.get(opts, :max_concurrent_runs, 1)
 
-    if max_concurrent_runs != 1 do
+    if not is_integer(max_concurrent_runs) or max_concurrent_runs < 1 do
       {:error,
        Error.new(
          :validation_error,
-         "MVP runtime supports strict sequential execution only (max_concurrent_runs must be 1)"
+         "max_concurrent_runs must be a positive integer, got: #{inspect(max_concurrent_runs)}"
        )}
     else
       try do
@@ -85,6 +100,16 @@ defmodule AgentSessionManager.Runtime.SessionServer do
     GenServer.call(server, {:cancel_run, run_id})
   end
 
+  @doc """
+  Interrupts an in-flight run via `ControlOperations` (if configured)
+  or falls back to cancel via `SessionManager`.
+  """
+  @spec interrupt_run(GenServer.server(), String.t()) ::
+          {:ok, String.t()} | :ok | {:error, Error.t()}
+  def interrupt_run(server, run_id) when is_binary(run_id) do
+    GenServer.call(server, {:interrupt_run, run_id})
+  end
+
   @spec subscribe(GenServer.server(), subscribe_opts()) ::
           {:ok, reference()} | {:error, Error.t()}
   def subscribe(server, opts \\ []) when is_list(opts) do
@@ -101,6 +126,17 @@ defmodule AgentSessionManager.Runtime.SessionServer do
     GenServer.call(server, :status)
   end
 
+  @doc """
+  Waits for the queue and all in-flight runs to complete.
+
+  Returns `:ok` when drained, or `{:error, :timeout}` if the timeout
+  elapses before all work finishes.
+  """
+  @spec drain(GenServer.server(), timeout()) :: :ok | {:error, :timeout}
+  def drain(server, timeout \\ @default_await_timeout) do
+    GenServer.call(server, {:drain, timeout}, timeout + 1_000)
+  end
+
   # ============================================================================
   # GenServer Callbacks
   # ============================================================================
@@ -112,14 +148,15 @@ defmodule AgentSessionManager.Runtime.SessionServer do
 
     max_concurrent_runs = Keyword.get(opts, :max_concurrent_runs, 1)
 
-    if max_concurrent_runs != 1 do
+    if not is_integer(max_concurrent_runs) or max_concurrent_runs < 1 do
       {:stop,
        Error.new(
          :validation_error,
-         "MVP runtime supports strict sequential execution only (max_concurrent_runs must be 1)"
+         "max_concurrent_runs must be a positive integer, got: #{inspect(max_concurrent_runs)}"
        )}
     else
       limiter = Keyword.get(opts, :limiter)
+      control_ops = Keyword.get(opts, :control_ops)
       default_execute_opts = Keyword.get(opts, :default_execute_opts, [])
       max_queued_runs = Keyword.get(opts, :max_queued_runs, @default_max_queued_runs)
 
@@ -134,12 +171,14 @@ defmodule AgentSessionManager.Runtime.SessionServer do
            store: store,
            adapter: adapter,
            limiter: limiter,
+           control_ops: control_ops,
            default_execute_opts: default_execute_opts,
            session_id: session.id,
-           max_concurrent_runs: 1,
+           max_concurrent_runs: max_concurrent_runs,
            queue: RunQueue.new(max_queued_runs: max_queued_runs),
            max_queued_runs: max_queued_runs,
-           active_run: nil,
+           # %{run_id => task_ref}
+           in_flight: %{},
            # run_id => keyword()
            run_execute_opts: %{},
            # run_id => {:ok, result} | {:error, error}
@@ -152,7 +191,9 @@ defmodule AgentSessionManager.Runtime.SessionServer do
            dispatch_cursor: cursor,
            dispatch_scheduled?: false,
            # {run_id => true} for limiter acquisitions
-           limiter_acquired: %{}
+           limiter_acquired: %{},
+           # [GenServer.from()] for drain callers
+           drain_waiters: []
          }}
       else
         {:error, %Error{} = error} ->
@@ -163,21 +204,27 @@ defmodule AgentSessionManager.Runtime.SessionServer do
 
   @impl GenServer
   def handle_call(:status, _from, state) do
+    in_flight_runs = Map.keys(state.in_flight)
+
     status = %{
       session_id: state.session_id,
-      active_run_id: active_run_id(state.active_run),
+      in_flight_runs: in_flight_runs,
+      in_flight_count: map_size(state.in_flight),
       queued_runs: RunQueue.to_list(state.queue),
       queued_count: RunQueue.size(state.queue),
       max_concurrent_runs: state.max_concurrent_runs,
       max_queued_runs: state.max_queued_runs,
-      subscribers: map_size(state.subscribers)
+      subscribers: map_size(state.subscribers),
+      # Backward compat: active_run_id for single-slot callers
+      active_run_id: List.first(in_flight_runs)
     }
 
     {:reply, status, state}
   end
 
   def handle_call({:submit_run, input, submit_opts}, _from, state) do
-    if RunQueue.size(state.queue) >= state.max_queued_runs do
+    if RunQueue.size(state.queue) >= state.max_queued_runs and
+         map_size(state.in_flight) >= state.max_concurrent_runs do
       {:reply,
        {:error,
         Error.new(:max_runs_exceeded, "Maximum queued runs exceeded (#{state.max_queued_runs})")},
@@ -191,7 +238,7 @@ defmodule AgentSessionManager.Runtime.SessionServer do
             state
             |> put_run_execute_opts(run.id, execute_opts)
             |> enqueue_run(run.id)
-            |> maybe_start_next_run()
+            |> maybe_start_next_runs()
 
           {:reply, {:ok, run.id}, state}
 
@@ -213,10 +260,24 @@ defmodule AgentSessionManager.Runtime.SessionServer do
   end
 
   def handle_call({:cancel_run, run_id}, _from, state) do
-    if active_run_id(state.active_run) == run_id do
-      {:reply, :ok, cancel_active_run(state, run_id)}
+    if Map.has_key?(state.in_flight, run_id) do
+      {:reply, :ok, cancel_in_flight_run(state, run_id)}
     else
-      cancel_non_active_run(state, run_id)
+      cancel_non_in_flight_run(state, run_id)
+    end
+  end
+
+  def handle_call({:interrupt_run, run_id}, _from, state) do
+    cond do
+      state.control_ops && Map.has_key?(state.in_flight, run_id) ->
+        result = ControlOperations.interrupt(state.control_ops, run_id)
+        {:reply, result, state}
+
+      Map.has_key?(state.in_flight, run_id) ->
+        {:reply, :ok, cancel_in_flight_run(state, run_id)}
+
+      true ->
+        {:reply, {:error, Error.new(:run_not_found, "Run not in flight: #{run_id}")}, state}
     end
   end
 
@@ -271,6 +332,16 @@ defmodule AgentSessionManager.Runtime.SessionServer do
     {:reply, :ok, %{state | subscribers: subscribers}}
   end
 
+  def handle_call({:drain, timeout}, from, state) do
+    if map_size(state.in_flight) == 0 and RunQueue.size(state.queue) == 0 do
+      {:reply, :ok, state}
+    else
+      timer_ref = Process.send_after(self(), {:drain_timeout, from}, timeout)
+      drain_waiters = [{from, timer_ref} | state.drain_waiters]
+      {:noreply, %{state | drain_waiters: drain_waiters}}
+    end
+  end
+
   @impl GenServer
   def handle_info({:event_tick, _run_id}, state) do
     {:noreply, schedule_dispatch(state)}
@@ -284,9 +355,21 @@ defmodule AgentSessionManager.Runtime.SessionServer do
   def handle_info({:run_finished, run_id, result}, state) do
     state = maybe_release_limiter(state, run_id)
     state = record_run_result(state, run_id, result)
-    state = clear_active_run(state, run_id)
+    state = clear_in_flight(state, run_id)
     state = dispatch_new_events(state)
-    {:noreply, maybe_start_next_run(state)}
+    state = maybe_start_next_runs(state)
+    {:noreply, maybe_notify_drain_waiters(state)}
+  end
+
+  def handle_info({:drain_timeout, from}, state) do
+    {expired, remaining} =
+      Enum.split_with(state.drain_waiters, fn {wf, _ref} -> wf == from end)
+
+    Enum.each(expired, fn {wf, _ref} ->
+      GenServer.reply(wf, {:error, :timeout})
+    end)
+
+    {:noreply, %{state | drain_waiters: remaining}}
   end
 
   def handle_info({:DOWN, mon_ref, :process, _pid, reason}, state) do
@@ -331,7 +414,7 @@ defmodule AgentSessionManager.Runtime.SessionServer do
   end
 
   # ============================================================================
-  # Queue + execution
+  # Queue + execution (multi-slot)
   # ============================================================================
 
   defp enqueue_run(state, run_id) do
@@ -350,11 +433,34 @@ defmodule AgentSessionManager.Runtime.SessionServer do
     end
   end
 
-  defp maybe_start_next_run(state) do
-    if state.active_run != nil do
-      state
+  defp maybe_start_next_runs(state) do
+    available_slots = state.max_concurrent_runs - map_size(state.in_flight)
+
+    if available_slots > 0 do
+      dequeue_and_start_n(state, available_slots)
     else
-      dequeue_and_start(state)
+      state
+    end
+  end
+
+  defp dequeue_and_start_n(state, 0), do: state
+
+  defp dequeue_and_start_n(state, n) when n > 0 do
+    case RunQueue.dequeue(state.queue) do
+      {:ok, run_id, queue} ->
+        state = %{state | queue: queue}
+
+        runtime_telemetry(
+          [:session_server, :queue, :dequeue],
+          %{queue_length: RunQueue.size(queue)},
+          %{session_id: state.session_id, run_id: run_id}
+        )
+
+        state = start_run_execution(state, run_id)
+        dequeue_and_start_n(state, n - 1)
+
+      {:empty, _queue} ->
+        state
     end
   end
 
@@ -364,32 +470,38 @@ defmodule AgentSessionManager.Runtime.SessionServer do
         execute_opts = build_execute_opts(state, run_id)
         task_ref = start_execution_task(state, run_id, execute_opts)
 
+        # Register with control ops if configured
+        if state.control_ops do
+          _ = ControlOperations.register_run(state.control_ops, state.session_id, run_id)
+        end
+
         runtime_telemetry(
           [:session_server, :run, :start],
           %{system_time: System.system_time()},
           %{session_id: state.session_id, run_id: run_id}
         )
 
-        %{state | active_run: %{run_id: run_id, task_ref: task_ref}}
+        %{state | in_flight: Map.put(state.in_flight, run_id, task_ref)}
 
       {:error, %Error{} = error} ->
         state = record_run_result(state, run_id, {:error, error})
-        maybe_start_next_run(state)
+        maybe_start_next_runs(state)
     end
   end
 
-  defp active_run_id(nil), do: nil
-  defp active_run_id(%{run_id: run_id}), do: run_id
-
-  defp clear_active_run(state, run_id) do
-    if active_run_id(state.active_run) == run_id do
+  defp clear_in_flight(state, run_id) do
+    if Map.has_key?(state.in_flight, run_id) do
       runtime_telemetry(
         [:session_server, :run, :stop],
         %{system_time: System.system_time()},
         %{session_id: state.session_id, run_id: run_id}
       )
 
-      %{state | active_run: nil, run_execute_opts: Map.delete(state.run_execute_opts, run_id)}
+      %{
+        state
+        | in_flight: Map.delete(state.in_flight, run_id),
+          run_execute_opts: Map.delete(state.run_execute_opts, run_id)
+      }
     else
       state
     end
@@ -435,8 +547,31 @@ defmodule AgentSessionManager.Runtime.SessionServer do
   end
 
   # ============================================================================
-  # Cancel queued run (no provider call)
+  # Cancel (queued or in-flight)
   # ============================================================================
+
+  defp cancel_in_flight_run(state, run_id) do
+    _ = Task.start(fn -> _ = SessionManager.cancel_run(state.store, state.adapter, run_id) end)
+
+    runtime_telemetry([:session_server, :cancel, :active], %{}, %{
+      session_id: state.session_id,
+      run_id: run_id
+    })
+
+    state
+  end
+
+  defp cancel_non_in_flight_run(state, run_id) do
+    case RunQueue.remove(state.queue, run_id) do
+      {:ok, new_queue} ->
+        state = %{state | queue: new_queue}
+        state = maybe_cancel_queued_run(state, run_id)
+        {:reply, :ok, state}
+
+      {:error, :not_found} ->
+        {:reply, cancel_unknown_or_finished(state, run_id), state}
+    end
+  end
 
   defp cancel_queued_run(state, run_id) do
     cancelled_error = Error.new(:cancelled, "Run cancelled")
@@ -469,6 +604,21 @@ defmodule AgentSessionManager.Runtime.SessionServer do
              data: %{}
            }) do
       SessionStore.append_event_with_sequence(state.store, event)
+    end
+  end
+
+  defp maybe_cancel_queued_run(state, run_id) do
+    case cancel_queued_run(state, run_id) do
+      {:ok, new_state} -> new_state
+      {:error, _} -> state
+    end
+  end
+
+  defp cancel_unknown_or_finished(state, run_id) do
+    if Map.has_key?(state.run_results, run_id) do
+      :ok
+    else
+      {:error, Error.new(:run_not_found, "Run not found in queue: #{run_id}")}
     end
   end
 
@@ -532,24 +682,6 @@ defmodule AgentSessionManager.Runtime.SessionServer do
     end
   end
 
-  defp dequeue_and_start(state) do
-    case RunQueue.dequeue(state.queue) do
-      {:ok, run_id, queue} ->
-        state = %{state | queue: queue}
-
-        runtime_telemetry(
-          [:session_server, :queue, :dequeue],
-          %{queue_length: RunQueue.size(queue)},
-          %{session_id: state.session_id, run_id: run_id}
-        )
-
-        start_run_execution(state, run_id)
-
-      {:empty, _queue} ->
-        state
-    end
-  end
-
   defp build_execute_opts(state, run_id) do
     per_run = Map.get(state.run_execute_opts, run_id, [])
     execute_opts = merge_execute_opts(state.default_execute_opts || [], per_run)
@@ -582,44 +714,6 @@ defmodule AgentSessionManager.Runtime.SessionServer do
     task_ref
   end
 
-  defp cancel_active_run(state, run_id) do
-    _ = Task.start(fn -> _ = SessionManager.cancel_run(state.store, state.adapter, run_id) end)
-
-    runtime_telemetry([:session_server, :cancel, :active], %{}, %{
-      session_id: state.session_id,
-      run_id: run_id
-    })
-
-    state
-  end
-
-  defp cancel_non_active_run(state, run_id) do
-    case RunQueue.remove(state.queue, run_id) do
-      {:ok, new_queue} ->
-        state = %{state | queue: new_queue}
-        state = maybe_cancel_queued_run(state, run_id)
-        {:reply, :ok, state}
-
-      {:error, :not_found} ->
-        {:reply, cancel_unknown_or_finished(state, run_id), state}
-    end
-  end
-
-  defp maybe_cancel_queued_run(state, run_id) do
-    case cancel_queued_run(state, run_id) do
-      {:ok, new_state} -> new_state
-      {:error, _} -> state
-    end
-  end
-
-  defp cancel_unknown_or_finished(state, run_id) do
-    if Map.has_key?(state.run_results, run_id) do
-      :ok
-    else
-      {:error, Error.new(:run_not_found, "Run not found in queue: #{run_id}")}
-    end
-  end
-
   defp match_sub?(sub, %Event{} = event) do
     (is_nil(sub.type) or event.type == sub.type) and
       (is_nil(sub.run_id) or event.run_id == sub.run_id) and
@@ -645,23 +739,52 @@ defmodule AgentSessionManager.Runtime.SessionServer do
   end
 
   # ============================================================================
-  # Task failure handling
+  # Task failure handling (multi-slot aware)
   # ============================================================================
 
   defp handle_task_down(state, mon_ref, reason) do
-    if state.active_run && state.active_run.task_ref == mon_ref do
-      run_id = state.active_run.run_id
-      state = maybe_release_limiter(state, run_id)
+    case find_in_flight_by_monitor(state, mon_ref) do
+      {:ok, run_id} ->
+        state = maybe_release_limiter(state, run_id)
 
-      error =
-        Error.new(
-          :internal_error,
-          "Run task crashed: #{inspect(reason)}"
-        )
+        error =
+          Error.new(
+            :internal_error,
+            "Run task crashed: #{inspect(reason)}"
+          )
 
-      state = record_run_result(state, run_id, {:error, error})
-      state = clear_active_run(state, run_id)
-      maybe_start_next_run(state)
+        state = record_run_result(state, run_id, {:error, error})
+        state = clear_in_flight(state, run_id)
+        state = maybe_start_next_runs(state)
+        maybe_notify_drain_waiters(state)
+
+      :error ->
+        state
+    end
+  end
+
+  defp find_in_flight_by_monitor(state, mon_ref) do
+    state.in_flight
+    |> Enum.find(fn {_run_id, task_ref} -> task_ref == mon_ref end)
+    |> case do
+      {run_id, _task_ref} -> {:ok, run_id}
+      nil -> :error
+    end
+  end
+
+  # ============================================================================
+  # Drain support
+  # ============================================================================
+
+  defp maybe_notify_drain_waiters(state) do
+    if map_size(state.in_flight) == 0 and RunQueue.size(state.queue) == 0 and
+         state.drain_waiters != [] do
+      Enum.each(state.drain_waiters, fn {from, timer_ref} ->
+        Process.cancel_timer(timer_ref)
+        GenServer.reply(from, :ok)
+      end)
+
+      %{state | drain_waiters: []}
     else
       state
     end

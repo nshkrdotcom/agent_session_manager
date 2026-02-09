@@ -136,14 +136,26 @@ defmodule AgentSessionManager.Runtime.SessionServerTest do
   end
 
   describe "start_link/1" do
-    test "rejects max_concurrent_runs > 1 in MVP", %{store: store, adapter: adapter} do
+    test "rejects max_concurrent_runs < 1", %{store: store, adapter: adapter} do
       assert {:error, %Error{code: :validation_error}} =
+               SessionServer.start_link(
+                 store: store,
+                 adapter: adapter,
+                 session_opts: %{agent_id: "agent"},
+                 max_concurrent_runs: 0
+               )
+    end
+
+    test "accepts max_concurrent_runs > 1 in Phase 2", %{store: store, adapter: adapter} do
+      assert {:ok, server} =
                SessionServer.start_link(
                  store: store,
                  adapter: adapter,
                  session_opts: %{agent_id: "agent"},
                  max_concurrent_runs: 2
                )
+
+      cleanup_on_exit(fn -> safe_stop(server) end)
     end
   end
 

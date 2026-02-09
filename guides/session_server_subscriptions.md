@@ -47,6 +47,39 @@ Examples:
 {:ok, _} = SessionServer.subscribe(server, from_sequence: cursor)
 ```
 
+## Durable Subscriptions (Phase 2)
+
+Subscription delivery is **gap-safe**:
+
+1. On subscribe: the server backfills events from the store starting at `from_sequence`.
+2. Then: live events are delivered as they are appended by running tasks.
+3. If the subscriber disconnects and re-subscribes with the last received sequence,
+   no events are missed.
+
+### Backfill + Live
+
+```elixir
+# Subscribe from sequence 0 to get all historical events + live ones
+{:ok, ref} = SessionServer.subscribe(server, from_sequence: 0)
+
+# Or subscribe from a saved cursor to resume where you left off
+{:ok, ref} = SessionServer.subscribe(server, from_sequence: last_seen_seq + 1)
+```
+
+### Multi-Slot Interleaving
+
+When `max_concurrent_runs > 1`, events from different runs may interleave.
+Each event includes `run_id` so subscribers can disambiguate:
+
+```elixir
+receive do
+  {:session_event, _session_id, event} ->
+    IO.puts("run=#{event.run_id} type=#{event.type} seq=#{event.sequence_number}")
+end
+```
+
+Use `run_id:` filtering to subscribe to events from a specific run only.
+
 ## Cursor Semantics
 
 Subscriptions are backed by `SessionStore.get_events/3` and sequence numbers assigned at append time.
@@ -62,4 +95,3 @@ Feature 6 avoids expanding `Core.Event` types for runtime internals. Queue opera
 
 - existing session/run event types (persisted by `SessionManager`)
 - telemetry events under the `[:agent_session_manager, :runtime, ...]` namespace
-

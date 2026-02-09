@@ -178,6 +178,20 @@ mix run examples/session_limiter.exs --provider codex
 mix run examples/session_limiter.exs --provider amp
 ```
 
+### `session_concurrency.exs` -- Multi-Slot Concurrency (Feature 6 v2)
+
+- Starts a `SessionServer` with `max_concurrent_runs: 2`
+- Submits 4 runs and shows that up to 2 execute in parallel
+- Remaining runs are queued and drained as slots free up
+- Demonstrates `drain/2` waiting for all runs to complete
+- Prints status showing in-flight and queued counts
+
+```bash
+mix run examples/session_concurrency.exs --provider claude
+mix run examples/session_concurrency.exs --provider codex
+mix run examples/session_concurrency.exs --provider amp
+```
+
 ## Other Live Provider Examples
 
 ### `oneshot.exs` -- One-Shot Execution

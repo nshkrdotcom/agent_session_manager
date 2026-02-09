@@ -32,7 +32,7 @@ AgentSessionManager provides the infrastructure layer for building applications 
 - **Policy enforcement** -- Real-time budget/tool governance with cancel or warn actions, `:policy_violation` events, policy stacking with deterministic merge, provider-side enforcement, and preflight checks
 - **Capability negotiation** -- Declare required and optional capabilities; the resolver checks provider support before execution
 - **Concurrency controls** -- Configurable limits on parallel sessions and runs with slot-based tracking
-- **Session server runtime** -- Optional per-session `SessionServer` with FIFO queueing, subscriptions, and strict sequential MVP execution (`max_concurrent_runs: 1`)
+- **Session server runtime** -- Optional per-session `SessionServer` with FIFO queueing, multi-slot concurrency (`max_concurrent_runs`), durable subscriptions with backfill, drain/status operational APIs, and optional `ConcurrencyLimiter` / `ControlOperations` integration
 - **Observability** -- Telemetry integration, audit logging, and append-only event stores
 - **Ports & adapters architecture** -- Clean separation between core logic and external dependencies
 
@@ -121,11 +121,11 @@ IO.inspect(result.token_usage)
 {:ok, _} = SessionManager.complete_session(store, session.id)
 ```
 
-### Session runtime (queued, sequential)
+### Session runtime (queued, concurrent)
 
 If you need a per-session runtime that queues runs and provides await/cancel and subscriptions, use `AgentSessionManager.Runtime.SessionServer`.
 
-**MVP behavior:** strict sequential execution only (`max_concurrent_runs: 1`).
+Supports sequential (`max_concurrent_runs: 1`) or multi-slot parallel execution.
 
 ```elixir
 alias AgentSessionManager.Adapters.{ClaudeAdapter, InMemorySessionStore}
@@ -139,7 +139,7 @@ alias AgentSessionManager.Runtime.SessionServer
     store: store,
     adapter: adapter,
     session_opts: %{agent_id: "runtime-session"},
-    max_concurrent_runs: 1
+    max_concurrent_runs: 2   # up to 2 runs in parallel
   )
 
 {:ok, run_id} =
@@ -149,6 +149,9 @@ alias AgentSessionManager.Runtime.SessionServer
 
 {:ok, result} = SessionServer.await_run(server, run_id, 120_000)
 IO.inspect(result.output)
+
+# Drain: wait for all in-flight and queued runs to complete
+:ok = SessionServer.drain(server, 30_000)
 ```
 
 ## Core Concepts
@@ -449,6 +452,9 @@ mix run examples/policy_enforcement.exs --provider claude
 mix run examples/routing_v2.exs --provider amp
 mix run examples/policy_v2.exs --provider claude
 
+# Feature 6 v2: multi-slot concurrency
+mix run examples/session_concurrency.exs --provider claude
+
 # Default run-all mode executes all examples for all providers
 bash examples/run_all.sh
 
@@ -467,8 +473,8 @@ The guides cover each subsystem in depth:
 - [Architecture](guides/architecture.md) -- Ports & adapters design, module map, data flow
 - [Configuration](guides/configuration.md) -- Layered config system, process-local overrides
 - [Sessions and Runs](guides/sessions_and_runs.md) -- Lifecycle state machines, metadata, context
-- [Session Server Runtime](guides/session_server_runtime.md) -- Per-session FIFO queueing, submit/await/cancel, and limiter integration
-- [Session Server Subscriptions](guides/session_server_subscriptions.md) -- Store-backed event subscriptions with cursor replay and filtering
+- [Session Server Runtime](guides/session_server_runtime.md) -- Per-session FIFO queueing, multi-slot concurrency, submit/await/cancel/drain, and limiter/control-ops integration
+- [Session Server Subscriptions](guides/session_server_subscriptions.md) -- Durable event subscriptions with backfill, cursor replay, and filtering
 - [Session Continuity](guides/session_continuity.md) -- Transcript reconstruction, continuation options, adapter replay behavior
 - [Events and Streaming](guides/events_and_streaming.md) -- Event types, normalization, EventStream cursor
 - [Cursor Streaming and Migration](guides/cursor_streaming_and_migration.md) -- Sequence assignment, cursor APIs, and custom store migration

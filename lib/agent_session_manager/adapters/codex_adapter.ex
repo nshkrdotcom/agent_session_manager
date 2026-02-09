@@ -92,6 +92,7 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
 
   - `:working_directory` - Required. The working directory for Codex operations.
   - `:model` - Optional. The model to use.
+  - `:permission_mode` - Optional. Normalized permission mode (see `AgentSessionManager.PermissionMode`).
   - `:sdk_module` - Optional. Mock SDK module for testing.
   - `:sdk_pid` - Optional. Mock SDK process for testing.
   - `:name` - Optional. GenServer name for registration.
@@ -163,6 +164,7 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
     case extract_working_directory(opts) do
       {:ok, working_directory} ->
         model = Keyword.get(opts, :model)
+        permission_mode = Keyword.get(opts, :permission_mode)
         sdk_module = Keyword.get(opts, :sdk_module)
         sdk_pid = Keyword.get(opts, :sdk_pid)
         {:ok, task_supervisor} = Task.Supervisor.start_link()
@@ -172,6 +174,7 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
         state = %{
           working_directory: working_directory,
           model: model,
+          permission_mode: permission_mode,
           sdk_module: sdk_module,
           sdk_pid: sdk_pid,
           task_supervisor: task_supervisor,
@@ -422,9 +425,30 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
     Codex.Options.new(attrs)
   end
 
-  defp build_thread_options(state) do
-    Codex.Thread.Options.new(%{working_directory: state.working_directory})
+  @doc false
+  @spec build_thread_options_for_state(map()) ::
+          {:ok, Codex.Thread.Options.t()} | {:error, term()}
+  def build_thread_options_for_state(state) do
+    build_thread_options(state)
   end
+
+  defp build_thread_options(state) do
+    attrs =
+      %{working_directory: state.working_directory}
+      |> apply_permission_mode(state.permission_mode)
+
+    Codex.Thread.Options.new(attrs)
+  end
+
+  defp apply_permission_mode(attrs, :full_auto) do
+    Map.put(attrs, :full_auto, true)
+  end
+
+  defp apply_permission_mode(attrs, :dangerously_skip_permissions) do
+    Map.put(attrs, :dangerously_bypass_approvals_and_sandbox, true)
+  end
+
+  defp apply_permission_mode(attrs, _mode), do: attrs
 
   defp extract_prompt(input) when is_binary(input), do: input
 

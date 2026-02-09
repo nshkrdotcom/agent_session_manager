@@ -27,6 +27,31 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
     end
   end
 
+  defmodule OptionsCapturingSDK do
+    @moduledoc false
+
+    alias ClaudeAgentSDK.Message
+
+    def query(test_pid, _input, opts) do
+      send(test_pid, {:captured_sdk_options, opts})
+
+      [
+        %Message{
+          type: :system,
+          subtype: :init,
+          data: %{session_id: "claude-session", model: "claude-haiku-4-5-20251001", tools: []},
+          raw: %{}
+        },
+        %Message{
+          type: :result,
+          subtype: :success,
+          data: %{usage: %{"input_tokens" => 1, "output_tokens" => 1}},
+          raw: %{}
+        }
+      ]
+    end
+  end
+
   defmodule CapturingAgentSDK do
     @moduledoc false
 
@@ -1535,6 +1560,137 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
 
       assert contains_text?(input, "Earlier assistant reply")
       assert contains_text?(input, "Hello")
+    end
+  end
+
+  # ============================================================================
+  # Permission Mode Configuration Tests
+  # ============================================================================
+
+  describe "permission_mode configuration" do
+    test "stores permission_mode in adapter state" do
+      {:ok, adapter} =
+        ClaudeAdapter.start_link(
+          api_key: "test-key",
+          permission_mode: :full_auto
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      assert state.permission_mode == :full_auto
+    end
+
+    test "defaults permission_mode to nil when not provided" do
+      {:ok, adapter} = ClaudeAdapter.start_link(api_key: "test-key")
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      assert state.permission_mode == nil
+    end
+
+    test "full_auto maps to bypass_permissions on SDK options", %{session: session, run: run} do
+      {:ok, adapter} =
+        ClaudeAdapter.start_link(
+          api_key: "test-key",
+          permission_mode: :full_auto,
+          sdk_module: OptionsCapturingSDK,
+          sdk_pid: self()
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      assert {:ok, _result} = ClaudeAdapter.execute(adapter, run, session, timeout: 5_000)
+
+      assert_receive {:captured_sdk_options, opts}, 1_000
+      assert opts.permission_mode == :bypass_permissions
+    end
+
+    test "dangerously_skip_permissions maps to bypass_permissions on SDK options", %{
+      session: session,
+      run: run
+    } do
+      {:ok, adapter} =
+        ClaudeAdapter.start_link(
+          api_key: "test-key",
+          permission_mode: :dangerously_skip_permissions,
+          sdk_module: OptionsCapturingSDK,
+          sdk_pid: self()
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      assert {:ok, _result} = ClaudeAdapter.execute(adapter, run, session, timeout: 5_000)
+
+      assert_receive {:captured_sdk_options, opts}, 1_000
+      assert opts.permission_mode == :bypass_permissions
+    end
+
+    test "accept_edits maps to accept_edits on SDK options", %{session: session, run: run} do
+      {:ok, adapter} =
+        ClaudeAdapter.start_link(
+          api_key: "test-key",
+          permission_mode: :accept_edits,
+          sdk_module: OptionsCapturingSDK,
+          sdk_pid: self()
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      assert {:ok, _result} = ClaudeAdapter.execute(adapter, run, session, timeout: 5_000)
+
+      assert_receive {:captured_sdk_options, opts}, 1_000
+      assert opts.permission_mode == :accept_edits
+    end
+
+    test "plan maps to plan on SDK options", %{session: session, run: run} do
+      {:ok, adapter} =
+        ClaudeAdapter.start_link(
+          api_key: "test-key",
+          permission_mode: :plan,
+          sdk_module: OptionsCapturingSDK,
+          sdk_pid: self()
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      assert {:ok, _result} = ClaudeAdapter.execute(adapter, run, session, timeout: 5_000)
+
+      assert_receive {:captured_sdk_options, opts}, 1_000
+      assert opts.permission_mode == :plan
+    end
+
+    test "default permission_mode omits it from SDK options", %{session: session, run: run} do
+      {:ok, adapter} =
+        ClaudeAdapter.start_link(
+          api_key: "test-key",
+          permission_mode: :default,
+          sdk_module: OptionsCapturingSDK,
+          sdk_pid: self()
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      assert {:ok, _result} = ClaudeAdapter.execute(adapter, run, session, timeout: 5_000)
+
+      assert_receive {:captured_sdk_options, opts}, 1_000
+      assert opts.permission_mode == nil
+    end
+
+    test "nil permission_mode omits it from SDK options", %{session: session, run: run} do
+      {:ok, adapter} =
+        ClaudeAdapter.start_link(
+          api_key: "test-key",
+          sdk_module: OptionsCapturingSDK,
+          sdk_pid: self()
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      assert {:ok, _result} = ClaudeAdapter.execute(adapter, run, session, timeout: 5_000)
+
+      assert_receive {:captured_sdk_options, opts}, 1_000
+      assert opts.permission_mode == nil
     end
   end
 

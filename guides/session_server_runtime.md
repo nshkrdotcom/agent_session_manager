@@ -167,3 +167,92 @@ alias AgentSessionManager.Runtime.SessionSupervisor
 ```
 
 Use `SessionSupervisor.whereis/2` to look up a session server by `session_id`.
+
+## Multi-Slot Worked Example
+
+This example shows how 4 runs flow through a 2-slot server, illustrating
+queuing, interleaved execution, and slot release.
+
+```elixir
+{:ok, server} =
+  SessionServer.start_link(
+    store: store,
+    adapter: adapter,
+    session_opts: %{agent_id: "multi-slot-demo"},
+    max_concurrent_runs: 2,
+    max_queued_runs: 10
+  )
+
+# Submit 4 runs -- runs 1 and 2 start immediately, 3 and 4 queue
+{:ok, r1} = SessionServer.submit_run(server, %{messages: [%{role: "user", content: "Task 1"}]})
+{:ok, r2} = SessionServer.submit_run(server, %{messages: [%{role: "user", content: "Task 2"}]})
+{:ok, r3} = SessionServer.submit_run(server, %{messages: [%{role: "user", content: "Task 3"}]})
+{:ok, r4} = SessionServer.submit_run(server, %{messages: [%{role: "user", content: "Task 4"}]})
+
+status = SessionServer.status(server)
+# status.in_flight_count => 2  (r1, r2 executing)
+# status.queued_count    => 2  (r3, r4 waiting)
+
+# When r1 or r2 completes, a queued run starts automatically.
+# Slots are released on completion, failure, or cancellation.
+
+# Await individual results
+{:ok, result_1} = SessionServer.await_run(server, r1, 60_000)
+{:ok, result_2} = SessionServer.await_run(server, r2, 60_000)
+# At this point r3 and r4 have moved into slots and are executing
+
+# Or drain all remaining work
+:ok = SessionServer.drain(server, 60_000)
+
+final = SessionServer.status(server)
+# final.in_flight_count => 0
+# final.queued_count    => 0
+```
+
+Slot management internals:
+
+- When a run completes (success, failure, or cancellation), the server decrements
+  the in-flight count and immediately dequeues the next waiting run.
+- If the adapter task crashes, the server receives a `DOWN` message, releases the
+  slot, notifies awaiters, and releases any limiter slot if configured.
+- `cancel_run/2` on a queued run removes it from the queue without consuming a slot.
+- `cancel_run/2` on an in-flight run delegates to the adapter and frees the slot
+  when the adapter acknowledges cancellation.
+
+## Transcript Caching
+
+When running multiple sequential runs within a `SessionServer`, you can enable
+an in-memory transcript cache to avoid re-reading the full event history from
+the store on every continuation.
+
+The cache uses `TranscriptBuilder.update_from_store/3` for incremental updates:
+only events appended since the last known sequence are fetched.
+
+```elixir
+{:ok, server} =
+  SessionServer.start_link(
+    store: store,
+    adapter: adapter,
+    session_opts: %{agent_id: "cached-session"},
+    default_execute_opts: [
+      continuation: :auto,
+      continuation_opts: [max_messages: 200]
+    ]
+  )
+```
+
+Cache behavior:
+
+- **Populated on first run**: After the first run completes, the transcript is
+  built from persisted events and held in server state.
+- **Incrementally updated**: Before each subsequent run, the server calls
+  `TranscriptBuilder.update_from_store/3` with the cached transcript, fetching
+  only new events since `transcript.last_sequence`.
+- **Invalidated on error**: If a store read fails, the cache is cleared and the
+  next run rebuilds from scratch.
+- **Correct under replay**: Because the cache is keyed by sequence number and
+  the store is the source of truth, cursor-backed replay and cache agree.
+
+The cache is an optimization -- it reduces store reads from O(total_events) to
+O(new_events) per run. Correctness does not depend on it; disabling or clearing
+the cache simply means the next run reads the full history.

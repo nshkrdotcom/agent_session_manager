@@ -7,6 +7,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-02-08
+
+### Added
+
+- **Normalized permission modes** via `AgentSessionManager.PermissionMode` with provider-specific mapping
+  - Five modes: `:default`, `:accept_edits`, `:plan`, `:full_auto`, `:dangerously_skip_permissions`
+  - `PermissionMode.all/0`, `valid?/1`, and `normalize/1` for validation and string/atom coercion
+  - ClaudeAdapter maps `:full_auto` and `:dangerously_skip_permissions` to `permission_mode: :bypass_permissions` on `ClaudeAgentSDK.Options`
+  - CodexAdapter maps `:full_auto` to `full_auto: true` and `:dangerously_skip_permissions` to `dangerously_bypass_approvals_and_sandbox: true` on `Codex.Thread.Options`
+  - AmpAdapter maps `:full_auto` and `:dangerously_skip_permissions` to `dangerously_allow_all: true` on `AmpSdk.Types.Options`
+  - `:accept_edits` and `:plan` are Claude-specific; no-op on Codex and Amp adapters
+  - All three adapters accept `:permission_mode` option on `start_link/1`
+  - ClaudeAdapter `execute_with_agent_sdk` now forwards built SDK options through `query/3` (was `%{}`)
+- **Long-poll cursor reads** via optional `wait_timeout_ms` parameter on `SessionStore.get_events/3`
+  - `InMemorySessionStore` implements deferred-reply long-poll using `GenServer.reply/2` without blocking the server loop
+  - `SessionManager.stream_session_events/3` forwards `wait_timeout_ms` to the store, eliminating busy polling when supported
+  - Stores that do not support `wait_timeout_ms` ignore it and fall back to immediate return (backward compatible)
+  - `cursor_wait_follow.exs` live example demonstrating long-poll follow
+- **Adapter event metadata persistence** in `SessionManager.handle_adapter_event/4`
+  - Adapter-provided `DateTime` timestamps stored in `Event.timestamp` instead of `DateTime.utc_now()`
+  - Adapter-provided `metadata` map merged into `Event.metadata`
+  - `Event.metadata[:provider]` always set to the adapter's provider name string
+- **Native continuation modes** for session continuity
+  - `:continuation` option expanded to accept `:auto`, `:replay`, `:native`, `true`, and `false`
+  - `:native` mode uses provider-native session continuation (errors if unsupported)
+  - `:replay` mode always replays transcript from events regardless of provider support
+  - `:auto` mode (and `true` alias) uses native when available, falls back to replay
+- **Token-aware transcript truncation** via `continuation_opts`
+  - `max_chars` -- hard character budget for transcript content
+  - `max_tokens_approx` -- approximate token budget using 4-chars-per-token heuristic
+  - Truncation keeps the most recent messages within the lower effective limit
+- **Per-provider continuation handles** stored under `session.metadata[:provider_sessions]` keyed map for multi-provider sessions
+- **Workspace artifact storage** via `ArtifactStore` port and `FileArtifactStore` adapter
+  - Large patches stored as artifacts with `patch_ref` in run metadata instead of embedding raw patches
+  - `ArtifactStore.put/3`, `get/2`, `delete/2` API
+  - Without an artifact store configured, patches are embedded directly (backward compatible)
+- **Git snapshot untracked file support** using alternate `GIT_INDEX_FILE` to stage all content without mutating `HEAD`
+  - Snapshot metadata includes `head_ref`, `dirty`, and `includes_untracked` fields
+- **Hash backend configurable ignore rules** via `ignore: [paths: [...], globs: [...]]`
+- **Weighted provider routing** via `strategy: :weighted` with custom weight maps and health-based score penalties
+  - Score formula: `weight - failure_count * 0.5`; ties broken by `prefer` order
+  - Per-run weight overrides via `adapter_opts: [routing: [weights: ...]]`
+- **Session stickiness** via `sticky_session_id` in routing options with configurable `sticky_ttl_ms`
+  - Best-effort: falls back to normal selection when sticky adapter is unavailable
+- **Circuit breaker** for per-adapter fault isolation (`:closed` / `:open` / `:half_open` states)
+  - Pure-functional data structure stored in router state, no extra processes
+  - Configurable `failure_threshold`, `cooldown_ms`, and `half_open_max_probes`
+- **Routing telemetry** events: `[:agent_session_manager, :router, :attempt, :start | :stop | :exception]`
+- **Policy stacks** via `policies: [...]` list option with deterministic left-to-right merge semantics
+  - Names joined with ` + `, limits overridden by later values, tool rules concatenated, strictest `on_violation` wins
+- **Provider-side enforcement** via `AdapterCompiler` compiling policy rules to `adapter_opts`
+  - Deny rules to `denied_tools`, allow rules to `allowed_tools`, token limits to `max_tokens`
+  - Reactive enforcement remains the safety net alongside provider-side hints
+- **Policy preflight checks** reject impossible policies (empty allow lists, zero budgets, contradictory rules) before adapter execution
+- **Multi-slot concurrent session runtime** (`max_concurrent_runs > 1`) in `SessionServer`
+  - Submitted runs queue in FIFO order, dequeued as slots free up
+  - Automatic slot release on completion, failure, cancellation, and task crash
+- **Durable subscriptions** with gap-safe backfill + live delivery in `SessionServer`
+  - `subscribe/2` with `from_sequence:` replays stored events then follows live appends
+  - Cursor-based resumption after disconnect: re-subscribe with `last_seen_seq + 1`
+- **Transcript caching** in `SessionServer` using `TranscriptBuilder.update_from_store/3` for incremental updates
+  - Cache reduces store reads from O(total_events) to O(new_events) per run
+  - Invalidated on error; correctness does not depend on cache
+- **Runtime telemetry** events under `[:agent_session_manager, :runtime, ...]` namespace
+  - `run:enqueued`, `run:started`, `run:completed`, `run:crashed`, `drain:complete`
+- **ConcurrencyLimiter and ControlOperations integration** with `SessionServer` via `:limiter` and `:control_ops` options
+  - Crash-safe acquire/release and cancellation routing through the runtime layer
+- New examples: `cursor_wait_follow.exs`, `routing_v2.exs`, `policy_v2.exs`, `session_concurrency.exs`
+- New guide: `guides/advanced_patterns.md` covering cross-feature integration patterns
+
+### Changed
+
+- **SessionStore port** `get_events/3` now accepts optional `wait_timeout_ms` parameter (non-breaking; stores may ignore it)
+- `InMemorySessionStore` extended with waiter tracking for long-poll support
+- `session_continuity.exs` and `workspace_snapshot.exs` examples updated with Phase 2 features
+- `examples/run_all.sh` updated with full Phase 2 provider matrix
+
+### Documentation
+
+- Add routing and runtime telemetry event tables with measurements and metadata to `guides/telemetry_and_observability.md`
+- Expand `AdapterCompiler` section in `guides/policy_enforcement.md` with mapping rules table, merged policy compilation, and provider support matrix
+- Add multi-slot worked example and transcript caching section to `guides/session_server_runtime.md`
+- Add new Phase 2 examples to `guides/live_examples.md`
+- Add `guides/advanced_patterns.md` covering routing + policies, SessionServer + subscriptions + workspace, stickiness + continuity, and policy + workspace + artifacts
+- Update `guides/cursor_streaming_and_migration.md` with long-poll reference implementation
+- Update `guides/session_continuity.md` with continuation modes, token-aware truncation, and per-provider handles
+- Update `guides/workspace_snapshots.md` with artifact store, untracked file support, and ignore rules
+- Update `guides/provider_routing.md` with weighted routing, stickiness, circuit breaker, and routing telemetry
+- Update `guides/policy_enforcement.md` with policy stacks, provider-side enforcement, and preflight checks
+- Update `guides/session_server_runtime.md` with multi-slot concurrency and operational APIs
+- Update `guides/session_server_subscriptions.md` with durable subscriptions and multi-slot interleaving
+- Bump installation snippets in `README.md` and `guides/getting_started.md` to `~> 0.6.0`
+
 ## [0.5.1] - 2026-02-07
 
 ### Changed
@@ -218,7 +311,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic project structure with mix.exs configuration
 - Project logo and assets
 
-[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.4.0...v0.4.1

@@ -597,6 +597,125 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
   end
 
   # ============================================================================
+  # Permission Mode Configuration Tests
+  # ============================================================================
+
+  describe "permission_mode configuration" do
+    test "stores permission_mode in adapter state" do
+      {:ok, mock_sdk} = CodexMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        CodexAdapter.start_link(
+          working_directory: "/tmp/test",
+          permission_mode: :full_auto,
+          sdk_module: CodexMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      assert state.permission_mode == :full_auto
+    end
+
+    test "defaults permission_mode to nil when not provided" do
+      {:ok, mock_sdk} = CodexMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        CodexAdapter.start_link(
+          working_directory: "/tmp/test",
+          sdk_module: CodexMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      assert state.permission_mode == nil
+    end
+
+    test "full_auto produces thread options with full_auto: true" do
+      {:ok, mock_sdk} = CodexMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        CodexAdapter.start_link(
+          working_directory: "/tmp/test",
+          permission_mode: :full_auto,
+          sdk_module: CodexMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      {:ok, thread_opts} = CodexAdapter.build_thread_options_for_state(state)
+      assert thread_opts.full_auto == true
+      assert thread_opts.dangerously_bypass_approvals_and_sandbox == false
+    end
+
+    test "dangerously_skip_permissions produces thread options with dangerously bypass" do
+      {:ok, mock_sdk} = CodexMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        CodexAdapter.start_link(
+          working_directory: "/tmp/test",
+          permission_mode: :dangerously_skip_permissions,
+          sdk_module: CodexMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      {:ok, thread_opts} = CodexAdapter.build_thread_options_for_state(state)
+      assert thread_opts.dangerously_bypass_approvals_and_sandbox == true
+    end
+
+    test "default permission_mode leaves thread options at defaults" do
+      {:ok, mock_sdk} = CodexMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        CodexAdapter.start_link(
+          working_directory: "/tmp/test",
+          sdk_module: CodexMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      {:ok, thread_opts} = CodexAdapter.build_thread_options_for_state(state)
+      assert thread_opts.full_auto == false
+      assert thread_opts.dangerously_bypass_approvals_and_sandbox == false
+    end
+
+    test "accept_edits is a no-op for codex (no equivalent)" do
+      {:ok, mock_sdk} = CodexMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        CodexAdapter.start_link(
+          working_directory: "/tmp/test",
+          permission_mode: :accept_edits,
+          sdk_module: CodexMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      {:ok, thread_opts} = CodexAdapter.build_thread_options_for_state(state)
+      assert thread_opts.full_auto == false
+      assert thread_opts.dangerously_bypass_approvals_and_sandbox == false
+    end
+  end
+
+  # ============================================================================
   # Test Helpers
   # ============================================================================
 

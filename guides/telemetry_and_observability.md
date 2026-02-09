@@ -232,3 +232,174 @@ config :agent_session_manager, audit_logging_enabled: false
 ```
 
 See [Configuration](configuration.md) for the full resolution order.
+
+## Routing Telemetry Events
+
+The `ProviderRouter` emits telemetry events for each routing attempt, enabling
+observability into provider selection, failover, and latency.
+
+#### `[:agent_session_manager, :router, :attempt, :start]`
+
+Emitted before adapter execution begins for a routing attempt.
+
+| Measurement | Type | Description |
+|---|---|---|
+| `system_time` | integer | System time in native units |
+
+| Metadata | Type | Description |
+|---|---|---|
+| `adapter_id` | string | Selected adapter identifier |
+| `run_id` | string | Run identifier |
+| `session_id` | string | Session identifier |
+| `attempt` | integer | Attempt number (1-based) |
+| `strategy` | atom | Routing strategy (`:prefer` or `:weighted`) |
+| `candidates` | list | Candidate adapter IDs considered |
+
+#### `[:agent_session_manager, :router, :attempt, :stop]`
+
+Emitted after a successful adapter execution.
+
+| Measurement | Type | Description |
+|---|---|---|
+| `duration` | integer | Duration in nanoseconds |
+| `system_time` | integer | System time |
+
+| Metadata | Type | Description |
+|---|---|---|
+| `adapter_id` | string | Adapter that handled the run |
+| `run_id` | string | Run identifier |
+| `session_id` | string | Session identifier |
+| `attempt` | integer | Attempt number |
+
+#### `[:agent_session_manager, :router, :attempt, :exception]`
+
+Emitted when an adapter execution fails during routing.
+
+| Measurement | Type | Description |
+|---|---|---|
+| `duration` | integer | Duration in nanoseconds |
+| `system_time` | integer | System time |
+
+| Metadata | Type | Description |
+|---|---|---|
+| `adapter_id` | string | Adapter that failed |
+| `run_id` | string | Run identifier |
+| `session_id` | string | Session identifier |
+| `attempt` | integer | Attempt number |
+| `error_code` | atom | Error code from the failure |
+| `retryable` | boolean | Whether the error is retryable |
+| `will_retry` | boolean | Whether the router will try another adapter |
+
+### Attaching Router Handlers
+
+```elixir
+:telemetry.attach_many(
+  "my-routing-metrics",
+  [
+    [:agent_session_manager, :router, :attempt, :start],
+    [:agent_session_manager, :router, :attempt, :stop],
+    [:agent_session_manager, :router, :attempt, :exception]
+  ],
+  &MyRoutingHandler.handle_event/4,
+  nil
+)
+```
+
+## Runtime Telemetry Events
+
+The `SessionServer` runtime emits telemetry events under the
+`[:agent_session_manager, :runtime, ...]` namespace for queue and lifecycle
+observability.
+
+#### `[:agent_session_manager, :runtime, :run, :enqueued]`
+
+Emitted when a run is submitted to the queue.
+
+| Measurement | Type | Description |
+|---|---|---|
+| `system_time` | integer | System time |
+| `queue_depth` | integer | Queue size after enqueue |
+
+| Metadata | Type | Description |
+|---|---|---|
+| `run_id` | string | Run identifier |
+| `session_id` | string | Session identifier |
+| `in_flight_count` | integer | Current in-flight runs |
+| `max_concurrent_runs` | integer | Configured slot limit |
+
+#### `[:agent_session_manager, :runtime, :run, :started]`
+
+Emitted when a run is dequeued and adapter execution begins.
+
+| Measurement | Type | Description |
+|---|---|---|
+| `system_time` | integer | System time |
+| `wait_time` | integer | Time in queue (nanoseconds) |
+
+| Metadata | Type | Description |
+|---|---|---|
+| `run_id` | string | Run identifier |
+| `session_id` | string | Session identifier |
+| `in_flight_count` | integer | In-flight runs after start |
+
+#### `[:agent_session_manager, :runtime, :run, :completed]`
+
+Emitted when a run finishes (success, failure, or cancellation).
+
+| Measurement | Type | Description |
+|---|---|---|
+| `duration` | integer | Total run duration (nanoseconds) |
+| `system_time` | integer | System time |
+
+| Metadata | Type | Description |
+|---|---|---|
+| `run_id` | string | Run identifier |
+| `session_id` | string | Session identifier |
+| `status` | atom | Final status (`:completed`, `:failed`, `:cancelled`) |
+| `in_flight_count` | integer | In-flight runs after completion |
+| `queued_count` | integer | Remaining queued runs |
+
+#### `[:agent_session_manager, :runtime, :run, :crashed]`
+
+Emitted when a run task crashes unexpectedly.
+
+| Measurement | Type | Description |
+|---|---|---|
+| `system_time` | integer | System time |
+
+| Metadata | Type | Description |
+|---|---|---|
+| `run_id` | string | Run identifier |
+| `session_id` | string | Session identifier |
+| `reason` | term | Crash reason from the DOWN message |
+
+#### `[:agent_session_manager, :runtime, :drain, :complete]`
+
+Emitted when `drain/2` finishes successfully.
+
+| Measurement | Type | Description |
+|---|---|---|
+| `duration` | integer | Total drain wait time (nanoseconds) |
+| `system_time` | integer | System time |
+
+| Metadata | Type | Description |
+|---|---|---|
+| `session_id` | string | Session identifier |
+| `runs_drained` | integer | Total runs that completed during drain |
+
+### Attaching Runtime Handlers
+
+```elixir
+:telemetry.attach_many(
+  "my-runtime-metrics",
+  [
+    [:agent_session_manager, :runtime, :run, :enqueued],
+    [:agent_session_manager, :runtime, :run, :started],
+    [:agent_session_manager, :runtime, :run, :completed],
+    [:agent_session_manager, :runtime, :run, :crashed],
+    [:agent_session_manager, :runtime, :drain, :complete]
+  ],
+  &MyRuntimeHandler.handle_event/4,
+  nil
+)
+```

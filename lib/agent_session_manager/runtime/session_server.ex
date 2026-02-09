@@ -551,7 +551,14 @@ defmodule AgentSessionManager.Runtime.SessionServer do
   # ============================================================================
 
   defp cancel_in_flight_run(state, run_id) do
-    _ = Task.start(fn -> _ = SessionManager.cancel_run(state.store, state.adapter, run_id) end)
+    store = state.store
+    adapter = state.adapter
+    session_id = state.session_id
+
+    _ =
+      Task.start(fn ->
+        _ = run_cancel_task(store, adapter, session_id, run_id)
+      end)
 
     runtime_telemetry([:session_server, :cancel, :active], %{}, %{
       session_id: state.session_id,
@@ -559,6 +566,42 @@ defmodule AgentSessionManager.Runtime.SessionServer do
     })
 
     state
+  end
+
+  defp run_cancel_task(store, adapter, session_id, run_id) do
+    case SessionManager.cancel_run(store, adapter, run_id) do
+      {:ok, _} ->
+        :ok
+
+      {:error, %Error{} = error} ->
+        runtime_telemetry([:session_server, :cancel, :failed], %{}, %{
+          session_id: session_id,
+          run_id: run_id,
+          error_code: error.code
+        })
+
+        :ok
+    end
+  rescue
+    exception ->
+      runtime_telemetry([:session_server, :cancel, :failed], %{}, %{
+        session_id: session_id,
+        run_id: run_id,
+        error_code: :internal_error,
+        error_message: Exception.message(exception)
+      })
+
+      :ok
+  catch
+    kind, reason ->
+      runtime_telemetry([:session_server, :cancel, :failed], %{}, %{
+        session_id: session_id,
+        run_id: run_id,
+        error_code: :internal_error,
+        error_message: "#{kind}:#{inspect(reason)}"
+      })
+
+      :ok
   end
 
   defp cancel_non_in_flight_run(state, run_id) do

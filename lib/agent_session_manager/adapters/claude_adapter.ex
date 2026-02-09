@@ -88,6 +88,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
 
   - `:model` - Optional. The model to use (default: #{@default_model})
   - `:api_key` - Optional. Anthropic API key (SDK authenticates via `claude login` or env var).
+  - `:permission_mode` - Optional. Normalized permission mode (see `AgentSessionManager.PermissionMode`).
   - `:sdk_module` - Optional. Mock SDK module for testing.
   - `:sdk_pid` - Optional. Mock SDK process for testing.
   - `:name` - Optional. GenServer name for registration.
@@ -157,6 +158,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
     sdk_module = Keyword.get(opts, :sdk_module)
     sdk_pid = Keyword.get(opts, :sdk_pid)
     tools = Keyword.get(opts, :tools)
+    permission_mode = Keyword.get(opts, :permission_mode)
     {:ok, task_supervisor} = Task.Supervisor.start_link()
 
     capabilities = build_capabilities()
@@ -168,6 +170,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
       sdk_pid: sdk_pid,
       task_supervisor: task_supervisor,
       tools: tools,
+      permission_mode: permission_mode,
       active_runs: %{},
       task_refs: %{},
       capabilities: capabilities
@@ -525,9 +528,10 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
     {:cont, ctx}
   end
 
-  defp execute_with_agent_sdk(sdk_module, sdk_pid, ctx, _state) do
+  defp execute_with_agent_sdk(sdk_module, sdk_pid, ctx, state) do
     # Use the ClaudeAgentSDK-compatible interface
-    stream = sdk_module.query(sdk_pid, ctx.prepared_input, %{})
+    sdk_opts = build_sdk_options(state)
+    stream = sdk_module.query(sdk_pid, ctx.prepared_input, sdk_opts)
     process_agent_sdk_stream(stream, ctx)
   end
 
@@ -636,7 +640,8 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
     opts = %ClaudeAgentSDK.Options{
       model: state.model,
       max_turns: 1,
-      setting_sources: ["user"]
+      setting_sources: ["user"],
+      permission_mode: map_permission_mode(state.permission_mode)
     }
 
     if state.tools do
@@ -645,6 +650,13 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapter do
       opts
     end
   end
+
+  defp map_permission_mode(:full_auto), do: :bypass_permissions
+  defp map_permission_mode(:dangerously_skip_permissions), do: :bypass_permissions
+  defp map_permission_mode(:accept_edits), do: :accept_edits
+  defp map_permission_mode(:plan), do: :plan
+  defp map_permission_mode(:default), do: nil
+  defp map_permission_mode(nil), do: nil
 
   defp process_agent_sdk_stream(stream, ctx) do
     result =

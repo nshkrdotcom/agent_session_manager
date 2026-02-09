@@ -108,6 +108,7 @@ defmodule AgentSessionManager.Adapters.AmpAdapter do
 
   - `:cwd` - Required. The working directory for Amp operations.
   - `:mode` - Optional. Execution mode (default: "smart").
+  - `:permission_mode` - Optional. Normalized permission mode (see `AgentSessionManager.PermissionMode`).
   - `:permissions` - Optional. Permission rules.
   - `:mcp_config` - Optional. MCP server configuration.
   - `:thinking` - Optional. Enable thinking mode.
@@ -186,6 +187,7 @@ defmodule AgentSessionManager.Adapters.AmpAdapter do
         state = %{
           cwd: cwd,
           mode: Keyword.get(opts, :mode, "smart"),
+          permission_mode: Keyword.get(opts, :permission_mode),
           permissions: Keyword.get(opts, :permissions),
           mcp_config: Keyword.get(opts, :mcp_config),
           thinking: Keyword.get(opts, :thinking, false),
@@ -601,15 +603,24 @@ defmodule AgentSessionManager.Adapters.AmpAdapter do
 
   defp update_token_usage(ctx, _), do: ctx
 
+  @doc false
+  @spec build_amp_options_for_state(map()) :: AmpSdk.Types.Options.t()
+  def build_amp_options_for_state(state), do: build_amp_options(state)
+
   defp build_amp_options(state) do
     %AmpSdk.Types.Options{
       cwd: state.cwd,
       mode: state.mode || "smart",
+      dangerously_allow_all: dangerously_allow_all?(state.permission_mode),
       permissions: state.permissions,
       mcp_config: state.mcp_config,
       thinking: state.thinking || false
     }
   end
+
+  defp dangerously_allow_all?(:full_auto), do: true
+  defp dangerously_allow_all?(:dangerously_skip_permissions), do: true
+  defp dangerously_allow_all?(_), do: false
 
   defp extract_prompt(input) when is_binary(input), do: input
 

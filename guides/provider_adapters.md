@@ -22,7 +22,8 @@ The Claude adapter integrates with Anthropic's API via the ClaudeAgentSDK.
 ```elixir
 {:ok, adapter} = AgentSessionManager.Adapters.ClaudeAdapter.start_link(
   api_key: System.get_env("ANTHROPIC_API_KEY"),
-  model: "claude-haiku-4-5-20251001"  # optional, this is the default
+  model: "claude-haiku-4-5-20251001",  # optional, this is the default
+  permission_mode: :full_auto           # optional, see Permission Modes below
 )
 ```
 
@@ -50,7 +51,8 @@ The Codex adapter integrates with the Codex CLI SDK.
 ```elixir
 {:ok, adapter} = AgentSessionManager.Adapters.CodexAdapter.start_link(
   working_directory: File.cwd!(),
-  model: "gpt-4"  # optional
+  model: "gpt-5.3-codex",     # optional, this is the SDK default
+  permission_mode: :full_auto  # optional, see Permission Modes below
 )
 ```
 
@@ -80,7 +82,8 @@ The Amp adapter integrates with the Sourcegraph Amp API via the Amp SDK.
 
 ```elixir
 {:ok, adapter} = AgentSessionManager.Adapters.AmpAdapter.start_link(
-  api_key: System.get_env("AMP_API_KEY")
+  api_key: System.get_env("AMP_API_KEY"),
+  permission_mode: :full_auto  # optional, see Permission Modes below
 )
 ```
 
@@ -101,6 +104,47 @@ The Amp adapter integrates with the Sourcegraph Amp API via the Amp SDK.
 | `AssistantMessage` (tool use) | `:tool_call_started` |
 | `ResultMessage` | `:tool_call_completed`, `:run_completed` |
 | `ErrorResultMessage` | `:tool_call_failed`, `:run_failed` |
+
+## Permission Modes
+
+All built-in adapters accept an optional `:permission_mode` on `start_link`. This controls how each provider handles tool-call approvals and sandboxing.
+
+The `AgentSessionManager.PermissionMode` module defines five normalized modes:
+
+| Mode | Description |
+|---|---|
+| `:default` | Provider's default permission handling |
+| `:accept_edits` | Auto-accept file edit operations (Claude-specific; no-op on Codex/Amp) |
+| `:plan` | Plan mode -- generate a plan before executing (Claude-specific; no-op on Codex/Amp) |
+| `:full_auto` | Skip all permission prompts, allow all tool calls |
+| `:dangerously_skip_permissions` | Bypass all approvals and sandboxing (most permissive) |
+
+Each adapter maps these to its provider SDK's native semantics:
+
+| Normalized Mode | Claude SDK | Codex SDK | Amp SDK |
+|---|---|---|---|
+| `:default` | (omitted) | (defaults) | (defaults) |
+| `:accept_edits` | `permission_mode: :accept_edits` | no-op | no-op |
+| `:plan` | `permission_mode: :plan` | no-op | no-op |
+| `:full_auto` | `permission_mode: :bypass_permissions` | `full_auto: true` | `dangerously_allow_all: true` |
+| `:dangerously_skip_permissions` | `permission_mode: :bypass_permissions` | `dangerously_bypass_approvals_and_sandbox: true` | `dangerously_allow_all: true` |
+
+```elixir
+# Claude: bypass all permission prompts
+{:ok, adapter} = ClaudeAdapter.start_link(permission_mode: :full_auto)
+
+# Codex: enable full auto mode
+{:ok, adapter} = CodexAdapter.start_link(
+  working_directory: File.cwd!(),
+  permission_mode: :full_auto
+)
+
+# Amp: allow all dangerous operations
+{:ok, adapter} = AmpAdapter.start_link(
+  cwd: File.cwd!(),
+  permission_mode: :dangerously_skip_permissions
+)
+```
 
 ## The ProviderAdapter Behaviour
 

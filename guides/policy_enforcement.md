@@ -119,19 +119,68 @@ When both `:policies` and `:policy` are provided, `:policies` takes precedence.
 ## Provider-Side Enforcement (Phase 2)
 
 For providers that support it, policies are compiled into `adapter_opts` for
-best-effort provider-side enforcement:
+best-effort provider-side enforcement. This is automatic during `execute_run/4`
+-- no manual step is required.
+
+### How It Works
+
+`SessionManager` calls `AdapterCompiler.compile/2` before adapter execution.
+The compiler translates policy rules into provider-native options:
 
 ```elixir
 alias AgentSessionManager.Policy.AdapterCompiler
 
-# Automatic during execute_run -- no manual step needed
-# The SessionManager internally does:
-adapter_opts = AdapterCompiler.compile(policy, provider_name)
-# => [denied_tools: ["bash"], max_tokens: 100_000]
+# Given a policy:
+{:ok, policy} =
+  Policy.new(
+    name: "restricted",
+    limits: [{:max_total_tokens, 50_000}],
+    tool_rules: [{:deny, ["bash", "shell"]}, {:allow, ["read", "write"]}],
+    on_violation: :cancel
+  )
+
+# Compile for a specific provider:
+adapter_opts = AdapterCompiler.compile(policy, "claude")
+# => [
+#   denied_tools: ["bash", "shell"],
+#   allowed_tools: ["read", "write"],
+#   max_tokens: 50_000
+# ]
 ```
 
-Tool deny rules are mapped to `:denied_tools`, tool allow rules to
-`:allowed_tools`, and `max_total_tokens` limits to `:max_tokens`.
+### Mapping Rules
+
+| Policy Rule | Compiled adapter_opt | Notes |
+|---|---|---|
+| `{:deny, tools}` | `denied_tools: tools` | Provider may exclude tools from responses |
+| `{:allow, tools}` | `allowed_tools: tools` | Provider may restrict to only these tools |
+| `{:max_total_tokens, n}` | `max_tokens: n` | Provider may cap output tokens |
+| `{:max_duration_ms, n}` | (not compiled) | Duration is enforced reactively only |
+| `{:max_tool_calls, n}` | (not compiled) | Tool call count is enforced reactively only |
+| `{:max_cost_usd, n}` | (not compiled) | Cost is enforced reactively only |
+
+### Merged Policy Compilation
+
+When using `policies: [...]` stacks, the merged policy is compiled:
+
+```elixir
+{:ok, org} = Policy.new(name: "org", limits: [{:max_total_tokens, 100_000}])
+{:ok, team} = Policy.new(name: "team", tool_rules: [{:deny, ["bash"]}])
+
+# During execute_run, policies are merged first, then compiled:
+# Merged: max_total_tokens=100_000, deny=["bash"]
+# Compiled: [denied_tools: ["bash"], max_tokens: 100_000]
+```
+
+### Provider Support
+
+Provider-side enforcement is best-effort. Not all providers honor all hints:
+
+- **Claude**: Supports `denied_tools`, `allowed_tools`, and `max_tokens`
+- **Codex**: Supports `denied_tools` and `max_tokens`
+- **Amp**: Supports `denied_tools`
+
+Unsupported hints are silently ignored by the adapter.
 
 Reactive enforcement remains the safety net: even with provider-side hints,
 the policy runtime still evaluates every event and enforces violations.

@@ -192,6 +192,24 @@ mix run examples/session_concurrency.exs --provider codex
 mix run examples/session_concurrency.exs --provider amp
 ```
 
+## Permission Mode Example
+
+### `permission_mode.exs` -- Normalized Permission Modes
+
+- Starts an adapter with a configurable `permission_mode`
+- Demonstrates the normalized mode being passed through to the provider SDK
+- Supports all five modes: `:default`, `:accept_edits`, `:plan`, `:full_auto`, `:dangerously_skip_permissions`
+- Each provider maps the mode to its native semantics (Claude `permission_mode`, Codex `full_auto`/`dangerously_bypass`, Amp `dangerously_allow_all`)
+
+```bash
+mix run examples/permission_mode.exs --provider claude
+mix run examples/permission_mode.exs --provider codex
+mix run examples/permission_mode.exs --provider amp
+
+# With a specific mode:
+mix run examples/permission_mode.exs --provider claude --mode dangerously_skip_permissions
+```
+
 ## Other Live Provider Examples
 
 ### `oneshot.exs` -- One-Shot Execution

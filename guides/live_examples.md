@@ -13,6 +13,10 @@ Cursor examples are also available and use real provider execution:
 - `examples/session_runtime.exs --provider <claude|codex|amp>`
 - `examples/session_subscription.exs --provider <claude|codex|amp>`
 - `examples/session_limiter.exs --provider <claude|codex|amp>`
+- `examples/cursor_wait_follow.exs --provider <claude|codex|amp>` -- long-poll streaming with `wait_timeout_ms`
+- `examples/routing_v2.exs --provider <claude|codex|amp>` -- weighted routing and session stickiness
+- `examples/policy_v2.exs --provider <claude|codex|amp>` -- policy stacks and provider-side enforcement
+- `examples/session_concurrency.exs --provider <claude|codex|amp>` -- multi-slot concurrent session runtime
 
 ## Authentication
 
@@ -85,6 +89,26 @@ mix run examples/common_surface.exs --provider amp
 mix run examples/contract_surface_live.exs --provider claude
 mix run examples/contract_surface_live.exs --provider codex
 mix run examples/contract_surface_live.exs --provider amp
+
+# Cursor long-poll follow (Phase 2)
+mix run examples/cursor_wait_follow.exs --provider claude
+mix run examples/cursor_wait_follow.exs --provider codex
+mix run examples/cursor_wait_follow.exs --provider amp
+
+# Routing v2: weighted scoring + stickiness (Phase 2)
+mix run examples/routing_v2.exs --provider claude
+mix run examples/routing_v2.exs --provider codex
+mix run examples/routing_v2.exs --provider amp
+
+# Policy v2: stacks + provider-side enforcement (Phase 2)
+mix run examples/policy_v2.exs --provider claude
+mix run examples/policy_v2.exs --provider codex
+mix run examples/policy_v2.exs --provider amp
+
+# Session concurrency: multi-slot runtime (Phase 2)
+mix run examples/session_concurrency.exs --provider claude
+mix run examples/session_concurrency.exs --provider codex
+mix run examples/session_concurrency.exs --provider amp
 ```
 
 Provider-specific SDK examples:

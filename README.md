@@ -59,7 +59,7 @@ Add `agent_session_manager` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.5.1"}
+    {:agent_session_manager, "~> 0.6.0"}
   ]
 end
 ```
@@ -387,6 +387,17 @@ Adapters implement the `ProviderAdapter` behaviour to integrate with AI provider
 | `CodexAdapter` | Codex CLI | Yes | Yes | Yes |
 | `AmpAdapter` | Amp (Sourcegraph) | Yes | Yes | Yes |
 
+All adapters accept a `:permission_mode` option to control tool-call approval behavior:
+
+```elixir
+# Skip permission prompts (maps to each provider's native semantics)
+{:ok, adapter} = ClaudeAdapter.start_link(permission_mode: :full_auto)
+{:ok, adapter} = CodexAdapter.start_link(working_directory: ".", permission_mode: :full_auto)
+{:ok, adapter} = AmpAdapter.start_link(cwd: ".", permission_mode: :dangerously_skip_permissions)
+```
+
+Modes: `:default`, `:accept_edits`, `:plan`, `:full_auto`, `:dangerously_skip_permissions`. See the [Provider Adapters](guides/provider_adapters.md) guide for the full mapping table.
+
 ### Capability Negotiation
 
 Before starting a run, you can declare what capabilities are required. The resolver checks the provider's capabilities and fails fast if requirements aren't met.
@@ -455,6 +466,9 @@ mix run examples/policy_v2.exs --provider claude
 # Feature 6 v2: multi-slot concurrency
 mix run examples/session_concurrency.exs --provider claude
 
+# Permission modes (full_auto, dangerously_skip_permissions, etc.)
+mix run examples/permission_mode.exs --provider claude --mode full_auto
+
 # Default run-all mode executes all examples for all providers
 bash examples/run_all.sh
 
@@ -481,6 +495,7 @@ The guides cover each subsystem in depth:
 - [Workspace Snapshots](guides/workspace_snapshots.md) -- Workspace options, snapshot/diff events, metadata, and rollback scope
 - [Provider Routing](guides/provider_routing.md) -- Router-as-adapter setup, capability matching, health, failover, cancel routing
 - [Policy Enforcement](guides/policy_enforcement.md) -- Policy model, runtime enforcement, final result semantics, cost checks
+- [Advanced Patterns](guides/advanced_patterns.md) -- Cross-feature integration: routing + policies, SessionServer + subscriptions + workspace, stickiness + continuity
 - [Provider Adapters](guides/provider_adapters.md) -- Using Claude/Codex/Amp adapters, writing your own
 - [Capabilities](guides/capabilities.md) -- Defining capabilities, negotiation, manifests, registry
 - [Concurrency](guides/concurrency.md) -- Session/run limits, slot management, control operations

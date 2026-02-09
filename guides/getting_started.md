@@ -9,7 +9,7 @@ Add `agent_session_manager` to your `mix.exs` dependencies:
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.5.1"}
+    {:agent_session_manager, "~> 0.6.0"}
   ]
 end
 ```
@@ -189,4 +189,5 @@ mix run examples/codex_direct.exs --section threads
 - [Workspace Snapshots](workspace_snapshots.md) -- pre/post snapshots, diffs, and rollback
 - [Provider Routing](provider_routing.md) -- capability-based selection and failover
 - [Policy Enforcement](policy_enforcement.md) -- budget/tool governance per execution
+- [Advanced Patterns](advanced_patterns.md) -- cross-feature integration examples
 - [Provider Adapters](provider_adapters.md) -- configure Claude, Codex, or Amp, or write your own

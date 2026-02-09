@@ -405,18 +405,50 @@ defmodule AgentSessionManager.SessionManager do
   - `{:ok, run_id}` - Run was cancelled
   - `{:error, Error.t()}` - Cancellation failed
 
+  Cancellation is best-effort. If the adapter process has already exited
+  (`:noproc`/shutdown race), we still persist the run as `:cancelled` to
+  honour caller intent and avoid leaving the run in a non-terminal state.
+
   """
   @spec cancel_run(store(), adapter(), String.t()) ::
           {:ok, String.t()} | {:error, Error.t()}
   def cancel_run(store, adapter, run_id) do
     with {:ok, run} <- SessionStore.get_run(store, run_id),
-         {:ok, _} <- ProviderAdapter.cancel(adapter, run_id),
+         :ok <- request_run_cancel(adapter, run_id),
          {:ok, cancelled_run} <- Run.update_status(run, :cancelled),
          :ok <- SessionStore.save_run(store, cancelled_run),
          :ok <- emit_run_event(store, :run_cancelled, cancelled_run) do
       {:ok, run_id}
     end
   end
+
+  @spec request_run_cancel(adapter(), String.t()) :: :ok | {:error, Error.t()}
+  defp request_run_cancel(adapter, run_id) do
+    case ProviderAdapter.cancel(adapter, run_id) do
+      {:ok, _} ->
+        :ok
+
+      {:error, %Error{} = error} ->
+        {:error, error}
+    end
+  catch
+    :exit, reason ->
+      if adapter_unavailable_exit_reason?(reason) do
+        :ok
+      else
+        {:error,
+         Error.new(
+           :provider_unavailable,
+           "Adapter became unavailable while cancelling run #{run_id}: #{inspect(reason)}"
+         )}
+      end
+  end
+
+  defp adapter_unavailable_exit_reason?(:noproc), do: true
+  defp adapter_unavailable_exit_reason?({:noproc, _}), do: true
+  defp adapter_unavailable_exit_reason?({:shutdown, {:noproc, _}}), do: true
+  defp adapter_unavailable_exit_reason?({:shutdown, _}), do: true
+  defp adapter_unavailable_exit_reason?(_), do: false
 
   # ============================================================================
   # Queries

@@ -697,6 +697,26 @@ defmodule AgentSessionManager.SessionManagerTest do
       {:ok, events} = SessionStore.get_events(store, session.id, run_id: run.id)
       assert Enum.any?(events, &(&1.type == :run_cancelled))
     end
+
+    test "best-effort cancels when adapter has already stopped", %{store: store, adapter: adapter} do
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+      {:ok, run} = SessionManager.start_run(store, adapter, session.id, %{prompt: "Hello"})
+
+      {:ok, running_run} = Run.update_status(run, :running)
+      :ok = SessionStore.save_run(store, running_run)
+
+      :ok = MockAdapter.stop(adapter)
+      run_id = run.id
+
+      assert {:ok, ^run_id} = SessionManager.cancel_run(store, adapter, run_id)
+
+      {:ok, cancelled_run} = SessionStore.get_run(store, run_id)
+      assert cancelled_run.status == :cancelled
+
+      {:ok, events} = SessionStore.get_events(store, session.id, run_id: run_id)
+      assert Enum.any?(events, &(&1.type == :run_cancelled))
+    end
   end
 
   # ============================================================================

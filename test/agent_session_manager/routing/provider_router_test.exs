@@ -191,7 +191,7 @@ defmodule AgentSessionManager.Routing.ProviderRouterTest do
         RouterTestAdapter.start_link(
           provider_name: "primary",
           outcomes: [
-            {:sleep, 500,
+            {:sleep, 2_000,
              {:ok,
               %{
                 output: %{provider: "primary", content: "late success"},
@@ -218,7 +218,9 @@ defmodule AgentSessionManager.Routing.ProviderRouterTest do
 
       execute_task = Task.async(fn -> ProviderAdapter.execute(router, run, session, []) end)
 
-      Process.sleep(50)
+      # Allow time for the full routing chain: router task spawn → prepare_execution →
+      # bind_run → adapter execute call → adapter task spawn → enter wait_for_cancellation
+      Process.sleep(200)
 
       run_id = run.id
 
@@ -226,7 +228,7 @@ defmodule AgentSessionManager.Routing.ProviderRouterTest do
       assert run_id in RouterTestAdapter.cancelled_runs(primary)
       refute run_id in RouterTestAdapter.cancelled_runs(secondary)
 
-      assert {:error, %Error{code: :cancelled}} = Task.await(execute_task, 1_500)
+      assert {:error, %Error{code: :cancelled}} = Task.await(execute_task, 3_000)
     end
   end
 

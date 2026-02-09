@@ -1,7 +1,7 @@
 defmodule AgentSessionManager.MixProject do
   use Mix.Project
 
-  @version "0.5.1"
+  @version "0.6.0"
   @source_url "https://github.com/nshkrdotcom/agent_session_manager"
 
   def project do
@@ -82,6 +82,7 @@ defmodule AgentSessionManager.MixProject do
         "guides/workspace_snapshots.md",
         "guides/provider_routing.md",
         "guides/policy_enforcement.md",
+        "guides/advanced_patterns.md",
         "guides/provider_adapters.md",
         "guides/capabilities.md",
         "guides/concurrency.md",
@@ -109,6 +110,7 @@ defmodule AgentSessionManager.MixProject do
           "guides/workspace_snapshots.md",
           "guides/provider_routing.md",
           "guides/policy_enforcement.md",
+          "guides/advanced_patterns.md",
           "guides/capabilities.md"
         ],
         Integration: [

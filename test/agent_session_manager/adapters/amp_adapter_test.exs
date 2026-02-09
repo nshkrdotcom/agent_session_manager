@@ -727,6 +727,122 @@ defmodule AgentSessionManager.Adapters.AmpAdapterTest do
   end
 
   # ============================================================================
+  # Permission Mode Configuration Tests
+  # ============================================================================
+
+  describe "permission_mode configuration" do
+    test "stores permission_mode in adapter state" do
+      {:ok, mock_sdk} = AmpMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        AmpAdapter.start_link(
+          cwd: "/tmp/test",
+          permission_mode: :full_auto,
+          sdk_module: AmpMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      assert state.permission_mode == :full_auto
+    end
+
+    test "defaults permission_mode to nil when not provided" do
+      {:ok, mock_sdk} = AmpMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        AmpAdapter.start_link(
+          cwd: "/tmp/test",
+          sdk_module: AmpMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      assert state.permission_mode == nil
+    end
+
+    test "full_auto produces amp options with dangerously_allow_all: true" do
+      {:ok, mock_sdk} = AmpMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        AmpAdapter.start_link(
+          cwd: "/tmp/test",
+          permission_mode: :full_auto,
+          sdk_module: AmpMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      opts = AmpAdapter.build_amp_options_for_state(state)
+      assert opts.dangerously_allow_all == true
+    end
+
+    test "dangerously_skip_permissions produces amp options with dangerously_allow_all: true" do
+      {:ok, mock_sdk} = AmpMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        AmpAdapter.start_link(
+          cwd: "/tmp/test",
+          permission_mode: :dangerously_skip_permissions,
+          sdk_module: AmpMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      opts = AmpAdapter.build_amp_options_for_state(state)
+      assert opts.dangerously_allow_all == true
+    end
+
+    test "default permission_mode keeps dangerously_allow_all: false" do
+      {:ok, mock_sdk} = AmpMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        AmpAdapter.start_link(
+          cwd: "/tmp/test",
+          sdk_module: AmpMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      opts = AmpAdapter.build_amp_options_for_state(state)
+      assert opts.dangerously_allow_all == false
+    end
+
+    test "accept_edits is a no-op for amp (no equivalent)" do
+      {:ok, mock_sdk} = AmpMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        AmpAdapter.start_link(
+          cwd: "/tmp/test",
+          permission_mode: :accept_edits,
+          sdk_module: AmpMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      opts = AmpAdapter.build_amp_options_for_state(state)
+      assert opts.dangerously_allow_all == false
+    end
+  end
+
+  # ============================================================================
   # Test Helpers
   # ============================================================================
 

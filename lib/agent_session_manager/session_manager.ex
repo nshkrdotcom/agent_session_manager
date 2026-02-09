@@ -446,7 +446,13 @@ defmodule AgentSessionManager.SessionManager do
 
   - `:after` - Starting cursor (default: `0`)
   - `:limit` - Page size per poll (default: `100`)
-  - `:poll_interval_ms` - Poll interval when no new events (default: `250`)
+  - `:poll_interval_ms` - Poll interval when no new events (default: `250`).
+    Ignored when `:wait_timeout_ms` is set.
+  - `:wait_timeout_ms` - When set to a positive integer, the stream uses
+    store-backed long-poll semantics instead of sleep-based polling. The store's
+    `get_events/3` is called with this option so stores that support it can
+    block until matching events arrive or the timeout elapses, avoiding busy
+    polling.
   - `:run_id` - Optional run filter
   - `:type` - Optional event type filter
   """
@@ -455,6 +461,7 @@ defmodule AgentSessionManager.SessionManager do
     initial_cursor = Keyword.get(opts, :after, 0)
     page_limit = Keyword.get(opts, :limit, 100)
     poll_interval_ms = Keyword.get(opts, :poll_interval_ms, 250)
+    wait_timeout_ms = Keyword.get(opts, :wait_timeout_ms, 0)
     query_filters = Keyword.take(opts, [:run_id, :type, :since, :before])
 
     Stream.resource(
@@ -467,12 +474,20 @@ defmodule AgentSessionManager.SessionManager do
 
         {:ok, events} = SessionStore.get_events(store, session_id, query_opts)
 
-        if events == [] do
-          Process.sleep(poll_interval_ms)
-          {[], cursor}
-        else
-          next_cursor = advance_cursor(cursor, events)
-          {events, next_cursor}
+        case events do
+          [] ->
+            stream_wait_for_events(
+              store,
+              session_id,
+              query_opts,
+              cursor,
+              wait_timeout_ms,
+              poll_interval_ms
+            )
+
+          _ ->
+            next_cursor = advance_cursor(cursor, events)
+            {events, next_cursor}
         end
       end,
       fn _cursor -> :ok end
@@ -538,8 +553,10 @@ defmodule AgentSessionManager.SessionManager do
   end
 
   defp build_event_callback(store, run, execution_session, user_callback, adapter, policy_runtime) do
+    provider_name = ProviderAdapter.name(adapter)
+
     fn event_data ->
-      handle_adapter_event(store, run, execution_session, event_data)
+      handle_adapter_event(store, run, execution_session, event_data, provider_name)
       maybe_enforce_policy(store, run, adapter, policy_runtime, event_data)
       maybe_invoke_user_callback(user_callback, event_data)
     end
@@ -1019,19 +1036,27 @@ defmodule AgentSessionManager.SessionManager do
     end
   end
 
-  defp handle_adapter_event(store, run, session, event_data) do
+  defp handle_adapter_event(store, run, session, event_data, provider_name) do
     normalized_type = normalize_event_type(event_data, run)
     normalized_event_data = Map.put(event_data, :type, normalized_type)
     event_payload = ensure_map(Map.get(event_data, :data))
+
+    # Build metadata: merge adapter-provided metadata with provider identity
+    adapter_metadata = ensure_map(Map.get(event_data, :metadata))
+    event_metadata = Map.put(adapter_metadata, :provider, provider_name)
 
     telemetry_event_data =
       case Event.new(%{
              type: normalized_type,
              session_id: run.session_id,
              run_id: run.id,
-             data: event_payload
+             data: event_payload,
+             metadata: event_metadata
            }) do
         {:ok, event} ->
+          # Preserve adapter-provided timestamp if present
+          event = apply_adapter_timestamp(event, event_data)
+
           case append_sequenced_event(store, event) do
             {:ok, stored_event} ->
               Map.put(normalized_event_data, :sequence_number, stored_event.sequence_number)
@@ -1046,6 +1071,13 @@ defmodule AgentSessionManager.SessionManager do
 
     # Emit telemetry event for observability
     Telemetry.emit_adapter_event(run, session, telemetry_event_data)
+  end
+
+  defp apply_adapter_timestamp(event, event_data) do
+    case Map.get(event_data, :timestamp) do
+      %DateTime{} = ts -> %{event | timestamp: ts}
+      _ -> event
+    end
   end
 
   defp normalize_event_type(event_data, run) do
@@ -1131,6 +1163,24 @@ defmodule AgentSessionManager.SessionManager do
 
   defp append_sequenced_event(store, %Event{} = event) do
     SessionStore.append_event_with_sequence(store, event)
+  end
+
+  defp stream_wait_for_events(store, session_id, query_opts, cursor, wait_timeout_ms, poll_ms) do
+    if is_integer(wait_timeout_ms) and wait_timeout_ms > 0 do
+      wait_query_opts = Keyword.put(query_opts, :wait_timeout_ms, wait_timeout_ms)
+      {:ok, wait_events} = SessionStore.get_events(store, session_id, wait_query_opts)
+      emit_stream_events_or_idle(wait_events, cursor)
+    else
+      Process.sleep(poll_ms)
+      {[], cursor}
+    end
+  end
+
+  defp emit_stream_events_or_idle([], cursor), do: {[], cursor}
+
+  defp emit_stream_events_or_idle(events, cursor) do
+    next_cursor = advance_cursor(cursor, events)
+    {events, next_cursor}
   end
 
   defp advance_cursor(cursor, events) do

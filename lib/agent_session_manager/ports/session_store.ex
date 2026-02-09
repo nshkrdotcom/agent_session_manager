@@ -302,6 +302,9 @@ defmodule AgentSessionManager.Ports.SessionStore do
     - `:after` - Events with sequence number strictly greater than this value
     - `:before` - Events with sequence number strictly less than this value
     - `:limit` - Maximum number of results
+    - `:wait_timeout_ms` - When set to a positive integer and the query would
+      return an empty list, the store may block until matching events are appended
+      or the timeout elapses. Stores that do not support this option ignore it.
 
   ## Returns
 
@@ -312,6 +315,10 @@ defmodule AgentSessionManager.Ports.SessionStore do
       {:ok, all_events} = SessionStore.get_events(store, session.id)
       {:ok, run_events} = SessionStore.get_events(store, session.id, run_id: run.id)
       {:ok, message_events} = SessionStore.get_events(store, session.id, type: :message_received)
+
+      # Long-poll: wait up to 5 seconds for new events
+      {:ok, events} = SessionStore.get_events(store, session.id,
+        after: cursor, wait_timeout_ms: 5_000)
 
   """
   @callback get_events(store(), session_id(), filter_opts()) :: {:ok, [Event.t()]}
@@ -411,10 +418,14 @@ defmodule AgentSessionManager.Ports.SessionStore do
 
   @doc """
   Gets events for a session with optional filtering.
+
+  When `wait_timeout_ms` is provided and the store supports it,
+  the call may block up to that duration waiting for matching events.
   """
   @spec get_events(store(), session_id(), filter_opts()) :: {:ok, [Event.t()]}
   def get_events(store, session_id, opts \\ []) do
-    GenServer.call(store, {:get_events, session_id, opts})
+    call_timeout = genserver_call_timeout(opts)
+    GenServer.call(store, {:get_events, session_id, opts}, call_timeout)
   end
 
   @doc """
@@ -424,5 +435,14 @@ defmodule AgentSessionManager.Ports.SessionStore do
           {:ok, non_neg_integer()} | {:error, Error.t()}
   def get_latest_sequence(store, session_id) do
     GenServer.call(store, {:get_latest_sequence, session_id})
+  end
+
+  # When wait_timeout_ms is provided, the GenServer.call timeout must
+  # accommodate the wait plus a margin for processing.
+  defp genserver_call_timeout(opts) do
+    case Keyword.get(opts, :wait_timeout_ms, 0) do
+      wait when is_integer(wait) and wait > 0 -> wait + 5_000
+      _ -> 5_000
+    end
   end
 end

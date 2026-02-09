@@ -431,6 +431,218 @@ defmodule AgentSessionManager.Ports.SessionStoreContractTest do
     end
   end
 
+  describe "Long-poll wait_timeout_ms" do
+    setup do
+      store = new_store()
+      {:ok, session} = Session.new(%{agent_id: "agent-1"})
+      :ok = SessionStore.save_session(store, session)
+      {:ok, store: store, session: session}
+    end
+
+    test "get_events/3 returns immediately when events exist (wait_timeout_ms ignored)", %{
+      store: store,
+      session: session
+    } do
+      {:ok, event} = Event.new(%{type: :session_created, session_id: session.id})
+      {:ok, _} = SessionStore.append_event_with_sequence(store, event)
+
+      start = System.monotonic_time(:millisecond)
+
+      {:ok, events} =
+        SessionStore.get_events(store, session.id, after: 0, wait_timeout_ms: 5_000)
+
+      elapsed = System.monotonic_time(:millisecond) - start
+
+      assert length(events) == 1
+      # Should return near-instantly, well under the 5s timeout
+      assert elapsed < 1_000
+    end
+
+    test "get_events/3 with wait_timeout_ms blocks until event appended", %{
+      store: store,
+      session: session
+    } do
+      test_pid = self()
+
+      # Start a reader that will block waiting for events
+      reader_task =
+        Task.async(fn ->
+          send(test_pid, :reader_started)
+
+          {:ok, events} =
+            SessionStore.get_events(store, session.id, after: 0, wait_timeout_ms: 10_000)
+
+          events
+        end)
+
+      # Wait for reader to start
+      assert_receive :reader_started, 1_000
+
+      # Give the reader time to enter the wait state
+      Process.sleep(50)
+
+      # Append an event — should unblock the reader
+      {:ok, event} = Event.new(%{type: :session_created, session_id: session.id})
+      {:ok, _} = SessionStore.append_event_with_sequence(store, event)
+
+      # Reader should return promptly with the new event
+      events = Task.await(reader_task, 5_000)
+      assert events != []
+      assert hd(events).type == :session_created
+    end
+
+    test "get_events/3 with wait_timeout_ms returns empty list on timeout", %{
+      store: store,
+      session: session
+    } do
+      start = System.monotonic_time(:millisecond)
+
+      {:ok, events} =
+        SessionStore.get_events(store, session.id, after: 0, wait_timeout_ms: 100)
+
+      elapsed = System.monotonic_time(:millisecond) - start
+
+      assert events == []
+      # Should have waited approximately the timeout duration
+      assert elapsed >= 80
+    end
+
+    test "get_events/3 with wait_timeout_ms respects session filter", %{
+      store: store,
+      session: session
+    } do
+      # Create a second session
+      {:ok, other_session} = Session.new(%{agent_id: "agent-other"})
+      :ok = SessionStore.save_session(store, other_session)
+
+      test_pid = self()
+
+      reader_task =
+        Task.async(fn ->
+          send(test_pid, :reader_started)
+
+          {:ok, events} =
+            SessionStore.get_events(store, session.id, after: 0, wait_timeout_ms: 10_000)
+
+          events
+        end)
+
+      assert_receive :reader_started, 1_000
+      Process.sleep(50)
+
+      # Append event to different session — should NOT unblock
+      {:ok, other_event} = Event.new(%{type: :session_created, session_id: other_session.id})
+      {:ok, _} = SessionStore.append_event_with_sequence(store, other_event)
+
+      # Wait a bit, reader should still be blocked
+      Process.sleep(100)
+      refute Process.alive?(reader_task.pid) == false
+
+      # Now append event to correct session — should unblock
+      {:ok, event} = Event.new(%{type: :session_started, session_id: session.id})
+      {:ok, _} = SessionStore.append_event_with_sequence(store, event)
+
+      events = Task.await(reader_task, 5_000)
+      assert events != []
+      assert hd(events).session_id == session.id
+    end
+
+    test "get_events/3 with wait_timeout_ms respects type filter", %{
+      store: store,
+      session: session
+    } do
+      test_pid = self()
+
+      reader_task =
+        Task.async(fn ->
+          send(test_pid, :reader_started)
+
+          {:ok, events} =
+            SessionStore.get_events(store, session.id,
+              after: 0,
+              type: :run_started,
+              wait_timeout_ms: 10_000
+            )
+
+          events
+        end)
+
+      assert_receive :reader_started, 1_000
+      Process.sleep(50)
+
+      # Append non-matching event — should NOT unblock
+      {:ok, created_event} = Event.new(%{type: :session_created, session_id: session.id})
+      {:ok, _} = SessionStore.append_event_with_sequence(store, created_event)
+
+      Process.sleep(100)
+
+      # Append matching event — should unblock
+      {:ok, run_event} = Event.new(%{type: :run_started, session_id: session.id})
+      {:ok, _} = SessionStore.append_event_with_sequence(store, run_event)
+
+      events = Task.await(reader_task, 5_000)
+      assert events != []
+      assert Enum.all?(events, &(&1.type == :run_started))
+    end
+
+    test "get_events/3 with wait_timeout_ms respects run_id filter", %{
+      store: store,
+      session: session
+    } do
+      {:ok, run} = Run.new(%{session_id: session.id})
+      :ok = SessionStore.save_run(store, run)
+      {:ok, other_run} = Run.new(%{session_id: session.id})
+      :ok = SessionStore.save_run(store, other_run)
+
+      test_pid = self()
+
+      reader_task =
+        Task.async(fn ->
+          send(test_pid, :reader_started)
+
+          {:ok, events} =
+            SessionStore.get_events(store, session.id,
+              after: 0,
+              run_id: run.id,
+              wait_timeout_ms: 10_000
+            )
+
+          events
+        end)
+
+      assert_receive :reader_started, 1_000
+      Process.sleep(50)
+
+      # Append event for other run — should NOT unblock
+      {:ok, other_event} =
+        Event.new(%{type: :run_started, session_id: session.id, run_id: other_run.id})
+
+      {:ok, _} = SessionStore.append_event_with_sequence(store, other_event)
+
+      Process.sleep(100)
+
+      # Append event for correct run — should unblock
+      {:ok, event} = Event.new(%{type: :run_started, session_id: session.id, run_id: run.id})
+      {:ok, _} = SessionStore.append_event_with_sequence(store, event)
+
+      events = Task.await(reader_task, 5_000)
+      assert events != []
+      assert Enum.all?(events, &(&1.run_id == run.id))
+    end
+
+    test "get_events/3 without wait_timeout_ms returns immediately (backward compat)", %{
+      store: store,
+      session: session
+    } do
+      start = System.monotonic_time(:millisecond)
+      {:ok, events} = SessionStore.get_events(store, session.id, after: 0)
+      elapsed = System.monotonic_time(:millisecond) - start
+
+      assert events == []
+      assert elapsed < 100
+    end
+  end
+
   describe "Idempotency guarantees" do
     test "duplicate session saves don't create duplicates" do
       store = new_store()

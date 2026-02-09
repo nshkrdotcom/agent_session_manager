@@ -278,6 +278,7 @@ For resumable polling from persisted events, use `SessionManager.stream_session_
 ```elixir
 alias AgentSessionManager.SessionManager
 
+# Polling mode (default) — sleeps between empty reads
 stream =
   SessionManager.stream_session_events(store, session.id,
     after: 0,
@@ -290,3 +291,44 @@ Enum.take(stream, 10)
 ```
 
 This stream is cursor-backed by `SessionStore.get_events/3` and works across reconnects.
+
+### Long-Poll Mode (wait_timeout_ms)
+
+To avoid busy polling, pass `wait_timeout_ms`. When the store supports it
+(e.g. `InMemorySessionStore`), the store blocks the read until matching events
+arrive or the timeout elapses:
+
+```elixir
+stream =
+  SessionManager.stream_session_events(store, session.id,
+    after: cursor,
+    limit: 100,
+    wait_timeout_ms: 5_000
+  )
+
+Enum.take(stream, 10)
+```
+
+This is ideal for real-time streaming UIs (SSE, WebSocket, LiveView) where
+you need low latency without wasting CPU cycles on empty polls. Stores that
+do not support `wait_timeout_ms` ignore it and fall back to immediate return.
+
+## Adapter Event Metadata
+
+When `SessionManager` persists adapter events, it preserves:
+
+- **Adapter timestamps**: If the adapter emits a `DateTime` timestamp, it is
+  stored in `Event.timestamp` (instead of the default `DateTime.utc_now()`).
+- **Adapter metadata**: If the adapter emits a `metadata` map, it is merged
+  into `Event.metadata`.
+- **Provider identity**: `Event.metadata[:provider]` is always set to the
+  adapter's provider name (e.g. `"claude"`, `"codex"`, `"amp"`).
+
+```elixir
+{:ok, events} = SessionStore.get_events(store, session.id, run_id: run.id)
+event = Enum.find(events, &(&1.type == :run_started))
+
+event.metadata[:provider]       # => "claude"
+event.metadata[:provider_event_id]  # => adapter-specific ID (if provided)
+event.timestamp                 # => adapter-provided timestamp
+```

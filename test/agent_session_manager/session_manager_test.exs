@@ -218,13 +218,18 @@ defmodule AgentSessionManager.SessionManagerTest do
     end
 
     defp normalize_mock_event(%{type: _type} = event, run) do
-      %{
+      base = %{
         type: event.type,
         session_id: Map.get(event, :session_id, run.session_id),
         run_id: Map.get(event, :run_id, run.id),
         data: Map.get(event, :data, %{}),
         timestamp: Map.get(event, :timestamp, DateTime.utc_now())
       }
+
+      case Map.get(event, :metadata) do
+        nil -> base
+        metadata -> Map.put(base, :metadata, metadata)
+      end
     end
 
     defp build_event(type, run, data \\ %{}) do
@@ -1249,6 +1254,160 @@ defmodule AgentSessionManager.SessionManagerTest do
       {:ok, result} = SessionManager.execute_run(store, adapter, run.id)
 
       assert is_map(result.output)
+    end
+  end
+
+  # ============================================================================
+  # Adapter Timestamp and Metadata Persistence Tests
+  # ============================================================================
+
+  describe "adapter event timestamp and metadata persistence" do
+    test "persists adapter-provided timestamp into Event.timestamp", %{
+      store: store,
+      adapter: adapter
+    } do
+      explicit_timestamp = ~U[2025-06-15 10:30:00Z]
+
+      MockAdapter.set_response(adapter, :execute, %{
+        content: "Response with explicit timestamp",
+        token_usage: %{input_tokens: 5, output_tokens: 10},
+        events: [
+          %{
+            type: :run_started,
+            data: %{model: "mock-v1"},
+            timestamp: explicit_timestamp
+          },
+          %{
+            type: :message_received,
+            data: %{content: "Response with explicit timestamp"},
+            timestamp: explicit_timestamp
+          },
+          %{
+            type: :run_completed,
+            data: %{},
+            timestamp: explicit_timestamp
+          }
+        ]
+      })
+
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+      {:ok, run} = SessionManager.start_run(store, adapter, session.id, %{prompt: "Hello"})
+      {:ok, _} = SessionManager.execute_run(store, adapter, run.id)
+
+      {:ok, events} = SessionStore.get_events(store, session.id, run_id: run.id)
+
+      # Find adapter-emitted events (run_started, message_received, run_completed from adapter)
+      adapter_events =
+        Enum.filter(events, &(&1.type in [:run_started, :message_received, :run_completed]))
+
+      assert adapter_events != []
+
+      Enum.each(adapter_events, fn event ->
+        assert event.timestamp == explicit_timestamp,
+               "Expected adapter timestamp #{inspect(explicit_timestamp)} " <>
+                 "but got #{inspect(event.timestamp)} for event type #{event.type}"
+      end)
+    end
+
+    test "persists adapter-provided metadata into Event.metadata", %{
+      store: store,
+      adapter: adapter
+    } do
+      MockAdapter.set_response(adapter, :execute, %{
+        content: "Response with metadata",
+        token_usage: %{input_tokens: 5, output_tokens: 10},
+        events: [
+          %{
+            type: :run_started,
+            data: %{model: "mock-v1"},
+            metadata: %{provider_event_id: "pe-123", latency_ms: 42}
+          },
+          %{
+            type: :message_received,
+            data: %{content: "Response with metadata"},
+            metadata: %{chunk_count: 3}
+          },
+          %{
+            type: :run_completed,
+            data: %{}
+          }
+        ]
+      })
+
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+      {:ok, run} = SessionManager.start_run(store, adapter, session.id, %{prompt: "Hello"})
+      {:ok, _} = SessionManager.execute_run(store, adapter, run.id)
+
+      {:ok, events} = SessionStore.get_events(store, session.id, run_id: run.id)
+
+      run_started = Enum.find(events, &(&1.type == :run_started))
+      assert run_started != nil
+      assert run_started.metadata[:provider_event_id] == "pe-123"
+      assert run_started.metadata[:latency_ms] == 42
+
+      message_received = Enum.find(events, &(&1.type == :message_received))
+      assert message_received != nil
+      assert message_received.metadata[:chunk_count] == 3
+    end
+
+    test "persists provider name in Event.metadata for adapter events", %{
+      store: store,
+      adapter: adapter
+    } do
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+      {:ok, run} = SessionManager.start_run(store, adapter, session.id, %{prompt: "Hello"})
+      {:ok, _} = SessionManager.execute_run(store, adapter, run.id)
+
+      {:ok, events} = SessionStore.get_events(store, session.id, run_id: run.id)
+
+      adapter_events =
+        Enum.filter(events, &(&1.type in [:run_started, :message_received, :run_completed]))
+
+      assert adapter_events != []
+
+      Enum.each(adapter_events, fn event ->
+        assert event.metadata[:provider] == "mock",
+               "Expected provider 'mock' in metadata for event type #{event.type}, " <>
+                 "got metadata: #{inspect(event.metadata)}"
+      end)
+    end
+
+    test "stream_session_events accepts and forwards wait_timeout_ms", %{
+      store: store,
+      adapter: adapter
+    } do
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+
+      {:ok, cursor} = SessionStore.get_latest_sequence(store, session.id)
+      test_pid = self()
+
+      # Start stream with wait_timeout_ms — it should block instead of sleeping
+      reader_task =
+        Task.async(fn ->
+          send(test_pid, :reader_started)
+
+          SessionManager.stream_session_events(store, session.id,
+            after: cursor,
+            limit: 2,
+            wait_timeout_ms: 10_000
+          )
+          |> Enum.take(2)
+        end)
+
+      assert_receive :reader_started, 1_000
+      Process.sleep(50)
+
+      # Execute a run — should produce events that unblock the stream
+      {:ok, run} = SessionManager.start_run(store, adapter, session.id, %{prompt: "Hello"})
+      {:ok, _} = SessionManager.execute_run(store, adapter, run.id)
+
+      events = Task.await(reader_task, 10_000)
+      assert length(events) == 2
+      assert Enum.all?(events, &(&1.sequence_number > cursor))
     end
   end
 end

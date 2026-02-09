@@ -1,8 +1,9 @@
 # Cursor Streaming and Migration
 
-Feature 1 introduces durable cursor-backed event streaming.
+Feature 1 introduces durable cursor-backed event streaming. Phase 2 adds
+long-poll semantics and richer metadata persistence.
 
-## What Changed
+## What Changed (Phase 1)
 
 `SessionStore` now includes two required callbacks:
 
@@ -16,6 +17,40 @@ Feature 1 introduces durable cursor-backed event streaming.
 
 This is an explicit contract break for custom `SessionStore` implementations.
 
+## What Changed (Phase 2)
+
+### Long-Poll Support (`wait_timeout_ms`)
+
+`get_events/3` now accepts an optional `wait_timeout_ms` parameter:
+
+- `wait_timeout_ms: non_neg_integer()` -- when set and the query would return
+  an empty list, the store may block until matching events arrive or the
+  timeout elapses
+
+This is an **optional** optimization. Stores that do not support it simply
+ignore the parameter and return immediately (existing behavior).
+
+`InMemorySessionStore` implements long-poll by tracking "waiters" and using
+`GenServer.reply/2` to respond when matching events are appended, without
+blocking the GenServer loop.
+
+`SessionManager.stream_session_events/3` now accepts `wait_timeout_ms` and
+forwards it to the store, eliminating busy polling when supported.
+
+### Adapter Event Metadata Persistence
+
+`SessionManager.handle_adapter_event/4` now preserves:
+
+- **Adapter-provided timestamps**: When the adapter emits a `DateTime`
+  timestamp, it is stored in `Event.timestamp` instead of `DateTime.utc_now()`.
+- **Adapter-provided metadata**: When the adapter emits a `metadata` map,
+  it is merged into `Event.metadata`.
+- **Provider identity**: `Event.metadata[:provider]` is always set to the
+  adapter's provider name string.
+
+No new event atoms are added. This is purely a data/metadata correctness
+improvement.
+
 ## Sequencing Semantics
 
 For each `session_id`:
@@ -27,7 +62,7 @@ For each `session_id`:
 
 ## SessionManager Behavior
 
-`SessionManager` now persists lifecycle and adapter events through sequenced appends.
+`SessionManager` persists lifecycle and adapter events through sequenced appends.
 Public run APIs are unchanged:
 
 - `execute_run/4`
@@ -36,14 +71,24 @@ Public run APIs are unchanged:
 For polling consumers, use:
 
 ```elixir
+# Polling mode (default)
 SessionManager.stream_session_events(store, session_id,
   after: 0,
   limit: 100,
   poll_interval_ms: 250
 )
+
+# Long-poll mode (Phase 2) — no busy polling
+SessionManager.stream_session_events(store, session_id,
+  after: cursor,
+  limit: 100,
+  wait_timeout_ms: 5_000
+)
 ```
 
 ## Migration Checklist for Custom Stores
+
+### Phase 1 (Required)
 
 1. Add `append_event_with_sequence/2` callback implementation.
 2. Add `get_latest_sequence/2` callback implementation.
@@ -51,6 +96,11 @@ SessionManager.stream_session_events(store, session_id,
 4. Preserve existing filter behavior (`run_id`, `type`, `since`, `limit`).
 5. Preserve duplicate event ID idempotency.
 6. Ensure sequence assignment and append are atomic in your store backend.
+
+### Phase 2 (Optional)
+
+7. Optionally support `wait_timeout_ms` in `get_events/3`. If not supported,
+   ignore the option (callers fall back to sleep-based polling).
 
 ## Reference Implementation Pattern
 
@@ -70,6 +120,27 @@ end
 
 DB-backed stores should do this in a single transaction with row-level locking or equivalent concurrency control.
 
+### Long-Poll Reference (Optional)
+
+For GenServer-backed stores, implement long-poll using deferred replies:
+
+```elixir
+def handle_call({:get_events, session_id, opts}, from, state) do
+  events = query_events(state, session_id, opts)
+  wait_timeout_ms = Keyword.get(opts, :wait_timeout_ms, 0)
+
+  if events == [] and wait_timeout_ms > 0 do
+    timer_ref = Process.send_after(self(), {:waiter_timeout, from}, wait_timeout_ms)
+    waiter = {from, session_id, opts, timer_ref}
+    {:noreply, %{state | waiters: [waiter | state.waiters]}}
+  else
+    {:reply, {:ok, events}, state}
+  end
+end
+```
+
+When events are appended, check waiters and reply via `GenServer.reply/2`.
+
 ## Cursor Query Examples
 
 ```elixir
@@ -81,4 +152,8 @@ DB-backed stores should do this in a single transaction with row-level locking o
 
 # Resume from latest known cursor
 {:ok, latest} = SessionStore.get_latest_sequence(store, session_id)
+
+# Long-poll: block up to 5 seconds for new events
+{:ok, events} = SessionStore.get_events(store, session_id,
+  after: cursor, wait_timeout_ms: 5_000)
 ```

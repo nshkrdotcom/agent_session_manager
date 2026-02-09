@@ -25,7 +25,7 @@ AgentSessionManager provides the infrastructure layer for building applications 
 - **Session & run lifecycle** -- Create sessions, execute runs, and track state transitions with a well-defined state machine
 - **Multi-provider support** -- Built-in adapters for Claude Code (Anthropic), Codex, and Amp (Sourcegraph), with a behaviour for adding your own
 - **Streaming events** -- Normalized event pipeline that maps provider-specific events to a canonical format
-- **Cursor-backed event streaming** -- Monotonic per-session sequence numbers with durable cursor queries (`after` / `before`)
+- **Cursor-backed event streaming** -- Monotonic per-session sequence numbers with durable cursor queries (`after` / `before`) and optional long-poll support (`wait_timeout_ms`)
 - **Session continuity** -- Provider-agnostic transcript reconstruction and optional cross-run context replay
 - **Workspace snapshots** -- Optional pre/post snapshots, diff summaries, patch capture caps, and git-only rollback on failure
 - **Provider routing** -- Router-as-adapter with capability-based selection, policy ordering, and retryable failover
@@ -215,6 +215,7 @@ cursor = List.last(page_1).sequence_number
 For follow/poll consumption, use `SessionManager.stream_session_events/3`:
 
 ```elixir
+# Polling mode (default)
 stream =
   SessionManager.stream_session_events(store, session.id,
     after: 0,
@@ -223,6 +224,28 @@ stream =
   )
 
 Enum.take(stream, 10)
+
+# Long-poll mode (no busy polling — the store blocks until events arrive)
+stream =
+  SessionManager.stream_session_events(store, session.id,
+    after: cursor,
+    limit: 100,
+    wait_timeout_ms: 5_000
+  )
+
+Enum.take(stream, 10)
+```
+
+The long-poll mode is useful for real-time streaming UIs (SSE/WebSocket) where
+you want lower latency without wasting CPU on frequent empty polls.
+
+Adapter events also preserve provider timestamps and metadata:
+
+```elixir
+{:ok, events} = SessionStore.get_events(store, session.id, run_id: run.id)
+event = Enum.find(events, &(&1.type == :run_started))
+event.metadata[:provider]  # => "claude"
+event.timestamp            # => adapter-provided timestamp (when available)
 ```
 
 ### Session Continuity
@@ -385,6 +408,7 @@ The `examples/` directory contains runnable scripts:
 # Cursor examples (live providers)
 mix run examples/cursor_pagination.exs --provider claude
 mix run examples/cursor_follow_stream.exs --provider codex
+mix run examples/cursor_wait_follow.exs --provider amp  # long-poll (no busy polling)
 
 # Feature 2 and 3 examples
 mix run examples/session_continuity.exs --provider amp

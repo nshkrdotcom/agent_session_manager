@@ -160,7 +160,9 @@ defmodule AgentSessionManager.Adapters.InMemorySessionStore do
       # Append-only event log - list of events in insertion order (newest last)
       events: [],
       # Latest assigned sequence number per session_id
-      session_sequences: %{}
+      session_sequences: %{},
+      # Waiters for long-poll: [{from, session_id, opts, timer_ref}]
+      waiters: []
     }
 
     {:ok, state}
@@ -234,21 +236,32 @@ defmodule AgentSessionManager.Adapters.InMemorySessionStore do
 
   def handle_call({:append_event, event}, _from, state) do
     {:ok, _event, new_state} = append_sequenced_event(state, event)
+    new_state = notify_waiters(new_state)
     {:reply, :ok, new_state}
   end
 
   def handle_call({:append_event_with_sequence, event}, _from, state) do
     {:ok, stored_event, new_state} = append_sequenced_event(state, event)
+    new_state = notify_waiters(new_state)
     {:reply, {:ok, stored_event}, new_state}
   end
 
-  def handle_call({:get_events, session_id, opts}, _from, state) do
+  def handle_call({:get_events, session_id, opts}, from, state) do
     events =
       state.events
       |> Enum.filter(&(&1.session_id == session_id))
       |> filter_events(opts)
 
-    {:reply, {:ok, events}, state}
+    wait_timeout_ms = Keyword.get(opts, :wait_timeout_ms, 0)
+
+    if events == [] and is_integer(wait_timeout_ms) and wait_timeout_ms > 0 do
+      # Long-poll: defer reply until matching events arrive or timeout
+      timer_ref = Process.send_after(self(), {:waiter_timeout, from}, wait_timeout_ms)
+      waiter = {from, session_id, opts, timer_ref}
+      {:noreply, %{state | waiters: state.waiters ++ [waiter]}}
+    else
+      {:reply, {:ok, events}, state}
+    end
   end
 
   def handle_call({:get_latest_sequence, session_id}, _from, state) do
@@ -257,7 +270,27 @@ defmodule AgentSessionManager.Adapters.InMemorySessionStore do
   end
 
   @impl GenServer
+  def handle_info({:waiter_timeout, from}, state) do
+    # Find and remove the timed-out waiter, reply with empty list
+    case Enum.split_with(state.waiters, fn {w_from, _sid, _opts, _ref} -> w_from == from end) do
+      {[_expired], remaining} ->
+        GenServer.reply(from, {:ok, []})
+        {:noreply, %{state | waiters: remaining}}
+
+      {[], _} ->
+        # Already resolved (event arrived before timeout)
+        {:noreply, state}
+    end
+  end
+
+  @impl GenServer
   def terminate(_reason, state) do
+    # Cancel pending waiter timers and reply to waiters
+    Enum.each(state.waiters, fn {from, _sid, _opts, timer_ref} ->
+      Process.cancel_timer(timer_ref)
+      GenServer.reply(from, {:ok, []})
+    end)
+
     # Clean up ETS tables
     :ets.delete(state.sessions)
     :ets.delete(state.runs)
@@ -368,6 +401,31 @@ defmodule AgentSessionManager.Adapters.InMemorySessionStore do
       limit when is_integer(limit) and limit > 0 -> Enum.take(items, limit)
       _ -> items
     end
+  end
+
+  defp notify_waiters(state) do
+    {resolved, remaining} =
+      Enum.split_with(state.waiters, fn {_from, session_id, opts, _ref} ->
+        events =
+          state.events
+          |> Enum.filter(&(&1.session_id == session_id))
+          |> filter_events(opts)
+
+        events != []
+      end)
+
+    Enum.each(resolved, fn {from, session_id, opts, timer_ref} ->
+      Process.cancel_timer(timer_ref)
+
+      events =
+        state.events
+        |> Enum.filter(&(&1.session_id == session_id))
+        |> filter_events(opts)
+
+      GenServer.reply(from, {:ok, events})
+    end)
+
+    %{state | waiters: remaining}
   end
 
   defp append_sequenced_event(state, %Event{} = event) do

@@ -34,6 +34,20 @@ mix run examples/cursor_follow_stream.exs --provider codex
 mix run examples/cursor_follow_stream.exs --provider amp
 ```
 
+### `cursor_wait_follow.exs` -- Cursor Wait Follow (Long-Poll, Live Provider)
+
+- Demonstrates `wait_timeout_ms` long-poll mode (Phase 2 Feature 1)
+- Uses `SessionManager.stream_session_events/3` with `wait_timeout_ms: 30_000`
+- The store blocks until matching events arrive instead of busy polling
+- Prints adapter event metadata including `provider` name and timestamps
+- Shows cursor resumption from the last received sequence number
+
+```bash
+mix run examples/cursor_wait_follow.exs --provider claude
+mix run examples/cursor_wait_follow.exs --provider codex
+mix run examples/cursor_wait_follow.exs --provider amp
+```
+
 ## Session Continuity and Workspace Examples
 
 These examples demonstrate Feature 2 and Feature 3 using live provider execution.

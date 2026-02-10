@@ -59,7 +59,9 @@ defmodule AgentSessionManager.Core.Run do
           turn_count: non_neg_integer(),
           token_usage: map(),
           started_at: DateTime.t() | nil,
-          ended_at: DateTime.t() | nil
+          ended_at: DateTime.t() | nil,
+          provider: String.t() | nil,
+          provider_metadata: map()
         }
 
   defstruct [
@@ -70,10 +72,12 @@ defmodule AgentSessionManager.Core.Run do
     :error,
     :started_at,
     :ended_at,
+    :provider,
     status: :pending,
     metadata: %{},
     turn_count: 0,
-    token_usage: %{}
+    token_usage: %{},
+    provider_metadata: %{}
   ]
 
   @doc """
@@ -216,7 +220,9 @@ defmodule AgentSessionManager.Core.Run do
       "turn_count" => run.turn_count,
       "token_usage" => Serialization.stringify_keys(run.token_usage),
       "started_at" => format_datetime(run.started_at),
-      "ended_at" => format_datetime(run.ended_at)
+      "ended_at" => format_datetime(run.ended_at),
+      "provider" => run.provider,
+      "provider_metadata" => Serialization.stringify_keys(run.provider_metadata)
     }
   end
 
@@ -240,7 +246,9 @@ defmodule AgentSessionManager.Core.Run do
         turn_count: map["turn_count"] || 0,
         token_usage: Serialization.atomize_keys(map["token_usage"] || %{}),
         started_at: started_at,
-        ended_at: parse_optional_datetime(map["ended_at"])
+        ended_at: parse_optional_datetime(map["ended_at"]),
+        provider: map["provider"],
+        provider_metadata: Serialization.atomize_keys(map["provider_metadata"] || %{})
       }
 
       {:ok, run}

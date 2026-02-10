@@ -5,26 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-02-10
+
+### Added
+
+- **Persistence subsystem** with production-grade adapters and maintenance/query surfaces
+  - New `SQLiteSessionStore` adapter
+  - New `EctoSessionStore` adapter with migrations and schemas
+  - New `S3ArtifactStore` adapter
+  - New `CompositeSessionStore` adapter combining SessionStore + ArtifactStore
+  - New `QueryAPI` and `Maintenance` ports with Ecto implementations (`EctoQueryAPI`, `EctoMaintenance`)
+  - New persistence modules (`EventPipeline`, `EventValidator`, `RetentionPolicy`, `ArtifactRegistry`)
+- **`DurableStore` port** (`AgentSessionManager.Ports.DurableStore`) for boundary-oriented persistence with `flush/2`, `load_run/2`, `load_session/2`, and `load_events/3`
+- **`SessionStoreBridge` adapter** (`AgentSessionManager.Adapters.SessionStoreBridge`) to adapt existing `SessionStore` implementations to the new `DurableStore` contract
+- **`NoopStore` adapter** (`AgentSessionManager.Adapters.NoopStore`) for ephemeral `run_once/4` execution with no durable writes
+- **`ExecutionState` module** (`AgentSessionManager.Persistence.ExecutionState`) for in-memory run state accumulation (session, run, events, provider metadata)
+- **`EventEmitter` module** (`AgentSessionManager.Persistence.EventEmitter`) for pure event normalize/enrich/validate processing without persistence
+- **Durable-store `run_once/4` path** in `SessionManager` allowing module stores (e.g. `NoopStore`) in addition to `SessionStore` process stores
+
+### Changed
+
+- **Provider metadata extraction** no longer depends on run-scoped `SessionStore.get_events/3` read-back; metadata is captured from callback/result event data during execution
+- **`EventPipeline` internals** now delegate build/enrich/validate to `EventEmitter`, while keeping persistence and persistence telemetry in `EventPipeline`
+
+### Documentation
+
+- Update `README.md` with `DurableStore` concepts, bridge/no-op usage, and boundary flush caveats
+- Update `guides/persistence_overview.md` with `DurableStore` and adapter matrix additions
+- Update `guides/custom_persistence_guide.md` with guidance on when to implement `SessionStore` vs `DurableStore`
+- Add `examples/noop_store_run_once.exs` and reference it in `examples/README.md`
+
 ## [0.7.0] - 2026-02-09
 
 ### Added
 
 - **Generic rendering system** with pluggable Renderer x Sink architecture (`AgentSessionManager.Rendering`)
   - `Rendering.stream/2` orchestrator consumes any `Enumerable` of event maps, renders each event, and writes to all sinks simultaneously
-  - Full lifecycle: init → render loop → finish → flush → close
+  - Full lifecycle: init -> render loop -> finish -> flush -> close
 - **`Renderer` behaviour** with three built-in implementations
-  - `CompactRenderer` — single-line token format (`r+`, `r-`, `t+Name`, `t-Name`, `>>`, `tk:N/M`, `msg`, `!`, `?`) with optional ANSI color support via `:color` option
-  - `VerboseRenderer` — line-by-line bracketed format (`[run_started]`, `[tool_call_started]`, etc.) with inline text streaming and labeled fields
-  - `PassthroughRenderer` — no-op renderer returning empty iodata for every event, for use with programmatic sinks
+  - `CompactRenderer` - single-line token format (`r+`, `r-`, `t+Name`, `t-Name`, `>>`, `tk:N/M`, `msg`, `!`, `?`) with optional ANSI color support via `:color` option
+  - `VerboseRenderer` - line-by-line bracketed format (`[run_started]`, `[tool_call_started]`, etc.) with inline text streaming and labeled fields
+  - `PassthroughRenderer` - no-op renderer returning empty iodata for every event, for use with programmatic sinks
 - **`Sink` behaviour** with four built-in implementations
-  - `TTYSink` — writes rendered iodata to a terminal device (`:stdio` default), preserving ANSI codes
-  - `FileSink` — writes rendered output to a plain-text file with ANSI codes stripped; supports both `:path` (owns the file) and `:io` (pre-opened device, caller manages lifecycle) options
-  - `JSONLSink` — writes events as JSON Lines with `:full` mode (all fields, ISO 8601 timestamps) and `:compact` mode (abbreviated type codes, millisecond epoch timestamps)
-  - `CallbackSink` — forwards raw events and rendered iodata to a 2-arity callback function for programmatic processing
+  - `TTYSink` - writes rendered iodata to a terminal device (`:stdio` default), preserving ANSI codes
+  - `FileSink` - writes rendered output to a plain-text file with ANSI codes stripped; supports both `:path` (owns the file) and `:io` (pre-opened device, caller manages lifecycle) options
+  - `JSONLSink` - writes events as JSON Lines with `:full` mode (all fields, ISO 8601 timestamps) and `:compact` mode (abbreviated type codes, millisecond epoch timestamps)
+  - `CallbackSink` - forwards raw events and rendered iodata to a 2-arity callback function for programmatic processing
 - **ANSI color support** in `CompactRenderer` with configurable `:color` option (default `true`)
 - **`StreamSession`** one-shot streaming session lifecycle module
   - `StreamSession.start/1` replaces ~35 lines of hand-rolled boilerplate (store + adapter + task + Stream.resource + cleanup) with a single function call
-  - Returns `{:ok, stream, close_fun, meta}` — a lazy event stream, idempotent close function, and metadata map
+  - Returns `{:ok, stream, close_fun, meta}` - a lazy event stream, idempotent close function, and metadata map
   - Automatic `InMemorySessionStore` creation when no store is provided
   - Adapter startup from `{Module, opts}` tuples; passes through existing pids/names without ownership
   - Ownership tracking: only terminates resources that StreamSession created
@@ -33,7 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Atomic idempotent close via `:atomics.compare_exchange`
 - **`StreamSession.Supervisor`** convenience supervisor for production use
   - Starts `Task.Supervisor` and `DynamicSupervisor` for managed task and adapter lifecycle
-  - Optional — StreamSession works without it using `Task.start_link` directly
+  - Optional - StreamSession works without it using `Task.start_link` directly
 - **`StreamSession.Lifecycle`** resource acquisition and release (store, adapter, task)
 - **`StreamSession.EventStream`** lazy `Stream.resource` with receive-based state machine
 - Four new rendering examples: `rendering_compact.exs`, `rendering_verbose.exs`, `rendering_multi_sink.exs`, `rendering_callback.exs`
@@ -378,7 +408,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic project structure with mix.exs configuration
 - Project logo and assets
 
-[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.5.0...v0.5.1

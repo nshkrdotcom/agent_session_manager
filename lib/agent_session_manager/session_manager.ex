@@ -57,18 +57,21 @@ defmodule AgentSessionManager.SessionManager do
     CapabilityResolver,
     Error,
     Event,
-    EventNormalizer,
     Run,
     Session,
     TranscriptBuilder
   }
 
+  alias AgentSessionManager.Adapters.InMemorySessionStore
+  alias AgentSessionManager.Persistence.EventPipeline
   alias AgentSessionManager.Policy.{AdapterCompiler, Policy, Preflight, Runtime}
-  alias AgentSessionManager.Ports.{ArtifactStore, ProviderAdapter, SessionStore}
+  alias AgentSessionManager.Ports.{ArtifactStore, DurableStore, ProviderAdapter, SessionStore}
   alias AgentSessionManager.Telemetry
   alias AgentSessionManager.Workspace.{Diff, Snapshot, Workspace}
 
   @type store :: SessionStore.store()
+  @type durable_store_config :: module() | {module(), DurableStore.store()}
+  @type run_once_store :: store() | durable_store_config()
   @type adapter :: ProviderAdapter.adapter()
 
   # ============================================================================
@@ -327,8 +330,22 @@ defmodule AgentSessionManager.SessionManager do
       IO.puts(result.output.content)
 
   """
-  @spec run_once(store(), adapter(), map(), keyword()) :: {:ok, map()} | {:error, Error.t()}
+  @spec run_once(run_once_store(), adapter(), map(), keyword()) ::
+          {:ok, map()} | {:error, Error.t()}
   def run_once(store, adapter, input, opts \\ []) do
+    case resolve_run_once_store(store) do
+      {:durable, durable_store_module, durable_store_ref} ->
+        run_once_with_durable_store(durable_store_module, durable_store_ref, adapter, input, opts)
+
+      {:session, session_store} ->
+        run_once_with_session_store(session_store, adapter, input, opts)
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  defp run_once_with_session_store(store, adapter, input, opts) do
     agent_id = Keyword.get(opts, :agent_id, ProviderAdapter.name(adapter))
 
     session_attrs =
@@ -355,6 +372,116 @@ defmodule AgentSessionManager.SessionManager do
     with {:ok, session} <- start_session(store, adapter, session_attrs),
          {:ok, _active} <- activate_session(store, session.id) do
       run_once_execute(store, adapter, session, input, cap_opts, exec_opts)
+    end
+  end
+
+  defp run_once_with_durable_store(durable_store_module, durable_store_ref, adapter, input, opts) do
+    with {:ok, transient_store} <- InMemorySessionStore.start_link() do
+      try do
+        case run_once_with_session_store(transient_store, adapter, input, opts) do
+          {:ok, result} ->
+            case flush_run_once_result(
+                   durable_store_module,
+                   durable_store_ref,
+                   transient_store,
+                   result
+                 ) do
+              :ok -> {:ok, result}
+              {:error, _} = error -> error
+            end
+
+          {:error, _} = error ->
+            error
+        end
+      after
+        stop_transient_store(transient_store)
+      end
+    end
+  end
+
+  defp flush_run_once_result(durable_store_module, durable_store_ref, transient_store, result) do
+    with {:ok, session} <- SessionStore.get_session(transient_store, result.session_id),
+         {:ok, run} <- SessionStore.get_run(transient_store, result.run_id),
+         {:ok, events} <-
+           SessionStore.get_events(transient_store, result.session_id, run_id: result.run_id) do
+      flush_execution_result(durable_store_module, durable_store_ref, %{
+        session: session,
+        run: run,
+        events: events,
+        provider_metadata: run.provider_metadata
+      })
+    end
+  end
+
+  defp flush_execution_result(durable_store_module, durable_store_ref, execution_result) do
+    durable_store_module.flush(durable_store_ref, execution_result)
+  rescue
+    exception ->
+      {:error, Error.new(:storage_write_failed, Exception.message(exception))}
+  catch
+    :exit, reason ->
+      {:error, Error.new(:storage_write_failed, "DurableStore flush failed: #{inspect(reason)}")}
+  end
+
+  defp stop_transient_store(store) when is_pid(store) do
+    GenServer.stop(store, :normal)
+  catch
+    :exit, _ -> :ok
+  end
+
+  defp resolve_run_once_store({durable_store_module, durable_store_ref})
+       when is_atom(durable_store_module) do
+    if durable_store_module?(durable_store_module) do
+      {:durable, durable_store_module, durable_store_ref}
+    else
+      {:error,
+       Error.new(
+         :validation_error,
+         "Invalid DurableStore module: #{inspect(durable_store_module)}"
+       )}
+    end
+  end
+
+  defp resolve_run_once_store(store) when is_atom(store) do
+    case Process.whereis(store) do
+      pid when is_pid(pid) ->
+        {:session, store}
+
+      _ ->
+        if durable_store_module?(store) do
+          {:durable, store, store}
+        else
+          {:error,
+           Error.new(
+             :validation_error,
+             "Store must be a SessionStore server or DurableStore module: #{inspect(store)}"
+           )}
+        end
+    end
+  end
+
+  defp resolve_run_once_store(store) when is_pid(store), do: {:session, store}
+  defp resolve_run_once_store({:via, _registry, _name} = store), do: {:session, store}
+  defp resolve_run_once_store({:global, _name} = store), do: {:session, store}
+
+  defp resolve_run_once_store(store) do
+    {:error,
+     Error.new(
+       :validation_error,
+       "Unsupported store reference for run_once/4: #{inspect(store)}"
+     )}
+  end
+
+  defp durable_store_module?(module) when is_atom(module) do
+    case Code.ensure_loaded(module) do
+      {:module, ^module} ->
+        function_exported?(module, :flush, 2) and
+          function_exported?(module, :load_run, 2) and
+          function_exported?(module, :load_session, 2) and
+          function_exported?(module, :load_events, 3)
+
+      _ ->
+        false
     end
   end
 
@@ -544,6 +671,7 @@ defmodule AgentSessionManager.SessionManager do
   defp execute_with_adapter(store, adapter, run, session, opts) do
     provider_name = ProviderAdapter.name(adapter)
     user_callback = Keyword.get(opts, :event_callback)
+    callback_owner = self()
 
     with {:ok, effective_policy} <- resolve_effective_policy(opts),
          :ok <- maybe_preflight_check(effective_policy),
@@ -563,7 +691,8 @@ defmodule AgentSessionManager.SessionManager do
           execution_session,
           user_callback,
           adapter,
-          policy_runtime
+          policy_runtime,
+          callback_owner
         )
 
       adapter_opts =
@@ -575,6 +704,8 @@ defmodule AgentSessionManager.SessionManager do
       provider_result =
         ProviderAdapter.execute(adapter, run, execution_session, adapter_opts)
 
+      callback_provider_metadata = collect_provider_metadata(run.id)
+
       case apply_policy_result(provider_result, policy_runtime) do
         {:ok, result} ->
           finalize_provider_success(
@@ -583,7 +714,8 @@ defmodule AgentSessionManager.SessionManager do
             session,
             provider_name,
             result,
-            workspace_state
+            workspace_state,
+            callback_provider_metadata
           )
 
         {:error, error} ->
@@ -595,20 +727,57 @@ defmodule AgentSessionManager.SessionManager do
     end
   end
 
-  defp build_event_callback(store, run, execution_session, user_callback, adapter, policy_runtime) do
+  defp build_event_callback(
+         store,
+         run,
+         execution_session,
+         user_callback,
+         adapter,
+         policy_runtime,
+         callback_owner
+       ) do
     provider_name = ProviderAdapter.name(adapter)
 
+    pipeline_context = %{
+      session_id: run.session_id,
+      run_id: run.id,
+      provider: provider_name,
+      correlation_id: Map.get(execution_session.metadata, :correlation_id)
+    }
+
     fn event_data ->
-      handle_adapter_event(store, run, execution_session, event_data, provider_name)
-      maybe_enforce_policy(store, run, adapter, policy_runtime, event_data)
-      maybe_invoke_user_callback(user_callback, event_data)
+      enriched_event_data =
+        case EventPipeline.process(store, event_data, pipeline_context) do
+          {:ok, event} ->
+            event_data
+            |> Map.put(:type, event.type)
+            |> Map.put(:sequence_number, event.sequence_number)
+
+          {:error, _} ->
+            event_data
+        end
+
+      maybe_publish_provider_metadata(callback_owner, run.id, enriched_event_data)
+      maybe_enforce_policy(store, run, adapter, policy_runtime, enriched_event_data)
+      maybe_invoke_user_callback(user_callback, enriched_event_data)
+      Telemetry.emit_adapter_event(run, execution_session, enriched_event_data)
     end
   end
 
-  defp finalize_provider_success(store, run, session, provider_name, result, workspace_state) do
+  defp finalize_provider_success(
+         store,
+         run,
+         session,
+         provider_name,
+         result,
+         workspace_state,
+         callback_provider_metadata
+       ) do
     case maybe_finalize_workspace_success(store, run, result, workspace_state) do
       {:ok, result_with_workspace, workspace_metadata} ->
-        provider_metadata = extract_provider_metadata_from_events(store, run)
+        provider_metadata =
+          callback_provider_metadata
+          |> Map.merge(extract_provider_metadata_from_result(result_with_workspace))
 
         finalize_successful_run(
           store,
@@ -775,6 +944,79 @@ defmodule AgentSessionManager.SessionManager do
   defp maybe_invoke_user_callback(user_callback, event_data) when is_function(user_callback, 1) do
     user_callback.(event_data)
     :ok
+  end
+
+  defp maybe_publish_provider_metadata(owner_pid, run_id, event_data) when is_pid(owner_pid) do
+    case extract_provider_metadata_from_event_data(event_data) do
+      metadata when map_size(metadata) > 0 ->
+        send(owner_pid, {:provider_metadata, run_id, metadata})
+        :ok
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp collect_provider_metadata(run_id, acc \\ %{}) do
+    receive do
+      {:provider_metadata, ^run_id, metadata} when is_map(metadata) ->
+        collect_provider_metadata(run_id, Map.merge(acc, metadata))
+    after
+      0 ->
+        acc
+    end
+  end
+
+  defp extract_provider_metadata_from_result(result) when is_map(result) do
+    events =
+      case Map.get(result, :events) do
+        event_list when is_list(event_list) -> event_list
+        _ -> []
+      end
+
+    case Enum.find(events, fn event -> event_type(event) == :run_started end) do
+      nil -> %{}
+      event -> extract_provider_metadata_from_event_data(event)
+    end
+  end
+
+  defp extract_provider_metadata_from_event_data(event_data) do
+    case event_type(event_data) do
+      :run_started ->
+        event_data
+        |> event_data_map()
+        |> normalize_provider_metadata()
+
+      _ ->
+        %{}
+    end
+  end
+
+  defp event_type(%Event{type: type}) when is_atom(type), do: type
+  defp event_type(%{type: type}) when is_atom(type), do: type
+  defp event_type(%{type: "run_started"}), do: :run_started
+  defp event_type(%{"type" => "run_started"}), do: :run_started
+  defp event_type(_), do: nil
+
+  defp event_data_map(%Event{data: data}) when is_map(data), do: data
+  defp event_data_map(%{data: data}) when is_map(data), do: data
+  defp event_data_map(%{"data" => data}) when is_map(data), do: data
+  defp event_data_map(_), do: %{}
+
+  defp normalize_provider_metadata(data) do
+    %{
+      provider_session_id:
+        map_get(data, :provider_session_id) || map_get(data, :session_id) ||
+          map_get(data, :thread_id),
+      model: map_get(data, :model),
+      tools: map_get(data, :tools)
+    }
+    |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+    |> Map.new()
+  end
+
+  defp map_get(map, key) when is_map(map) do
+    Map.get(map, key) || Map.get(map, Atom.to_string(key))
   end
 
   defp maybe_attach_transcript(store, session, opts) do
@@ -1106,26 +1348,6 @@ defmodule AgentSessionManager.SessionManager do
     Keyword.get(opts, :enabled, false)
   end
 
-  defp extract_provider_metadata_from_events(store, run) do
-    case SessionStore.get_events(store, run.session_id, run_id: run.id) do
-      {:ok, events} ->
-        case Enum.find(events, &(&1.type == :run_started)) do
-          nil ->
-            %{}
-
-          event ->
-            data = event.data
-
-            %{
-              provider_session_id:
-                data[:provider_session_id] || data[:session_id] || data[:thread_id],
-              model: data[:model],
-              tools: data[:tools]
-            }
-        end
-    end
-  end
-
   defp finalize_successful_run(
          store,
          run,
@@ -1144,7 +1366,12 @@ defmodule AgentSessionManager.SessionManager do
 
     with {:ok, updated_run} <- Run.set_output(run, result.output),
          {:ok, run_with_usage} <- Run.update_token_usage(updated_run, result.token_usage),
-         final_run = update_run_metadata(run_with_usage, run_provider_metadata),
+         run_with_provider = %{
+           run_with_usage
+           | provider: provider_name,
+             provider_metadata: run_provider_metadata
+         },
+         final_run = update_run_metadata(run_with_provider, run_provider_metadata),
          :ok <- SessionStore.save_run(store, final_run),
          :ok <- update_session_provider_metadata(store, session, provider_metadata) do
       {:ok, result}
@@ -1207,88 +1434,7 @@ defmodule AgentSessionManager.SessionManager do
     end
   end
 
-  defp handle_adapter_event(store, run, session, event_data, provider_name) do
-    normalized_type = normalize_event_type(event_data, run)
-    normalized_event_data = Map.put(event_data, :type, normalized_type)
-    event_payload = ensure_map(Map.get(event_data, :data))
-
-    # Build metadata: merge adapter-provided metadata with provider identity
-    adapter_metadata = ensure_map(Map.get(event_data, :metadata))
-    event_metadata = Map.put(adapter_metadata, :provider, provider_name)
-
-    telemetry_event_data =
-      case Event.new(%{
-             type: normalized_type,
-             session_id: run.session_id,
-             run_id: run.id,
-             data: event_payload,
-             metadata: event_metadata
-           }) do
-        {:ok, event} ->
-          # Preserve adapter-provided timestamp if present
-          event = apply_adapter_timestamp(event, event_data)
-
-          case append_sequenced_event(store, event) do
-            {:ok, stored_event} ->
-              Map.put(normalized_event_data, :sequence_number, stored_event.sequence_number)
-
-            {:error, _} ->
-              normalized_event_data
-          end
-
-        {:error, _} ->
-          normalized_event_data
-      end
-
-    # Emit telemetry event for observability
-    Telemetry.emit_adapter_event(run, session, telemetry_event_data)
-  end
-
-  defp apply_adapter_timestamp(event, event_data) do
-    case Map.get(event_data, :timestamp) do
-      %DateTime{} = ts -> %{event | timestamp: ts}
-      _ -> event
-    end
-  end
-
-  defp normalize_event_type(event_data, run) do
-    case Map.get(event_data, :type) do
-      type when is_atom(type) ->
-        if Event.valid_type?(type) do
-          type
-        else
-          fallback_event_type(type)
-        end
-
-      _ ->
-        payload =
-          event_data
-          |> Map.get(:data)
-          |> ensure_map()
-          |> Map.put(:type, Map.get(event_data, :type))
-
-        context = %{
-          session_id: run.session_id,
-          run_id: run.id,
-          provider: Map.get(event_data, :provider, :generic)
-        }
-
-        case EventNormalizer.normalize(payload, context) do
-          {:ok, normalized} ->
-            normalized.type
-
-          {:error, _} ->
-            fallback_event_type(Map.get(event_data, :type))
-        end
-    end
-  end
-
-  defp fallback_event_type(type) when is_atom(type) do
-    if Event.valid_type?(type), do: type, else: :error_occurred
-  end
-
-  defp fallback_event_type(_), do: :error_occurred
-
+  @dialyzer {:nowarn_function, ensure_map: 1}
   defp ensure_map(value) when is_map(value), do: value
   defp ensure_map(_), do: %{}
 

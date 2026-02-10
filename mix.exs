@@ -1,7 +1,7 @@
 defmodule AgentSessionManager.MixProject do
   use Mix.Project
 
-  @version "0.7.0"
+  @version "0.8.0"
   @source_url "https://github.com/nshkrdotcom/agent_session_manager"
 
   def project do
@@ -41,13 +41,23 @@ defmodule AgentSessionManager.MixProject do
       {:claude_agent_sdk, "~> 0.11"},
       {:amp_sdk, "~> 0.2"},
 
+      # Persistence adapters (optional — consumers pick what they need)
+      {:ecto_sql, "~> 3.12", optional: true},
+      {:postgrex, "~> 0.19", optional: true},
+      {:ecto_sqlite3, "~> 0.17", optional: true},
+      {:ex_aws, "~> 2.5", optional: true},
+      {:ex_aws_s3, "~> 2.5", optional: true},
+      {:sweet_xml, "~> 0.7", optional: true},
+      {:hackney, "~> 1.20", optional: true},
+
       # Development and documentation
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
 
       # Testing
-      {:supertester, "~> 0.5.1", only: :test}
+      {:supertester, "~> 0.5.1", only: :test},
+      {:mox, "~> 1.1", only: :test}
     ]
   end
 
@@ -91,6 +101,13 @@ defmodule AgentSessionManager.MixProject do
         "guides/telemetry_and_observability.md",
         "guides/error_handling.md",
         "guides/testing.md",
+        "guides/persistence_overview.md",
+        "guides/ecto_session_store.md",
+        "guides/sqlite_session_store.md",
+        "guides/s3_artifact_store.md",
+        "guides/composite_store.md",
+        "guides/event_schema_versioning.md",
+        "guides/custom_persistence_guide.md",
         "CHANGELOG.md",
         "LICENSE"
       ],
@@ -116,6 +133,15 @@ defmodule AgentSessionManager.MixProject do
           "guides/policy_enforcement.md",
           "guides/advanced_patterns.md",
           "guides/capabilities.md"
+        ],
+        Persistence: [
+          "guides/persistence_overview.md",
+          "guides/ecto_session_store.md",
+          "guides/sqlite_session_store.md",
+          "guides/s3_artifact_store.md",
+          "guides/composite_store.md",
+          "guides/event_schema_versioning.md",
+          "guides/custom_persistence_guide.md"
         ],
         Integration: [
           "guides/provider_adapters.md",
@@ -175,7 +201,11 @@ defmodule AgentSessionManager.MixProject do
           AgentSessionManager.Adapters.CodexAdapter,
           AgentSessionManager.Adapters.AmpAdapter,
           AgentSessionManager.Adapters.InMemorySessionStore,
-          AgentSessionManager.Adapters.FileArtifactStore
+          AgentSessionManager.Adapters.FileArtifactStore,
+          AgentSessionManager.Adapters.SQLiteSessionStore,
+          AgentSessionManager.Adapters.EctoSessionStore,
+          AgentSessionManager.Adapters.S3ArtifactStore,
+          AgentSessionManager.Adapters.CompositeSessionStore
         ],
         Concurrency: [
           AgentSessionManager.Concurrency.ConcurrencyLimiter,

@@ -10,10 +10,16 @@ defmodule AgentSessionManager.Telemetry do
 
   All events are prefixed with `[:agent_session_manager, ...]`:
 
+  ### Run Lifecycle
   - `[:agent_session_manager, :run, :start]` - Emitted when a run starts
   - `[:agent_session_manager, :run, :stop]` - Emitted when a run completes successfully
   - `[:agent_session_manager, :run, :exception]` - Emitted when a run fails with an error
   - `[:agent_session_manager, :usage, :report]` - Emitted with usage metrics
+
+  ### Persistence (emitted by `EventPipeline`)
+  - `[:agent_session_manager, :persistence, :event_persisted]` - Event was validated and persisted
+  - `[:agent_session_manager, :persistence, :event_validation_warning]` - Event had shape warnings
+  - `[:agent_session_manager, :persistence, :event_rejected]` - Event failed structural validation
 
   ## Configuration
 

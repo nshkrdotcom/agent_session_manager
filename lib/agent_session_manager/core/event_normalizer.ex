@@ -81,6 +81,44 @@ defmodule AgentSessionManager.Core.EventNormalizer do
   }
 
   @doc """
+  Resolves a raw event type (string or atom) to a canonical event atom type.
+
+  Uses the internal type mappings to convert common provider event type strings
+  (e.g., `"run_start"`, `"delta"`) into canonical atoms (`:run_started`, `:message_streamed`).
+
+  Returns `:error_occurred` for unrecognized types.
+
+  ## Examples
+
+      iex> EventNormalizer.resolve_type("run_start")
+      :run_started
+
+      iex> EventNormalizer.resolve_type(:run_started)
+      :run_started
+
+      iex> EventNormalizer.resolve_type("totally_unknown")
+      :error_occurred
+
+  """
+  @spec resolve_type(atom() | String.t()) :: atom()
+  def resolve_type(type) when is_atom(type) and not is_nil(type), do: type
+
+  def resolve_type(type) when is_binary(type) do
+    case Map.get(@type_mappings, type) do
+      nil -> try_atom_conversion(type)
+      canonical -> canonical
+    end
+  end
+
+  def resolve_type(_), do: :error_occurred
+
+  defp try_atom_conversion(type_string) do
+    String.to_existing_atom(type_string)
+  rescue
+    ArgumentError -> :error_occurred
+  end
+
+  @doc """
   Normalizes a raw event map into a NormalizedEvent.
 
   ## Parameters

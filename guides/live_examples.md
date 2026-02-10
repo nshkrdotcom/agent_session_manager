@@ -18,6 +18,7 @@ Cursor examples are also available and use real provider execution:
 - `examples/policy_v2.exs --provider <claude|codex|amp>` -- policy stacks and provider-side enforcement
 - `examples/session_concurrency.exs --provider <claude|codex|amp>` -- multi-slot concurrent session runtime
 - `examples/stream_session.exs --provider <claude|codex|amp>` -- StreamSession one-shot lifecycle with rendering and raw modes
+- `examples/noop_store_run_once.exs --provider <claude|codex|amp>` -- no-op durable mode for ephemeral one-shot runs
 
 ## Authentication
 
@@ -78,6 +79,10 @@ mix run examples/session_limiter.exs --provider amp
 mix run examples/oneshot.exs --provider claude
 mix run examples/oneshot.exs --provider codex
 mix run examples/oneshot.exs --provider amp
+
+mix run examples/noop_store_run_once.exs --provider claude
+mix run examples/noop_store_run_once.exs --provider codex
+mix run examples/noop_store_run_once.exs --provider amp
 
 mix run examples/live_session.exs --provider claude
 mix run examples/live_session.exs --provider codex

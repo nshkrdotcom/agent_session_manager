@@ -9,7 +9,7 @@ Add `agent_session_manager` to your `mix.exs` dependencies:
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.7.0"}
+    {:agent_session_manager, "~> 0.8.0"}
   ]
 end
 ```

@@ -33,6 +33,7 @@ AgentSessionManager provides the infrastructure layer for building applications 
 - **Capability negotiation** -- Declare required and optional capabilities; the resolver checks provider support before execution
 - **Concurrency controls** -- Configurable limits on parallel sessions and runs with slot-based tracking
 - **Session server runtime** -- Optional per-session `SessionServer` with FIFO queueing, multi-slot concurrency (`max_concurrent_runs`), durable subscriptions with backfill, drain/status operational APIs, and optional `ConcurrencyLimiter` / `ControlOperations` integration
+- **Rendering pipeline** -- Pluggable Renderer x Sink architecture for formatting and outputting events to terminals, files, JSONL, or custom callbacks
 - **Observability** -- Telemetry integration, audit logging, and append-only event stores
 - **Ports & adapters architecture** -- Clean separation between core logic and external dependencies
 
@@ -59,7 +60,7 @@ Add `agent_session_manager` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.6.0"}
+    {:agent_session_manager, "~> 0.7.0"}
   ]
 end
 ```
@@ -419,6 +420,27 @@ All adapters also accept `:max_turns`, `:system_prompt`, and `:sdk_opts`:
 
 See the [Provider Adapters](guides/provider_adapters.md) guide for details on each option.
 
+### Rendering Pipeline
+
+The rendering system provides a pluggable pipeline for formatting and outputting agent session events. It separates _what_ events look like (renderers) from _where_ they go (sinks).
+
+```elixir
+alias AgentSessionManager.Rendering
+alias AgentSessionManager.Rendering.Renderers.CompactRenderer
+alias AgentSessionManager.Rendering.Sinks.{TTYSink, FileSink, JSONLSink}
+
+Rendering.stream(event_stream,
+  renderer: {CompactRenderer, color: true},
+  sinks: [
+    {TTYSink, []},
+    {FileSink, path: "session.log"},
+    {JSONLSink, path: "events.jsonl", mode: :full}
+  ]
+)
+```
+
+Built-in renderers: `CompactRenderer` (single-line token format with ANSI colors), `VerboseRenderer` (bracketed line-by-line), `PassthroughRenderer` (no-op for programmatic sinks). Built-in sinks: `TTYSink`, `FileSink`, `JSONLSink` (full and compact modes), `CallbackSink`. See the [Rendering](guides/rendering.md) guide for details.
+
 ### Capability Negotiation
 
 Before starting a run, you can declare what capabilities are required. The resolver checks the provider's capabilities and fails fast if requirements aren't met.
@@ -490,6 +512,12 @@ mix run examples/session_concurrency.exs --provider claude
 # Permission modes (full_auto, dangerously_skip_permissions, etc.)
 mix run examples/permission_mode.exs --provider claude --mode full_auto
 
+# Rendering pipeline examples
+mix run examples/rendering_compact.exs --provider claude
+mix run examples/rendering_verbose.exs --provider codex
+mix run examples/rendering_multi_sink.exs --provider amp
+mix run examples/rendering_callback.exs --provider claude
+
 # Default run-all mode executes all examples for all providers
 bash examples/run_all.sh
 
@@ -512,6 +540,7 @@ The guides cover each subsystem in depth:
 - [Session Server Subscriptions](guides/session_server_subscriptions.md) -- Durable event subscriptions with backfill, cursor replay, and filtering
 - [Session Continuity](guides/session_continuity.md) -- Transcript reconstruction, continuation options, adapter replay behavior
 - [Events and Streaming](guides/events_and_streaming.md) -- Event types, normalization, EventStream cursor
+- [Rendering](guides/rendering.md) -- Pluggable Renderer x Sink pipeline for formatting and outputting events
 - [Cursor Streaming and Migration](guides/cursor_streaming_and_migration.md) -- Sequence assignment, cursor APIs, and custom store migration
 - [Workspace Snapshots](guides/workspace_snapshots.md) -- Workspace options, snapshot/diff events, metadata, and rollback scope
 - [Provider Routing](guides/provider_routing.md) -- Router-as-adapter setup, capability matching, health, failover, cancel routing

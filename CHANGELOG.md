@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-02-10
+
+### Added
+
+- **Generic rendering system** with pluggable Renderer x Sink architecture (`AgentSessionManager.Rendering`)
+  - `Rendering.stream/2` orchestrator consumes any `Enumerable` of event maps, renders each event, and writes to all sinks simultaneously
+  - Full lifecycle: init → render loop → finish → flush → close
+- **`Renderer` behaviour** with three built-in implementations
+  - `CompactRenderer` — single-line token format (`r+`, `r-`, `t+Name`, `t-Name`, `>>`, `tk:N/M`, `msg`, `!`, `?`) with optional ANSI color support via `:color` option
+  - `VerboseRenderer` — line-by-line bracketed format (`[run_started]`, `[tool_call_started]`, etc.) with inline text streaming and labeled fields
+  - `PassthroughRenderer` — no-op renderer returning empty iodata for every event, for use with programmatic sinks
+- **`Sink` behaviour** with four built-in implementations
+  - `TTYSink` — writes rendered iodata to a terminal device (`:stdio` default), preserving ANSI codes
+  - `FileSink` — writes rendered output to a plain-text file with ANSI codes stripped; supports both `:path` (owns the file) and `:io` (pre-opened device, caller manages lifecycle) options
+  - `JSONLSink` — writes events as JSON Lines with `:full` mode (all fields, ISO 8601 timestamps) and `:compact` mode (abbreviated type codes, millisecond epoch timestamps)
+  - `CallbackSink` — forwards raw events and rendered iodata to a 2-arity callback function for programmatic processing
+- **ANSI color support** in `CompactRenderer` with configurable `:color` option (default `true`)
+- Four new rendering examples: `rendering_compact.exs`, `rendering_verbose.exs`, `rendering_multi_sink.exs`, `rendering_callback.exs`
+- New guide: `guides/rendering.md` covering architecture, all renderers/sinks, multi-sink pipelines, custom renderer/sink authoring, and event stream integration
+- Rendering test helpers in `test/support/rendering_helpers.ex`
+- Full test coverage for all renderers and sinks
+
+### Documentation
+
+- Add `guides/rendering.md` to HexDocs extras and "Core Concepts" group
+- Add Rendering module group to HexDocs with all renderer and sink modules
+- Update `examples/README.md` with rendering pipeline examples section
+- Update `examples/run_all.sh` with rendering example entries
+- Add rendering section and examples to `README.md`
+- Add rendering guide entry to guides list in `README.md`
+- Bump installation snippets in `README.md` and `guides/getting_started.md` to `~> 0.7.0`
+
 ## [0.6.0] - 2026-02-08
 
 ### Added
@@ -328,7 +360,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic project structure with mix.exs configuration
 - Project logo and assets
 
-[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.4.1...v0.5.0

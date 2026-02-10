@@ -224,6 +224,7 @@ if Code.ensure_loaded?(Ecto.Query) do
         )
         |> maybe_filter(:run_id, opts)
         |> maybe_filter(:type, opts)
+        |> maybe_filter(:since, opts)
         |> maybe_filter(:after, opts)
         |> maybe_filter(:before, opts)
         |> maybe_limit(opts)
@@ -521,6 +522,14 @@ if Code.ensure_loaded?(Ecto.Query) do
       case Keyword.get(opts, :before) do
         nil -> query
         seq -> from(q in query, where: q.sequence_number < ^seq)
+      end
+    end
+
+    defp maybe_filter(query, :since, opts) do
+      case Keyword.get(opts, :since) do
+        nil -> query
+        %DateTime{} = since -> from(q in query, where: q.timestamp > ^since)
+        since -> from(q in query, where: q.timestamp > ^since)
       end
     end
 

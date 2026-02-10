@@ -100,9 +100,9 @@ Here's what happens under the hood when you call `SessionManager.execute_run/3`:
 3. The provider adapter's `execute/4` is called with the run and session
 4. The adapter sends the request to the AI provider
 5. As the provider streams back responses, the adapter emits normalized events
-6. Each event is persisted to the session store via `append_event`
+6. Each event is persisted to the session store via `append_event_with_sequence/2`
 7. Telemetry events are emitted for observability
-8. When the provider finishes, the run is updated with output and token usage
+8. When the provider finishes, the run/session are finalized and persisted via `flush/2`
 9. The result is returned to the caller
 
 ## Using the Event Callback

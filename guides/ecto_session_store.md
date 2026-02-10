@@ -124,11 +124,11 @@ Each schema defines a `changeset/2` function with appropriate validations.
 ## How Queries Work
 
 The adapter uses `Ecto.Query` and the schemas defined in
-`EctoSessionStore.Schemas` for all database operations. This means the same
-adapter code works across PostgreSQL, SQLite, MySQL, and any other
-Ecto-compatible database without modification -- Ecto handles SQL dialect
-differences (parameter placeholders, upsert syntax, type serialization)
-automatically.
+`EctoSessionStore.Schemas` for all database operations. The implementation is
+tested against PostgreSQL and SQLite. Most SQL differences are handled by Ecto,
+but the sequence allocator relies on `insert_all(..., returning: ...)`, which
+is not supported by every Ecto adapter (for example, MySQL). If you target a
+different database, you may need to replace the sequence allocation strategy.
 
 Upserts use `Repo.insert/2` with `on_conflict: {:replace_all_except, [:id]}`
 and `conflict_target: :id`, which Ecto translates to the correct syntax for
@@ -241,13 +241,16 @@ The `asm_artifacts` table schema:
 | Column | Type | Purpose |
 |--------|------|---------|
 | `id` | string | Primary key |
-| `key` | string | Unique artifact key |
-| `session_id` | string | Associated session |
+| `session_id` | string | Associated session (optional) |
 | `run_id` | string | Associated run (optional) |
-| `type` | string | Artifact type (e.g., "diff", "snapshot") |
+| `key` | string | Unique artifact key |
 | `content_type` | string | MIME type |
-| `size_bytes` | integer | Artifact size |
+| `byte_size` | bigint | Artifact size |
+| `checksum_sha256` | string | Content checksum |
+| `storage_backend` | string | Backend name (e.g., "s3", "file") |
+| `storage_ref` | string | Backend-specific reference |
 | `metadata` | JSON | Additional metadata |
+| `created_at` | datetime | Creation timestamp |
 | `deleted_at` | datetime | Soft-delete timestamp |
 
 ## QueryAPI and Maintenance
@@ -274,11 +277,15 @@ policy = RetentionPolicy.new(max_completed_session_age_days: 90)
 
 ## Notes and Caveats
 
-- **Cross-database portability via Ecto.Query.** The adapter uses `Ecto.Query`
-  and Ecto schemas for all operations. Ecto handles SQL dialect differences
-  (parameter placeholders, upsert syntax, type serialization) per-adapter.
-  You can swap the underlying database by changing your Repo's adapter
-  configuration without modifying the store code.
+- **Cross-database portability via Ecto.Query.** Most queries are portable, but
+  sequence allocation relies on `insert_all(..., returning: ...)` and is only
+  implemented for SQLite and PostgreSQL. Other adapters (e.g., MySQL) need a
+  different sequence allocation strategy or a custom store.
+
+- **Token usage filters are adapter-limited.** `search_runs/2` options like
+  `:min_tokens` and `:token_usage_desc` rely on JSON extraction and are only
+  supported on SQLite and PostgreSQL adapters. Other adapters return a
+  `:query_error`.
 
 - **Atom values do not survive JSON roundtrip.** Maps stored in `metadata`,
   `context`, `data`, and similar fields are JSON-encoded. Atom values inside

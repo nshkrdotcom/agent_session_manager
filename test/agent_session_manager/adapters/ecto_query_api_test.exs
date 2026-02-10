@@ -76,6 +76,7 @@ defmodule AgentSessionManager.Adapters.EctoQueryAPITest do
     status = Keyword.get(opts, :status, :completed)
     input_tokens = Keyword.get(opts, :input_tokens, 100)
     output_tokens = Keyword.get(opts, :output_tokens, 50)
+    started_at = Keyword.get(opts, :started_at)
 
     {:ok, run} = Run.new(%{id: run_id, session_id: session_id})
 
@@ -87,7 +88,8 @@ defmodule AgentSessionManager.Adapters.EctoQueryAPITest do
           input_tokens: input_tokens,
           output_tokens: output_tokens,
           total_tokens: input_tokens + output_tokens
-        }
+        },
+        started_at: started_at || run.started_at
     }
 
     :ok = SessionStore.save_run(store, run)
@@ -183,6 +185,26 @@ defmodule AgentSessionManager.Adapters.EctoQueryAPITest do
       {:ok, %{cursor: cursor}} = QueryAPI.search_sessions(query)
       assert is_binary(cursor)
     end
+
+    test "filters by provider across runs", %{store: store, query: query} do
+      seed_session(store, "ses_1")
+      seed_session(store, "ses_2")
+      seed_run(store, "ses_1", "run_1", provider: "claude")
+      seed_run(store, "ses_2", "run_2", provider: "codex")
+
+      {:ok, %{sessions: sessions}} = QueryAPI.search_sessions(query, provider: "claude")
+      assert length(sessions) == 1
+      assert hd(sessions).id == "ses_1"
+    end
+
+    test "filters by tags", %{store: store, query: query} do
+      seed_session(store, "ses_1", tags: ["alpha", "beta"])
+      seed_session(store, "ses_2", tags: ["beta"])
+
+      {:ok, %{sessions: sessions}} = QueryAPI.search_sessions(query, tags: ["alpha"])
+      assert length(sessions) == 1
+      assert hd(sessions).id == "ses_1"
+    end
   end
 
   # ============================================================================
@@ -245,6 +267,27 @@ defmodule AgentSessionManager.Adapters.EctoQueryAPITest do
 
       {:ok, %{runs: runs}} = QueryAPI.search_runs(query, session_id: "ses_1")
       assert length(runs) == 1
+    end
+
+    test "filters by min_tokens", %{store: store, query: query} do
+      seed_session(store, "ses_1")
+      seed_run(store, "ses_1", "run_1", input_tokens: 50, output_tokens: 25)
+      seed_run(store, "ses_1", "run_2", input_tokens: 200, output_tokens: 50)
+
+      {:ok, %{runs: runs}} = QueryAPI.search_runs(query, min_tokens: 200)
+      assert length(runs) == 1
+      assert hd(runs).id == "run_2"
+    end
+
+    test "orders by token usage descending", %{store: store, query: query} do
+      seed_session(store, "ses_1")
+      seed_run(store, "ses_1", "run_1", input_tokens: 10, output_tokens: 5)
+      seed_run(store, "ses_1", "run_2", input_tokens: 200, output_tokens: 50)
+
+      {:ok, %{runs: runs}} = QueryAPI.search_runs(query, order_by: :token_usage_desc)
+      assert length(runs) == 2
+      assert Enum.at(runs, 0).id == "run_2"
+      assert Enum.at(runs, 1).id == "run_1"
     end
   end
 

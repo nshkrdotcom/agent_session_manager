@@ -1289,8 +1289,14 @@ defmodule AgentSessionManager.SessionManager do
              provider_metadata: run_provider_metadata
          },
          final_run = update_run_metadata(run_with_provider, run_provider_metadata),
-         :ok <- safe_save_run(store, final_run, :finalize_successful_run),
-         :ok <- update_session_provider_metadata(store, session, provider_metadata) do
+         updated_session = merge_session_provider_metadata(session, provider_metadata),
+         execution_result = %{
+           session: updated_session,
+           run: final_run,
+           events: [],
+           provider_metadata: provider_metadata
+         },
+         :ok <- safe_flush(store, execution_result, :finalize_successful_run) do
       {:ok, result}
     end
   end
@@ -1300,7 +1306,7 @@ defmodule AgentSessionManager.SessionManager do
     %{run | metadata: merged_metadata}
   end
 
-  defp update_session_provider_metadata(store, session, provider_metadata) do
+  defp merge_session_provider_metadata(session, provider_metadata) do
     provider_name = Map.get(session.metadata, :provider)
 
     # Only update if we have provider metadata to add
@@ -1325,10 +1331,9 @@ defmodule AgentSessionManager.SessionManager do
         |> Map.merge(metadata_to_add)
         |> Map.put(:provider_sessions, provider_sessions)
 
-      updated_session = %{session | metadata: merged_metadata, updated_at: DateTime.utc_now()}
-      safe_save_session(store, updated_session, :update_session_provider_metadata)
+      %{session | metadata: merged_metadata, updated_at: DateTime.utc_now()}
     else
-      :ok
+      session
     end
   end
 
@@ -1416,6 +1421,10 @@ defmodule AgentSessionManager.SessionManager do
 
   defp safe_save_run(store, run, operation) do
     safe_store_call(fn -> SessionStore.save_run(store, run) end, operation)
+  end
+
+  defp safe_flush(store, execution_result, operation) do
+    safe_store_call(fn -> SessionStore.flush(store, execution_result) end, operation)
   end
 
   defp safe_store_call(fun, operation) when is_function(fun, 0) do

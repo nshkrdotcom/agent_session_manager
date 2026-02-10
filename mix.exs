@@ -102,6 +102,7 @@ defmodule AgentSessionManager.MixProject do
         "guides/error_handling.md",
         "guides/testing.md",
         "guides/persistence_overview.md",
+        "guides/migrating_to_v0.8.md",
         "guides/ecto_session_store.md",
         "guides/sqlite_session_store.md",
         "guides/s3_artifact_store.md",
@@ -136,6 +137,7 @@ defmodule AgentSessionManager.MixProject do
         ],
         Persistence: [
           "guides/persistence_overview.md",
+          "guides/migrating_to_v0.8.md",
           "guides/ecto_session_store.md",
           "guides/sqlite_session_store.md",
           "guides/s3_artifact_store.md",

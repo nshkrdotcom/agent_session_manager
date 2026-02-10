@@ -12,7 +12,7 @@ defmodule AgentSessionManager.SessionManagerTest do
 
   alias AgentSessionManager.Core.{Capability, Transcript}
   alias AgentSessionManager.SessionManager
-  alias AgentSessionManager.Test.RunScopedEventBlindStore
+  alias AgentSessionManager.Test.{FlushTrackingStore, RunScopedEventBlindStore}
 
   # ============================================================================
   # Mock Adapter for SessionManager Tests
@@ -755,6 +755,21 @@ defmodule AgentSessionManager.SessionManagerTest do
       {:ok, stored_run} = SessionStore.get_run(store, run.id)
       assert stored_run.provider_metadata[:provider] == "mock"
       assert stored_run.provider_metadata[:model] == "mock-model-v1"
+    end
+
+    test "uses flush to persist final run state", %{adapter: adapter} do
+      {:ok, store} = FlushTrackingStore.start_link()
+      cleanup_on_exit(fn -> safe_stop(store) end)
+
+      {:ok, result} =
+        SessionManager.run_once(store, adapter, %{
+          messages: [%{role: "user", content: "hello"}]
+        })
+
+      [execution_result] = FlushTrackingStore.flush_calls(store)
+      assert execution_result.run.id == result.run_id
+      assert execution_result.session.id == result.session_id
+      assert is_list(execution_result.events)
     end
   end
 

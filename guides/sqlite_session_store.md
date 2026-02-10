@@ -132,4 +132,4 @@ policy = RetentionPolicy.new(max_completed_session_age_days: 90)
 - One transactional implementation for all SQL backends
 - Shared behavior/tests between SQLite and PostgreSQL
 - No duplicated raw SQL store code to maintain
-- Better long-term parity for `flush/2` and batch append semantics
+- Better long-term parity for `flush/2` finalization and `append_events/2` batch support

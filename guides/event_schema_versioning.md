@@ -82,7 +82,8 @@ event.schema_version  # => 1  (nil treated as 1)
 
 ### Database Storage
 
-The SQLite and Ecto adapters persist `schema_version` as an integer column with a `DEFAULT 1`:
+The adapters persist `schema_version` as an integer column with a `DEFAULT 1`.
+The SQL below is illustrative; the Ecto migrations are the canonical schema.
 
 ```sql
 CREATE TABLE IF NOT EXISTS asm_events (
@@ -142,7 +143,8 @@ If you are extending the library and need to add a field to the `Event` struct, 
     end
     ```
 
-5. **Update the database schema** in the SQLite bootstrapper and Ecto migration to add the new column with a default:
+5. **Update the database schema** in the Ecto migration (and any custom SQL
+   schema you maintain) to add the new column with a default:
 
     ```sql
     ALTER TABLE asm_events ADD COLUMN correlation_id TEXT DEFAULT NULL;

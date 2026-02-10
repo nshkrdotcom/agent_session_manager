@@ -18,8 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `QueryAPI` and `Maintenance` ports with Ecto implementations (`EctoQueryAPI`, `EctoMaintenance`)
   - Persistence modules: `EventPipeline`, `EventValidator`, `RetentionPolicy`, `ArtifactRegistry`
 - **`flush/2` and `append_events/2` callbacks** on the `SessionStore` port
-  - `flush/2` atomically persists session, run, and events in a single transaction (in transactional backends like Ecto)
-  - `append_events/2` persists a batch of events with atomic sequence assignment
+  - `flush/2` atomically persists final session/run state (and any queued events) in transactional backends like Ecto
+  - `append_events/2` persists a batch of events with atomic sequence assignment (used by `EventPipeline.process_batch/3`)
   - Implemented in `EctoSessionStore`, `InMemorySessionStore`, and `CompositeSessionStore`
 - **`EventBuilder` module** (`AgentSessionManager.Persistence.EventBuilder`) for pure event normalize/enrich/validate processing without persistence
 - **`ExecutionState` module** (`AgentSessionManager.Persistence.ExecutionState`) for in-memory run state accumulation (session, run, events, provider metadata)
@@ -45,17 +45,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **`SessionStore` is the single execution persistence boundary** -- `flush/2` and batch `append_events/2` replace per-event persistence and the earlier experimental `DurableStore` port
+- **`SessionStore` is the single execution persistence boundary** -- event persistence remains per-event via `append_event_with_sequence/2`, with `append_events/2` available for batch paths and `flush/2` used during finalization
 - **`QueryAPI` and `Maintenance` refactored to module-backed refs** -- `{EctoQueryAPI, Repo}` and `{EctoMaintenance, Repo}` replace dedicated GenServer adapters, removing process lifecycle overhead
-- **`EventPipeline` batch processing** -- builds all events via `EventBuilder` before persisting as a batch through `append_events/2`, instead of per-event process calls
+- **`EventPipeline` processing** -- builds events via `EventBuilder`; `process/3` persists per-event with `append_event_with_sequence/2`, while `process_batch/3` persists via `append_events/2`
 - **Provider metadata extraction** no longer depends on run-scoped `SessionStore.get_events/3` read-back; metadata is captured from callback/result event data during execution
 - `crypto.strong_rand_bytes` used for workspace artifact keys instead of `System.unique_integer`
 
 ### Documentation
 
-- Persistence guides: `persistence_overview.md`, `ecto_session_store.md`, `sqlite_session_store.md`, `s3_artifact_store.md`, `composite_store.md`, `event_schema_versioning.md`, `custom_persistence_guide.md`
+- Persistence guides: `persistence_overview.md`, `ecto_session_store.md`, `sqlite_session_store.md`, `s3_artifact_store.md`, `composite_store.md`, `event_schema_versioning.md`, `custom_persistence_guide.md`, `migrating_to_v0.8.md`
 - Persistence module group and guides added to HexDocs configuration
-- Update `README.md` with durable persistence semantics and `flush/2` description
+- Update `README.md` and persistence overview with per-event persistence and `flush/2` finalization details
 - Update `examples/README.md` with all persistence adapter and query/maintenance examples
 
 ## [0.7.0] - 2026-02-09
@@ -154,7 +154,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Per-provider continuation handles** stored under `session.metadata[:provider_sessions]` keyed map for multi-provider sessions
 - **Workspace artifact storage** via `ArtifactStore` port and `FileArtifactStore` adapter
   - Large patches stored as artifacts with `patch_ref` in run metadata instead of embedding raw patches
-  - `ArtifactStore.put/3`, `get/2`, `delete/2` API
+  - `ArtifactStore.put/4`, `get/3`, `delete/3` API (opts optional)
   - Without an artifact store configured, patches are embedded directly (backward compatible)
 - **Git snapshot untracked file support** using alternate `GIT_INDEX_FILE` to stage all content without mutating `HEAD`
   - Snapshot metadata includes `head_ref`, `dirty`, and `includes_untracked` fields

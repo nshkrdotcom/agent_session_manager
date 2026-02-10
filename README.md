@@ -35,7 +35,7 @@ AgentSessionManager provides the infrastructure layer for building applications 
 - **Session server runtime** -- Optional per-session `SessionServer` with FIFO queueing, multi-slot concurrency (`max_concurrent_runs`), durable subscriptions with backfill, drain/status operational APIs, and optional `ConcurrencyLimiter` / `ControlOperations` integration
 - **Rendering pipeline** -- Pluggable Renderer x Sink architecture for formatting and outputting events to terminals, files, JSONL, or custom callbacks
 - **Observability** -- Telemetry integration, audit logging, and append-only event stores
-- **Durable persistence semantics** -- `SessionStore.flush/2` and batch event append provide atomic lifecycle persistence in transactional backends
+- **Durable persistence semantics** -- Events are appended with atomic sequencing, and `SessionStore.flush/2` is used at run finalization to atomically persist the final run/session state in transactional backends
 - **Ports & adapters architecture** -- Clean separation between core logic and external dependencies
 
 ## Architecture Overview

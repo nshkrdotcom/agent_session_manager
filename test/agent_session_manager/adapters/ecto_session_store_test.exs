@@ -482,6 +482,35 @@ defmodule AgentSessionManager.Adapters.EctoSessionStoreTest do
       assert Enum.all?(filtered, &(&1.sequence_number < 3))
     end
 
+    test "filters by :since timestamp", %{store: store, session_id: sid} do
+      base_time = DateTime.utc_now()
+
+      older =
+        build_event(
+          index: 20,
+          session_id: sid,
+          run_id: "run_events",
+          type: :message_received,
+          timestamp: DateTime.add(base_time, -60, :second)
+        )
+
+      newer =
+        build_event(
+          index: 21,
+          session_id: sid,
+          run_id: "run_events",
+          type: :message_received,
+          timestamp: DateTime.add(base_time, 60, :second)
+        )
+
+      {:ok, _} = SessionStore.append_event_with_sequence(store, older)
+      {:ok, _} = SessionStore.append_event_with_sequence(store, newer)
+
+      {:ok, filtered} = SessionStore.get_events(store, sid, since: base_time)
+      assert length(filtered) == 1
+      assert hd(filtered).id == newer.id
+    end
+
     test "applies limit", %{store: store, session_id: sid} do
       {:ok, filtered} = SessionStore.get_events(store, sid, limit: 2)
       assert length(filtered) == 2

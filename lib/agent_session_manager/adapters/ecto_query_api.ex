@@ -59,20 +59,42 @@ if Code.ensure_loaded?(Ecto.Query) do
 
     defp do_search_sessions(repo, opts) do
       limit = Keyword.get(opts, :limit, 50)
+      tags = normalize_tags_filter(opts)
 
-      query =
+      base_query =
         SessionSchema
         |> apply_session_filters(opts)
         |> apply_session_order(opts)
-        |> apply_cursor(opts, :session)
-        |> limit(^limit)
 
-      count_query = SessionSchema |> apply_session_filters(opts) |> select([s], count(s.id))
+      page_query = base_query |> apply_cursor(opts, :session)
 
-      sessions = repo.all(query) |> Enum.map(&schema_to_session/1)
-      total_count = repo.one(count_query)
+      {sessions, total_count} =
+        if tags == [] do
+          query = page_query |> limit(^limit)
+          count_query = SessionSchema |> apply_session_filters(opts) |> select([s], count(s.id))
+
+          sessions = repo.all(query) |> Enum.map(&schema_to_session/1)
+          total_count = repo.one(count_query)
+          {sessions, total_count}
+        else
+          total_sessions =
+            base_query
+            |> repo.all()
+            |> Enum.map(&schema_to_session/1)
+            |> filter_sessions_by_tags(tags)
+
+          sessions =
+            page_query
+            |> repo.all()
+            |> Enum.map(&schema_to_session/1)
+            |> filter_sessions_by_tags(tags)
+            |> Enum.take(limit)
+
+          total_count = length(total_sessions)
+          {sessions, total_count}
+        end
+
       cursor = build_cursor(sessions, :session)
-
       {:ok, %{sessions: sessions, cursor: cursor, total_count: total_count}}
     rescue
       e -> {:error, Error.new(:query_error, Exception.message(e))}
@@ -82,7 +104,7 @@ if Code.ensure_loaded?(Ecto.Query) do
       query
       |> filter_by_opt(:agent_id, opts)
       |> filter_session_status(opts)
-      |> filter_session_tags(opts)
+      |> filter_session_provider(opts)
       |> filter_created_after(opts)
       |> filter_created_before(opts)
       |> filter_deleted(opts)
@@ -109,12 +131,27 @@ if Code.ensure_loaded?(Ecto.Query) do
       end
     end
 
-    defp filter_session_tags(query, opts) do
-      case Keyword.get(opts, :tags) do
-        nil -> query
-        [] -> query
-        # SQLite doesn't support array contains, so we filter in Elixir for portability
-        _tags -> query
+    defp filter_session_provider(query, opts) do
+      case Keyword.get(opts, :provider) do
+        nil ->
+          query
+
+        providers ->
+          provider_list =
+            providers
+            |> List.wrap()
+            |> Enum.map(&to_string/1)
+
+          where(
+            query,
+            [s],
+            s.id in subquery(
+              from(r in RunSchema,
+                where: r.provider in ^provider_list,
+                select: r.session_id
+              )
+            )
+          )
       end
     end
 
@@ -138,6 +175,21 @@ if Code.ensure_loaded?(Ecto.Query) do
       else
         where(query, [s], is_nil(s.deleted_at))
       end
+    end
+
+    defp normalize_tags_filter(opts) do
+      case Keyword.get(opts, :tags) do
+        nil -> []
+        [] -> []
+        tags -> Enum.map(tags, &to_string/1)
+      end
+    end
+
+    defp filter_sessions_by_tags(sessions, tags) do
+      Enum.filter(sessions, fn session ->
+        session_tags = Enum.map(session.tags || [], &to_string/1)
+        Enum.all?(tags, &(&1 in session_tags))
+      end)
     end
 
     defp apply_session_order(query, opts) do
@@ -248,28 +300,34 @@ if Code.ensure_loaded?(Ecto.Query) do
     defp do_search_runs(repo, opts) do
       limit = Keyword.get(opts, :limit, 50)
 
-      query =
-        RunSchema
-        |> apply_run_filters(opts)
-        |> apply_run_order(opts)
-        |> apply_cursor(opts, :run)
-        |> limit(^limit)
+      with :ok <- ensure_token_usage_support(repo, opts),
+           :ok <- validate_min_tokens(opts) do
+        query =
+          RunSchema
+          |> apply_run_filters(repo, opts)
+          |> apply_run_order(repo, opts)
+          |> apply_cursor(opts, :run)
+          |> limit(^limit)
 
-      runs = repo.all(query) |> Enum.map(&schema_to_run/1)
-      cursor = build_cursor(runs, :run)
+        runs = repo.all(query) |> Enum.map(&schema_to_run/1)
+        cursor = build_cursor(runs, :run)
 
-      {:ok, %{runs: runs, cursor: cursor}}
+        {:ok, %{runs: runs, cursor: cursor}}
+      else
+        {:error, %Error{} = error} -> {:error, error}
+      end
     rescue
       e -> {:error, Error.new(:query_error, Exception.message(e))}
     end
 
-    defp apply_run_filters(query, opts) do
+    defp apply_run_filters(query, repo, opts) do
       query
       |> filter_run_session(opts)
       |> filter_run_provider(opts)
       |> filter_run_status(opts)
       |> filter_started_after(opts)
       |> filter_started_before(opts)
+      |> filter_run_min_tokens(repo, opts)
     end
 
     defp filter_run_session(query, opts) do
@@ -307,11 +365,89 @@ if Code.ensure_loaded?(Ecto.Query) do
       end
     end
 
-    defp apply_run_order(query, opts) do
+    defp apply_run_order(query, repo, opts) do
       case Keyword.get(opts, :order_by, :started_at_desc) do
-        :started_at_asc -> order_by(query, [r], asc: r.started_at, asc: r.id)
-        :started_at_desc -> order_by(query, [r], desc: r.started_at, desc: r.id)
-        _ -> order_by(query, [r], desc: r.started_at, desc: r.id)
+        :started_at_asc ->
+          order_by(query, [r], asc: r.started_at, asc: r.id)
+
+        :started_at_desc ->
+          order_by(query, [r], desc: r.started_at, desc: r.id)
+
+        :token_usage_desc ->
+          case repo.__adapter__() do
+            Ecto.Adapters.SQLite3 ->
+              order_by(query, [r],
+                desc: fragment("COALESCE(json_extract(?, '$.total_tokens'), 0)", r.token_usage),
+                desc: r.id
+              )
+
+            Ecto.Adapters.Postgres ->
+              order_by(query, [r],
+                desc: fragment("COALESCE((?->>'total_tokens')::int, 0)", r.token_usage),
+                desc: r.id
+              )
+          end
+
+        _ ->
+          order_by(query, [r], desc: r.started_at, desc: r.id)
+      end
+    end
+
+    defp filter_run_min_tokens(query, repo, opts) do
+      case Keyword.get(opts, :min_tokens) do
+        nil ->
+          query
+
+        min_tokens when is_integer(min_tokens) ->
+          case repo.__adapter__() do
+            Ecto.Adapters.SQLite3 ->
+              where(
+                query,
+                [r],
+                fragment("COALESCE(json_extract(?, '$.total_tokens'), 0)", r.token_usage) >=
+                  ^min_tokens
+              )
+
+            Ecto.Adapters.Postgres ->
+              where(
+                query,
+                [r],
+                fragment("COALESCE((?->>'total_tokens')::int, 0)", r.token_usage) >=
+                  ^min_tokens
+              )
+          end
+      end
+    end
+
+    defp ensure_token_usage_support(repo, opts) do
+      if requires_token_usage_filter?(opts) and not token_usage_supported?(repo) do
+        {:error,
+         Error.new(
+           :query_error,
+           "token usage filters require SQLite or PostgreSQL adapters"
+         )}
+      else
+        :ok
+      end
+    end
+
+    defp validate_min_tokens(opts) do
+      case Keyword.get(opts, :min_tokens) do
+        nil -> :ok
+        min when is_integer(min) and min >= 0 -> :ok
+        _ -> {:error, Error.new(:query_error, "min_tokens must be a non-negative integer")}
+      end
+    end
+
+    defp requires_token_usage_filter?(opts) do
+      Keyword.has_key?(opts, :min_tokens) or Keyword.get(opts, :order_by) == :token_usage_desc
+    end
+
+    defp token_usage_supported?(repo) do
+      case repo.__adapter__() do
+        Ecto.Adapters.SQLite3 -> true
+        Ecto.Adapters.Postgres -> true
+        _ -> false
       end
     end
 

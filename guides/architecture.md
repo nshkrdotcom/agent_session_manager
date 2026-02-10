@@ -98,15 +98,15 @@ SessionManager.execute_run(store, adapter, run_id)
   |     |-- [adapter sends request to AI provider]
   |     |-- [provider streams responses]
   |     |-- event_callback.(normalized_event)       -- for each event:
-  |     |     |-- Event.new(event_data)             --   create event struct
-  |     |     |-- SessionStore.append_event(event)  --   persist to store
+  |     |     |-- EventPipeline.process(...)        --   build/validate event
+  |     |     |-- SessionStore.append_event_with_sequence(event) -- persist
   |     |     |-- Telemetry.emit_adapter_event()    --   emit telemetry
   |     |
   |     |-- {:ok, result}                           -- final result
   |
   |-- Run.set_output(run, result.output)            -- pure state transition
   |-- Run.update_token_usage(run, result.usage)     -- pure accumulation
-  |-- SessionStore.save_run(store, final_run)       -- persist completed run
+  |-- SessionStore.flush(store, execution_result)   -- persist final run/session
   |
   |-- {:ok, result}                                 -- returned to caller
 ```

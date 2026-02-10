@@ -129,15 +129,19 @@ maint = {EctoMaintenance, MyApp.Repo}
 
 ## Event Persistence Flow
 
-`EventPipeline` enforces event build/validation and batch persistence:
+`EventPipeline` enforces event build/validation and persistence:
 
 1. Build normalized events through `EventBuilder`
-2. Validate all events in a batch
-3. Persist with `SessionStore.append_events/2`
+2. Validate each event (shape warnings are attached, not rejected)
+3. Persist each event with `SessionStore.append_event_with_sequence/2`
 4. Emit telemetry for persisted/rejected events
 
-For execution finalization, `SessionStore.flush/2` atomically persists session,
-run, and event data in adapters that support transactions.
+`EventPipeline.process_batch/3` validates a batch first and persists it via
+`SessionStore.append_events/2` when you already have a batch to commit.
+
+For execution finalization, `SessionManager` calls `SessionStore.flush/2` to
+atomically persist the final session/run state (and any buffered events in
+transactional adapters).
 
 ## Choosing an Adapter
 

@@ -1,6 +1,12 @@
 # Custom Persistence Guide
 
-This guide explains how to implement your own storage adapters for AgentSessionManager. The library uses a ports-and-adapters architecture with two behaviour contracts: `SessionStore` for structured session/run/event data, and `ArtifactStore` for binary blobs. You can implement either or both.
+This guide explains how to implement your own storage adapters for AgentSessionManager. The library uses a ports-and-adapters architecture with three behaviour contracts:
+
+- `SessionStore` for full structured session/run/event persistence
+- `ArtifactStore` for binary blobs
+- `DurableStore` for boundary-oriented execution flush/load workflows
+
+You can implement any subset depending on your integration goals.
 
 ## Prerequisites
 
@@ -49,6 +55,23 @@ The `AgentSessionManager.Ports.ArtifactStore` behaviour defines 3 callbacks for 
 | `get(store, key, opts)` | `{:ok, binary()} \| {:error, Error.t()}` | Retrieve data by key; `:not_found` if missing |
 | `delete(store, key, opts)` | `:ok \| {:error, Error.t()}` | Remove data by key; idempotent |
 
+## The DurableStore Behaviour
+
+The `AgentSessionManager.Ports.DurableStore` behaviour defines 4 callbacks:
+
+| Callback | Return | Description |
+|----------|--------|-------------|
+| `flush(store, execution_result)` | `:ok \| {:error, Error.t()}` | Persist a completed execution (`session`, `run`, `events`, metadata) |
+| `load_run(store, run_id)` | `{:ok, Run.t()} \| {:error, Error.t()}` | Rehydrate run by ID |
+| `load_session(store, session_id)` | `{:ok, Session.t()} \| {:error, Error.t()}` | Rehydrate session by ID |
+| `load_events(store, session_id, opts)` | `{:ok, [Event.t()]} \| {:error, Error.t()}` | Load events for replay/query needs |
+
+Use `DurableStore` when you want boundary integration with `SessionManager.run_once/4`
+without implementing the full 12-callback `SessionStore` surface.
+
+For full lifecycle/query APIs (`start_session`, `execute_run`, `stream_session_events`, replay continuation),
+you still need `SessionStore`.
+
 ## Key Implementation Patterns
 
 ### GenServer-Based Architecture
@@ -75,6 +98,12 @@ All built-in adapters use GenServer as the process model. The port modules (`Ses
 {:get_artifact, key, opts}
 {:delete_artifact, key, opts}
 ```
+
+`DurableStore` adapters are often plain modules instead of GenServers. `run_once/4`
+accepts:
+
+- `NoopStore`-style module stores (`SessionManager.run_once(NoopStore, adapter, input)`)
+- Tuple config when the adapter needs a separate store reference (`SessionManager.run_once({SessionStoreBridge, store_pid}, adapter, input)`)
 
 ### Idempotent Writes
 

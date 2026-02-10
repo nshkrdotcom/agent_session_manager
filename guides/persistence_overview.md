@@ -1,8 +1,11 @@
 # Persistence Overview
 
 AgentSessionManager ships with a pluggable persistence layer built on the
-**Ports and Adapters** pattern. Two port behaviours define the storage contract;
-four concrete adapters implement them for different deployment scenarios.
+**Ports and Adapters** pattern. Three port behaviours define the storage contracts:
+
+- `SessionStore` for full session/run/event persistence and queryability
+- `ArtifactStore` for binary blobs
+- `DurableStore` for boundary-oriented execution flush/load workflows
 
 ## Ports
 
@@ -34,6 +37,21 @@ All implementations must guarantee:
 | `put/4`  | Store binary data under a string key |
 | `get/3`  | Retrieve binary data by key |
 | `delete/3` | Remove an artifact by key |
+
+### DurableStore (4 callbacks)
+
+`AgentSessionManager.Ports.DurableStore` provides a smaller boundary contract for
+execution results:
+
+| Callback | Purpose |
+|----------|---------|
+| `flush/2` | Persist a completed execution result (`session`, `run`, `events`, metadata) |
+| `load_run/2` | Rehydrate a run by ID |
+| `load_session/2` | Rehydrate a session by ID |
+| `load_events/3` | Load session events for replay/query use cases |
+
+`run_once/4` can use `DurableStore` directly by passing either a module (e.g. `NoopStore`)
+or `{durable_module, durable_ref}` (e.g. `{SessionStoreBridge, session_store_pid}`).
 
 ## Adapters
 
@@ -108,6 +126,38 @@ SessionStore.save_session(store, session)
 # Artifact operations go to S3
 ArtifactStore.put(store, "patch-123", data)
 ```
+
+### SessionStoreBridge
+
+`AgentSessionManager.Adapters.SessionStoreBridge` adapts any existing `SessionStore`
+backend to `DurableStore`:
+
+```elixir
+{:ok, session_store} = InMemorySessionStore.start_link()
+
+{:ok, result} =
+  SessionManager.run_once({SessionStoreBridge, session_store}, adapter, %{
+    messages: [%{role: "user", content: "Hello"}]
+  })
+```
+
+This is useful when integrating through `DurableStore` while preserving existing
+`SessionStore` behavior and data availability.
+
+### NoopStore
+
+`AgentSessionManager.Adapters.NoopStore` is a `DurableStore` implementation that
+discards writes:
+
+```elixir
+{:ok, result} =
+  SessionManager.run_once(NoopStore, adapter, %{
+    messages: [%{role: "user", content: "Hello"}]
+  })
+```
+
+Use this for ephemeral one-shot flows. Replay continuation and store-backed read APIs
+require persisted events and are not available with `NoopStore`.
 
 ## QueryAPI and Maintenance Ports
 
@@ -185,6 +235,9 @@ and storage, processing each event through four stages:
 3. **Validate** -- Structural validation (strict) and shape validation (advisory)
 4. **Persist** -- Atomically appends the event with sequence assignment
 
+The first three steps are implemented by `AgentSessionManager.Persistence.EventEmitter`
+and reused by `EventPipeline` before persistence.
+
 The pipeline is automatically wired into `SessionManager` and does not need
 manual invocation.
 
@@ -207,16 +260,16 @@ for artifacts stored in the `asm_artifacts` table:
                   |   SessionServer       |
                   +----------+------------+
                              |
-              +--------------+--------------+
-              |                             |
-     +--------v--------+          +--------v--------+
-     | SessionStore     |          | ArtifactStore   |
-     | (port/behaviour) |          | (port/behaviour)|
-     +--------+---------+          +--------+--------+
-              |                             |
-     +--------+--------+           +-------+--------+
-     |        |        |           |                |
-  InMemory  SQLite   Ecto    FileArtifact     S3Artifact
+              +---------+-----------+----------+
+              |                     |          |
+     +--------v--------+   +--------v--------+ +--------v--------+
+     | SessionStore     |   | ArtifactStore   | | DurableStore    |
+     | (port/behaviour) |   | (port/behaviour)| | (port/behaviour)|
+     +--------+---------+   +--------+--------+ +--------+--------+
+              |                      |                   |
+     +--------+--------+     +-------+--------+   +------+----------------+
+     |        |        |     |                |   |                       |
+  InMemory  SQLite   Ecto  FileArtifact   S3Artifact  SessionStoreBridge  NoopStore
                                    |
                         +----------+-----------+
                         |  CompositeSessionStore |
@@ -231,6 +284,8 @@ for artifacts stored in the `asm_artifacts` table:
 - **Production with an existing database** -- `EctoSessionStore` (PostgreSQL, etc.)
 - **Large binary artifacts** -- `S3ArtifactStore` (offload blobs to object storage)
 - **Session data in a DB, blobs in S3** -- `CompositeSessionStore` wrapping both
+- **Boundary flush integration over an existing SessionStore** -- `SessionStoreBridge`
+- **Ephemeral one-shot execution without durable writes** -- `NoopStore`
 
 ## Configuration with SessionManager
 
@@ -245,6 +300,17 @@ alias AgentSessionManager.Adapters.SQLiteSessionStore
 {:ok, result} = SessionManager.run_once(store, adapter, %{
   messages: [%{role: "user", content: "Hello"}]
 })
+```
+
+For `DurableStore` mode with `run_once/4`:
+
+```elixir
+# Bridge to an existing SessionStore
+{:ok, session_store} = InMemorySessionStore.start_link()
+{:ok, result} = SessionManager.run_once({SessionStoreBridge, session_store}, adapter, input)
+
+# Ephemeral mode (no durable writes)
+{:ok, result} = SessionManager.run_once(NoopStore, adapter, input)
 ```
 
 All adapters are GenServers, so they can be started under a supervision tree

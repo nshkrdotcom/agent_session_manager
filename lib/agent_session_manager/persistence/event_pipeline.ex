@@ -25,8 +25,8 @@ defmodule AgentSessionManager.Persistence.EventPipeline do
 
   """
 
-  alias AgentSessionManager.Core.{Error, Event, EventNormalizer}
-  alias AgentSessionManager.Persistence.EventValidator
+  alias AgentSessionManager.Core.{Error, Event}
+  alias AgentSessionManager.Persistence.EventEmitter
   alias AgentSessionManager.Ports.SessionStore
 
   @type context :: %{
@@ -48,9 +48,8 @@ defmodule AgentSessionManager.Persistence.EventPipeline do
   @spec process(SessionStore.store(), map(), context()) ::
           {:ok, Event.t()} | {:error, Error.t()}
   def process(store, raw_event_data, context) do
-    with {:ok, event} <- build_event(raw_event_data, context),
-         event <- enrich(event, context),
-         {:ok, event} <- validate(event),
+    with {:ok, event} <- EventEmitter.process(raw_event_data, context),
+         {:ok, event} <- emit_validation_warning_if_present(event),
          {:ok, persisted} <- persist(store, event) do
       emit_persisted_telemetry(persisted, context)
       {:ok, persisted}
@@ -80,86 +79,6 @@ defmodule AgentSessionManager.Persistence.EventPipeline do
       end)
 
     results
-  end
-
-  # ============================================================================
-  # Build
-  # ============================================================================
-
-  defp build_event(raw_event_data, context) do
-    type = normalize_type(raw_event_data)
-    data = ensure_map(Map.get(raw_event_data, :data, %{}))
-    metadata = ensure_map(Map.get(raw_event_data, :metadata, %{}))
-
-    attrs = %{
-      type: type,
-      session_id: context.session_id,
-      run_id: context.run_id,
-      data: data,
-      metadata: metadata,
-      provider: context.provider,
-      correlation_id: Map.get(context, :correlation_id)
-    }
-
-    case Event.new(attrs) do
-      {:ok, event} ->
-        {:ok, apply_adapter_timestamp(event, raw_event_data)}
-
-      {:error, _} = error ->
-        error
-    end
-  end
-
-  defp normalize_type(raw_event_data) do
-    raw_type = Map.get(raw_event_data, :type)
-    resolved = EventNormalizer.resolve_type(raw_type)
-
-    if Event.valid_type?(resolved), do: resolved, else: :error_occurred
-  end
-
-  defp apply_adapter_timestamp(event, raw_event_data) do
-    case Map.get(raw_event_data, :timestamp) do
-      %DateTime{} = ts -> %{event | timestamp: ts}
-      _ -> event
-    end
-  end
-
-  # ============================================================================
-  # Enrich
-  # ============================================================================
-
-  defp enrich(event, context) do
-    # Copy provider into metadata for backward compatibility with consumers
-    # that read provider from metadata rather than the first-class field
-    enriched_metadata = Map.put(event.metadata, :provider, context.provider)
-
-    %{
-      event
-      | provider: context.provider,
-        correlation_id: Map.get(context, :correlation_id),
-        metadata: enriched_metadata
-    }
-  end
-
-  # ============================================================================
-  # Validate
-  # ============================================================================
-
-  defp validate(event) do
-    with :ok <- EventValidator.validate_structural(event) do
-      warnings = EventValidator.validate_shape(event)
-
-      event =
-        if warnings != [] do
-          emit_warning_telemetry(event, warnings)
-          updated_metadata = Map.put(event.metadata, :_validation_warnings, warnings)
-          %{event | metadata: updated_metadata}
-        else
-          event
-        end
-
-      {:ok, event}
-    end
   end
 
   # ============================================================================
@@ -203,11 +122,14 @@ defmodule AgentSessionManager.Persistence.EventPipeline do
     )
   end
 
-  # ============================================================================
-  # Helpers
-  # ============================================================================
+  defp emit_validation_warning_if_present(event) do
+    case Map.get(event.metadata, :_validation_warnings, []) do
+      warnings when is_list(warnings) and warnings != [] ->
+        emit_warning_telemetry(event, warnings)
+        {:ok, event}
 
-  defp ensure_map(nil), do: %{}
-  defp ensure_map(m) when is_map(m), do: m
-  defp ensure_map(_), do: %{}
+      _ ->
+        {:ok, event}
+    end
+  end
 end

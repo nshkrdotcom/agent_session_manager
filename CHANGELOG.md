@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - Unreleased
+
+### Added
+
+- **`DurableStore` port** (`AgentSessionManager.Ports.DurableStore`) for boundary-oriented persistence with `flush/2`, `load_run/2`, `load_session/2`, and `load_events/3`
+- **`SessionStoreBridge` adapter** (`AgentSessionManager.Adapters.SessionStoreBridge`) to adapt existing `SessionStore` implementations to the new `DurableStore` contract
+- **`NoopStore` adapter** (`AgentSessionManager.Adapters.NoopStore`) for ephemeral `run_once/4` execution with no durable writes
+- **`ExecutionState` module** (`AgentSessionManager.Persistence.ExecutionState`) for in-memory run state accumulation (session, run, events, provider metadata)
+- **`EventEmitter` module** (`AgentSessionManager.Persistence.EventEmitter`) for pure event normalize/enrich/validate processing without persistence
+- **Durable-store `run_once/4` path** in `SessionManager` allowing module stores (e.g. `NoopStore`) in addition to `SessionStore` process stores
+
+### Changed
+
+- **Provider metadata extraction** no longer depends on run-scoped `SessionStore.get_events/3` read-back; metadata is captured from callback/result event data during execution
+- **`EventPipeline` internals** now delegate build/enrich/validate to `EventEmitter`, while keeping persistence and persistence telemetry in `EventPipeline`
+
+### Documentation
+
+- Update `README.md` with `DurableStore` concepts, bridge/no-op usage, and boundary flush caveats
+- Update `guides/persistence_overview.md` with `DurableStore` and adapter matrix additions
+- Update `guides/custom_persistence_guide.md` with guidance on when to implement `SessionStore` vs `DurableStore`
+- Add `examples/noop_store_run_once.exs` and reference it in `examples/README.md`
+
 ## [0.6.0] - 2026-02-08
 
 ### Added

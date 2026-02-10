@@ -34,6 +34,7 @@ AgentSessionManager provides the infrastructure layer for building applications 
 - **Concurrency controls** -- Configurable limits on parallel sessions and runs with slot-based tracking
 - **Session server runtime** -- Optional per-session `SessionServer` with FIFO queueing, multi-slot concurrency (`max_concurrent_runs`), durable subscriptions with backfill, drain/status operational APIs, and optional `ConcurrencyLimiter` / `ControlOperations` integration
 - **Observability** -- Telemetry integration, audit logging, and append-only event stores
+- **Flexible durability modes** -- Use `SessionStore` for full lifecycle/query semantics, `DurableStore` for boundary flush integration, or `NoopStore` for ephemeral one-shot execution
 - **Ports & adapters architecture** -- Clean separation between core logic and external dependencies
 
 ## Architecture Overview
@@ -51,6 +52,11 @@ ETS/DB   Claude/Codex/Amp -- adapters (implementations)
 ```
 
 The core domain types (`Session`, `Run`, `Event`, `Capability`, `Manifest`) are pure data structures with no side effects. The `SessionManager` coordinates between the storage port and the provider adapter port.
+
+`run_once/4` supports two persistence modes:
+
+- `SessionStore` (pid/name) for fully persisted sessions/runs/events and read APIs.
+- `DurableStore` (module or `{module, ref}`) for boundary flush integration.
 
 ## Installation
 
@@ -89,6 +95,37 @@ IO.puts(result.output.content)
 IO.inspect(result.token_usage)
 # result also includes :session_id and :run_id
 ```
+
+### One-shot without durable writes
+
+For ephemeral workflows, pass `NoopStore` as the first argument to `run_once/4`:
+
+```elixir
+alias AgentSessionManager.SessionManager
+alias AgentSessionManager.Adapters.{ClaudeAdapter, NoopStore}
+
+{:ok, adapter} = ClaudeAdapter.start_link(api_key: System.get_env("ANTHROPIC_API_KEY"))
+
+{:ok, result} =
+  SessionManager.run_once(NoopStore, adapter, %{
+    messages: [%{role: "user", content: "Hello!"}]
+  })
+```
+
+If you want the `DurableStore` integration path while writing into an existing `SessionStore`, pass `{SessionStoreBridge, store}`:
+
+```elixir
+alias AgentSessionManager.Adapters.{InMemorySessionStore, SessionStoreBridge}
+
+{:ok, store} = InMemorySessionStore.start_link()
+
+{:ok, result} =
+  SessionManager.run_once({SessionStoreBridge, store}, adapter, %{
+    messages: [%{role: "user", content: "Hello!"}]
+  })
+```
+
+`NoopStore` is intentionally limited: store-backed queries/streams and replay-based continuation require persisted events and are not available in no-op mode.
 
 ### Full lifecycle
 
@@ -475,6 +512,9 @@ mix run examples/cursor_wait_follow.exs --provider amp  # long-poll (no busy pol
 # Feature 2 and 3 examples
 mix run examples/session_continuity.exs --provider amp
 mix run examples/workspace_snapshot.exs --provider claude
+
+# DurableStore no-op mode
+mix run examples/noop_store_run_once.exs --provider codex
 
 # Feature 4 and 5 examples
 mix run examples/provider_routing.exs --provider codex

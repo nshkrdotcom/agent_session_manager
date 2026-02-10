@@ -132,6 +132,10 @@ for p in "${PROVIDERS[@]}"; do
   PLAN_FILES+=("examples/oneshot.exs")
   PLAN_ARGS+=("--provider $p")
 
+  PLAN_NAMES+=("NoopStore One-Shot ($label)")
+  PLAN_FILES+=("examples/noop_store_run_once.exs")
+  PLAN_ARGS+=("--provider $p")
+
   PLAN_NAMES+=("Live Session ($label)")
   PLAN_FILES+=("examples/live_session.exs")
   PLAN_ARGS+=("--provider $p")

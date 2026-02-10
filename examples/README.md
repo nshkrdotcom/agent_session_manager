@@ -220,6 +220,18 @@ mix run examples/oneshot.exs --provider codex
 mix run examples/oneshot.exs --provider amp
 ```
 
+### `noop_store_run_once.exs` -- One-Shot Execution with NoopStore
+
+- Uses `SessionManager.run_once/4` with `NoopStore` (`DurableStore` mode)
+- Returns output and in-memory events without durable writes
+- Useful for fire-and-forget workflows where replay/query persistence is not required
+
+```bash
+mix run examples/noop_store_run_once.exs --provider claude
+mix run examples/noop_store_run_once.exs --provider codex
+mix run examples/noop_store_run_once.exs --provider amp
+```
+
 ### `live_session.exs` -- Full Lifecycle
 
 ```bash

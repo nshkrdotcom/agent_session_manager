@@ -10,8 +10,10 @@ defmodule AgentSessionManager.SessionManagerTest do
 
   use AgentSessionManager.SupertesterCase, async: true
 
+  alias AgentSessionManager.Adapters.{InMemorySessionStore, NoopStore, SessionStoreBridge}
   alias AgentSessionManager.Core.{Capability, Transcript}
   alias AgentSessionManager.SessionManager
+  alias AgentSessionManager.Test.RunScopedEventBlindStore
 
   # ============================================================================
   # Mock Adapter for SessionManager Tests
@@ -652,6 +654,23 @@ defmodule AgentSessionManager.SessionManagerTest do
       assert_received {:user_event, :message_received}
       assert_received {:user_event, :run_completed}
     end
+
+    test "extracts provider metadata without querying run-scoped store events", %{
+      adapter: adapter
+    } do
+      {:ok, store} = RunScopedEventBlindStore.start_link()
+      cleanup_on_exit(fn -> safe_stop(store) end)
+
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+      {:ok, run} = SessionManager.start_run(store, adapter, session.id, %{prompt: "Hello"})
+
+      {:ok, _result} = SessionManager.execute_run(store, adapter, run.id)
+
+      {:ok, stored_run} = SessionStore.get_run(store, run.id)
+      assert stored_run.provider_metadata[:provider] == "mock"
+      assert stored_run.provider_metadata[:model] == "mock-model-v1"
+    end
   end
 
   describe "cancel_run/3" do
@@ -1213,6 +1232,56 @@ defmodule AgentSessionManager.SessionManagerTest do
         )
 
       assert MockAdapter.get_execute_count(adapter) == 1
+    end
+
+    test "supports DurableStore-only execution with NoopStore", %{adapter: adapter} do
+      test_pid = self()
+
+      callback = fn event_data ->
+        send(test_pid, {:durable_event, event_data.type})
+      end
+
+      {:ok, result} =
+        SessionManager.run_once(
+          NoopStore,
+          adapter,
+          %{prompt: "Hello"},
+          event_callback: callback
+        )
+
+      assert is_binary(result.session_id)
+      assert is_binary(result.run_id)
+      assert is_map(result.output)
+      assert is_map(result.token_usage)
+      assert is_list(result.events)
+      assert_received {:durable_event, :run_started}
+      assert_received {:durable_event, :message_received}
+      assert_received {:durable_event, :run_completed}
+    end
+
+    test "supports SessionStoreBridge durable execution with tuple store config", %{
+      adapter: adapter
+    } do
+      {:ok, durable_backend} = InMemorySessionStore.start_link()
+      cleanup_on_exit(fn -> safe_stop(durable_backend) end)
+
+      {:ok, result} =
+        SessionManager.run_once(
+          {SessionStoreBridge, durable_backend},
+          adapter,
+          %{prompt: "Hello"}
+        )
+
+      {:ok, persisted_session} = SessionStore.get_session(durable_backend, result.session_id)
+      {:ok, persisted_run} = SessionStore.get_run(durable_backend, result.run_id)
+
+      {:ok, persisted_events} =
+        SessionStore.get_events(durable_backend, result.session_id, run_id: result.run_id)
+
+      assert persisted_session.status == :completed
+      assert persisted_run.status == :completed
+      assert Enum.any?(persisted_events, &(&1.type == :run_started))
+      assert Enum.any?(persisted_events, &(&1.type == :run_completed))
     end
   end
 

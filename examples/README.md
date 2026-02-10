@@ -210,6 +210,66 @@ mix run examples/permission_mode.exs --provider amp
 mix run examples/permission_mode.exs --provider claude --mode dangerously_skip_permissions
 ```
 
+## Rendering Pipeline Examples
+
+These examples demonstrate the Rendering system (Renderer x Sink architecture) using live provider execution.
+
+### `rendering_compact.exs` -- CompactRenderer (Live Provider)
+
+- Runs a real provider session and renders the event stream using CompactRenderer
+- Demonstrates compact token format: `r+` (run start), `r-` (run end), `t+`/`t-` (tool), `>>` (text stream), `tk:` (usage)
+- Supports `--no-color` flag to disable ANSI coloring
+- Uses TTYSink for terminal output
+
+```bash
+mix run examples/rendering_compact.exs --provider claude
+mix run examples/rendering_compact.exs --provider codex --no-color
+mix run examples/rendering_compact.exs --provider amp
+```
+
+### `rendering_verbose.exs` -- VerboseRenderer (Live Provider)
+
+- Runs a real provider session and renders using VerboseRenderer
+- Demonstrates bracketed line-by-line format: `[run_started]`, `[tool_call_started]`, etc.
+- Shows inline text streaming with automatic line breaks before structured events
+- Uses TTYSink for terminal output
+
+```bash
+mix run examples/rendering_verbose.exs --provider claude
+mix run examples/rendering_verbose.exs --provider codex
+mix run examples/rendering_verbose.exs --provider amp
+```
+
+### `rendering_multi_sink.exs` -- Multi-Sink Pipeline (Live Provider)
+
+- Runs a real provider session through all four sink types simultaneously
+- **TTYSink**: colored terminal output
+- **FileSink**: ANSI-stripped plain-text log file (uses `:io` option for pre-opened file with header)
+- **JSONLSink**: both full and compact modes side-by-side in separate files
+- **CallbackSink**: programmatic event counting
+- Prints log file contents and first few JSONL lines after completion
+- Supports `--mode compact|verbose` flag
+
+```bash
+mix run examples/rendering_multi_sink.exs --provider claude
+mix run examples/rendering_multi_sink.exs --provider codex --mode verbose
+mix run examples/rendering_multi_sink.exs --provider amp
+```
+
+### `rendering_callback.exs` -- PassthroughRenderer + CallbackSink (Live Provider)
+
+- Runs a real provider session with PassthroughRenderer (no terminal rendering)
+- All events processed programmatically via CallbackSink
+- Aggregates event statistics: total events, text bytes, tools used, model, stop reason
+- Captures full response text and prints it after completion
+- Demonstrates using the rendering pipeline as a programmable event processor
+
+```bash
+mix run examples/rendering_callback.exs --provider claude
+mix run examples/rendering_callback.exs --provider codex
+mix run examples/rendering_callback.exs --provider amp
+```
+
 ## Other Live Provider Examples
 
 ### `oneshot.exs` -- One-Shot Execution

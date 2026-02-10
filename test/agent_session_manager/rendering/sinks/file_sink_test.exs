@@ -17,8 +17,16 @@ defmodule AgentSessionManager.Rendering.Sinks.FileSinkTest do
       FileSink.close(state)
     end
 
-    test "returns error when no path provided" do
+    test "returns error when no path or io provided" do
       assert {:error, _reason} = FileSink.init([])
+    end
+
+    test "accepts pre-opened :io device", %{path: path} do
+      {:ok, io} = File.open(path, [:write, :utf8])
+      assert {:ok, state} = FileSink.init(io: io)
+      assert state.io == io
+      assert state.owns_io == false
+      File.close(io)
     end
   end
 
@@ -75,10 +83,49 @@ defmodule AgentSessionManager.Rendering.Sinks.FileSinkTest do
   end
 
   describe "close/1" do
-    test "closes the file handle", %{path: path} do
+    test "closes the file handle when owns_io", %{path: path} do
       {:ok, state} = FileSink.init(path: path)
       {:ok, state} = FileSink.write("data", state)
       assert :ok = FileSink.close(state)
+    end
+
+    test "does not close when not owns_io", %{path: path} do
+      {:ok, io} = File.open(path, [:write, :utf8])
+      {:ok, state} = FileSink.init(io: io)
+      {:ok, state} = FileSink.write("data", state)
+      assert :ok = FileSink.close(state)
+      # IO device should still be usable
+      assert :ok = IO.binwrite(io, "more data")
+      File.close(io)
+    end
+  end
+
+  describe "io option" do
+    test "writes to pre-opened io device with ANSI stripped", %{path: path} do
+      {:ok, io} = File.open(path, [:write, :utf8])
+      {:ok, state} = FileSink.init(io: io)
+
+      {:ok, state} = FileSink.write("\e[0;34mHello\e[0m world\n", state)
+      FileSink.flush(state)
+      FileSink.close(state)
+      File.close(io)
+
+      content = File.read!(path)
+      assert content == "Hello world\n"
+    end
+
+    test "preserves pre-written content when io is pre-opened", %{path: path} do
+      {:ok, io} = File.open(path, [:write, :utf8])
+      IO.binwrite(io, "HEADER\n")
+
+      {:ok, state} = FileSink.init(io: io)
+      {:ok, state} = FileSink.write("body\n", state)
+      FileSink.flush(state)
+      FileSink.close(state)
+      File.close(io)
+
+      content = File.read!(path)
+      assert content == "HEADER\nbody\n"
     end
   end
 end

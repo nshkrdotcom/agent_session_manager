@@ -78,6 +78,7 @@ defmodule AgentSessionManager.MixProject do
         "guides/session_server_subscriptions.md",
         "guides/session_continuity.md",
         "guides/events_and_streaming.md",
+        "guides/rendering.md",
         "guides/cursor_streaming_and_migration.md",
         "guides/workspace_snapshots.md",
         "guides/provider_routing.md",
@@ -106,6 +107,7 @@ defmodule AgentSessionManager.MixProject do
           "guides/session_server_subscriptions.md",
           "guides/session_continuity.md",
           "guides/events_and_streaming.md",
+          "guides/rendering.md",
           "guides/cursor_streaming_and_migration.md",
           "guides/workspace_snapshots.md",
           "guides/provider_routing.md",
@@ -189,6 +191,18 @@ defmodule AgentSessionManager.MixProject do
           AgentSessionManager.Workspace.Diff,
           AgentSessionManager.Workspace.GitBackend,
           AgentSessionManager.Workspace.HashBackend
+        ],
+        Rendering: [
+          AgentSessionManager.Rendering,
+          AgentSessionManager.Rendering.Renderer,
+          AgentSessionManager.Rendering.Sink,
+          AgentSessionManager.Rendering.Renderers.CompactRenderer,
+          AgentSessionManager.Rendering.Renderers.VerboseRenderer,
+          AgentSessionManager.Rendering.Renderers.PassthroughRenderer,
+          AgentSessionManager.Rendering.Sinks.TTYSink,
+          AgentSessionManager.Rendering.Sinks.FileSink,
+          AgentSessionManager.Rendering.Sinks.JSONLSink,
+          AgentSessionManager.Rendering.Sinks.CallbackSink
         ],
         Observability: [
           AgentSessionManager.Config,

@@ -21,3 +21,6 @@ agent_session_manager-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
+
+# Rendering example output files
+/examples/tmp/

@@ -16,18 +16,25 @@ defmodule AgentSessionManager.Rendering.Renderers.VerboseRenderer do
 
   ## Options
 
-  None currently.
+    * `:color` — Enable ANSI color output. Default `true`.
   """
 
   @behaviour AgentSessionManager.Rendering.Renderer
+
+  @red "\e[0;31m"
+  @green "\e[0;32m"
+  @blue "\e[0;34m"
+  @dim "\e[2m"
+  @nc "\e[0m"
 
   @preview_limit 120
   @result_limit 2000
 
   @impl true
-  def init(_opts) do
+  def init(opts) do
     {:ok,
      %{
+       color: Keyword.get(opts, :color, true),
        in_text: false,
        event_count: 0,
        tool_count: 0
@@ -44,7 +51,7 @@ defmodule AgentSessionManager.Rendering.Renderers.VerboseRenderer do
   @impl true
   def finish(state) do
     closing = if state.in_text, do: "\n", else: ""
-    summary = "--- #{state.event_count} events, #{state.tool_count} tools ---\n"
+    summary = dim("--- #{state.event_count} events, #{state.tool_count} tools ---\n", state)
     {:ok, [closing, summary], state}
   end
 
@@ -55,7 +62,8 @@ defmodule AgentSessionManager.Rendering.Renderers.VerboseRenderer do
     model = data[:model] || "unknown"
     session_id = event[:session_id] || data[:session_id] || ""
 
-    line = "[run_started] model=#{model} session_id=#{session_id}\n"
+    tag = colorize("[run_started]", @blue, state)
+    line = "#{tag} model=#{model} session_id=#{session_id}\n"
     {[break, line], state}
   end
 
@@ -70,7 +78,8 @@ defmodule AgentSessionManager.Rendering.Renderers.VerboseRenderer do
     id = data[:tool_call_id] || data[:tool_use_id] || ""
     input = format_tool_input(data[:tool_input])
 
-    line = "[tool_call_started] name=#{name} id=#{id}#{input}\n"
+    tag = colorize("[tool_call_started]", @green, state)
+    line = "#{tag} name=#{name} id=#{id}#{input}\n"
     state = %{state | tool_count: state.tool_count + 1}
     {[break, line], state}
   end
@@ -80,7 +89,8 @@ defmodule AgentSessionManager.Rendering.Renderers.VerboseRenderer do
     name = data[:tool_name] || "unknown"
     output = format_output(data[:tool_output])
 
-    line = "[tool_call_completed] name=#{name}#{output}\n"
+    tag = colorize("[tool_call_completed]", @green, state)
+    line = "#{tag} name=#{name}#{output}\n"
     {[break, line], state}
   end
 
@@ -89,7 +99,8 @@ defmodule AgentSessionManager.Rendering.Renderers.VerboseRenderer do
     input_t = data[:input_tokens] || 0
     output_t = data[:output_tokens] || 0
 
-    line = "[token_usage] input=#{input_t} output=#{output_t}\n"
+    tag = dim("[token_usage]", state)
+    line = "#{tag} input=#{input_t} output=#{output_t}\n"
     {[break, line], state}
   end
 
@@ -98,7 +109,8 @@ defmodule AgentSessionManager.Rendering.Renderers.VerboseRenderer do
     content = truncate(data[:content] || "", @result_limit)
     role = data[:role] || "assistant"
 
-    line = "[message_received] role=#{role} content=#{content}\n"
+    tag = colorize("[message_received]", @blue, state)
+    line = "#{tag} role=#{role} content=#{content}\n"
     {[break, line], %{state | in_text: false}}
   end
 
@@ -107,7 +119,8 @@ defmodule AgentSessionManager.Rendering.Renderers.VerboseRenderer do
     reason = data[:stop_reason] || "end_turn"
     usage = format_usage(data[:token_usage])
 
-    line = "[run_completed] stop_reason=#{reason}#{usage}\n"
+    tag = colorize("[run_completed]", @blue, state)
+    line = "#{tag} stop_reason=#{reason}#{usage}\n"
     {[break, line], %{state | in_text: false}}
   end
 
@@ -116,13 +129,15 @@ defmodule AgentSessionManager.Rendering.Renderers.VerboseRenderer do
     code = data[:error_code] || "unknown"
     msg = data[:error_message] || "unknown error"
 
-    line = "[run_failed] error_code=#{code} error_message=#{truncate(msg, @result_limit)}\n"
+    tag = colorize("[run_failed]", @red, state)
+    line = "#{tag} error_code=#{code} error_message=#{truncate(msg, @result_limit)}\n"
     {[break, line], state}
   end
 
   defp render(%{type: :run_cancelled}, state) do
     {break, state} = maybe_break_line(state)
-    {[break, "[run_cancelled]\n"], state}
+    tag = colorize("[run_cancelled]", @red, state)
+    {[break, "#{tag}\n"], state}
   end
 
   defp render(%{type: :error_occurred, data: data}, state) do
@@ -130,7 +145,8 @@ defmodule AgentSessionManager.Rendering.Renderers.VerboseRenderer do
     code = data[:error_code] || "unknown"
     msg = data[:error_message] || "unknown error"
 
-    line = "[error] error_code=#{code} error_message=#{truncate(msg, @result_limit)}\n"
+    tag = colorize("[error]", @red, state)
+    line = "#{tag} error_code=#{code} error_message=#{truncate(msg, @result_limit)}\n"
     {[break, line], state}
   end
 
@@ -139,7 +155,8 @@ defmodule AgentSessionManager.Rendering.Renderers.VerboseRenderer do
     {break, state} = maybe_break_line(state)
     data_preview = truncate(inspect(event[:data] || %{}), @preview_limit)
 
-    line = "[event] type=#{type} data=#{data_preview}\n"
+    tag = dim("[event]", state)
+    line = "#{tag} type=#{type} data=#{data_preview}\n"
     {[break, line], state}
   end
 
@@ -150,6 +167,12 @@ defmodule AgentSessionManager.Rendering.Renderers.VerboseRenderer do
   end
 
   defp maybe_break_line(state), do: {"", state}
+
+  defp colorize(text, color, %{color: true}), do: color <> text <> @nc
+  defp colorize(text, _color, _state), do: text
+
+  defp dim(text, %{color: true}), do: @dim <> text <> @nc
+  defp dim(text, _state), do: text
 
   defp format_tool_input(nil), do: ""
   defp format_tool_input(input) when input == %{}, do: ""

@@ -156,6 +156,22 @@ for p in "${PROVIDERS[@]}"; do
   PLAN_FILES+=("examples/permission_mode.exs")
   PLAN_ARGS+=("--provider $p")
 
+  PLAN_NAMES+=("Rendering Compact ($label)")
+  PLAN_FILES+=("examples/rendering_compact.exs")
+  PLAN_ARGS+=("--provider $p")
+
+  PLAN_NAMES+=("Rendering Verbose ($label)")
+  PLAN_FILES+=("examples/rendering_verbose.exs")
+  PLAN_ARGS+=("--provider $p")
+
+  PLAN_NAMES+=("Rendering Multi-Sink ($label)")
+  PLAN_FILES+=("examples/rendering_multi_sink.exs")
+  PLAN_ARGS+=("--provider $p")
+
+  PLAN_NAMES+=("Rendering Callback ($label)")
+  PLAN_FILES+=("examples/rendering_callback.exs")
+  PLAN_ARGS+=("--provider $p")
+
   PLAN_NAMES+=("$label Direct Features")
   PLAN_FILES+=("examples/${p}_direct.exs")
   PLAN_ARGS+=("")

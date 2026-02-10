@@ -67,7 +67,7 @@ defmodule AgentSessionManager.Rendering.Renderers.CompactRenderer do
     {closing, state} = end_stream(state)
     model = short_model(data[:model])
     token = emit_token(state, [colorize("r+", @blue, state), model_label(model, state)])
-    {[closing, token], state}
+    {[closing, token], %{state | line_open: true}}
   end
 
   defp render(%{type: :message_streamed, data: data}, state) do
@@ -93,7 +93,8 @@ defmodule AgentSessionManager.Rendering.Renderers.CompactRenderer do
       state
       | tool_count: state.tool_count + 1,
         current_tool: name,
-        current_tool_id: data[:tool_call_id] || data[:tool_use_id]
+        current_tool_id: data[:tool_call_id] || data[:tool_use_id],
+        line_open: true
     }
 
     {[closing, token], state}
@@ -129,7 +130,7 @@ defmodule AgentSessionManager.Rendering.Renderers.CompactRenderer do
     input_t = data[:input_tokens] || 0
     output_t = data[:output_tokens] || 0
     token = emit_token(state, dim("tk:#{input_t}/#{output_t}", state))
-    {[closing, token], state}
+    {[closing, token], %{state | line_open: true}}
   end
 
   defp render(%{type: :message_received, data: data}, state) do
@@ -137,7 +138,7 @@ defmodule AgentSessionManager.Rendering.Renderers.CompactRenderer do
     content = data[:content] || ""
     preview = truncate(content, @tool_preview_limit)
     token = emit_token(state, [colorize("msg", @blue, state), " ", dim(preview, state)])
-    {[closing, token], %{state | in_text: false}}
+    {[closing, token], %{state | in_text: false, line_open: true}}
   end
 
   defp render(%{type: :run_completed, data: data}, state) do
@@ -145,7 +146,7 @@ defmodule AgentSessionManager.Rendering.Renderers.CompactRenderer do
     reason = short_reason(data[:stop_reason])
     label = if reason == "", do: "r-", else: "r-:#{reason}"
     token = emit_token(state, colorize(label, @blue, state))
-    {[closing, token], %{state | in_text: false}}
+    {[closing, token], %{state | in_text: false, line_open: true}}
   end
 
   defp render(%{type: :run_failed, data: data}, state) do
@@ -159,13 +160,13 @@ defmodule AgentSessionManager.Rendering.Renderers.CompactRenderer do
         dim(truncate(msg, @tool_preview_limit), state)
       ])
 
-    {[closing, token], state}
+    {[closing, token], %{state | line_open: true}}
   end
 
   defp render(%{type: :run_cancelled}, state) do
     {closing, state} = end_stream(state)
     token = emit_token(state, [colorize("!", @red, state), " ", dim("cancelled", state)])
-    {[closing, token], state}
+    {[closing, token], %{state | line_open: true}}
   end
 
   defp render(%{type: :error_occurred, data: data}, state) do
@@ -179,7 +180,7 @@ defmodule AgentSessionManager.Rendering.Renderers.CompactRenderer do
         dim(truncate(msg, @tool_preview_limit), state)
       ])
 
-    {[closing, token], state}
+    {[closing, token], %{state | line_open: true}}
   end
 
   # Catch-all for unknown events
@@ -187,7 +188,7 @@ defmodule AgentSessionManager.Rendering.Renderers.CompactRenderer do
     {closing, state} = end_stream(state)
     preview = truncate(inspect(event.type), @tool_preview_limit)
     token = emit_token(state, [dim("?", state), dim(preview, state)])
-    {[closing, token], state}
+    {[closing, token], %{state | line_open: true}}
   end
 
   # -- Streaming helpers --

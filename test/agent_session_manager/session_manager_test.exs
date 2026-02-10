@@ -10,7 +10,6 @@ defmodule AgentSessionManager.SessionManagerTest do
 
   use AgentSessionManager.SupertesterCase, async: true
 
-  alias AgentSessionManager.Adapters.{InMemorySessionStore, NoopStore, SessionStoreBridge}
   alias AgentSessionManager.Core.{Capability, Transcript}
   alias AgentSessionManager.SessionManager
   alias AgentSessionManager.Test.RunScopedEventBlindStore
@@ -284,6 +283,78 @@ defmodule AgentSessionManager.SessionManagerTest do
 
     def set_response(adapter, key, response) do
       GenServer.call(adapter, {:set_response, key, response})
+    end
+  end
+
+  defmodule StoreKillingAdapter do
+    @moduledoc false
+
+    @behaviour AgentSessionManager.Ports.ProviderAdapter
+
+    use GenServer
+    use Supertester.TestableGenServer
+
+    alias AgentSessionManager.Core.{Capability, Error}
+
+    def start_link(opts) do
+      store = Keyword.fetch!(opts, :store)
+      GenServer.start_link(__MODULE__, %{store: store})
+    end
+
+    @impl GenServer
+    def init(state), do: {:ok, state}
+
+    @impl AgentSessionManager.Ports.ProviderAdapter
+    def name(adapter), do: GenServer.call(adapter, :name)
+
+    @impl AgentSessionManager.Ports.ProviderAdapter
+    def capabilities(adapter), do: GenServer.call(adapter, :capabilities)
+
+    @impl AgentSessionManager.Ports.ProviderAdapter
+    def execute(adapter, run, session, opts \\ []) do
+      GenServer.call(adapter, {:execute, run, session, opts})
+    end
+
+    @impl AgentSessionManager.Ports.ProviderAdapter
+    def cancel(adapter, run_id), do: GenServer.call(adapter, {:cancel, run_id})
+
+    @impl AgentSessionManager.Ports.ProviderAdapter
+    def validate_config(adapter, config), do: GenServer.call(adapter, {:validate_config, config})
+
+    @impl GenServer
+    def handle_call(:name, _from, state) do
+      {:reply, "store-killer", state}
+    end
+
+    def handle_call(:capabilities, _from, state) do
+      {:reply, {:ok, [%Capability{name: "chat", type: :tool, enabled: true}]}, state}
+    end
+
+    @impl GenServer
+    def handle_call({:execute, _run, _session, _opts}, _from, state) do
+      _ = safe_stop_store(state.store)
+
+      {:reply,
+       {:error,
+        Error.new(
+          :provider_unavailable,
+          "Provider failed after store shutdown"
+        )}, state}
+    end
+
+    def handle_call({:cancel, run_id}, _from, state) do
+      {:reply, {:ok, run_id}, state}
+    end
+
+    def handle_call({:validate_config, _config}, _from, state) do
+      {:reply, :ok, state}
+    end
+
+    defp safe_stop_store(store) when is_pid(store) do
+      if Process.alive?(store), do: GenServer.stop(store, :normal)
+      :ok
+    catch
+      :exit, _ -> :ok
     end
   end
 
@@ -568,6 +639,20 @@ defmodule AgentSessionManager.SessionManagerTest do
 
       {:ok, events} = SessionStore.get_events(store, session.id, run_id: run.id)
       assert Enum.any?(events, &(&1.type == :run_failed))
+    end
+
+    test "returns storage_connection_failed when store goes down during failed-run finalization" do
+      {:ok, store} = setup_test_store(%{})
+      {:ok, adapter} = StoreKillingAdapter.start_link(store: store)
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+      cleanup_on_exit(fn -> safe_stop(store) end)
+
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+      {:ok, run} = SessionManager.start_run(store, adapter, session.id, %{prompt: "Hello"})
+
+      assert {:error, %Error{code: :storage_connection_failed}} =
+               SessionManager.execute_run(store, adapter, run.id)
     end
 
     test "injects transcript into session context when continuation is enabled", %{
@@ -1209,6 +1294,24 @@ defmodule AgentSessionManager.SessionManagerTest do
       assert failed.status == :failed
     end
 
+    test "returns provider_timeout and marks run/session failed when adapter call times out", %{
+      store: store
+    } do
+      {:ok, timeout_adapter} = MockProviderAdapter.start_link(execution_mode: :timeout)
+      cleanup_on_exit(fn -> safe_stop(timeout_adapter) end)
+
+      assert {:error, %Error{code: :provider_timeout}} =
+               SessionManager.run_once(store, timeout_adapter, %{prompt: "Hello"},
+                 adapter_opts: [timeout: 1]
+               )
+
+      {:ok, sessions} = SessionStore.list_sessions(store)
+      assert [%Session{status: :failed} = failed_session] = sessions
+
+      {:ok, runs} = SessionStore.list_runs(store, failed_session.id)
+      assert [%Run{status: :failed}] = runs
+    end
+
     test "delivers events to user callback in real-time", %{store: store, adapter: adapter} do
       test_pid = self()
 
@@ -1234,54 +1337,12 @@ defmodule AgentSessionManager.SessionManagerTest do
       assert MockAdapter.get_execute_count(adapter) == 1
     end
 
-    test "supports DurableStore-only execution with NoopStore", %{adapter: adapter} do
-      test_pid = self()
+    test "rejects module store references that are not SessionStore servers", %{adapter: adapter} do
+      assert {:error, %Error{code: :validation_error}} =
+               SessionManager.run_once(SessionManager, adapter, %{prompt: "Hello"})
 
-      callback = fn event_data ->
-        send(test_pid, {:durable_event, event_data.type})
-      end
-
-      {:ok, result} =
-        SessionManager.run_once(
-          NoopStore,
-          adapter,
-          %{prompt: "Hello"},
-          event_callback: callback
-        )
-
-      assert is_binary(result.session_id)
-      assert is_binary(result.run_id)
-      assert is_map(result.output)
-      assert is_map(result.token_usage)
-      assert is_list(result.events)
-      assert_received {:durable_event, :run_started}
-      assert_received {:durable_event, :message_received}
-      assert_received {:durable_event, :run_completed}
-    end
-
-    test "supports SessionStoreBridge durable execution with tuple store config", %{
-      adapter: adapter
-    } do
-      {:ok, durable_backend} = InMemorySessionStore.start_link()
-      cleanup_on_exit(fn -> safe_stop(durable_backend) end)
-
-      {:ok, result} =
-        SessionManager.run_once(
-          {SessionStoreBridge, durable_backend},
-          adapter,
-          %{prompt: "Hello"}
-        )
-
-      {:ok, persisted_session} = SessionStore.get_session(durable_backend, result.session_id)
-      {:ok, persisted_run} = SessionStore.get_run(durable_backend, result.run_id)
-
-      {:ok, persisted_events} =
-        SessionStore.get_events(durable_backend, result.session_id, run_id: result.run_id)
-
-      assert persisted_session.status == :completed
-      assert persisted_run.status == :completed
-      assert Enum.any?(persisted_events, &(&1.type == :run_started))
-      assert Enum.any?(persisted_events, &(&1.type == :run_completed))
+      assert {:error, %Error{code: :validation_error}} =
+               SessionManager.run_once({SessionManager, :ignored}, adapter, %{prompt: "Hello"})
     end
   end
 

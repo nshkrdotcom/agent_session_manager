@@ -202,7 +202,6 @@ defmodule AgentSessionManager.MixProject do
           AgentSessionManager.Adapters.AmpAdapter,
           AgentSessionManager.Adapters.InMemorySessionStore,
           AgentSessionManager.Adapters.FileArtifactStore,
-          AgentSessionManager.Adapters.SQLiteSessionStore,
           AgentSessionManager.Adapters.EctoSessionStore,
           AgentSessionManager.Adapters.S3ArtifactStore,
           AgentSessionManager.Adapters.CompositeSessionStore

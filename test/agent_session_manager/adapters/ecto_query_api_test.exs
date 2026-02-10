@@ -56,8 +56,7 @@ defmodule AgentSessionManager.Adapters.EctoQueryAPITest do
     QueryTestRepo.delete_all(AgentSessionManager.Adapters.EctoSessionStore.Schemas.SessionSchema)
 
     {:ok, store} = EctoSessionStore.start_link(repo: QueryTestRepo)
-    {:ok, query} = EctoQueryAPI.start_link(repo: QueryTestRepo)
-    %{store: store, query: query}
+    %{store: store, query: {EctoQueryAPI, QueryTestRepo}}
   end
 
   defp seed_session(store, id, opts \\ []) do
@@ -313,6 +312,23 @@ defmodule AgentSessionManager.Adapters.EctoQueryAPITest do
 
       {:ok, %{events: events}} = QueryAPI.search_events(query, correlation_id: "corr_1")
       assert length(events) == 1
+    end
+
+    test "keeps unknown JSON keys as strings in projected events", %{store: store, query: query} do
+      seed_session(store, "ses_1")
+      unique_key = "unknown_key_#{System.unique_integer([:positive, :monotonic])}"
+      nested_key = "nested_key_#{System.unique_integer([:positive, :monotonic])}"
+
+      seed_event(
+        store,
+        "ses_1",
+        "run_1",
+        :message_received,
+        data: %{unique_key => %{nested_key => "value"}}
+      )
+
+      {:ok, %{events: [event]}} = QueryAPI.search_events(query, session_ids: ["ses_1"])
+      assert event.data == %{unique_key => %{nested_key => "value"}}
     end
   end
 

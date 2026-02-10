@@ -9,7 +9,7 @@ Most applications need two kinds of storage:
 - **Session storage** -- sessions, runs, and events (structured, queryable data)
 - **Artifact storage** -- large binary blobs like workspace patches and snapshot manifests
 
-These are defined by separate behaviour contracts (`SessionStore` and `ArtifactStore`). The `CompositeSessionStore` wraps one of each, presenting a unified handle to the rest of your system. You can combine any session backend (InMemory, SQLite, Ecto) with any artifact backend (File, S3) without changing calling code.
+These are defined by separate behaviour contracts (`SessionStore` and `ArtifactStore`). The `CompositeSessionStore` wraps one of each, presenting a unified handle to the rest of your system. You can combine any session backend (InMemory, Ecto) with any artifact backend (File, S3) without changing calling code.
 
 ## Configuration
 
@@ -28,12 +28,12 @@ Start your backend stores first, then pass them to the composite:
 ```elixir
 alias AgentSessionManager.Adapters.{
   CompositeSessionStore,
-  SQLiteSessionStore,
+  EctoSessionStore,
   S3ArtifactStore
 }
 
 # Start the session backend
-{:ok, sqlite} = SQLiteSessionStore.start_link(path: "/var/data/sessions.db")
+{:ok, session_store} = EctoSessionStore.start_link(repo: MyApp.Repo)
 
 # Start the artifact backend
 {:ok, s3} = S3ArtifactStore.start_link(
@@ -43,7 +43,7 @@ alias AgentSessionManager.Adapters.{
 
 # Combine them
 {:ok, store} = CompositeSessionStore.start_link(
-  session_store: sqlite,
+  session_store: session_store,
   artifact_store: s3
 )
 ```
@@ -52,7 +52,7 @@ With a registered name for supervision trees:
 
 ```elixir
 {:ok, store} = CompositeSessionStore.start_link(
-  session_store: sqlite,
+  session_store: session_store,
   artifact_store: s3,
   name: MyApp.Store
 )
@@ -123,22 +123,22 @@ When a `GenServer.call` arrives, the `handle_call/3` clauses inspect the message
 
 This means calls go through two GenServer hops: caller -> composite -> backend. For most workloads this overhead is negligible. If you need to bypass it for high-throughput artifact writes, you can call the artifact backend directly while still using the composite for session operations.
 
-## Example: SQLite + File (Development)
+## Example: Ecto(SQLite) + File (Development)
 
 A lighter-weight setup for local development:
 
 ```elixir
 alias AgentSessionManager.Adapters.{
   CompositeSessionStore,
-  SQLiteSessionStore,
+  EctoSessionStore,
   FileArtifactStore
 }
 
-{:ok, sqlite} = SQLiteSessionStore.start_link(path: "priv/dev_sessions.db")
+{:ok, session_store} = EctoSessionStore.start_link(repo: MyApp.Repo)
 {:ok, files} = FileArtifactStore.start_link(root: "priv/dev_artifacts")
 
 {:ok, store} = CompositeSessionStore.start_link(
-  session_store: sqlite,
+  session_store: session_store,
   artifact_store: files
 )
 ```
@@ -169,7 +169,7 @@ alias AgentSessionManager.Adapters.{
 
 - **No cross-store transactions.** The composite delegates independently to each backend. There is no atomicity guarantee across a session write and an artifact write. If you need both to succeed or fail together, handle that in your application layer.
 
-- **Error passthrough.** Errors from the underlying backends are returned as-is. A `:storage_error` from SQLite or S3 propagates directly through the composite without wrapping.
+- **Error passthrough.** Errors from the underlying backends are returned as-is. A `:storage_error` from the SessionStore or S3 propagates directly through the composite without wrapping.
 
 - **Supervision.** In a supervision tree, start the backends as children before the composite, or use a dedicated supervisor that guarantees start order.
 

@@ -62,16 +62,14 @@ defmodule AgentSessionManager.SessionManager do
     TranscriptBuilder
   }
 
-  alias AgentSessionManager.Adapters.InMemorySessionStore
   alias AgentSessionManager.Persistence.EventPipeline
   alias AgentSessionManager.Policy.{AdapterCompiler, Policy, Preflight, Runtime}
-  alias AgentSessionManager.Ports.{ArtifactStore, DurableStore, ProviderAdapter, SessionStore}
+  alias AgentSessionManager.Ports.{ArtifactStore, ProviderAdapter, SessionStore}
   alias AgentSessionManager.Telemetry
   alias AgentSessionManager.Workspace.{Diff, Snapshot, Workspace}
 
   @type store :: SessionStore.store()
-  @type durable_store_config :: module() | {module(), DurableStore.store()}
-  @type run_once_store :: store() | durable_store_config()
+  @type run_once_store :: store()
   @type adapter :: ProviderAdapter.adapter()
 
   # ============================================================================
@@ -116,7 +114,7 @@ defmodule AgentSessionManager.SessionManager do
     attrs_with_provider = Map.put(attrs, :metadata, merged_metadata)
 
     with {:ok, session} <- Session.new(attrs_with_provider),
-         :ok <- SessionStore.save_session(store, session),
+         :ok <- safe_save_session(store, session, :start_session),
          :ok <- emit_event(store, :session_created, session, %{provider: provider_name}) do
       {:ok, session}
     end
@@ -149,9 +147,9 @@ defmodule AgentSessionManager.SessionManager do
   """
   @spec activate_session(store(), String.t()) :: {:ok, Session.t()} | {:error, Error.t()}
   def activate_session(store, session_id) do
-    with {:ok, session} <- SessionStore.get_session(store, session_id),
+    with {:ok, session} <- safe_get_session(store, session_id, :activate_session),
          {:ok, activated} <- Session.update_status(session, :active),
-         :ok <- SessionStore.save_session(store, activated),
+         :ok <- safe_save_session(store, activated, :activate_session),
          :ok <- emit_event(store, :session_started, activated) do
       {:ok, activated}
     end
@@ -170,9 +168,9 @@ defmodule AgentSessionManager.SessionManager do
   """
   @spec complete_session(store(), String.t()) :: {:ok, Session.t()} | {:error, Error.t()}
   def complete_session(store, session_id) do
-    with {:ok, session} <- SessionStore.get_session(store, session_id),
+    with {:ok, session} <- safe_get_session(store, session_id, :complete_session),
          {:ok, completed} <- Session.update_status(session, :completed),
-         :ok <- SessionStore.save_session(store, completed),
+         :ok <- safe_save_session(store, completed, :complete_session),
          :ok <- emit_event(store, :session_completed, completed) do
       {:ok, completed}
     end
@@ -197,9 +195,9 @@ defmodule AgentSessionManager.SessionManager do
   """
   @spec fail_session(store(), String.t(), Error.t()) :: {:ok, Session.t()} | {:error, Error.t()}
   def fail_session(store, session_id, %Error{} = error) do
-    with {:ok, session} <- SessionStore.get_session(store, session_id),
+    with {:ok, session} <- safe_get_session(store, session_id, :fail_session),
          {:ok, failed} <- Session.update_status(session, :failed),
-         :ok <- SessionStore.save_session(store, failed),
+         :ok <- safe_save_session(store, failed, :fail_session),
          :ok <-
            emit_event(store, :session_failed, failed, %{
              error_code: error.code,
@@ -237,10 +235,10 @@ defmodule AgentSessionManager.SessionManager do
   @spec start_run(store(), adapter(), String.t(), map(), keyword()) ::
           {:ok, Run.t()} | {:error, Error.t()}
   def start_run(store, adapter, session_id, input, opts \\ []) do
-    with {:ok, _session} <- SessionStore.get_session(store, session_id),
+    with {:ok, _session} <- safe_get_session(store, session_id, :start_run),
          :ok <- check_capabilities(adapter, opts),
          {:ok, run} <- Run.new(%{session_id: session_id, input: input}),
-         :ok <- SessionStore.save_run(store, run) do
+         :ok <- safe_save_run(store, run, :start_run) do
       {:ok, run}
     end
   end
@@ -281,10 +279,10 @@ defmodule AgentSessionManager.SessionManager do
   @spec execute_run(store(), adapter(), String.t(), keyword()) ::
           {:ok, map()} | {:error, Error.t()}
   def execute_run(store, adapter, run_id, opts \\ []) do
-    with {:ok, run} <- SessionStore.get_run(store, run_id),
-         {:ok, session} <- SessionStore.get_session(store, run.session_id),
+    with {:ok, run} <- safe_get_run(store, run_id, :execute_run),
+         {:ok, session} <- safe_get_session(store, run.session_id, :execute_run),
          {:ok, running_run} <- Run.update_status(run, :running),
-         :ok <- SessionStore.save_run(store, running_run) do
+         :ok <- safe_save_run(store, running_run, :execute_run) do
       execute_with_adapter(store, adapter, running_run, session, opts)
     end
   end
@@ -334,9 +332,6 @@ defmodule AgentSessionManager.SessionManager do
           {:ok, map()} | {:error, Error.t()}
   def run_once(store, adapter, input, opts \\ []) do
     case resolve_run_once_store(store) do
-      {:durable, durable_store_module, durable_store_ref} ->
-        run_once_with_durable_store(durable_store_module, durable_store_ref, adapter, input, opts)
-
       {:session, session_store} ->
         run_once_with_session_store(session_store, adapter, input, opts)
 
@@ -375,88 +370,17 @@ defmodule AgentSessionManager.SessionManager do
     end
   end
 
-  defp run_once_with_durable_store(durable_store_module, durable_store_ref, adapter, input, opts) do
-    with {:ok, transient_store} <- InMemorySessionStore.start_link() do
-      try do
-        case run_once_with_session_store(transient_store, adapter, input, opts) do
-          {:ok, result} ->
-            case flush_run_once_result(
-                   durable_store_module,
-                   durable_store_ref,
-                   transient_store,
-                   result
-                 ) do
-              :ok -> {:ok, result}
-              {:error, _} = error -> error
-            end
-
-          {:error, _} = error ->
-            error
-        end
-      after
-        stop_transient_store(transient_store)
-      end
-    end
-  end
-
-  defp flush_run_once_result(durable_store_module, durable_store_ref, transient_store, result) do
-    with {:ok, session} <- SessionStore.get_session(transient_store, result.session_id),
-         {:ok, run} <- SessionStore.get_run(transient_store, result.run_id),
-         {:ok, events} <-
-           SessionStore.get_events(transient_store, result.session_id, run_id: result.run_id) do
-      flush_execution_result(durable_store_module, durable_store_ref, %{
-        session: session,
-        run: run,
-        events: events,
-        provider_metadata: run.provider_metadata
-      })
-    end
-  end
-
-  defp flush_execution_result(durable_store_module, durable_store_ref, execution_result) do
-    durable_store_module.flush(durable_store_ref, execution_result)
-  rescue
-    exception ->
-      {:error, Error.new(:storage_write_failed, Exception.message(exception))}
-  catch
-    :exit, reason ->
-      {:error, Error.new(:storage_write_failed, "DurableStore flush failed: #{inspect(reason)}")}
-  end
-
-  defp stop_transient_store(store) when is_pid(store) do
-    GenServer.stop(store, :normal)
-  catch
-    :exit, _ -> :ok
-  end
-
-  defp resolve_run_once_store({durable_store_module, durable_store_ref})
-       when is_atom(durable_store_module) do
-    if durable_store_module?(durable_store_module) do
-      {:durable, durable_store_module, durable_store_ref}
-    else
-      {:error,
-       Error.new(
-         :validation_error,
-         "Invalid DurableStore module: #{inspect(durable_store_module)}"
-       )}
-    end
-  end
-
   defp resolve_run_once_store(store) when is_atom(store) do
     case Process.whereis(store) do
       pid when is_pid(pid) ->
         {:session, store}
 
       _ ->
-        if durable_store_module?(store) do
-          {:durable, store, store}
-        else
-          {:error,
-           Error.new(
-             :validation_error,
-             "Store must be a SessionStore server or DurableStore module: #{inspect(store)}"
-           )}
-        end
+        {:error,
+         Error.new(
+           :validation_error,
+           "Store must be a SessionStore server: #{inspect(store)}"
+         )}
     end
   end
 
@@ -470,19 +394,6 @@ defmodule AgentSessionManager.SessionManager do
        :validation_error,
        "Unsupported store reference for run_once/4: #{inspect(store)}"
      )}
-  end
-
-  defp durable_store_module?(module) when is_atom(module) do
-    case Code.ensure_loaded(module) do
-      {:module, ^module} ->
-        function_exported?(module, :flush, 2) and
-          function_exported?(module, :load_run, 2) and
-          function_exported?(module, :load_session, 2) and
-          function_exported?(module, :load_events, 3)
-
-      _ ->
-        false
-    end
   end
 
   defp run_once_execute(store, adapter, session, input, cap_opts, exec_opts) do
@@ -540,10 +451,10 @@ defmodule AgentSessionManager.SessionManager do
   @spec cancel_run(store(), adapter(), String.t()) ::
           {:ok, String.t()} | {:error, Error.t()}
   def cancel_run(store, adapter, run_id) do
-    with {:ok, run} <- SessionStore.get_run(store, run_id),
+    with {:ok, run} <- safe_get_run(store, run_id, :cancel_run),
          :ok <- request_run_cancel(adapter, run_id),
          {:ok, cancelled_run} <- Run.update_status(run, :cancelled),
-         :ok <- SessionStore.save_run(store, cancelled_run),
+         :ok <- safe_save_run(store, cancelled_run, :cancel_run),
          :ok <- emit_run_event(store, :run_cancelled, cancelled_run) do
       {:ok, run_id}
     end
@@ -553,6 +464,11 @@ defmodule AgentSessionManager.SessionManager do
   defp request_run_cancel(adapter, run_id) do
     case ProviderAdapter.cancel(adapter, run_id) do
       {:ok, _} ->
+        :ok
+
+      # Best-effort semantics: if the adapter is already gone, persist
+      # cancellation intent rather than failing the control path.
+      {:error, %Error{code: :provider_unavailable}} ->
         :ok
 
       {:error, %Error{} = error} ->
@@ -1275,9 +1191,10 @@ defmodule AgentSessionManager.SessionManager do
 
       is_binary(diff.patch) and diff.patch != "" ->
         patch_bytes = byte_size(diff.patch)
+        random_suffix = :crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower)
 
         artifact_key =
-          "patch_#{diff.from_ref}_#{diff.to_ref}_#{System.unique_integer([:positive, :monotonic])}"
+          "patch_#{diff.from_ref}_#{diff.to_ref}_#{random_suffix}"
 
         case ArtifactStore.put(artifact_store, artifact_key, diff.patch) do
           :ok ->
@@ -1372,7 +1289,7 @@ defmodule AgentSessionManager.SessionManager do
              provider_metadata: run_provider_metadata
          },
          final_run = update_run_metadata(run_with_provider, run_provider_metadata),
-         :ok <- SessionStore.save_run(store, final_run),
+         :ok <- safe_save_run(store, final_run, :finalize_successful_run),
          :ok <- update_session_provider_metadata(store, session, provider_metadata) do
       {:ok, result}
     end
@@ -1409,7 +1326,7 @@ defmodule AgentSessionManager.SessionManager do
         |> Map.put(:provider_sessions, provider_sessions)
 
       updated_session = %{session | metadata: merged_metadata, updated_at: DateTime.utc_now()}
-      SessionStore.save_session(store, updated_session)
+      safe_save_session(store, updated_session, :update_session_provider_metadata)
     else
       :ok
     end
@@ -1428,7 +1345,7 @@ defmodule AgentSessionManager.SessionManager do
 
     with {:ok, failed_run} <- Run.set_error(run, error_map),
          run_with_metadata = update_run_metadata(failed_run, extra_run_metadata),
-         :ok <- SessionStore.save_run(store, run_with_metadata),
+         :ok <- safe_save_run(store, run_with_metadata, :finalize_failed_run),
          :ok <- emit_run_event(store, :run_failed, run_with_metadata, %{error_code: error_code}) do
       {:error, error}
     end
@@ -1479,7 +1396,38 @@ defmodule AgentSessionManager.SessionManager do
   end
 
   defp append_sequenced_event(store, %Event{} = event) do
-    SessionStore.append_event_with_sequence(store, event)
+    safe_store_call(
+      fn -> SessionStore.append_event_with_sequence(store, event) end,
+      :append_event_with_sequence
+    )
+  end
+
+  defp safe_get_session(store, session_id, operation) do
+    safe_store_call(fn -> SessionStore.get_session(store, session_id) end, operation)
+  end
+
+  defp safe_get_run(store, run_id, operation) do
+    safe_store_call(fn -> SessionStore.get_run(store, run_id) end, operation)
+  end
+
+  defp safe_save_session(store, session, operation) do
+    safe_store_call(fn -> SessionStore.save_session(store, session) end, operation)
+  end
+
+  defp safe_save_run(store, run, operation) do
+    safe_store_call(fn -> SessionStore.save_run(store, run) end, operation)
+  end
+
+  defp safe_store_call(fun, operation) when is_function(fun, 0) do
+    fun.()
+  catch
+    :exit, reason ->
+      {:error,
+       Error.new(
+         :storage_connection_failed,
+         "SessionStore #{operation} failed because the store became unavailable",
+         details: %{reason: inspect(reason)}
+       )}
   end
 
   defp stream_wait_for_events(store, session_id, query_opts, cursor, wait_timeout_ms, poll_ms) do

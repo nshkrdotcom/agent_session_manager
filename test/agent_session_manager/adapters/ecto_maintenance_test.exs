@@ -55,8 +55,7 @@ defmodule AgentSessionManager.Adapters.EctoMaintenanceTest do
     MaintTestRepo.delete_all(AgentSessionManager.Adapters.EctoSessionStore.Schemas.SessionSchema)
 
     {:ok, store} = EctoSessionStore.start_link(repo: MaintTestRepo)
-    {:ok, maint} = EctoMaintenance.start_link(repo: MaintTestRepo)
-    %{store: store, maint: maint}
+    %{store: store, maint: {EctoMaintenance, MaintTestRepo}}
   end
 
   defp seed_session(store, id, opts \\ []) do

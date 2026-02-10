@@ -36,7 +36,6 @@ defmodule AgentSessionManager.Persistence.ExecutionState do
   @spec append_event(t(), Event.t()) :: t()
   def append_event(%__MODULE__{} = state, %Event{} = event) do
     next_sequence = state.sequence_counter + 1
-    event = %{event | sequence_number: next_sequence}
 
     %{
       state

@@ -220,13 +220,17 @@ defmodule AgentSessionManager.Ports.ProviderAdapter do
   """
   @spec capabilities(adapter()) :: {:ok, [Capability.t()]} | {:error, Error.t()}
   def capabilities(adapter) when is_atom(adapter) and not is_nil(adapter) do
-    call_registered_or_fallback(adapter, :capabilities, fn ->
-      adapter.capabilities(adapter)
-    end)
+    call_registered_or_fallback(
+      adapter,
+      :capabilities,
+      fn -> adapter.capabilities(adapter) end,
+      5_000,
+      :capabilities
+    )
   end
 
   def capabilities(adapter) do
-    GenServer.call(adapter, :capabilities)
+    call_with_error(adapter, :capabilities, 5_000, :capabilities)
   end
 
   @doc """
@@ -243,13 +247,14 @@ defmodule AgentSessionManager.Ports.ProviderAdapter do
       fn ->
         adapter.execute(adapter, run, session, opts)
       end,
-      resolve_execute_timeout(opts)
+      resolve_execute_timeout(opts),
+      :execute
     )
   end
 
   def execute(adapter, run, session, opts) do
     timeout = resolve_execute_timeout(opts)
-    GenServer.call(adapter, {:execute, run, session, opts}, timeout)
+    call_with_error(adapter, {:execute, run, session, opts}, timeout, :execute)
   end
 
   @doc """
@@ -257,13 +262,17 @@ defmodule AgentSessionManager.Ports.ProviderAdapter do
   """
   @spec cancel(adapter(), String.t()) :: {:ok, String.t()} | {:error, Error.t()}
   def cancel(adapter, run_id) when is_atom(adapter) and not is_nil(adapter) do
-    call_registered_or_fallback(adapter, {:cancel, run_id}, fn ->
-      adapter.cancel(adapter, run_id)
-    end)
+    call_registered_or_fallback(
+      adapter,
+      {:cancel, run_id},
+      fn -> adapter.cancel(adapter, run_id) end,
+      5_000,
+      :cancel
+    )
   end
 
   def cancel(adapter, run_id) do
-    GenServer.call(adapter, {:cancel, run_id})
+    call_with_error(adapter, {:cancel, run_id}, 5_000, :cancel)
   end
 
   @doc """
@@ -275,7 +284,7 @@ defmodule AgentSessionManager.Ports.ProviderAdapter do
   end
 
   def validate_config(adapter, config) do
-    GenServer.call(adapter, {:validate_config, config})
+    call_with_error(adapter, {:validate_config, config}, 5_000, :validate_config)
   end
 
   @doc """
@@ -287,10 +296,68 @@ defmodule AgentSessionManager.Ports.ProviderAdapter do
     Keyword.get(opts, :timeout, @default_execute_timeout) + @execute_grace_timeout
   end
 
-  defp call_registered_or_fallback(adapter, request, fallback, timeout \\ 5_000) do
+  defp call_registered_or_fallback(adapter, request, fallback, timeout, operation) do
     GenServer.call(adapter, request, timeout)
   catch
-    :exit, {:noproc, _} ->
-      fallback.()
+    :exit, reason ->
+      if missing_registered_process_reason?(reason) do
+        fallback.()
+      else
+        {:error, call_exit_error(operation, adapter, reason, timeout)}
+      end
   end
+
+  defp call_with_error(adapter, request, timeout, operation) do
+    GenServer.call(adapter, request, timeout)
+  catch
+    :exit, reason ->
+      {:error, call_exit_error(operation, adapter, reason, timeout)}
+  end
+
+  defp call_exit_error(operation, adapter, reason, timeout) do
+    {code, message} =
+      cond do
+        timeout_exit_reason?(reason) ->
+          {
+            :provider_timeout,
+            "Provider #{operation} call timed out after #{timeout}ms"
+          }
+
+        adapter_unavailable_exit_reason?(reason) ->
+          {
+            :provider_unavailable,
+            "Provider #{operation} call failed because adapter is unavailable"
+          }
+
+        true ->
+          {
+            :provider_error,
+            "Provider #{operation} call failed: #{inspect(reason)}"
+          }
+      end
+
+    Error.new(code, message,
+      details: %{
+        operation: operation,
+        adapter: inspect(adapter),
+        timeout_ms: timeout,
+        exit_reason: inspect(reason)
+      }
+    )
+  end
+
+  defp timeout_exit_reason?(:timeout), do: true
+  defp timeout_exit_reason?({:timeout, _}), do: true
+  defp timeout_exit_reason?(_), do: false
+
+  defp missing_registered_process_reason?(:noproc), do: true
+  defp missing_registered_process_reason?({:noproc, _}), do: true
+  defp missing_registered_process_reason?({:shutdown, {:noproc, _}}), do: true
+  defp missing_registered_process_reason?(_), do: false
+
+  defp adapter_unavailable_exit_reason?(:noproc), do: true
+  defp adapter_unavailable_exit_reason?({:noproc, _}), do: true
+  defp adapter_unavailable_exit_reason?({:shutdown, {:noproc, _}}), do: true
+  defp adapter_unavailable_exit_reason?({:shutdown, _}), do: true
+  defp adapter_unavailable_exit_reason?(_), do: false
 end

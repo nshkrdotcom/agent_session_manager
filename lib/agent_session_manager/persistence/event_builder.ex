@@ -1,4 +1,4 @@
-defmodule AgentSessionManager.Persistence.EventEmitter do
+defmodule AgentSessionManager.Persistence.EventBuilder do
   @moduledoc """
   Normalizes and validates adapter events without persisting them.
   """

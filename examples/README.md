@@ -297,18 +297,6 @@ mix run examples/oneshot.exs --provider codex
 mix run examples/oneshot.exs --provider amp
 ```
 
-### `noop_store_run_once.exs` -- One-Shot Execution with NoopStore
-
-- Uses `SessionManager.run_once/4` with `NoopStore` (`DurableStore` mode)
-- Returns output and in-memory events without durable writes
-- Useful for fire-and-forget workflows where replay/query persistence is not required
-
-```bash
-mix run examples/noop_store_run_once.exs --provider claude
-mix run examples/noop_store_run_once.exs --provider codex
-mix run examples/noop_store_run_once.exs --provider amp
-```
-
 ### `live_session.exs` -- Full Lifecycle
 
 ```bash
@@ -345,9 +333,9 @@ mix run examples/amp_direct.exs
 
 These examples demonstrate the persistence adapters. They run locally without external services.
 
-### `sqlite_session_store_live.exs` -- SQLite SessionStore
+### `sqlite_session_store_live.exs` -- SQLite via Ecto SessionStore
 
-- Creates a SQLite database, saves sessions and events
+- Creates a SQLite database, migrates schema, and saves sessions/events
 - Demonstrates atomic sequence assignment and cursor queries
 - Shows data survives store restart
 
@@ -377,7 +365,7 @@ mix run examples/s3_artifact_store_live.exs
 
 ### `composite_store_live.exs` -- CompositeSessionStore
 
-- Combines SQLite (sessions) with FileArtifactStore (artifacts)
+- Combines Ecto/SQLite (sessions) with FileArtifactStore (artifacts)
 - Shows session and artifact operations through a single composite store
 - Demonstrates the unified interface
 

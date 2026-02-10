@@ -133,6 +133,16 @@ defmodule AgentSessionManager.Adapters.InMemorySessionStore do
   end
 
   @impl SessionStore
+  def append_events(store, events) when is_list(events) do
+    GenServer.call(store, {:append_events, events})
+  end
+
+  @impl SessionStore
+  def flush(store, execution_result) when is_map(execution_result) do
+    GenServer.call(store, {:flush, execution_result})
+  end
+
+  @impl SessionStore
   def get_events(store, session_id, opts \\ []) do
     GenServer.call(store, {:get_events, session_id, opts})
   end
@@ -244,6 +254,39 @@ defmodule AgentSessionManager.Adapters.InMemorySessionStore do
     {:ok, stored_event, new_state} = append_sequenced_event(state, event)
     new_state = notify_waiters(new_state)
     {:reply, {:ok, stored_event}, new_state}
+  end
+
+  def handle_call({:append_events, events}, _from, state) do
+    with :ok <- validate_event_structs(events),
+         {:ok, stored_events, new_state} <- append_sequenced_events(state, events) do
+      new_state = notify_waiters(new_state)
+      {:reply, {:ok, stored_events}, new_state}
+    else
+      {:error, _} = error ->
+        {:reply, error, state}
+    end
+  end
+
+  def handle_call(
+        {:flush, %{session: %Session{} = session, run: %Run{} = run, events: events}},
+        _from,
+        state
+      )
+      when is_list(events) do
+    with :ok <- validate_event_structs(events),
+         {:ok, _stored_events, appended_state} <- append_sequenced_events(state, events) do
+      :ets.insert(appended_state.sessions, {session.id, session})
+      :ets.insert(appended_state.runs, {run.id, run})
+      appended_state = notify_waiters(appended_state)
+      {:reply, :ok, appended_state}
+    else
+      {:error, _} = error ->
+        {:reply, error, state}
+    end
+  end
+
+  def handle_call({:flush, _invalid_payload}, _from, state) do
+    {:reply, {:error, Error.new(:validation_error, "invalid execution_result payload")}, state}
   end
 
   def handle_call({:get_events, session_id, opts}, from, state) do
@@ -447,6 +490,29 @@ defmodule AgentSessionManager.Adapters.InMemorySessionStore do
         }
 
         {:ok, sequenced_event, new_state}
+    end
+  end
+
+  defp append_sequenced_events(state, events) do
+    Enum.reduce_while(events, {:ok, [], state}, fn
+      %Event{} = event, {:ok, acc, current_state} ->
+        {:ok, stored_event, next_state} = append_sequenced_event(current_state, event)
+        {:cont, {:ok, [stored_event | acc], next_state}}
+
+      _other, _acc ->
+        {:halt, {:error, Error.new(:validation_error, "events must be Event structs")}}
+    end)
+    |> case do
+      {:ok, stored_events, new_state} -> {:ok, Enum.reverse(stored_events), new_state}
+      {:error, _} = error -> error
+    end
+  end
+
+  defp validate_event_structs(events) when is_list(events) do
+    if Enum.all?(events, &match?(%Event{}, &1)) do
+      :ok
+    else
+      {:error, Error.new(:validation_error, "events must be Event structs")}
     end
   end
 end

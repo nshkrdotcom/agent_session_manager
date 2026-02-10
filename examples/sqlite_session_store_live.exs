@@ -3,14 +3,20 @@
 defmodule SQLiteSessionStoreLive do
   @moduledoc false
 
-  alias AgentSessionManager.Adapters.SQLiteSessionStore
+  alias AgentSessionManager.Adapters.EctoSessionStore
+  alias AgentSessionManager.Adapters.EctoSessionStore.{Migration, MigrationV2}
   alias AgentSessionManager.Core.{Event, Session}
   alias AgentSessionManager.Ports.SessionStore
 
-  @db_path "/tmp/asm_sqlite_live_demo.db"
+  defmodule DemoRepo do
+    use Ecto.Repo, otp_app: :agent_session_manager, adapter: Ecto.Adapters.SQLite3
+  end
+
+  @db_path "/tmp/asm_ecto_sqlite_live_demo.db"
+  @repo DemoRepo
 
   def main(_args) do
-    IO.puts("\n=== SQLiteSessionStore Live Example ===\n")
+    IO.puts("\n=== SQLite via EctoSessionStore Live Example ===\n")
 
     cleanup()
 
@@ -28,9 +34,12 @@ defmodule SQLiteSessionStoreLive do
   end
 
   defp run do
-    # 1. Start the store
-    IO.puts("1. Starting SQLiteSessionStore at #{@db_path}")
-    {:ok, store} = SQLiteSessionStore.start_link(path: @db_path)
+    # 1. Start Repo + store
+    IO.puts("1. Starting SQLite Repo at #{@db_path}")
+    configure_repo()
+    {:ok, repo_pid} = @repo.start_link()
+    :ok = ensure_migrations()
+    {:ok, store} = EctoSessionStore.start_link(repo: @repo)
     IO.puts("   Store started: #{inspect(store)}")
 
     # 2. Create and save a session
@@ -109,7 +118,7 @@ defmodule SQLiteSessionStoreLive do
     GenServer.stop(store)
     IO.puts("   Store stopped")
 
-    {:ok, store2} = SQLiteSessionStore.start_link(path: @db_path)
+    {:ok, store2} = EctoSessionStore.start_link(repo: @repo)
     IO.puts("   Store restarted")
 
     {:ok, survived} = SessionStore.get_session(store2, session.id)
@@ -128,7 +137,27 @@ defmodule SQLiteSessionStoreLive do
     IO.puts("   Session deleted, store empty")
 
     GenServer.stop(store2)
+    if Process.alive?(repo_pid), do: Supervisor.stop(repo_pid, :normal)
     :ok
+  end
+
+  defp configure_repo do
+    Application.put_env(:agent_session_manager, @repo,
+      database: @db_path,
+      pool_size: 1
+    )
+  end
+
+  defp ensure_migrations do
+    :ok = run_migration(1, Migration)
+    :ok = run_migration(2, MigrationV2)
+  end
+
+  defp run_migration(version, migration) do
+    case Ecto.Migrator.up(@repo, version, migration, log: false) do
+      :ok -> :ok
+      {:error, :already_up} -> :ok
+    end
   end
 
   defp cleanup do

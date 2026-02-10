@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Persistence architecture remediation**
+  - `SessionStore` is now the single execution persistence boundary (`flush/2` + batch event persistence)
+  - `QueryAPI` and `Maintenance` now support module-backed refs (for example `{EctoQueryAPI, Repo}`) and no longer require dedicated adapter GenServers
+  - `EventEmitter` was renamed to `EventBuilder`
+- **SessionManager store-failure hardening**
+  - `SessionManager` now converts `SessionStore` process exits into `:storage_connection_failed` errors during run/session lifecycle persistence
+  - prevents background `SessionServer` execution tasks from crashing noisily when store teardown races with failed-run finalization
+
+### Removed
+
+- **Raw `SQLiteSessionStore` adapter** in favor of `EctoSessionStore` with `Ecto.Adapters.SQLite3`
+- **`DurableStore` port** and related bridge/no-op adapters (`SessionStoreBridge`, `NoopStore`)
+
+### Documentation
+
+- Reworked persistence guides to document SQLite via `EctoSessionStore`
+- Removed bridge/no-op usage examples and updated Query/Maintenance usage snippets
+
 ## [0.8.0] - 2026-02-10
 
 ### Added

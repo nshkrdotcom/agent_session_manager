@@ -397,6 +397,33 @@ defmodule AgentSessionManager.Adapters.EctoSessionStoreTest do
     end
   end
 
+  describe "append_events/2" do
+    test "assigns contiguous sequence numbers in a batch", %{store: store} do
+      e1 = build_event(index: 1, type: :run_started)
+      e2 = build_event(index: 2, session_id: e1.session_id, type: :message_received)
+      e3 = build_event(index: 3, session_id: e1.session_id, type: :run_completed)
+
+      {:ok, [stored1, stored2, stored3]} = SessionStore.append_events(store, [e1, e2, e3])
+
+      assert stored1.sequence_number == 1
+      assert stored2.sequence_number == 2
+      assert stored3.sequence_number == 3
+      assert {:ok, 3} = SessionStore.get_latest_sequence(store, e1.session_id)
+    end
+
+    test "is idempotent for duplicate IDs in a batch", %{store: store} do
+      event = build_event(type: :session_created)
+
+      {:ok, [first, second]} = SessionStore.append_events(store, [event, event])
+
+      assert first.id == second.id
+      assert first.sequence_number == second.sequence_number
+
+      {:ok, events} = SessionStore.get_events(store, event.session_id)
+      assert length(events) == 1
+    end
+  end
+
   describe "get_events/3" do
     setup %{store: store} do
       session_id = "ses_events"
@@ -495,6 +522,23 @@ defmodule AgentSessionManager.Adapters.EctoSessionStoreTest do
   # ============================================================================
 
   describe "data roundtrip fidelity" do
+    test "session roundtrip keeps unknown JSON keys as strings", %{store: store} do
+      unique_key = "unknown_key_#{System.unique_integer([:positive, :monotonic])}"
+      nested_key = "nested_key_#{System.unique_integer([:positive, :monotonic])}"
+
+      session =
+        build_session(
+          metadata: %{unique_key => %{nested_key => "metadata_value"}},
+          context: %{unique_key => %{nested_key => "context_value"}}
+        )
+
+      :ok = SessionStore.save_session(store, session)
+      {:ok, retrieved} = SessionStore.get_session(store, session.id)
+
+      assert retrieved.metadata == %{unique_key => %{nested_key => "metadata_value"}}
+      assert retrieved.context == %{unique_key => %{nested_key => "context_value"}}
+    end
+
     test "session roundtrips preserve all fields", %{store: store} do
       session =
         build_session(
@@ -562,6 +606,45 @@ defmodule AgentSessionManager.Adapters.EctoSessionStoreTest do
       assert retrieved.data == %{content: "Hello!", role: "assistant"}
       assert retrieved.metadata == %{provider: "claude", model: "test"}
       assert retrieved.sequence_number == stored.sequence_number
+    end
+  end
+
+  describe "flush/2" do
+    test "persists session, run, and events in one call", %{store: store} do
+      session = build_session(index: 900, agent_id: "flush-agent")
+      run = build_run(index: 901, session_id: session.id, status: :completed)
+      event = build_event(index: 902, session_id: session.id, run_id: run.id, type: :run_started)
+
+      assert :ok =
+               SessionStore.flush(store, %{
+                 session: session,
+                 run: run,
+                 events: [event],
+                 provider_metadata: %{}
+               })
+
+      assert {:ok, _} = SessionStore.get_session(store, session.id)
+      assert {:ok, _} = SessionStore.get_run(store, run.id)
+      assert {:ok, [stored_event]} = SessionStore.get_events(store, session.id, run_id: run.id)
+      assert stored_event.type == :run_started
+    end
+
+    test "rolls back session and run when event payload is invalid", %{store: store} do
+      session = build_session(index: 990, agent_id: "flush-agent")
+      run = build_run(index: 991, session_id: session.id, status: :completed)
+
+      assert {:error, %Error{code: :validation_error}} =
+               SessionStore.flush(store, %{
+                 session: session,
+                 run: run,
+                 events: [%{invalid: true}],
+                 provider_metadata: %{}
+               })
+
+      assert {:error, %Error{code: :session_not_found}} =
+               SessionStore.get_session(store, session.id)
+
+      assert {:error, %Error{code: :run_not_found}} = SessionStore.get_run(store, run.id)
     end
   end
 end

@@ -22,7 +22,7 @@ defmodule AgentSessionManager.Persistence.ExecutionStateTest do
     assert state.sequence_counter == 0
   end
 
-  test "append_event/2 assigns local sequence and preserves order via finalized_events/1" do
+  test "append_event/2 preserves order without assigning persistent sequence numbers" do
     {session, run} = build_session_run()
     state = ExecutionState.new(session, run)
 
@@ -45,7 +45,7 @@ defmodule AgentSessionManager.Persistence.ExecutionStateTest do
     finalized = ExecutionState.finalized_events(state)
 
     assert state.sequence_counter == 2
-    assert Enum.map(finalized, & &1.sequence_number) == [1, 2]
+    assert Enum.map(finalized, & &1.sequence_number) == [nil, nil]
     assert Enum.map(finalized, & &1.type) == [:run_started, :message_received]
   end
 

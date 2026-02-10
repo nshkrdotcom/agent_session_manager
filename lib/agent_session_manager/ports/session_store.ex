@@ -42,6 +42,12 @@ defmodule AgentSessionManager.Ports.SessionStore do
   @type session_id :: String.t()
   @type run_id :: String.t()
   @type filter_opts :: keyword()
+  @type execution_result :: %{
+          session: Session.t(),
+          run: Run.t(),
+          events: [Event.t()],
+          provider_metadata: map()
+        }
 
   # ============================================================================
   # Session Operations
@@ -287,6 +293,21 @@ defmodule AgentSessionManager.Ports.SessionStore do
               {:ok, Event.t()} | {:error, Error.t()}
 
   @doc """
+  Appends a batch of events with atomic, per-session sequence assignment.
+
+  Implementations should preserve input order for returned events and apply
+  idempotent semantics for duplicate event IDs.
+  """
+  @callback append_events(store(), [Event.t()]) :: {:ok, [Event.t()]} | {:error, Error.t()}
+
+  @doc """
+  Atomically persists an execution result (session, run, events).
+
+  On failure, no partial writes should be visible.
+  """
+  @callback flush(store(), execution_result()) :: :ok | {:error, Error.t()}
+
+  @doc """
   Retrieves events for a session with optional filtering.
 
   Events are returned in append order (oldest first).
@@ -414,6 +435,22 @@ defmodule AgentSessionManager.Ports.SessionStore do
           {:ok, Event.t()} | {:error, Error.t()}
   def append_event_with_sequence(store, event) do
     GenServer.call(store, {:append_event_with_sequence, event})
+  end
+
+  @doc """
+  Appends a batch of events and returns persisted events with assigned sequence numbers.
+  """
+  @spec append_events(store(), [Event.t()]) :: {:ok, [Event.t()]} | {:error, Error.t()}
+  def append_events(store, events) do
+    GenServer.call(store, {:append_events, events})
+  end
+
+  @doc """
+  Atomically persists an execution result payload.
+  """
+  @spec flush(store(), execution_result()) :: :ok | {:error, Error.t()}
+  def flush(store, execution_result) do
+    GenServer.call(store, {:flush, execution_result})
   end
 
   @doc """

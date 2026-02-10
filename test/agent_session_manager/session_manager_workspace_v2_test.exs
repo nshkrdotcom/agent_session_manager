@@ -111,6 +111,7 @@ defmodule AgentSessionManager.SessionManagerWorkspaceV2Test do
       workspace_diff = result.workspace.diff
       assert is_binary(workspace_diff.patch_ref)
       assert workspace_diff.patch_ref != ""
+      assert workspace_diff.patch_ref =~ ~r/^patch_.+_.+_[0-9a-f]{32}$/
 
       # patch_bytes should indicate the size
       assert is_integer(workspace_diff.patch_bytes)

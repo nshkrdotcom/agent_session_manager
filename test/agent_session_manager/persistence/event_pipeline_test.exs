@@ -197,6 +197,21 @@ defmodule AgentSessionManager.Persistence.EventPipelineTest do
 
       {:error, _} = EventPipeline.process_batch(store, raw_events, bad_context)
     end
+
+    test "rejects entire batch and persists nothing when any raw event is invalid", %{
+      store: store
+    } do
+      context = default_context()
+
+      raw_events = [
+        %{type: :run_started},
+        :not_a_map,
+        %{type: :run_completed, data: %{stop_reason: "done"}}
+      ]
+
+      assert {:error, _} = EventPipeline.process_batch(store, raw_events, context)
+      assert {:ok, []} = SessionStore.get_events(store, context.session_id)
+    end
   end
 
   # ============================================================================

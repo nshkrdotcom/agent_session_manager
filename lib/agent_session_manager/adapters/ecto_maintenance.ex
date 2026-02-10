@@ -7,13 +7,11 @@ defmodule AgentSessionManager.Adapters.EctoMaintenance do
 
   ## Usage
 
-      {:ok, maint} = EctoMaintenance.start_link(repo: MyApp.Repo)
+      maint = {EctoMaintenance, MyApp.Repo}
       policy = RetentionPolicy.new(max_completed_session_age_days: 90)
       {:ok, report} = Maintenance.execute(maint, policy)
 
   """
-
-  use GenServer
 
   import Ecto.Query
 
@@ -32,69 +30,27 @@ defmodule AgentSessionManager.Adapters.EctoMaintenance do
   }
 
   # ============================================================================
-  # Client API
+  # Maintenance callbacks
   # ============================================================================
 
   @impl Maintenance
-  def execute(store, policy), do: GenServer.call(store, {:maintenance_execute, policy}, 60_000)
+  def execute(repo, policy), do: do_execute(repo, policy)
 
   @impl Maintenance
-  def prune_session_events(store, session_id, policy),
-    do: GenServer.call(store, {:maintenance_prune_events, session_id, policy})
+  def prune_session_events(repo, session_id, policy),
+    do: do_prune_session_events(repo, session_id, policy)
 
   @impl Maintenance
-  def soft_delete_expired_sessions(store, policy),
-    do: GenServer.call(store, {:maintenance_soft_delete_expired, policy})
+  def soft_delete_expired_sessions(repo, policy), do: do_soft_delete_expired(repo, policy)
 
   @impl Maintenance
-  def hard_delete_expired_sessions(store, policy),
-    do: GenServer.call(store, {:maintenance_hard_delete_expired, policy})
+  def hard_delete_expired_sessions(repo, policy), do: do_hard_delete_expired(repo, policy)
 
   @impl Maintenance
-  def clean_orphaned_artifacts(store, opts \\ []),
-    do: GenServer.call(store, {:maintenance_clean_artifacts, opts})
+  def clean_orphaned_artifacts(repo, _opts \\ []), do: do_clean_orphaned_artifacts(repo)
 
   @impl Maintenance
-  def health_check(store),
-    do: GenServer.call(store, {:maintenance_health_check})
-
-  # ============================================================================
-  # GenServer
-  # ============================================================================
-
-  def start_link(opts) do
-    repo = Keyword.fetch!(opts, :repo)
-    name = Keyword.get(opts, :name)
-    GenServer.start_link(__MODULE__, %{repo: repo}, name: name)
-  end
-
-  @impl GenServer
-  def init(state), do: {:ok, state}
-
-  @impl GenServer
-  def handle_call({:maintenance_execute, policy}, _from, %{repo: repo} = state) do
-    {:reply, do_execute(repo, policy), state}
-  end
-
-  def handle_call({:maintenance_prune_events, session_id, policy}, _from, %{repo: repo} = state) do
-    {:reply, do_prune_session_events(repo, session_id, policy), state}
-  end
-
-  def handle_call({:maintenance_soft_delete_expired, policy}, _from, %{repo: repo} = state) do
-    {:reply, do_soft_delete_expired(repo, policy), state}
-  end
-
-  def handle_call({:maintenance_hard_delete_expired, policy}, _from, %{repo: repo} = state) do
-    {:reply, do_hard_delete_expired(repo, policy), state}
-  end
-
-  def handle_call({:maintenance_clean_artifacts, _opts}, _from, %{repo: repo} = state) do
-    {:reply, do_clean_orphaned_artifacts(repo), state}
-  end
-
-  def handle_call({:maintenance_health_check}, _from, %{repo: repo} = state) do
-    {:reply, do_health_check(repo), state}
-  end
+  def health_check(repo), do: do_health_check(repo)
 
   # ============================================================================
   # Execute (full maintenance cycle)

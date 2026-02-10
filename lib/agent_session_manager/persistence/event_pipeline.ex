@@ -26,7 +26,7 @@ defmodule AgentSessionManager.Persistence.EventPipeline do
   """
 
   alias AgentSessionManager.Core.{Error, Event}
-  alias AgentSessionManager.Persistence.EventEmitter
+  alias AgentSessionManager.Persistence.EventBuilder
   alias AgentSessionManager.Ports.SessionStore
 
   @type context :: %{
@@ -48,8 +48,7 @@ defmodule AgentSessionManager.Persistence.EventPipeline do
   @spec process(SessionStore.store(), map(), context()) ::
           {:ok, Event.t()} | {:error, Error.t()}
   def process(store, raw_event_data, context) do
-    with {:ok, event} <- EventEmitter.process(raw_event_data, context),
-         {:ok, event} <- emit_validation_warning_if_present(event),
+    with {:ok, event} <- build_event(raw_event_data, context),
          {:ok, persisted} <- persist(store, event) do
       emit_persisted_telemetry(persisted, context)
       {:ok, persisted}
@@ -70,15 +69,15 @@ defmodule AgentSessionManager.Persistence.EventPipeline do
   @spec process_batch(SessionStore.store(), [map()], context()) ::
           {:ok, [Event.t()]} | {:error, Error.t()}
   def process_batch(store, raw_events, context) do
-    results =
-      Enum.reduce_while(raw_events, {:ok, []}, fn raw, {:ok, acc} ->
-        case process(store, raw, context) do
-          {:ok, event} -> {:cont, {:ok, acc ++ [event]}}
-          {:error, _} = error -> {:halt, error}
-        end
-      end)
-
-    results
+    with {:ok, built_events} <- build_batch(raw_events, context),
+         {:ok, persisted_events} <- SessionStore.append_events(store, built_events) do
+      Enum.each(persisted_events, &emit_persisted_telemetry(&1, context))
+      {:ok, persisted_events}
+    else
+      {:error, %Error{} = error} ->
+        emit_rejected_telemetry(context, error)
+        {:error, error}
+    end
   end
 
   # ============================================================================
@@ -87,6 +86,29 @@ defmodule AgentSessionManager.Persistence.EventPipeline do
 
   defp persist(store, event) do
     SessionStore.append_event_with_sequence(store, event)
+  end
+
+  defp build_event(raw_event_data, context) when is_map(raw_event_data) do
+    with {:ok, event} <- EventBuilder.process(raw_event_data, context) do
+      emit_validation_warning_if_present(event)
+    end
+  end
+
+  defp build_event(_raw_event_data, _context) do
+    {:error, Error.new(:validation_error, "raw event data must be a map")}
+  end
+
+  defp build_batch(raw_events, context) do
+    Enum.reduce_while(raw_events, {:ok, []}, fn raw_event, {:ok, acc} ->
+      case build_event(raw_event, context) do
+        {:ok, event} -> {:cont, {:ok, [event | acc]}}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+    |> case do
+      {:ok, events} -> {:ok, Enum.reverse(events)}
+      {:error, _} = error -> error
+    end
   end
 
   # ============================================================================

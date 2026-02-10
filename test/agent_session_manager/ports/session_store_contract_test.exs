@@ -341,6 +341,34 @@ defmodule AgentSessionManager.Ports.SessionStoreContractTest do
       assert {:ok, 1} = SessionStore.get_latest_sequence(store, session.id)
     end
 
+    test "append_events/2 assigns contiguous sequence numbers", %{
+      store: store,
+      session: session,
+      run: run
+    } do
+      {:ok, event1} = Event.new(%{type: :run_started, session_id: session.id, run_id: run.id})
+
+      {:ok, event2} =
+        Event.new(%{type: :message_received, session_id: session.id, run_id: run.id})
+
+      assert {:ok, [stored1, stored2]} = SessionStore.append_events(store, [event1, event2])
+      assert stored1.sequence_number == 1
+      assert stored2.sequence_number == 2
+      assert {:ok, 2} = SessionStore.get_latest_sequence(store, session.id)
+    end
+
+    test "append_events/2 is idempotent for duplicate IDs", %{store: store, session: session} do
+      {:ok, event} = Event.new(%{type: :session_created, session_id: session.id})
+
+      assert {:ok, [first, second]} = SessionStore.append_events(store, [event, event])
+      assert first.id == second.id
+      assert first.sequence_number == second.sequence_number
+
+      assert {:ok, events} = SessionStore.get_events(store, session.id)
+      assert length(events) == 1
+      assert {:ok, 1} = SessionStore.get_latest_sequence(store, session.id)
+    end
+
     test "get_latest_sequence/2 returns 0 for sessions without events", %{store: store} do
       {:ok, other_session} = Session.new(%{agent_id: "agent-other"})
       :ok = SessionStore.save_session(store, other_session)
@@ -428,6 +456,65 @@ defmodule AgentSessionManager.Ports.SessionStoreContractTest do
                event2.sequence_number,
                event4.sequence_number
              ]
+    end
+  end
+
+  describe "Execution flush" do
+    setup do
+      store = new_store()
+      {:ok, store: store}
+    end
+
+    test "flush/2 persists session, run, and events atomically", %{store: store} do
+      {:ok, session} = Session.new(%{agent_id: "flush-agent"})
+      {:ok, run} = Run.new(%{session_id: session.id})
+      {:ok, run} = Run.update_status(run, :completed)
+
+      {:ok, event1} =
+        Event.new(%{
+          type: :run_started,
+          session_id: session.id,
+          run_id: run.id
+        })
+
+      {:ok, event2} =
+        Event.new(%{
+          type: :run_completed,
+          session_id: session.id,
+          run_id: run.id
+        })
+
+      assert :ok =
+               SessionStore.flush(store, %{
+                 session: session,
+                 run: run,
+                 events: [event1, event2],
+                 provider_metadata: %{}
+               })
+
+      assert {:ok, _stored_session} = SessionStore.get_session(store, session.id)
+      assert {:ok, _stored_run} = SessionStore.get_run(store, run.id)
+      assert {:ok, events} = SessionStore.get_events(store, session.id, run_id: run.id)
+      assert length(events) == 2
+      assert Enum.map(events, & &1.type) == [:run_started, :run_completed]
+    end
+
+    test "flush/2 rolls back when events are invalid", %{store: store} do
+      {:ok, session} = Session.new(%{agent_id: "flush-agent"})
+      {:ok, run} = Run.new(%{session_id: session.id})
+
+      assert {:error, %Error{code: :validation_error}} =
+               SessionStore.flush(store, %{
+                 session: session,
+                 run: run,
+                 events: [%{invalid: true}],
+                 provider_metadata: %{}
+               })
+
+      assert {:error, %Error{code: :session_not_found}} =
+               SessionStore.get_session(store, session.id)
+
+      assert {:error, %Error{code: :run_not_found}} = SessionStore.get_run(store, run.id)
     end
   end
 

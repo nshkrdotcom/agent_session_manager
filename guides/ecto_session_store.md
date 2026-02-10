@@ -259,9 +259,9 @@ for cross-session queries and lifecycle management:
 alias AgentSessionManager.Adapters.{EctoQueryAPI, EctoMaintenance}
 alias AgentSessionManager.Persistence.RetentionPolicy
 
-# Start alongside EctoSessionStore (same Repo)
-{:ok, query} = EctoQueryAPI.start_link(repo: MyApp.Repo)
-{:ok, maint} = EctoMaintenance.start_link(repo: MyApp.Repo)
+# Plain module-backed refs (no dedicated GenServer required)
+query = {EctoQueryAPI, MyApp.Repo}
+maint = {EctoMaintenance, MyApp.Repo}
 
 # Search and aggregate
 {:ok, %{sessions: sessions}} = QueryAPI.search_sessions(query, agent_id: "my-agent")
@@ -282,8 +282,8 @@ policy = RetentionPolicy.new(max_completed_session_age_days: 90)
 
 - **Atom values do not survive JSON roundtrip.** Maps stored in `metadata`,
   `context`, `data`, and similar fields are JSON-encoded. Atom values inside
-  those maps become strings. Map keys are atomized on read, but values remain
-  as strings.
+  those maps become strings. Known keys may be read as atoms; unknown keys are
+  preserved as strings.
 
 - **Status atoms must be pre-existing.** The adapter uses
   `String.to_existing_atom/1` for status fields. All status atoms are defined

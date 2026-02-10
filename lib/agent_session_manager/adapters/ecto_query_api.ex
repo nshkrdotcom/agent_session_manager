@@ -7,18 +7,16 @@ defmodule AgentSessionManager.Adapters.EctoQueryAPI do
 
   ## Usage
 
-      {:ok, query_store} = EctoQueryAPI.start_link(repo: MyApp.Repo)
-      {:ok, %{sessions: sessions}} = QueryAPI.search_sessions(query_store, agent_id: "agent-1")
+      query = {EctoQueryAPI, MyApp.Repo}
+      {:ok, %{sessions: sessions}} = QueryAPI.search_sessions(query, agent_id: "agent-1")
 
   """
-
-  use GenServer
 
   import Ecto.Query
 
   @behaviour AgentSessionManager.Ports.QueryAPI
 
-  alias AgentSessionManager.Core.{Error, Event, Run, Session}
+  alias AgentSessionManager.Core.{Error, Event, Run, Serialization, Session}
   alias AgentSessionManager.Ports.QueryAPI
 
   alias AgentSessionManager.Adapters.EctoSessionStore.Schemas.{
@@ -29,73 +27,29 @@ defmodule AgentSessionManager.Adapters.EctoQueryAPI do
   }
 
   # ============================================================================
-  # Client API
+  # QueryAPI callbacks
   # ============================================================================
 
   @impl QueryAPI
-  def search_sessions(store, opts \\ []), do: GenServer.call(store, {:search_sessions, opts})
+  def search_sessions(repo, opts \\ []), do: do_search_sessions(repo, opts)
 
   @impl QueryAPI
-  def get_session_stats(store, session_id),
-    do: GenServer.call(store, {:get_session_stats, session_id})
+  def get_session_stats(repo, session_id), do: do_get_session_stats(repo, session_id)
 
   @impl QueryAPI
-  def search_runs(store, opts \\ []), do: GenServer.call(store, {:search_runs, opts})
+  def search_runs(repo, opts \\ []), do: do_search_runs(repo, opts)
 
   @impl QueryAPI
-  def get_usage_summary(store, opts \\ []), do: GenServer.call(store, {:get_usage_summary, opts})
+  def get_usage_summary(repo, opts \\ []), do: do_get_usage_summary(repo, opts)
 
   @impl QueryAPI
-  def search_events(store, opts \\ []), do: GenServer.call(store, {:search_events, opts})
+  def search_events(repo, opts \\ []), do: do_search_events(repo, opts)
 
   @impl QueryAPI
-  def count_events(store, opts \\ []), do: GenServer.call(store, {:count_events, opts})
+  def count_events(repo, opts \\ []), do: do_count_events(repo, opts)
 
   @impl QueryAPI
-  def export_session(store, session_id, opts \\ []),
-    do: GenServer.call(store, {:export_session, session_id, opts})
-
-  # ============================================================================
-  # GenServer
-  # ============================================================================
-
-  def start_link(opts) do
-    repo = Keyword.fetch!(opts, :repo)
-    name = Keyword.get(opts, :name)
-    GenServer.start_link(__MODULE__, %{repo: repo}, name: name)
-  end
-
-  @impl GenServer
-  def init(state), do: {:ok, state}
-
-  @impl GenServer
-  def handle_call({:search_sessions, opts}, _from, %{repo: repo} = state) do
-    {:reply, do_search_sessions(repo, opts), state}
-  end
-
-  def handle_call({:get_session_stats, session_id}, _from, %{repo: repo} = state) do
-    {:reply, do_get_session_stats(repo, session_id), state}
-  end
-
-  def handle_call({:search_runs, opts}, _from, %{repo: repo} = state) do
-    {:reply, do_search_runs(repo, opts), state}
-  end
-
-  def handle_call({:get_usage_summary, opts}, _from, %{repo: repo} = state) do
-    {:reply, do_get_usage_summary(repo, opts), state}
-  end
-
-  def handle_call({:search_events, opts}, _from, %{repo: repo} = state) do
-    {:reply, do_search_events(repo, opts), state}
-  end
-
-  def handle_call({:count_events, opts}, _from, %{repo: repo} = state) do
-    {:reply, do_count_events(repo, opts), state}
-  end
-
-  def handle_call({:export_session, session_id, opts}, _from, %{repo: repo} = state) do
-    {:reply, do_export_session(repo, session_id, opts), state}
-  end
+  def export_session(repo, session_id, opts \\ []), do: do_export_session(repo, session_id, opts)
 
   # ============================================================================
   # Search Sessions
@@ -280,7 +234,8 @@ defmodule AgentSessionManager.Adapters.EctoQueryAPI do
   end
 
   defp get_token_val(usage, key) do
-    val = Map.get(usage, key) || Map.get(usage, String.to_atom(key), 0)
+    atom_key = Serialization.maybe_to_existing_atom(key)
+    val = Map.get(usage, key) || Map.get(usage, atom_key, 0)
     if is_number(val), do: val, else: 0
   end
 
@@ -702,16 +657,8 @@ defmodule AgentSessionManager.Adapters.EctoQueryAPI do
   defp safe_to_atom(s) when is_binary(s), do: String.to_existing_atom(s)
 
   defp atomize_keys(nil), do: %{}
-
-  defp atomize_keys(map) when is_map(map) do
-    Map.new(map, fn
-      {k, v} when is_binary(k) -> {String.to_atom(k), atomize_keys(v)}
-      {k, v} -> {k, atomize_keys(v)}
-    end)
-  end
-
-  defp atomize_keys(other), do: other
+  defp atomize_keys(value), do: Serialization.atomize_keys(value)
 
   defp atomize_keys_nullable(nil), do: nil
-  defp atomize_keys_nullable(map), do: atomize_keys(map)
+  defp atomize_keys_nullable(map), do: Serialization.atomize_keys(map)
 end

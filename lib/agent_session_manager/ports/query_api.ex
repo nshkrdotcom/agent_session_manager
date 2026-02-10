@@ -18,15 +18,16 @@ defmodule AgentSessionManager.Ports.QueryAPI do
   ## Usage
 
       {:ok, %{sessions: sessions, cursor: cursor}} =
-        QueryAPI.search_sessions(store, agent_id: "agent-1", limit: 20)
+        QueryAPI.search_sessions({EctoQueryAPI, MyApp.Repo}, agent_id: "agent-1", limit: 20)
 
-      {:ok, stats} = QueryAPI.get_session_stats(store, "ses_abc123")
+      {:ok, stats} = QueryAPI.get_session_stats({EctoQueryAPI, MyApp.Repo}, "ses_abc123")
 
   """
 
   alias AgentSessionManager.Core.{Error, Event, Run, Session}
 
-  @type store :: GenServer.server() | pid() | atom()
+  @type context :: term()
+  @type query_ref :: {module(), context()} | GenServer.server()
   @type cursor :: String.t() | nil
 
   # ============================================================================
@@ -49,7 +50,7 @@ defmodule AgentSessionManager.Ports.QueryAPI do
   - `:limit` — max results (default: 50)
   - `:cursor` — opaque cursor from previous page
   """
-  @callback search_sessions(store(), keyword()) ::
+  @callback search_sessions(context(), keyword()) ::
               {:ok,
                %{
                  sessions: [Session.t()],
@@ -70,7 +71,7 @@ defmodule AgentSessionManager.Ports.QueryAPI do
   - `last_event_at` — latest event timestamp
   - `status_counts` — `%{completed: 3, failed: 1, ...}` (run statuses)
   """
-  @callback get_session_stats(store(), session_id :: String.t()) ::
+  @callback get_session_stats(context(), session_id :: String.t()) ::
               {:ok, map()} | {:error, Error.t()}
 
   # ============================================================================
@@ -92,7 +93,7 @@ defmodule AgentSessionManager.Ports.QueryAPI do
   - `:limit` — max results (default: 50)
   - `:cursor` — opaque cursor from previous page
   """
-  @callback search_runs(store(), keyword()) ::
+  @callback search_runs(context(), keyword()) ::
               {:ok, %{runs: [Run.t()], cursor: cursor()}} | {:error, Error.t()}
 
   @doc """
@@ -112,7 +113,7 @@ defmodule AgentSessionManager.Ports.QueryAPI do
   - `run_count` — integer
   - `by_provider` — `%{"claude" => %{...}, "codex" => %{...}}`
   """
-  @callback get_usage_summary(store(), keyword()) ::
+  @callback get_usage_summary(context(), keyword()) ::
               {:ok, map()} | {:error, Error.t()}
 
   # ============================================================================
@@ -135,7 +136,7 @@ defmodule AgentSessionManager.Ports.QueryAPI do
   - `:limit` — max results (default: 100)
   - `:cursor` — opaque cursor from previous page
   """
-  @callback search_events(store(), keyword()) ::
+  @callback search_events(context(), keyword()) ::
               {:ok, %{events: [Event.t()], cursor: cursor()}} | {:error, Error.t()}
 
   @doc """
@@ -143,7 +144,7 @@ defmodule AgentSessionManager.Ports.QueryAPI do
 
   Same filter options as `search_events/2`.
   """
-  @callback count_events(store(), keyword()) ::
+  @callback count_events(context(), keyword()) ::
               {:ok, non_neg_integer()} | {:error, Error.t()}
 
   # ============================================================================
@@ -157,49 +158,67 @@ defmodule AgentSessionManager.Ports.QueryAPI do
 
   - `:include_artifacts` — include artifact metadata (default: false)
   """
-  @callback export_session(store(), session_id :: String.t(), keyword()) ::
+  @callback export_session(context(), session_id :: String.t(), keyword()) ::
               {:ok, map()} | {:error, Error.t()}
 
   # ============================================================================
-  # Dispatch functions
+  # Dispatch functions (module-backed, with GenServer compatibility)
   # ============================================================================
 
-  @spec search_sessions(store(), keyword()) ::
+  @spec search_sessions(query_ref(), keyword()) ::
           {:ok, %{sessions: [Session.t()], cursor: cursor(), total_count: non_neg_integer()}}
           | {:error, Error.t()}
-  def search_sessions(store, opts \\ []) do
-    GenServer.call(store, {:search_sessions, opts})
+  def search_sessions(query_ref, opts \\ []) do
+    dispatch(query_ref, :search_sessions, [opts], {:search_sessions, opts})
   end
 
-  @spec get_session_stats(store(), String.t()) :: {:ok, map()} | {:error, Error.t()}
-  def get_session_stats(store, session_id) do
-    GenServer.call(store, {:get_session_stats, session_id})
+  @spec get_session_stats(query_ref(), String.t()) :: {:ok, map()} | {:error, Error.t()}
+  def get_session_stats(query_ref, session_id) do
+    dispatch(
+      query_ref,
+      :get_session_stats,
+      [session_id],
+      {:get_session_stats, session_id}
+    )
   end
 
-  @spec search_runs(store(), keyword()) ::
+  @spec search_runs(query_ref(), keyword()) ::
           {:ok, %{runs: [Run.t()], cursor: cursor()}} | {:error, Error.t()}
-  def search_runs(store, opts \\ []) do
-    GenServer.call(store, {:search_runs, opts})
+  def search_runs(query_ref, opts \\ []) do
+    dispatch(query_ref, :search_runs, [opts], {:search_runs, opts})
   end
 
-  @spec get_usage_summary(store(), keyword()) :: {:ok, map()} | {:error, Error.t()}
-  def get_usage_summary(store, opts \\ []) do
-    GenServer.call(store, {:get_usage_summary, opts})
+  @spec get_usage_summary(query_ref(), keyword()) :: {:ok, map()} | {:error, Error.t()}
+  def get_usage_summary(query_ref, opts \\ []) do
+    dispatch(query_ref, :get_usage_summary, [opts], {:get_usage_summary, opts})
   end
 
-  @spec search_events(store(), keyword()) ::
+  @spec search_events(query_ref(), keyword()) ::
           {:ok, %{events: [Event.t()], cursor: cursor()}} | {:error, Error.t()}
-  def search_events(store, opts \\ []) do
-    GenServer.call(store, {:search_events, opts})
+  def search_events(query_ref, opts \\ []) do
+    dispatch(query_ref, :search_events, [opts], {:search_events, opts})
   end
 
-  @spec count_events(store(), keyword()) :: {:ok, non_neg_integer()} | {:error, Error.t()}
-  def count_events(store, opts \\ []) do
-    GenServer.call(store, {:count_events, opts})
+  @spec count_events(query_ref(), keyword()) :: {:ok, non_neg_integer()} | {:error, Error.t()}
+  def count_events(query_ref, opts \\ []) do
+    dispatch(query_ref, :count_events, [opts], {:count_events, opts})
   end
 
-  @spec export_session(store(), String.t(), keyword()) :: {:ok, map()} | {:error, Error.t()}
-  def export_session(store, session_id, opts \\ []) do
-    GenServer.call(store, {:export_session, session_id, opts})
+  @spec export_session(query_ref(), String.t(), keyword()) :: {:ok, map()} | {:error, Error.t()}
+  def export_session(query_ref, session_id, opts \\ []) do
+    dispatch(
+      query_ref,
+      :export_session,
+      [session_id, opts],
+      {:export_session, session_id, opts}
+    )
+  end
+
+  defp dispatch({module, context}, function_name, args, _legacy_call) when is_atom(module) do
+    apply(module, function_name, [context | args])
+  end
+
+  defp dispatch(server, _function_name, _args, legacy_call) do
+    GenServer.call(server, legacy_call)
   end
 end

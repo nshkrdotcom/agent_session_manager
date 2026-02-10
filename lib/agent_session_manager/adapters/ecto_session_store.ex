@@ -26,7 +26,7 @@ defmodule AgentSessionManager.Adapters.EctoSessionStore do
 
   @behaviour AgentSessionManager.Ports.SessionStore
 
-  alias AgentSessionManager.Core.{Error, Event, Run, Session}
+  alias AgentSessionManager.Core.{Error, Event, Run, Serialization, Session}
   alias AgentSessionManager.Ports.SessionStore
 
   alias AgentSessionManager.Adapters.EctoSessionStore.Schemas.{
@@ -75,6 +75,12 @@ defmodule AgentSessionManager.Adapters.EctoSessionStore do
     do: GenServer.call(store, {:append_event_with_sequence, event})
 
   @impl SessionStore
+  def append_events(store, events), do: GenServer.call(store, {:append_events, events})
+
+  @impl SessionStore
+  def flush(store, execution_result), do: GenServer.call(store, {:flush, execution_result})
+
+  @impl SessionStore
   def get_events(store, session_id, opts \\ []),
     do: GenServer.call(store, {:get_events, session_id, opts})
 
@@ -100,15 +106,9 @@ defmodule AgentSessionManager.Adapters.EctoSessionStore do
 
   @impl GenServer
   def handle_call({:save_session, session}, _from, %{repo: repo} = state) do
-    attrs = session_to_attrs(session)
-    changeset = SessionSchema.changeset(%SessionSchema{}, attrs)
-
-    case repo.insert(changeset,
-           on_conflict: {:replace_all_except, [:id]},
-           conflict_target: :id
-         ) do
+    case do_save_session(repo, session) do
       {:ok, _} -> {:reply, :ok, state}
-      {:error, cs} -> {:reply, {:error, changeset_to_error(cs)}, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
     end
   end
 
@@ -143,15 +143,9 @@ defmodule AgentSessionManager.Adapters.EctoSessionStore do
   # -- Run Operations --
 
   def handle_call({:save_run, run}, _from, %{repo: repo} = state) do
-    attrs = run_to_attrs(run)
-    changeset = RunSchema.changeset(%RunSchema{}, attrs)
-
-    case repo.insert(changeset,
-           on_conflict: {:replace_all_except, [:id]},
-           conflict_target: :id
-         ) do
+    case do_save_run(repo, run) do
       {:ok, _} -> {:reply, :ok, state}
-      {:error, cs} -> {:reply, {:error, changeset_to_error(cs)}, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
     end
   end
 
@@ -207,6 +201,20 @@ defmodule AgentSessionManager.Adapters.EctoSessionStore do
     end
   end
 
+  def handle_call({:append_events, events}, _from, %{repo: repo} = state) do
+    case do_append_events_with_sequence(repo, events) do
+      {:ok, stored_events} -> {:reply, {:ok, stored_events}, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call({:flush, execution_result}, _from, %{repo: repo} = state) do
+    case do_flush(repo, execution_result) do
+      :ok -> {:reply, :ok, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
   def handle_call({:get_events, session_id, opts}, _from, %{repo: repo} = state) do
     events =
       from(e in EventSchema,
@@ -244,22 +252,138 @@ defmodule AgentSessionManager.Adapters.EctoSessionStore do
     end)
   end
 
+  defp do_append_events_with_sequence(repo, events) when is_list(events) do
+    result =
+      repo.transaction(fn ->
+        case append_events_with_sequence_in_tx(repo, events) do
+          {:ok, stored_events} -> stored_events
+          {:error, reason} -> repo.rollback(reason)
+        end
+      end)
+
+    case result do
+      {:ok, stored_events} ->
+        {:ok, stored_events}
+
+      {:error, %Error{} = error} ->
+        {:error, error}
+
+      {:error, reason} ->
+        {:error, Error.new(:storage_error, "Failed to append events: #{inspect(reason)}")}
+    end
+  end
+
+  defp do_append_events_with_sequence(_repo, _events) do
+    {:error, Error.new(:validation_error, "events must be a list")}
+  end
+
+  defp do_flush(
+         repo,
+         %{session: %Session{} = session, run: %Run{} = run, events: events}
+       )
+       when is_list(events) do
+    result =
+      repo.transaction(fn ->
+        with {:ok, _} <- do_save_session(repo, session),
+             {:ok, _} <- do_save_run(repo, run),
+             {:ok, _stored_events} <- append_events_with_sequence_in_tx(repo, events) do
+          :ok
+        else
+          {:error, reason} -> repo.rollback(reason)
+        end
+      end)
+
+    case result do
+      {:ok, :ok} ->
+        :ok
+
+      {:error, %Error{} = error} ->
+        {:error, error}
+
+      {:error, reason} ->
+        {:error, Error.new(:storage_error, "flush failed: #{inspect(reason)}")}
+    end
+  end
+
+  defp do_flush(_repo, _payload) do
+    {:error, Error.new(:validation_error, "invalid execution_result payload")}
+  end
+
+  defp append_events_with_sequence_in_tx(repo, events) do
+    if Enum.all?(events, &match?(%Event{}, &1)) do
+      append_valid_events_with_sequence_in_tx(repo, events)
+    else
+      {:error, Error.new(:validation_error, "events must be Event structs")}
+    end
+  end
+
+  defp append_valid_events_with_sequence_in_tx(_repo, []), do: {:ok, []}
+
+  defp append_valid_events_with_sequence_in_tx(repo, events) do
+    unique_events = unique_events_by_id(events)
+    unique_ids = Enum.map(unique_events, & &1.id)
+
+    existing_events_by_id =
+      repo.all(from(e in EventSchema, where: e.id in ^unique_ids))
+      |> Enum.map(&schema_to_event/1)
+      |> Map.new(fn event -> {event.id, event} end)
+
+    new_events =
+      Enum.reject(unique_events, fn event ->
+        Map.has_key?(existing_events_by_id, event.id)
+      end)
+
+    with {:ok, inserted_events_by_id} <- insert_new_events_with_sequences(repo, new_events) do
+      persisted_events_by_id = Map.merge(existing_events_by_id, inserted_events_by_id)
+      {:ok, Enum.map(events, fn event -> Map.fetch!(persisted_events_by_id, event.id) end)}
+    end
+  end
+
+  defp insert_new_events_with_sequences(_repo, []), do: {:ok, %{}}
+
+  defp insert_new_events_with_sequences(repo, events) do
+    grouped_by_session = Enum.group_by(events, & &1.session_id)
+
+    Enum.reduce_while(grouped_by_session, {:ok, %{}}, fn {session_id, session_events},
+                                                         {:ok, acc} ->
+      case insert_session_events_batch(repo, session_id, session_events) do
+        {:ok, inserted} -> {:cont, {:ok, Map.merge(acc, inserted)}}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp insert_session_events_batch(repo, session_id, session_events) do
+    base_sequence = next_sequence_batch(repo, session_id, length(session_events))
+
+    rows =
+      Enum.with_index(session_events, fn event, index ->
+        event_to_attrs_with_sequence(event, base_sequence + index)
+      end)
+
+    case repo.insert_all(EventSchema, rows) do
+      {count, _} when count == length(rows) ->
+        inserted =
+          Enum.with_index(session_events, fn event, index ->
+            {event.id, %Event{event | sequence_number: base_sequence + index}}
+          end)
+          |> Map.new()
+
+        {:ok, inserted}
+
+      {count, _} ->
+        {:error,
+         Error.new(
+           :storage_error,
+           "batch insert count mismatch for session #{session_id}: expected #{length(rows)}, got #{count}"
+         )}
+    end
+  end
+
   defp insert_event_with_next_sequence(repo, event) do
     next_seq = next_sequence(repo, event.session_id)
 
-    attrs = %{
-      id: event.id,
-      type: Atom.to_string(event.type),
-      timestamp: event.timestamp,
-      session_id: event.session_id,
-      run_id: event.run_id,
-      sequence_number: next_seq,
-      data: stringify_keys(event.data),
-      metadata: stringify_keys(event.metadata),
-      schema_version: event.schema_version || 1,
-      provider: event.provider,
-      correlation_id: event.correlation_id
-    }
+    attrs = event_to_attrs_with_sequence(event, next_seq)
 
     changeset = EventSchema.changeset(%EventSchema{}, attrs)
     repo.insert!(changeset)
@@ -282,6 +406,77 @@ defmodule AgentSessionManager.Adapters.EctoSessionStore do
       )
 
     seq
+  end
+
+  defp next_sequence_batch(repo, session_id, count) when is_integer(count) and count > 0 do
+    on_conflict_query =
+      from(s in SessionSequenceSchema, update: [inc: [last_sequence: ^count]])
+
+    {_count, [%{last_sequence: last_seq}]} =
+      repo.insert_all(
+        SessionSequenceSchema,
+        [%{session_id: session_id, last_sequence: count}],
+        on_conflict: on_conflict_query,
+        conflict_target: :session_id,
+        returning: [:last_sequence]
+      )
+
+    last_seq - count + 1
+  end
+
+  defp unique_events_by_id(events) do
+    {_, unique_reversed} =
+      Enum.reduce(events, {MapSet.new(), []}, fn event, {seen_ids, acc} ->
+        if MapSet.member?(seen_ids, event.id) do
+          {seen_ids, acc}
+        else
+          {MapSet.put(seen_ids, event.id), [event | acc]}
+        end
+      end)
+
+    Enum.reverse(unique_reversed)
+  end
+
+  defp do_save_session(repo, session) do
+    attrs = session_to_attrs(session)
+    changeset = SessionSchema.changeset(%SessionSchema{}, attrs)
+
+    case repo.insert(changeset,
+           on_conflict: {:replace_all_except, [:id]},
+           conflict_target: :id
+         ) do
+      {:ok, schema} -> {:ok, schema}
+      {:error, cs} -> {:error, changeset_to_error(cs)}
+    end
+  end
+
+  defp do_save_run(repo, run) do
+    attrs = run_to_attrs(run)
+    changeset = RunSchema.changeset(%RunSchema{}, attrs)
+
+    case repo.insert(changeset,
+           on_conflict: {:replace_all_except, [:id]},
+           conflict_target: :id
+         ) do
+      {:ok, schema} -> {:ok, schema}
+      {:error, cs} -> {:error, changeset_to_error(cs)}
+    end
+  end
+
+  defp event_to_attrs_with_sequence(event, sequence_number) do
+    %{
+      id: event.id,
+      type: Atom.to_string(event.type),
+      timestamp: event.timestamp,
+      session_id: event.session_id,
+      run_id: event.run_id,
+      sequence_number: sequence_number,
+      data: stringify_keys(event.data),
+      metadata: stringify_keys(event.metadata),
+      schema_version: event.schema_version || 1,
+      provider: event.provider,
+      correlation_id: event.correlation_id
+    }
   end
 
   # -- Composable query filters --
@@ -421,27 +616,8 @@ defmodule AgentSessionManager.Adapters.EctoSessionStore do
 
   # -- Map key helpers --
 
-  defp stringify_keys(nil), do: nil
-
-  defp stringify_keys(map) when is_map(map) do
-    Map.new(map, fn
-      {k, v} when is_atom(k) -> {Atom.to_string(k), stringify_keys(v)}
-      {k, v} -> {k, stringify_keys(v)}
-    end)
-  end
-
-  defp stringify_keys(list) when is_list(list), do: Enum.map(list, &stringify_keys/1)
-  defp stringify_keys(other), do: other
-
-  defp atomize_keys(map) when is_map(map) do
-    Map.new(map, fn
-      {k, v} when is_binary(k) -> {String.to_atom(k), atomize_keys(v)}
-      {k, v} -> {k, atomize_keys(v)}
-    end)
-  end
-
-  defp atomize_keys(list) when is_list(list), do: Enum.map(list, &atomize_keys/1)
-  defp atomize_keys(other), do: other
+  defp stringify_keys(value), do: Serialization.stringify_keys(value)
+  defp atomize_keys(value), do: Serialization.atomize_keys(value)
 
   defp atomize_keys_nullable(nil), do: nil
   defp atomize_keys_nullable(val), do: atomize_keys(val)

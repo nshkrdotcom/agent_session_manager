@@ -2,21 +2,37 @@ defmodule AgentSessionManager.Adapters.CompositeSessionStoreIntegrationTest do
   @moduledoc """
   Integration tests for the CompositeSessionStore adapter.
 
-  Exercises the composite store with SQLite for sessions and
+  Exercises the composite store with Ecto/SQLite for sessions and
   file-based storage for artifacts, verifying both subsystems
   work together through the SessionManager.
   """
 
-  use AgentSessionManager.SupertesterCase, async: true
+  use AgentSessionManager.SupertesterCase, async: false
 
   alias AgentSessionManager.Adapters.{
     CompositeSessionStore,
-    FileArtifactStore,
-    SQLiteSessionStore
+    EctoSessionStore,
+    EctoSessionStore.Migration,
+    EctoSessionStore.MigrationV2,
+    FileArtifactStore
   }
 
   alias AgentSessionManager.Ports.{ArtifactStore, SessionStore}
   alias AgentSessionManager.SessionManager
+
+  alias AgentSessionManager.Adapters.EctoSessionStore.Schemas.{
+    ArtifactSchema,
+    EventSchema,
+    RunSchema,
+    SessionSchema,
+    SessionSequenceSchema
+  }
+
+  defmodule CompositeTestRepo do
+    use Ecto.Repo, otp_app: :agent_session_manager, adapter: Ecto.Adapters.SQLite3
+  end
+
+  @db_path Path.join(System.tmp_dir!(), "asm_composite_integ.db")
 
   # Mock adapter for SessionManager integration
   defmodule MockAdapter do
@@ -52,12 +68,41 @@ defmodule AgentSessionManager.Adapters.CompositeSessionStoreIntegrationTest do
     def handle_call(:capabilities, _from, s), do: {:reply, {:ok, []}, s}
   end
 
+  setup_all do
+    File.rm(@db_path)
+    File.rm(@db_path <> "-wal")
+    File.rm(@db_path <> "-shm")
+
+    Application.put_env(:agent_session_manager, CompositeTestRepo,
+      database: @db_path,
+      pool_size: 1
+    )
+
+    {:ok, repo_pid} = CompositeTestRepo.start_link()
+    Ecto.Migrator.up(CompositeTestRepo, 1, Migration, log: false)
+    Ecto.Migrator.up(CompositeTestRepo, 2, MigrationV2, log: false)
+
+    on_exit(fn ->
+      try do
+        if Process.alive?(repo_pid), do: Supervisor.stop(repo_pid, :normal)
+      catch
+        :exit, _ -> :ok
+      end
+
+      File.rm(@db_path)
+      File.rm(@db_path <> "-wal")
+      File.rm(@db_path <> "-shm")
+    end)
+
+    :ok
+  end
+
   setup _ctx do
-    db_path =
-      Path.join(
-        System.tmp_dir!(),
-        "asm_composite_integ_#{System.unique_integer([:positive, :monotonic])}.db"
-      )
+    CompositeTestRepo.delete_all(EventSchema)
+    CompositeTestRepo.delete_all(RunSchema)
+    CompositeTestRepo.delete_all(ArtifactSchema)
+    CompositeTestRepo.delete_all(SessionSequenceSchema)
+    CompositeTestRepo.delete_all(SessionSchema)
 
     artifact_root =
       Path.join(
@@ -65,7 +110,7 @@ defmodule AgentSessionManager.Adapters.CompositeSessionStoreIntegrationTest do
         "asm_composite_integ_art_#{System.unique_integer([:positive, :monotonic])}"
       )
 
-    {:ok, session_store} = SQLiteSessionStore.start_link(path: db_path)
+    {:ok, session_store} = EctoSessionStore.start_link(repo: CompositeTestRepo)
     {:ok, artifact_store} = FileArtifactStore.start_link(root: artifact_root)
 
     {:ok, composite} =
@@ -80,9 +125,6 @@ defmodule AgentSessionManager.Adapters.CompositeSessionStoreIntegrationTest do
     cleanup_on_exit(fn -> safe_stop(session_store) end)
     cleanup_on_exit(fn -> safe_stop(artifact_store) end)
     cleanup_on_exit(fn -> safe_stop(adapter) end)
-    cleanup_on_exit(fn -> File.rm(db_path) end)
-    cleanup_on_exit(fn -> File.rm(db_path <> "-wal") end)
-    cleanup_on_exit(fn -> File.rm(db_path <> "-shm") end)
     cleanup_on_exit(fn -> File.rm_rf(artifact_root) end)
 
     %{composite: composite, adapter: adapter}

@@ -130,6 +130,29 @@ defmodule AgentSessionManager.StreamSessionTest do
       assert error_data.error_message =~ "timeout"
     end
 
+    test "emits provider_timeout when run_once execute call times out" do
+      {:ok, adapter} =
+        MockProviderAdapter.start_link(execution_mode: :timeout)
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      {:ok, stream, close_fun, _meta} =
+        StreamSession.start(
+          adapter: adapter,
+          input: %{messages: [%{role: "user", content: "hello"}]},
+          idle_timeout: 10_000,
+          run_opts: [adapter_opts: [timeout: 1]]
+        )
+
+      events = Enum.to_list(stream)
+      close_fun.()
+
+      assert Enum.any?(events, fn event ->
+               event.type == :error_occurred and
+                 get_in(event, [:data, :error_code]) == :provider_timeout
+             end)
+    end
+
     test "forwards agent_id to run_once" do
       {:ok, stream, close_fun, _meta} =
         StreamSession.start(

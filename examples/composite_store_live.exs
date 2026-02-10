@@ -5,14 +5,20 @@ defmodule CompositeStoreLive do
 
   alias AgentSessionManager.Adapters.{
     CompositeSessionStore,
-    FileArtifactStore,
-    SQLiteSessionStore
+    EctoSessionStore,
+    EctoSessionStore.Migration,
+    EctoSessionStore.MigrationV2,
+    FileArtifactStore
   }
 
   alias AgentSessionManager.Core.{Event, Session}
   alias AgentSessionManager.Ports.{ArtifactStore, SessionStore}
 
-  @db_path "/tmp/asm_composite_live_demo.db"
+  defmodule DemoRepo do
+    use Ecto.Repo, otp_app: :agent_session_manager, adapter: Ecto.Adapters.SQLite3
+  end
+
+  @db_path "/tmp/asm_ecto_composite_live_demo.db"
   @artifact_root "/tmp/asm_composite_live_artifacts"
 
   def main(_args) do
@@ -36,8 +42,11 @@ defmodule CompositeStoreLive do
   defp run do
     # 1. Start backend stores
     IO.puts("1. Starting backend stores")
-    {:ok, sqlite} = SQLiteSessionStore.start_link(path: @db_path)
-    IO.puts("   SQLite session store: #{inspect(sqlite)}")
+    configure_repo()
+    {:ok, repo_pid} = DemoRepo.start_link()
+    :ok = ensure_migrations()
+    {:ok, session_store} = EctoSessionStore.start_link(repo: DemoRepo)
+    IO.puts("   Ecto session store (SQLite): #{inspect(session_store)}")
 
     {:ok, file_store} = FileArtifactStore.start_link(root: @artifact_root)
     IO.puts("   File artifact store: #{inspect(file_store)}")
@@ -47,14 +56,14 @@ defmodule CompositeStoreLive do
 
     {:ok, composite} =
       CompositeSessionStore.start_link(
-        session_store: sqlite,
+        session_store: session_store,
         artifact_store: file_store
       )
 
     IO.puts("   Composite store: #{inspect(composite)}")
 
-    # 3. Use session operations (delegated to SQLite)
-    IO.puts("\n3. Session operations (-> SQLite)")
+    # 3. Use session operations (delegated to Ecto/SQLite)
+    IO.puts("\n3. Session operations (-> Ecto/SQLite)")
 
     session = %Session{
       id: "ses_comp_001",
@@ -71,8 +80,8 @@ defmodule CompositeStoreLive do
     {:ok, retrieved} = SessionStore.get_session(composite, session.id)
     IO.puts("   Session saved and retrieved: #{retrieved.id} (#{retrieved.status})")
 
-    # 4. Use event operations (delegated to SQLite)
-    IO.puts("\n4. Event operations (-> SQLite)")
+    # 4. Use event operations (delegated to Ecto/SQLite)
+    IO.puts("\n4. Event operations (-> Ecto/SQLite)")
 
     for {type, i} <- Enum.with_index([:session_created, :run_started, :run_completed], 1) do
       {:ok, event} =
@@ -105,9 +114,29 @@ defmodule CompositeStoreLive do
     IO.puts("   All cleaned up")
 
     GenServer.stop(composite)
-    GenServer.stop(sqlite)
+    GenServer.stop(session_store)
     GenServer.stop(file_store)
+    if Process.alive?(repo_pid), do: Supervisor.stop(repo_pid, :normal)
     :ok
+  end
+
+  defp configure_repo do
+    Application.put_env(:agent_session_manager, DemoRepo,
+      database: @db_path,
+      pool_size: 1
+    )
+  end
+
+  defp ensure_migrations do
+    :ok = run_migration(1, Migration)
+    :ok = run_migration(2, MigrationV2)
+  end
+
+  defp run_migration(version, migration) do
+    case Ecto.Migrator.up(DemoRepo, version, migration, log: false) do
+      :ok -> :ok
+      {:error, :already_up} -> :ok
+    end
   end
 
   defp cleanup do

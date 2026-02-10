@@ -132,10 +132,6 @@ for p in "${PROVIDERS[@]}"; do
   PLAN_FILES+=("examples/oneshot.exs")
   PLAN_ARGS+=("--provider $p")
 
-  PLAN_NAMES+=("NoopStore One-Shot ($label)")
-  PLAN_FILES+=("examples/noop_store_run_once.exs")
-  PLAN_ARGS+=("--provider $p")
-
   PLAN_NAMES+=("Live Session ($label)")
   PLAN_FILES+=("examples/live_session.exs")
   PLAN_ARGS+=("--provider $p")
@@ -190,7 +186,7 @@ for p in "${PROVIDERS[@]}"; do
 done
 
 # Persistence examples (no provider needed)
-PLAN_NAMES+=("SQLite SessionStore")
+PLAN_NAMES+=("SQLite via Ecto SessionStore")
 PLAN_FILES+=("examples/sqlite_session_store_live.exs")
 PLAN_ARGS+=("")
 

@@ -342,6 +342,49 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
       assert tool_call.name == "bash"
       assert tool_call.id == "call-123"
     end
+
+    test "maps ItemStarted/ItemCompleted command events to tool events and keeps final message" do
+      {:ok, adapter} =
+        start_test_adapter(
+          scenario: :with_command_item,
+          command: "pwd",
+          command_output: "/tmp/test\n",
+          first_message: "Planning first.",
+          final_message: "Done. Current directory is /tmp/test."
+        )
+
+      session = build_test_session()
+      run = build_test_run(session_id: session.id, input: "Inspect the workspace")
+
+      test_pid = self()
+
+      {:ok, result} =
+        CodexAdapter.execute(adapter, run, session,
+          event_callback: fn event -> send(test_pid, {:event, event}) end,
+          timeout: 5_000
+        )
+
+      events = collect_events()
+
+      tool_started = Enum.find(events, &(&1.type == :tool_call_started))
+      tool_completed = Enum.find(events, &(&1.type == :tool_call_completed))
+      message_received = Enum.find(events, &(&1.type == :message_received))
+
+      assert tool_started != nil
+      assert tool_started.data.tool_name == "bash"
+      assert tool_started.data.tool_input.command == "pwd"
+
+      assert tool_completed != nil
+      assert tool_completed.data.tool_name == "bash"
+      assert tool_completed.data.tool_output.output == "/tmp/test\n"
+      assert tool_completed.data.tool_output.exit_code == 0
+
+      assert message_received != nil
+      assert message_received.data.content == "Done. Current directory is /tmp/test."
+
+      assert result.output.content == "Done. Current directory is /tmp/test."
+      assert Enum.any?(result.output.tool_calls, &(&1.id == "cmd-1" and &1.name == "bash"))
+    end
   end
 
   describe "execute/4 with token usage" do
@@ -881,6 +924,11 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
     tool_output = Keyword.get(opts, :tool_output)
     call_id = Keyword.get(opts, :call_id)
     error_message = Keyword.get(opts, :error_message)
+    command = Keyword.get(opts, :command)
+    command_output = Keyword.get(opts, :command_output)
+    command_cwd = Keyword.get(opts, :cwd)
+    first_message = Keyword.get(opts, :first_message)
+    final_message = Keyword.get(opts, :final_message)
 
     # Build mock SDK options
     mock_opts =
@@ -891,6 +939,11 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
       |> maybe_add(:tool_output, tool_output)
       |> maybe_add(:call_id, call_id)
       |> maybe_add(:error_message, error_message)
+      |> maybe_add(:command, command)
+      |> maybe_add(:command_output, command_output)
+      |> maybe_add(:cwd, command_cwd)
+      |> maybe_add(:first_message, first_message)
+      |> maybe_add(:final_message, final_message)
 
     {:ok, mock_sdk} = CodexMockSDK.start_link(mock_opts)
     cleanup_on_exit(fn -> safe_stop(mock_sdk) end)

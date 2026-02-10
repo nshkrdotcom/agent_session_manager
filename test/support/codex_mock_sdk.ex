@@ -23,6 +23,7 @@ defmodule AgentSessionManager.Test.CodexMockSDK do
   Use `build_event_stream/1` to generate realistic event sequences:
   - `:simple_response` - ThreadStarted, ItemAgentMessageDelta, TurnCompleted
   - `:with_tool_call` - Includes ToolCallRequested and ToolCallCompleted
+  - `:with_command_item` - Includes ItemStarted/ItemCompleted command execution events
   - `:streaming` - Multiple ItemAgentMessageDelta events
   - `:error` - Includes Error or TurnFailed event
   """
@@ -31,10 +32,12 @@ defmodule AgentSessionManager.Test.CodexMockSDK do
   use Supertester.TestableGenServer
 
   alias Codex.Events
+  alias Codex.Items
 
   @type event_scenario ::
           :simple_response
           | :with_tool_call
+          | :with_command_item
           | :streaming
           | :error
           | :cancelled
@@ -246,6 +249,60 @@ defmodule AgentSessionManager.Test.CodexMockSDK do
         thread_id: thread_id,
         turn_id: turn_id,
         status: "completed"
+      }
+    ]
+  end
+
+  def build_event_stream(:with_command_item, opts) do
+    thread_id = Keyword.get(opts, :thread_id, "test-thread-id")
+    turn_id = Keyword.get(opts, :turn_id, "test-turn-id")
+    command = Keyword.get(opts, :command, "pwd")
+    command_output = Keyword.get(opts, :command_output, "/tmp/test\n")
+    cwd = Keyword.get(opts, :cwd, "/tmp/test")
+    first_message = Keyword.get(opts, :first_message, "I will inspect the workspace first.")
+    final_message = Keyword.get(opts, :final_message, "Done. Current directory is /tmp/test.")
+
+    [
+      %Events.ThreadStarted{thread_id: thread_id, metadata: %{}},
+      %Events.TurnStarted{thread_id: thread_id, turn_id: turn_id},
+      %Events.ItemCompleted{
+        thread_id: thread_id,
+        turn_id: turn_id,
+        item: %Items.AgentMessage{id: "msg-1", text: first_message}
+      },
+      %Events.ItemStarted{
+        thread_id: thread_id,
+        turn_id: turn_id,
+        item: %Items.CommandExecution{
+          id: "cmd-1",
+          command: command,
+          cwd: cwd,
+          status: :in_progress
+        }
+      },
+      %Events.ItemCompleted{
+        thread_id: thread_id,
+        turn_id: turn_id,
+        item: %Items.CommandExecution{
+          id: "cmd-1",
+          command: command,
+          cwd: cwd,
+          aggregated_output: command_output,
+          exit_code: 0,
+          status: :completed,
+          duration_ms: 5
+        }
+      },
+      %Events.ItemCompleted{
+        thread_id: thread_id,
+        turn_id: turn_id,
+        item: %Items.AgentMessage{id: "msg-2", text: final_message}
+      },
+      %Events.TurnCompleted{
+        thread_id: thread_id,
+        turn_id: turn_id,
+        status: "completed",
+        usage: %{"input_tokens" => 21, "output_tokens" => 34}
       }
     ]
   end

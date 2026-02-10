@@ -18,6 +18,8 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
   | ThreadStarted            | run_started             | Signals execution has begun        |
   | ItemAgentMessageDelta    | message_streamed        | Each delta emits a stream event    |
   | ThreadTokenUsageUpdated  | token_usage_updated     | Usage statistics                   |
+  | ItemStarted (tool items) | tool_call_started       | Command/file/MCP tool start        |
+  | ItemCompleted (tool items)| tool_call_completed    | Command/file/MCP tool completion   |
   | ToolCallRequested        | tool_call_started       | Tool invocation requested          |
   | ToolCallCompleted        | tool_call_completed     | Tool finished with output          |
   | TurnCompleted            | message_received,       | Emits full message then completion |
@@ -57,6 +59,7 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
   alias AgentSessionManager.Core.{Capability, Error}
   alias AgentSessionManager.Ports.ProviderAdapter
   alias Codex.Events
+  alias Codex.Items
 
   @emitted_events_key {__MODULE__, :emitted_events}
 
@@ -371,7 +374,11 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
       adapter_pid: adapter_pid,
       model: state.model,
       accumulated_content: "",
+      agent_messages: %{},
+      agent_message_order: [],
+      streamed_agent_message_ids: MapSet.new(),
       tool_calls: [],
+      active_tools: %{},
       token_usage: %{input_tokens: 0, output_tokens: 0},
       thread_id: nil
     }
@@ -689,8 +696,8 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
   end
 
   defp handle_codex_event(%Events.ItemAgentMessageDelta{item: item} = event, ctx) do
-    # Extract delta content from the item
     content = extract_message_content(item)
+    item_id = extract_item_id(item)
 
     if content != "" do
       emit_event(ctx, :message_streamed, %{
@@ -701,40 +708,79 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
       })
     end
 
-    %{ctx | accumulated_content: ctx.accumulated_content <> content}
+    update_agent_message(ctx, item_id, content, :append)
   end
 
-  defp handle_codex_event(
-         %Events.ItemCompleted{item: %Codex.Items.AgentMessage{text: text}} = event,
-         ctx
-       )
-       when is_binary(text) do
-    # ItemCompleted with AgentMessage carries the full response text.
-    # Only emit as streamed if we haven't already accumulated this content via deltas.
-    already_have = ctx.accumulated_content
+  defp handle_codex_event(%Events.ItemCompleted{item: item} = event, ctx) do
+    case extract_completed_agent_message(item) do
+      {:ok, item_id, text} ->
+        already_streamed =
+          is_binary(item_id) and MapSet.member?(ctx.streamed_agent_message_ids, item_id)
 
-    if already_have == "" and text != "" do
-      emit_event(ctx, :message_streamed, %{
-        content: text,
-        delta: text,
-        thread_id: event.thread_id,
-        turn_id: event.turn_id
-      })
+        if text != "" and not already_streamed do
+          emit_event(ctx, :message_streamed, %{
+            content: text,
+            delta: text,
+            thread_id: event.thread_id,
+            turn_id: event.turn_id
+          })
+        end
 
-      %{ctx | accumulated_content: text}
-    else
-      ctx
+        update_agent_message(ctx, item_id, text, :replace)
+
+      :error ->
+        case normalize_tool_item(item) do
+          nil ->
+            ctx
+
+          %{id: tool_call_id, name: tool_name, input: tool_input, output: tool_output} ->
+            emit_event(ctx, :tool_call_completed, %{
+              tool_call_id: tool_call_id,
+              call_id: tool_call_id,
+              tool_name: tool_name,
+              tool_output: tool_output,
+              output: tool_output,
+              thread_id: event.thread_id,
+              turn_id: event.turn_id
+            })
+
+            tool_call = %{
+              id: tool_call_id || "unknown",
+              name: tool_name,
+              input: tool_input,
+              output: tool_output
+            }
+
+            %{
+              ctx
+              | tool_calls: ctx.tool_calls ++ [tool_call],
+                active_tools: drop_active_tool(ctx.active_tools, tool_call_id)
+            }
+        end
     end
   end
 
-  defp handle_codex_event(%Events.ItemCompleted{}, ctx) do
-    # Non-AgentMessage item completed, ignore
-    ctx
-  end
+  defp handle_codex_event(%Events.ItemStarted{item: item} = event, ctx) do
+    case normalize_tool_item(item) do
+      nil ->
+        ctx
 
-  defp handle_codex_event(%Events.ItemStarted{}, ctx) do
-    # Item started, no action needed
-    ctx
+      %{id: tool_call_id, name: tool_name, input: tool_input} ->
+        emit_event(ctx, :tool_call_started, %{
+          tool_call_id: tool_call_id,
+          call_id: tool_call_id,
+          tool_name: tool_name,
+          tool_input: tool_input,
+          arguments: tool_input,
+          thread_id: event.thread_id,
+          turn_id: event.turn_id
+        })
+
+        %{
+          ctx
+          | active_tools: put_active_tool(ctx.active_tools, tool_call_id, tool_name, tool_input)
+        }
+    end
   end
 
   defp handle_codex_event(%Events.ItemUpdated{}, ctx) do
@@ -775,10 +821,17 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
       turn_id: event.turn_id
     })
 
-    ctx
+    %{
+      ctx
+      | active_tools:
+          put_active_tool(ctx.active_tools, event.call_id, event.tool_name, tool_input)
+    }
   end
 
   defp handle_codex_event(%Events.ToolCallCompleted{} = event, ctx) do
+    active_tool = Map.get(ctx.active_tools, event.call_id)
+    tool_input = if is_map(active_tool), do: Map.get(active_tool, :input, %{}), else: %{}
+
     emit_event(ctx, :tool_call_completed, %{
       tool_call_id: event.call_id,
       call_id: event.call_id,
@@ -792,17 +845,23 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
     tool_call = %{
       id: event.call_id,
       name: event.tool_name,
-      input: %{},
+      input: tool_input,
       output: event.output
     }
 
-    %{ctx | tool_calls: ctx.tool_calls ++ [tool_call]}
+    %{
+      ctx
+      | tool_calls: ctx.tool_calls ++ [tool_call],
+        active_tools: drop_active_tool(ctx.active_tools, event.call_id)
+    }
   end
 
   defp handle_codex_event(%Events.TurnCompleted{} = event, ctx) do
+    final_content = final_agent_content(ctx)
+
     # Emit message_received with accumulated content
     emit_event(ctx, :message_received, %{
-      content: ctx.accumulated_content,
+      content: final_content,
       role: "assistant",
       thread_id: event.thread_id,
       turn_id: event.turn_id
@@ -834,7 +893,7 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
       token_usage: final_ctx.token_usage
     })
 
-    final_ctx
+    %{final_ctx | accumulated_content: final_content}
   end
 
   defp handle_codex_event(%Events.TurnAborted{}, ctx) do
@@ -881,6 +940,297 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
 
   defp extract_message_content(_), do: ""
 
+  defp extract_item_id(%{id: id}) when is_binary(id), do: id
+  defp extract_item_id(%{"id" => id}) when is_binary(id), do: id
+  defp extract_item_id(%{item_id: id}) when is_binary(id), do: id
+  defp extract_item_id(%{"item_id" => id}) when is_binary(id), do: id
+  defp extract_item_id(_), do: nil
+
+  defp extract_completed_agent_message(%Items.AgentMessage{text: text} = item)
+       when is_binary(text) do
+    {:ok, extract_item_id(item), text}
+  end
+
+  defp extract_completed_agent_message(%{} = item) do
+    item_type = Map.get(item, :type) || Map.get(item, "type")
+
+    if item_type in [:agent_message, "agent_message", "agentMessage"] do
+      text = extract_message_content(item)
+
+      if text != "" do
+        {:ok, extract_item_id(item), text}
+      else
+        :error
+      end
+    else
+      :error
+    end
+  end
+
+  defp extract_completed_agent_message(_), do: :error
+
+  defp update_agent_message(ctx, _item_id, "", _mode), do: ctx
+
+  defp update_agent_message(ctx, item_id, content, mode) do
+    normalized_id = item_id || "__anonymous__"
+
+    previous = Map.get(ctx.agent_messages, normalized_id, "")
+
+    next_content =
+      case mode do
+        :replace -> content
+        _ -> previous <> content
+      end
+
+    order =
+      if normalized_id in ctx.agent_message_order do
+        ctx.agent_message_order
+      else
+        ctx.agent_message_order ++ [normalized_id]
+      end
+
+    streamed_ids =
+      if is_binary(item_id) do
+        MapSet.put(ctx.streamed_agent_message_ids, item_id)
+      else
+        ctx.streamed_agent_message_ids
+      end
+
+    %{
+      ctx
+      | agent_messages: Map.put(ctx.agent_messages, normalized_id, next_content),
+        agent_message_order: order,
+        streamed_agent_message_ids: streamed_ids,
+        accumulated_content: next_content
+    }
+  end
+
+  defp final_agent_content(ctx) do
+    case List.last(ctx.agent_message_order) do
+      nil -> ctx.accumulated_content
+      id -> Map.get(ctx.agent_messages, id, ctx.accumulated_content)
+    end
+  end
+
+  defp put_active_tool(active_tools, nil, _tool_name, _tool_input), do: active_tools
+
+  defp put_active_tool(active_tools, tool_call_id, tool_name, tool_input) do
+    Map.put(active_tools, tool_call_id, %{name: tool_name, input: tool_input})
+  end
+
+  defp drop_active_tool(active_tools, nil), do: active_tools
+  defp drop_active_tool(active_tools, tool_call_id), do: Map.delete(active_tools, tool_call_id)
+
+  defp normalize_tool_item(%Items.CommandExecution{} = item) do
+    %{
+      id: extract_item_id(item),
+      name: "bash",
+      input: normalize_tool_input(%{command: item.command, cwd: item.cwd}),
+      output:
+        normalize_tool_output(%{
+          output: item.aggregated_output,
+          exit_code: item.exit_code,
+          status: item.status,
+          duration_ms: item.duration_ms
+        })
+    }
+  end
+
+  defp normalize_tool_item(%Items.FileChange{} = item) do
+    %{
+      id: extract_item_id(item),
+      name: "apply_patch",
+      input: normalize_tool_input(%{changes: item.changes}),
+      output: normalize_tool_output(%{status: item.status, changes: item.changes})
+    }
+  end
+
+  defp normalize_tool_item(%Items.McpToolCall{} = item) do
+    tool_name =
+      case {item.server, item.tool} do
+        {server, tool} when is_binary(server) and is_binary(tool) -> "#{server}:#{tool}"
+        {_server, tool} when is_binary(tool) -> tool
+        _ -> "mcp_tool"
+      end
+
+    output =
+      cond do
+        item.status == :failed and not is_nil(item.error) -> item.error
+        not is_nil(item.result) -> item.result
+        true -> %{}
+      end
+
+    %{
+      id: extract_item_id(item),
+      name: tool_name,
+      input: normalize_tool_input(item.arguments),
+      output: normalize_tool_output(output)
+    }
+  end
+
+  defp normalize_tool_item(%{} = item) do
+    type = Map.get(item, :type) || Map.get(item, "type")
+
+    case normalize_item_type(type) do
+      "command_execution" ->
+        normalize_command_item_from_map(item)
+
+      "file_change" ->
+        normalize_file_change_item_from_map(item)
+
+      "mcp_tool_call" ->
+        normalize_mcp_tool_item_from_map(item)
+
+      _ ->
+        normalize_generic_tool_item_from_map(item)
+    end
+  end
+
+  defp normalize_tool_item(_), do: nil
+
+  defp normalize_command_item_from_map(item) do
+    normalize_tool_item_from_map(item, "bash", [:command, "command"], fn map ->
+      %{
+        output: Map.get(map, :aggregated_output) || Map.get(map, "aggregated_output"),
+        exit_code: Map.get(map, :exit_code) || Map.get(map, "exit_code"),
+        status: Map.get(map, :status) || Map.get(map, "status"),
+        duration_ms: Map.get(map, :duration_ms) || Map.get(map, "duration_ms")
+      }
+    end)
+  end
+
+  defp normalize_file_change_item_from_map(item) do
+    changes = Map.get(item, :changes) || Map.get(item, "changes")
+
+    %{
+      id: extract_item_id(item),
+      name: "apply_patch",
+      input: normalize_tool_input(%{changes: changes}),
+      output:
+        normalize_tool_output(%{
+          status: Map.get(item, :status) || Map.get(item, "status"),
+          changes: changes
+        })
+    }
+  end
+
+  defp normalize_tool_item_from_map(item, tool_name, command_keys, output_builder) do
+    command = Enum.find_value(command_keys, fn key -> Map.get(item, key) end)
+
+    %{
+      id: extract_item_id(item),
+      name: tool_name,
+      input:
+        normalize_tool_input(%{
+          command: command,
+          cwd: Map.get(item, :cwd) || Map.get(item, "cwd")
+        }),
+      output: normalize_tool_output(output_builder.(item))
+    }
+  end
+
+  defp normalize_mcp_tool_item_from_map(item) do
+    server = get_flex(item, :server)
+    tool = get_flex(item, :tool)
+
+    tool_name =
+      case {server, tool} do
+        {srv, tl} when is_binary(srv) and is_binary(tl) -> "#{srv}:#{tl}"
+        {_srv, tl} when is_binary(tl) -> tl
+        _ -> "mcp_tool"
+      end
+
+    output = mcp_tool_output(item)
+
+    %{
+      id: extract_item_id(item),
+      name: tool_name,
+      input: normalize_tool_input(get_flex(item, :arguments)),
+      output: normalize_tool_output(output)
+    }
+  end
+
+  defp mcp_tool_output(item) do
+    status = get_flex(item, :status)
+    error = get_flex(item, :error)
+    result = get_flex(item, :result)
+
+    cond do
+      status == :failed and not is_nil(error) -> error
+      not is_nil(result) -> result
+      true -> %{}
+    end
+  end
+
+  defp get_flex(map, key) when is_atom(key) do
+    Map.get(map, key) || Map.get(map, Atom.to_string(key))
+  end
+
+  defp normalize_generic_tool_item_from_map(item) do
+    item_type = normalize_item_type(Map.get(item, :type) || Map.get(item, "type"))
+
+    if item_type in [
+         nil,
+         "agent_message",
+         "reasoning",
+         "user_message",
+         "image_view",
+         "review_mode",
+         "todo_list",
+         "error",
+         "ghost_snapshot",
+         "compaction"
+       ] do
+      nil
+    else
+      output =
+        %{
+          output: Map.get(item, :output) || Map.get(item, "output"),
+          result: Map.get(item, :result) || Map.get(item, "result"),
+          error: Map.get(item, :error) || Map.get(item, "error"),
+          status: Map.get(item, :status) || Map.get(item, "status")
+        }
+        |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+        |> Map.new()
+
+      input =
+        item
+        |> Map.drop([
+          :id,
+          "id",
+          :item_id,
+          "item_id",
+          :type,
+          "type",
+          :output,
+          "output",
+          :result,
+          "result",
+          :error,
+          "error",
+          :status,
+          "status"
+        ])
+        |> Enum.into(%{})
+
+      %{
+        id: extract_item_id(item),
+        name: item_type,
+        input: normalize_tool_input(input),
+        output: normalize_tool_output(output)
+      }
+    end
+  end
+
+  defp normalize_item_type(nil), do: nil
+  defp normalize_item_type(type) when is_atom(type), do: normalize_item_type(Atom.to_string(type))
+
+  defp normalize_item_type(type) when is_binary(type) do
+    type
+    |> String.replace(~r/([a-z0-9])([A-Z])/, "\\1_\\2")
+    |> String.downcase()
+  end
+
   defp emit_event(ctx, type, data) do
     event = %{
       type: type,
@@ -900,8 +1250,10 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
   end
 
   defp build_result(ctx) do
+    final_content = final_agent_content(ctx)
+
     output = %{
-      content: ctx.accumulated_content,
+      content: final_content,
       tool_calls: ctx.tool_calls
     }
 
@@ -930,6 +1282,11 @@ defmodule AgentSessionManager.Adapters.CodexAdapter do
 
   defp normalize_tool_input(arguments) when is_map(arguments), do: arguments
   defp normalize_tool_input(_), do: %{}
+
+  defp normalize_tool_output(output) when is_map(output), do: output
+  defp normalize_tool_output(output) when is_list(output), do: %{items: output}
+  defp normalize_tool_output(nil), do: %{}
+  defp normalize_tool_output(output), do: %{value: output}
 
   defp build_capabilities do
     [

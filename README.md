@@ -155,6 +155,26 @@ IO.inspect(result.output)
 :ok = SessionServer.drain(server, 30_000)
 ```
 
+### StreamSession (one-shot streaming)
+
+For consumers that just need a lazy event stream from a one-shot session, `StreamSession` eliminates the boilerplate:
+
+```elixir
+alias AgentSessionManager.Adapters.ClaudeAdapter
+alias AgentSessionManager.StreamSession
+
+{:ok, stream, close_fun, _meta} =
+  StreamSession.start(
+    adapter: {ClaudeAdapter, []},
+    input: %{messages: [%{role: "user", content: "Hello!"}]}
+  )
+
+stream |> Stream.each(&IO.inspect/1) |> Stream.run()
+close_fun.()
+```
+
+StreamSession handles store creation, adapter startup, task management, error events, and cleanup. See `guides/stream_session.md` for full documentation.
+
 ## Core Concepts
 
 ### Sessions

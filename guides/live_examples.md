@@ -17,6 +17,7 @@ Cursor examples are also available and use real provider execution:
 - `examples/routing_v2.exs --provider <claude|codex|amp>` -- weighted routing and session stickiness
 - `examples/policy_v2.exs --provider <claude|codex|amp>` -- policy stacks and provider-side enforcement
 - `examples/session_concurrency.exs --provider <claude|codex|amp>` -- multi-slot concurrent session runtime
+- `examples/stream_session.exs --provider <claude|codex|amp>` -- StreamSession one-shot lifecycle with rendering and raw modes
 
 ## Authentication
 

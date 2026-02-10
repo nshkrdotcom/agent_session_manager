@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.0] - 2026-02-10
+## [0.7.0] - 2026-02-09
 
 ### Added
 
@@ -22,19 +22,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `JSONLSink` — writes events as JSON Lines with `:full` mode (all fields, ISO 8601 timestamps) and `:compact` mode (abbreviated type codes, millisecond epoch timestamps)
   - `CallbackSink` — forwards raw events and rendered iodata to a 2-arity callback function for programmatic processing
 - **ANSI color support** in `CompactRenderer` with configurable `:color` option (default `true`)
+- **`StreamSession`** one-shot streaming session lifecycle module
+  - `StreamSession.start/1` replaces ~35 lines of hand-rolled boilerplate (store + adapter + task + Stream.resource + cleanup) with a single function call
+  - Returns `{:ok, stream, close_fun, meta}` — a lazy event stream, idempotent close function, and metadata map
+  - Automatic `InMemorySessionStore` creation when no store is provided
+  - Adapter startup from `{Module, opts}` tuples; passes through existing pids/names without ownership
+  - Ownership tracking: only terminates resources that StreamSession created
+  - Configurable idle timeout (default 120s) and shutdown grace period (default 5s)
+  - Error events emitted for adapter failures, task crashes, exceptions, and timeouts (never crashes the consumer)
+  - Atomic idempotent close via `:atomics.compare_exchange`
+- **`StreamSession.Supervisor`** convenience supervisor for production use
+  - Starts `Task.Supervisor` and `DynamicSupervisor` for managed task and adapter lifecycle
+  - Optional — StreamSession works without it using `Task.start_link` directly
+- **`StreamSession.Lifecycle`** resource acquisition and release (store, adapter, task)
+- **`StreamSession.EventStream`** lazy `Stream.resource` with receive-based state machine
 - Four new rendering examples: `rendering_compact.exs`, `rendering_verbose.exs`, `rendering_multi_sink.exs`, `rendering_callback.exs`
-- New guide: `guides/rendering.md` covering architecture, all renderers/sinks, multi-sink pipelines, custom renderer/sink authoring, and event stream integration
+- New example: `stream_session.exs` demonstrating StreamSession in rendering and raw modes
+- New guides: `guides/rendering.md`, `guides/stream_session.md`
 - Rendering test helpers in `test/support/rendering_helpers.ex`
-- Full test coverage for all renderers and sinks
+- Full test coverage for all renderers, sinks, and StreamSession
+
+### Changed
+
+- Rendering examples refactored to use `StreamSession.start/1`, eliminating duplicated `build_event_stream` boilerplate from each
+- `examples/run_all.sh` updated with StreamSession and rendering example entries
 
 ### Documentation
 
-- Add `guides/rendering.md` to HexDocs extras and "Core Concepts" group
-- Add Rendering module group to HexDocs with all renderer and sink modules
-- Update `examples/README.md` with rendering pipeline examples section
-- Update `examples/run_all.sh` with rendering example entries
-- Add rendering section and examples to `README.md`
-- Add rendering guide entry to guides list in `README.md`
+- Add `guides/rendering.md` and `guides/stream_session.md` to HexDocs extras and "Core Concepts" group
+- Add Rendering and Stream Session module groups to HexDocs
+- Update `examples/README.md` with rendering and StreamSession example documentation
+- Add rendering and StreamSession sections to `README.md`
 - Bump installation snippets in `README.md` and `guides/getting_started.md` to `~> 0.7.0`
 
 ## [0.6.0] - 2026-02-08

@@ -156,6 +156,14 @@ for p in "${PROVIDERS[@]}"; do
   PLAN_FILES+=("examples/permission_mode.exs")
   PLAN_ARGS+=("--provider $p")
 
+  PLAN_NAMES+=("Stream Session ($label)")
+  PLAN_FILES+=("examples/stream_session.exs")
+  PLAN_ARGS+=("--provider $p")
+
+  PLAN_NAMES+=("Stream Session Raw ($label)")
+  PLAN_FILES+=("examples/stream_session.exs")
+  PLAN_ARGS+=("--provider $p --mode raw")
+
   PLAN_NAMES+=("Rendering Compact ($label)")
   PLAN_FILES+=("examples/rendering_compact.exs")
   PLAN_ARGS+=("--provider $p")

@@ -7,55 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- **Persistence architecture remediation**
-  - `SessionStore` is now the single execution persistence boundary (`flush/2` + batch event persistence)
-  - `QueryAPI` and `Maintenance` now support module-backed refs (for example `{EctoQueryAPI, Repo}`) and no longer require dedicated adapter GenServers
-  - `EventEmitter` was renamed to `EventBuilder`
-- **SessionManager store-failure hardening**
-  - `SessionManager` now converts `SessionStore` process exits into `:storage_connection_failed` errors during run/session lifecycle persistence
-  - prevents background `SessionServer` execution tasks from crashing noisily when store teardown races with failed-run finalization
-
-### Removed
-
-- **Raw `SQLiteSessionStore` adapter** in favor of `EctoSessionStore` with `Ecto.Adapters.SQLite3`
-- **`DurableStore` port** and related bridge/no-op adapters (`SessionStoreBridge`, `NoopStore`)
-
-### Documentation
-
-- Reworked persistence guides to document SQLite via `EctoSessionStore`
-- Removed bridge/no-op usage examples and updated Query/Maintenance usage snippets
-
 ## [0.8.0] - 2026-02-10
 
 ### Added
 
 - **Persistence subsystem** with production-grade adapters and maintenance/query surfaces
-  - New `SQLiteSessionStore` adapter
-  - New `EctoSessionStore` adapter with migrations and schemas
-  - New `S3ArtifactStore` adapter
-  - New `CompositeSessionStore` adapter combining SessionStore + ArtifactStore
-  - New `QueryAPI` and `Maintenance` ports with Ecto implementations (`EctoQueryAPI`, `EctoMaintenance`)
-  - New persistence modules (`EventPipeline`, `EventValidator`, `RetentionPolicy`, `ArtifactRegistry`)
-- **`DurableStore` port** (`AgentSessionManager.Ports.DurableStore`) for boundary-oriented persistence with `flush/2`, `load_run/2`, `load_session/2`, and `load_events/3`
-- **`SessionStoreBridge` adapter** (`AgentSessionManager.Adapters.SessionStoreBridge`) to adapt existing `SessionStore` implementations to the new `DurableStore` contract
-- **`NoopStore` adapter** (`AgentSessionManager.Adapters.NoopStore`) for ephemeral `run_once/4` execution with no durable writes
+  - `EctoSessionStore` adapter with migrations and schemas (supports PostgreSQL, SQLite via `Ecto.Adapters.SQLite3`)
+  - `S3ArtifactStore` adapter for S3-compatible object storage
+  - `CompositeSessionStore` adapter combining SessionStore + ArtifactStore
+  - `QueryAPI` and `Maintenance` ports with Ecto implementations (`EctoQueryAPI`, `EctoMaintenance`)
+  - Persistence modules: `EventPipeline`, `EventValidator`, `RetentionPolicy`, `ArtifactRegistry`
+- **`flush/2` and `append_events/2` callbacks** on the `SessionStore` port
+  - `flush/2` atomically persists session, run, and events in a single transaction (in transactional backends like Ecto)
+  - `append_events/2` persists a batch of events with atomic sequence assignment
+  - Implemented in `EctoSessionStore`, `InMemorySessionStore`, and `CompositeSessionStore`
+- **`EventBuilder` module** (`AgentSessionManager.Persistence.EventBuilder`) for pure event normalize/enrich/validate processing without persistence
 - **`ExecutionState` module** (`AgentSessionManager.Persistence.ExecutionState`) for in-memory run state accumulation (session, run, events, provider metadata)
-- **`EventEmitter` module** (`AgentSessionManager.Persistence.EventEmitter`) for pure event normalize/enrich/validate processing without persistence
-- **Durable-store `run_once/4` path** in `SessionManager` allowing module stores (e.g. `NoopStore`) in addition to `SessionStore` process stores
+- **`OptionalDependency` module** (`AgentSessionManager.OptionalDependency`) for standardized error reporting when optional dependencies (Ecto, ExAws) are missing
+- **Conditional compilation** for optional Ecto and AWS dependencies
+  - `EctoSessionStore`, `EctoQueryAPI`, `EctoMaintenance`, Ecto migrations/schemas wrapped in conditional blocks
+  - `S3ArtifactStore.ExAwsClient` provides fallback when ExAws is missing
+  - `ArtifactRegistry` Ecto-dependent metadata tracking wrapped with fallback logic
+  - Library can be used without Ecto or ExAws dependencies installed
+- **`SessionManager` store-failure hardening**
+  - All `SessionStore` calls wrapped in `safe_store_call/2`
+  - Store process exits converted to `:storage_connection_failed` errors
+  - Prevents `SessionServer` execution tasks from crashing when store teardown races with failed-run finalization
+- **`ProviderAdapter` error normalization**
+  - `call_with_error/4` and `call_exit_error/4` for structured exit normalization
+  - `:noproc`, `:timeout`, and unexpected exits normalized into `Core.Error` structs
+  - `provider_unavailable` tolerance in `cancel_run` request path
+- **`Core.Serialization` module** consolidating `atomize_keys/1` and `stringify_keys/1` across `EctoSessionStore` and `EctoQueryAPI`
+- **Ecto migrations** (V1 base schema, V2 provider/artifact fields) and Ecto schemas for sessions, runs, and events
+- **`Event` struct extensions**: `schema_version`, `provider`, `correlation_id` fields
+- **`Session` struct extension**: `deleted_at` for soft-delete support
+- Persistence live examples: `sqlite_session_store_live.exs`, `ecto_session_store_live.exs`, `s3_artifact_store_live.exs`, `composite_store_live.exs`, `persistence_query.exs`, `persistence_maintenance.exs`, `persistence_multi_run.exs`, `persistence_live.exs`, `persistence_s3_minio.exs`
 
 ### Changed
 
+- **`SessionStore` is the single execution persistence boundary** -- `flush/2` and batch `append_events/2` replace per-event persistence and the earlier experimental `DurableStore` port
+- **`QueryAPI` and `Maintenance` refactored to module-backed refs** -- `{EctoQueryAPI, Repo}` and `{EctoMaintenance, Repo}` replace dedicated GenServer adapters, removing process lifecycle overhead
+- **`EventPipeline` batch processing** -- builds all events via `EventBuilder` before persisting as a batch through `append_events/2`, instead of per-event process calls
 - **Provider metadata extraction** no longer depends on run-scoped `SessionStore.get_events/3` read-back; metadata is captured from callback/result event data during execution
-- **`EventPipeline` internals** now delegate build/enrich/validate to `EventEmitter`, while keeping persistence and persistence telemetry in `EventPipeline`
+- `crypto.strong_rand_bytes` used for workspace artifact keys instead of `System.unique_integer`
 
 ### Documentation
 
-- Update `README.md` with `DurableStore` concepts, bridge/no-op usage, and boundary flush caveats
-- Update `guides/persistence_overview.md` with `DurableStore` and adapter matrix additions
-- Update `guides/custom_persistence_guide.md` with guidance on when to implement `SessionStore` vs `DurableStore`
-- Add `examples/noop_store_run_once.exs` and reference it in `examples/README.md`
+- Persistence guides: `persistence_overview.md`, `ecto_session_store.md`, `sqlite_session_store.md`, `s3_artifact_store.md`, `composite_store.md`, `event_schema_versioning.md`, `custom_persistence_guide.md`
+- Persistence module group and guides added to HexDocs configuration
+- Update `README.md` with durable persistence semantics and `flush/2` description
+- Update `examples/README.md` with all persistence adapter and query/maintenance examples
 
 ## [0.7.0] - 2026-02-09
 

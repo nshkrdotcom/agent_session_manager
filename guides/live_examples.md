@@ -18,7 +18,18 @@ Cursor examples are also available and use real provider execution:
 - `examples/policy_v2.exs --provider <claude|codex|amp>` -- policy stacks and provider-side enforcement
 - `examples/session_concurrency.exs --provider <claude|codex|amp>` -- multi-slot concurrent session runtime
 - `examples/stream_session.exs --provider <claude|codex|amp>` -- StreamSession one-shot lifecycle with rendering and raw modes
-- `examples/noop_store_run_once.exs --provider <claude|codex|amp>` -- no-op durable mode for ephemeral one-shot runs
+- `examples/persistence_live.exs --provider <claude|codex|amp>` -- live provider execution with EctoSessionStore persistence
+
+Persistence examples that run locally without provider credentials:
+
+- `examples/sqlite_session_store_live.exs` -- SQLite via EctoSessionStore
+- `examples/ecto_session_store_live.exs` -- Ecto SessionStore operations
+- `examples/s3_artifact_store_live.exs` -- S3 ArtifactStore (mock client)
+- `examples/composite_store_live.exs` -- CompositeSessionStore
+- `examples/persistence_query.exs` -- QueryAPI search, stats, and export
+- `examples/persistence_maintenance.exs` -- retention policies and health checks
+- `examples/persistence_multi_run.exs` -- multi-provider session with cross-provider aggregation
+- `examples/persistence_s3_minio.exs` -- real S3-compatible storage via local MinIO (Docker)
 
 ## Authentication
 
@@ -80,10 +91,6 @@ mix run examples/oneshot.exs --provider claude
 mix run examples/oneshot.exs --provider codex
 mix run examples/oneshot.exs --provider amp
 
-mix run examples/noop_store_run_once.exs --provider claude
-mix run examples/noop_store_run_once.exs --provider codex
-mix run examples/noop_store_run_once.exs --provider amp
-
 mix run examples/live_session.exs --provider claude
 mix run examples/live_session.exs --provider codex
 mix run examples/live_session.exs --provider amp
@@ -115,6 +122,27 @@ mix run examples/policy_v2.exs --provider amp
 mix run examples/session_concurrency.exs --provider claude
 mix run examples/session_concurrency.exs --provider codex
 mix run examples/session_concurrency.exs --provider amp
+
+# Persistence with live provider
+mix run examples/persistence_live.exs --provider claude
+mix run examples/persistence_live.exs --provider codex
+mix run examples/persistence_live.exs --provider amp
+```
+
+Persistence examples (no provider needed):
+
+```bash
+mix run examples/sqlite_session_store_live.exs
+mix run examples/ecto_session_store_live.exs
+mix run examples/s3_artifact_store_live.exs
+mix run examples/composite_store_live.exs
+mix run examples/persistence_query.exs
+mix run examples/persistence_maintenance.exs
+mix run examples/persistence_multi_run.exs
+
+# MinIO-backed S3 persistence (Docker required)
+MINIO_ROOT_USER=minioadmin MINIO_ROOT_PASSWORD=minioadmin \
+  mix run examples/persistence_s3_minio.exs
 ```
 
 Provider-specific SDK examples:

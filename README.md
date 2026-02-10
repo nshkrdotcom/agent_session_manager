@@ -542,6 +542,22 @@ mix run examples/rendering_verbose.exs --provider codex
 mix run examples/rendering_multi_sink.exs --provider amp
 mix run examples/rendering_callback.exs --provider claude
 
+# Persistence examples (no provider needed)
+mix run examples/sqlite_session_store_live.exs
+mix run examples/ecto_session_store_live.exs
+mix run examples/s3_artifact_store_live.exs
+mix run examples/composite_store_live.exs
+mix run examples/persistence_query.exs
+mix run examples/persistence_maintenance.exs
+mix run examples/persistence_multi_run.exs
+
+# Persistence with local MinIO (Docker required)
+MINIO_ROOT_USER=minioadmin MINIO_ROOT_PASSWORD=minioadmin \
+  mix run examples/persistence_s3_minio.exs
+
+# Persistence with live provider
+mix run examples/persistence_live.exs --provider claude
+
 # Default run-all mode executes all examples for all providers
 bash examples/run_all.sh
 
@@ -576,6 +592,13 @@ The guides cover each subsystem in depth:
 - [Telemetry and Observability](guides/telemetry_and_observability.md) -- Telemetry events, audit logging, metrics
 - [Error Handling](guides/error_handling.md) -- Error taxonomy, retryable errors, provider errors
 - [Testing](guides/testing.md) -- Mock adapters, in-memory store, testing patterns
+- [Persistence Overview](guides/persistence_overview.md) -- Ports, adapters, and event persistence flow
+- [Ecto SessionStore](guides/ecto_session_store.md) -- Production Ecto adapter for PostgreSQL and SQLite
+- [SQLite with EctoSessionStore](guides/sqlite_session_store.md) -- Zero-dependency file-backed persistence via Ecto
+- [S3 ArtifactStore](guides/s3_artifact_store.md) -- S3-compatible object storage for artifacts
+- [CompositeSessionStore](guides/composite_store.md) -- Unified session + artifact backend
+- [Event Schema Versioning](guides/event_schema_versioning.md) -- Schema evolution and versioning strategy
+- [Custom Persistence Guide](guides/custom_persistence_guide.md) -- Implementing your own persistence adapters
 
 ## Documentation
 

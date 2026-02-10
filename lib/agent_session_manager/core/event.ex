@@ -167,7 +167,10 @@ defmodule AgentSessionManager.Core.Event do
           run_id: String.t() | nil,
           data: map(),
           metadata: map(),
-          sequence_number: non_neg_integer() | nil
+          sequence_number: non_neg_integer() | nil,
+          schema_version: non_neg_integer(),
+          provider: String.t() | nil,
+          correlation_id: String.t() | nil
         }
 
   defstruct [
@@ -177,8 +180,11 @@ defmodule AgentSessionManager.Core.Event do
     :session_id,
     :run_id,
     :sequence_number,
+    :provider,
+    :correlation_id,
     data: %{},
-    metadata: %{}
+    metadata: %{},
+    schema_version: 1
   ]
 
   @doc """
@@ -273,7 +279,10 @@ defmodule AgentSessionManager.Core.Event do
         run_id: Map.get(attrs, :run_id),
         data: Map.get(attrs, :data, %{}),
         metadata: Map.get(attrs, :metadata, %{}),
-        sequence_number: Map.get(attrs, :sequence_number)
+        sequence_number: Map.get(attrs, :sequence_number),
+        schema_version: Map.get(attrs, :schema_version, 1),
+        provider: Map.get(attrs, :provider),
+        correlation_id: Map.get(attrs, :correlation_id)
       }
 
       {:ok, event}
@@ -293,7 +302,10 @@ defmodule AgentSessionManager.Core.Event do
       "run_id" => event.run_id,
       "data" => Serialization.stringify_keys(event.data),
       "metadata" => Serialization.stringify_keys(event.metadata),
-      "sequence_number" => event.sequence_number
+      "sequence_number" => event.sequence_number,
+      "schema_version" => event.schema_version,
+      "provider" => event.provider,
+      "correlation_id" => event.correlation_id
     }
   end
 
@@ -314,7 +326,10 @@ defmodule AgentSessionManager.Core.Event do
         run_id: map["run_id"],
         data: Serialization.atomize_keys(map["data"] || %{}),
         metadata: Serialization.atomize_keys(map["metadata"] || %{}),
-        sequence_number: map["sequence_number"]
+        sequence_number: map["sequence_number"],
+        schema_version: map["schema_version"] || 1,
+        provider: map["provider"],
+        correlation_id: map["correlation_id"]
       }
 
       {:ok, event}

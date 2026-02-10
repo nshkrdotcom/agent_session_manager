@@ -252,6 +252,116 @@ mix run examples/codex_direct.exs
 mix run examples/amp_direct.exs
 ```
 
+## Persistence Adapter Examples
+
+These examples demonstrate the persistence adapters. They run locally without external services.
+
+### `sqlite_session_store_live.exs` -- SQLite SessionStore
+
+- Creates a SQLite database, saves sessions and events
+- Demonstrates atomic sequence assignment and cursor queries
+- Shows data survives store restart
+
+```bash
+mix run examples/sqlite_session_store_live.exs
+```
+
+### `ecto_session_store_live.exs` -- Ecto SessionStore
+
+- Uses an Ecto Repo backed by SQLite
+- Demonstrates all session, run, and event operations
+- Shows the same SessionStore contract works with Ecto
+
+```bash
+mix run examples/ecto_session_store_live.exs
+```
+
+### `s3_artifact_store_live.exs` -- S3 ArtifactStore
+
+- Uses an in-memory mock S3 client (no AWS credentials needed)
+- Demonstrates put/get/delete lifecycle
+- Shows not-found handling and idempotent deletes
+
+```bash
+mix run examples/s3_artifact_store_live.exs
+```
+
+### `composite_store_live.exs` -- CompositeSessionStore
+
+- Combines SQLite (sessions) with FileArtifactStore (artifacts)
+- Shows session and artifact operations through a single composite store
+- Demonstrates the unified interface
+
+```bash
+mix run examples/composite_store_live.exs
+```
+
+## Persistence Query, Maintenance, and Multi-Run Examples
+
+These examples demonstrate the persistence query, maintenance, and multi-provider capabilities.
+They run locally with SQLite (no external services needed).
+
+### `persistence_query.exs` -- QueryAPI Demo
+
+- Seeds sessions with multiple providers (Claude, Codex, Amp)
+- Demonstrates cross-session search, filtering by agent, status, and provider
+- Shows usage summaries, session stats, event search, and export
+- Demonstrates cursor-based pagination
+
+```bash
+mix run examples/persistence_query.exs
+```
+
+### `persistence_maintenance.exs` -- Retention and Maintenance
+
+- Creates sessions with varied ages and statuses
+- Executes configurable retention policy (soft-delete, event pruning)
+- Demonstrates health check for data integrity
+- Shows hard-delete of expired sessions
+
+```bash
+mix run examples/persistence_maintenance.exs
+```
+
+### `persistence_multi_run.exs` -- Multi-Provider Session
+
+- Creates a single session with runs from 3 different providers
+- Demonstrates cross-provider QueryAPI aggregation and usage breakdown
+- Shows per-provider event grouping and sequence integrity
+
+```bash
+mix run examples/persistence_multi_run.exs
+```
+
+### `persistence_live.exs` -- Live Provider + Persistence
+
+- Runs a real provider SDK with EctoSessionStore persistence
+- Events flow through EventPipeline into SQLite
+- Verifies persisted sessions, runs, events, and sequence integrity
+
+```bash
+mix run examples/persistence_live.exs --provider claude
+mix run examples/persistence_live.exs --provider codex
+mix run examples/persistence_live.exs --provider amp
+```
+
+### `persistence_s3_minio.exs` -- S3 Artifacts with MinIO
+
+- Uses S3ArtifactStore with a real MinIO instance (Docker)
+- Demonstrates put/get/delete with real S3-compatible storage
+- Requires Docker: see example header for setup instructions
+
+```bash
+docker run -d --name minio \
+  -p 9000:9000 -p 9001:9001 \
+  -e MINIO_ROOT_USER=minioadmin \
+  -e MINIO_ROOT_PASSWORD=minioadmin \
+  minio/minio server /data --console-address ":9001"
+
+MINIO_ROOT_USER=minioadmin MINIO_ROOT_PASSWORD=minioadmin \
+  mix run examples/persistence_s3_minio.exs
+```
+
 ## Run All Examples
 
 ```bash

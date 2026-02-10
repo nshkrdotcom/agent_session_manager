@@ -1,0 +1,358 @@
+defmodule AgentSessionManager.Adapters.EctoQueryAPITest do
+  use ExUnit.Case, async: false
+
+  alias AgentSessionManager.Adapters.EctoQueryAPI
+  alias AgentSessionManager.Adapters.EctoSessionStore
+  alias AgentSessionManager.Adapters.EctoSessionStore.Migration
+  alias AgentSessionManager.Adapters.EctoSessionStore.MigrationV2
+  alias AgentSessionManager.Core.{Event, Run, Session}
+  alias AgentSessionManager.Ports.{QueryAPI, SessionStore}
+
+  defmodule QueryTestRepo do
+    use Ecto.Repo, otp_app: :agent_session_manager, adapter: Ecto.Adapters.SQLite3
+  end
+
+  @db_path Path.join(System.tmp_dir!(), "asm_query_api_test.db")
+
+  setup_all do
+    File.rm(@db_path)
+    File.rm(@db_path <> "-wal")
+    File.rm(@db_path <> "-shm")
+
+    Application.put_env(:agent_session_manager, QueryTestRepo,
+      database: @db_path,
+      pool_size: 1
+    )
+
+    {:ok, repo_pid} = QueryTestRepo.start_link()
+    Ecto.Migrator.up(QueryTestRepo, 1, Migration, log: false)
+    Ecto.Migrator.up(QueryTestRepo, 2, MigrationV2, log: false)
+
+    on_exit(fn ->
+      try do
+        if Process.alive?(repo_pid), do: Supervisor.stop(repo_pid, :normal)
+      catch
+        :exit, _ -> :ok
+      end
+
+      File.rm(@db_path)
+      File.rm(@db_path <> "-wal")
+      File.rm(@db_path <> "-shm")
+    end)
+
+    :ok
+  end
+
+  setup do
+    # Clean between tests
+    QueryTestRepo.delete_all(AgentSessionManager.Adapters.EctoSessionStore.Schemas.EventSchema)
+    QueryTestRepo.delete_all(AgentSessionManager.Adapters.EctoSessionStore.Schemas.RunSchema)
+    QueryTestRepo.delete_all(AgentSessionManager.Adapters.EctoSessionStore.Schemas.ArtifactSchema)
+
+    QueryTestRepo.delete_all(
+      AgentSessionManager.Adapters.EctoSessionStore.Schemas.SessionSequenceSchema
+    )
+
+    QueryTestRepo.delete_all(AgentSessionManager.Adapters.EctoSessionStore.Schemas.SessionSchema)
+
+    {:ok, store} = EctoSessionStore.start_link(repo: QueryTestRepo)
+    {:ok, query} = EctoQueryAPI.start_link(repo: QueryTestRepo)
+    %{store: store, query: query}
+  end
+
+  defp seed_session(store, id, opts \\ []) do
+    agent_id = Keyword.get(opts, :agent_id, "agent-1")
+    status = Keyword.get(opts, :status, :active)
+    tags = Keyword.get(opts, :tags, [])
+
+    {:ok, session} = Session.new(%{id: id, agent_id: agent_id, tags: tags})
+    session = %{session | status: status}
+
+    :ok = SessionStore.save_session(store, session)
+    session
+  end
+
+  defp seed_run(store, session_id, run_id, opts \\ []) do
+    provider = Keyword.get(opts, :provider, "claude")
+    status = Keyword.get(opts, :status, :completed)
+    input_tokens = Keyword.get(opts, :input_tokens, 100)
+    output_tokens = Keyword.get(opts, :output_tokens, 50)
+
+    {:ok, run} = Run.new(%{id: run_id, session_id: session_id})
+
+    run = %{
+      run
+      | provider: provider,
+        status: status,
+        token_usage: %{
+          input_tokens: input_tokens,
+          output_tokens: output_tokens,
+          total_tokens: input_tokens + output_tokens
+        }
+    }
+
+    :ok = SessionStore.save_run(store, run)
+    run
+  end
+
+  defp seed_event(store, session_id, run_id, type, opts \\ []) do
+    provider = Keyword.get(opts, :provider, "claude")
+    correlation_id = Keyword.get(opts, :correlation_id)
+
+    {:ok, event} =
+      Event.new(%{
+        type: type,
+        session_id: session_id,
+        run_id: run_id,
+        provider: provider,
+        correlation_id: correlation_id,
+        data: Keyword.get(opts, :data, %{})
+      })
+
+    {:ok, persisted} = SessionStore.append_event_with_sequence(store, event)
+    persisted
+  end
+
+  # ============================================================================
+  # search_sessions
+  # ============================================================================
+
+  describe "search_sessions/2" do
+    test "returns all sessions by default", %{store: store, query: query} do
+      seed_session(store, "ses_1")
+      seed_session(store, "ses_2")
+
+      {:ok, %{sessions: sessions, total_count: count}} = QueryAPI.search_sessions(query)
+      assert count == 2
+      assert length(sessions) == 2
+    end
+
+    test "filters by agent_id", %{store: store, query: query} do
+      seed_session(store, "ses_1", agent_id: "agent-a")
+      seed_session(store, "ses_2", agent_id: "agent-b")
+
+      {:ok, %{sessions: sessions}} = QueryAPI.search_sessions(query, agent_id: "agent-a")
+      assert length(sessions) == 1
+      assert hd(sessions).agent_id == "agent-a"
+    end
+
+    test "filters by status", %{store: store, query: query} do
+      seed_session(store, "ses_1", status: :active)
+      seed_session(store, "ses_2", status: :completed)
+
+      {:ok, %{sessions: sessions}} = QueryAPI.search_sessions(query, status: :completed)
+      assert length(sessions) == 1
+      assert hd(sessions).status == :completed
+    end
+
+    test "respects limit", %{store: store, query: query} do
+      for i <- 1..5, do: seed_session(store, "ses_#{i}")
+
+      {:ok, %{sessions: sessions, total_count: count}} =
+        QueryAPI.search_sessions(query, limit: 2)
+
+      assert length(sessions) == 2
+      assert count == 5
+    end
+
+    test "excludes soft-deleted sessions by default", %{store: store, query: query} do
+      session = seed_session(store, "ses_1")
+
+      deleted = %{session | deleted_at: DateTime.utc_now()}
+      :ok = SessionStore.save_session(store, deleted)
+
+      seed_session(store, "ses_2")
+
+      {:ok, %{sessions: sessions}} = QueryAPI.search_sessions(query)
+      assert length(sessions) == 1
+    end
+
+    test "includes soft-deleted when requested", %{store: store, query: query} do
+      session = seed_session(store, "ses_1")
+      deleted = %{session | deleted_at: DateTime.utc_now()}
+      :ok = SessionStore.save_session(store, deleted)
+
+      seed_session(store, "ses_2")
+
+      {:ok, %{sessions: sessions}} = QueryAPI.search_sessions(query, include_deleted: true)
+      assert length(sessions) == 2
+    end
+
+    test "returns cursor for pagination", %{store: store, query: query} do
+      seed_session(store, "ses_1")
+
+      {:ok, %{cursor: cursor}} = QueryAPI.search_sessions(query)
+      assert is_binary(cursor)
+    end
+  end
+
+  # ============================================================================
+  # get_session_stats
+  # ============================================================================
+
+  describe "get_session_stats/2" do
+    test "returns stats for a session", %{store: store, query: query} do
+      seed_session(store, "ses_1")
+      seed_run(store, "ses_1", "run_1", provider: "claude", input_tokens: 100, output_tokens: 50)
+      seed_run(store, "ses_1", "run_2", provider: "codex", input_tokens: 200, output_tokens: 80)
+      seed_event(store, "ses_1", "run_1", :run_started)
+      seed_event(store, "ses_1", "run_1", :run_completed)
+      seed_event(store, "ses_1", "run_2", :run_started)
+
+      {:ok, stats} = QueryAPI.get_session_stats(query, "ses_1")
+      assert stats.event_count == 3
+      assert stats.run_count == 2
+      assert stats.token_totals.input_tokens == 300
+      assert stats.token_totals.output_tokens == 130
+      assert "claude" in stats.providers_used
+      assert "codex" in stats.providers_used
+    end
+
+    test "returns error for missing session", %{query: query} do
+      {:error, error} = QueryAPI.get_session_stats(query, "nonexistent")
+      assert error.code == :session_not_found
+    end
+  end
+
+  # ============================================================================
+  # search_runs
+  # ============================================================================
+
+  describe "search_runs/2" do
+    test "returns all runs", %{store: store, query: query} do
+      seed_session(store, "ses_1")
+      seed_run(store, "ses_1", "run_1")
+      seed_run(store, "ses_1", "run_2")
+
+      {:ok, %{runs: runs}} = QueryAPI.search_runs(query)
+      assert length(runs) == 2
+    end
+
+    test "filters by provider", %{store: store, query: query} do
+      seed_session(store, "ses_1")
+      seed_run(store, "ses_1", "run_1", provider: "claude")
+      seed_run(store, "ses_1", "run_2", provider: "codex")
+
+      {:ok, %{runs: runs}} = QueryAPI.search_runs(query, provider: "claude")
+      assert length(runs) == 1
+      assert hd(runs).provider == "claude"
+    end
+
+    test "filters by session_id", %{store: store, query: query} do
+      seed_session(store, "ses_1")
+      seed_session(store, "ses_2")
+      seed_run(store, "ses_1", "run_1")
+      seed_run(store, "ses_2", "run_2")
+
+      {:ok, %{runs: runs}} = QueryAPI.search_runs(query, session_id: "ses_1")
+      assert length(runs) == 1
+    end
+  end
+
+  # ============================================================================
+  # get_usage_summary
+  # ============================================================================
+
+  describe "get_usage_summary/2" do
+    test "aggregates token usage across runs", %{store: store, query: query} do
+      seed_session(store, "ses_1")
+      seed_run(store, "ses_1", "run_1", provider: "claude", input_tokens: 100, output_tokens: 50)
+      seed_run(store, "ses_1", "run_2", provider: "codex", input_tokens: 200, output_tokens: 80)
+
+      {:ok, summary} = QueryAPI.get_usage_summary(query)
+      assert summary.total_input_tokens == 300
+      assert summary.total_output_tokens == 130
+      assert summary.total_tokens == 430
+      assert summary.run_count == 2
+      assert summary.by_provider["claude"].input_tokens == 100
+      assert summary.by_provider["codex"].input_tokens == 200
+    end
+
+    test "filters by provider", %{store: store, query: query} do
+      seed_session(store, "ses_1")
+      seed_run(store, "ses_1", "run_1", provider: "claude", input_tokens: 100, output_tokens: 50)
+      seed_run(store, "ses_1", "run_2", provider: "codex", input_tokens: 200, output_tokens: 80)
+
+      {:ok, summary} = QueryAPI.get_usage_summary(query, provider: "claude")
+      assert summary.run_count == 1
+      assert summary.total_input_tokens == 100
+    end
+  end
+
+  # ============================================================================
+  # search_events / count_events
+  # ============================================================================
+
+  describe "search_events/2" do
+    test "returns events filtered by session", %{store: store, query: query} do
+      seed_session(store, "ses_1")
+      seed_session(store, "ses_2")
+      seed_event(store, "ses_1", "run_1", :run_started)
+      seed_event(store, "ses_2", "run_2", :run_started)
+
+      {:ok, %{events: events}} = QueryAPI.search_events(query, session_ids: ["ses_1"])
+      assert length(events) == 1
+    end
+
+    test "filters by event type", %{store: store, query: query} do
+      seed_session(store, "ses_1")
+      seed_event(store, "ses_1", "run_1", :run_started)
+      seed_event(store, "ses_1", "run_1", :run_completed, data: %{stop_reason: "done"})
+
+      {:ok, %{events: events}} =
+        QueryAPI.search_events(query, session_ids: ["ses_1"], types: [:run_started])
+
+      assert length(events) == 1
+      assert hd(events).type == :run_started
+    end
+
+    test "filters by correlation_id", %{store: store, query: query} do
+      seed_session(store, "ses_1")
+      seed_event(store, "ses_1", "run_1", :run_started, correlation_id: "corr_1")
+      seed_event(store, "ses_1", "run_1", :run_completed, correlation_id: "corr_2")
+
+      {:ok, %{events: events}} = QueryAPI.search_events(query, correlation_id: "corr_1")
+      assert length(events) == 1
+    end
+  end
+
+  describe "count_events/2" do
+    test "counts events matching filters", %{store: store, query: query} do
+      seed_session(store, "ses_1")
+      seed_event(store, "ses_1", "run_1", :run_started)
+      seed_event(store, "ses_1", "run_1", :message_received)
+      seed_event(store, "ses_1", "run_1", :run_completed)
+
+      {:ok, count} = QueryAPI.count_events(query, session_ids: ["ses_1"])
+      assert count == 3
+
+      {:ok, count} =
+        QueryAPI.count_events(query, session_ids: ["ses_1"], types: [:run_started])
+
+      assert count == 1
+    end
+  end
+
+  # ============================================================================
+  # export_session
+  # ============================================================================
+
+  describe "export_session/3" do
+    test "exports full session data", %{store: store, query: query} do
+      seed_session(store, "ses_1")
+      seed_run(store, "ses_1", "run_1")
+      seed_event(store, "ses_1", "run_1", :run_started)
+      seed_event(store, "ses_1", "run_1", :run_completed)
+
+      {:ok, export} = QueryAPI.export_session(query, "ses_1")
+      assert %Session{} = export.session
+      assert length(export.runs) == 1
+      assert length(export.events) == 2
+    end
+
+    test "returns error for missing session", %{query: query} do
+      {:error, error} = QueryAPI.export_session(query, "nonexistent")
+      assert error.code == :session_not_found
+    end
+  end
+end

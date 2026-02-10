@@ -304,6 +304,86 @@ defmodule AgentSessionManager.Core.EventTest do
     end
   end
 
+  describe "Event schema versioning" do
+    test "new events get schema_version 1 by default" do
+      {:ok, event} =
+        Event.new(%{
+          type: :session_created,
+          session_id: "session-123"
+        })
+
+      assert event.schema_version == 1
+    end
+
+    test "schema_version is preserved when explicitly set" do
+      {:ok, event} =
+        Event.new(%{
+          type: :session_created,
+          session_id: "session-123",
+          schema_version: 2
+        })
+
+      assert event.schema_version == 2
+    end
+
+    test "events without schema_version (nil) are backward compatible" do
+      # Simulate an old event struct without schema_version
+      event = %Event{
+        id: "evt_old",
+        type: :session_created,
+        session_id: "session-123",
+        timestamp: DateTime.utc_now(),
+        schema_version: nil
+      }
+
+      # The struct should still work
+      assert event.id == "evt_old"
+      assert event.type == :session_created
+      assert event.schema_version == nil
+    end
+
+    test "schema_version is included in to_map serialization" do
+      {:ok, event} =
+        Event.new(%{
+          type: :session_created,
+          session_id: "session-123"
+        })
+
+      map = Event.to_map(event)
+      assert map["schema_version"] == 1
+    end
+
+    test "schema_version is restored from from_map deserialization" do
+      {:ok, original} =
+        Event.new(%{
+          type: :session_created,
+          session_id: "session-123"
+        })
+
+      map = Event.to_map(original)
+      {:ok, restored} = Event.from_map(map)
+
+      assert restored.schema_version == 1
+    end
+
+    test "from_map defaults schema_version to 1 when missing" do
+      map = %{
+        "id" => "evt_old",
+        "type" => "session_created",
+        "session_id" => "session-123",
+        "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601()
+      }
+
+      {:ok, event} = Event.from_map(map)
+      assert event.schema_version == 1
+    end
+
+    test "struct default for schema_version is 1" do
+      event = %Event{}
+      assert event.schema_version == 1
+    end
+  end
+
   describe "Event type categories" do
     test "session_events/0 returns session lifecycle event types" do
       types = Event.session_events()

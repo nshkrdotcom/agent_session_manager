@@ -55,7 +55,8 @@ defmodule AgentSessionManager.Core.Session do
           context: map(),
           tags: [String.t()],
           created_at: DateTime.t() | nil,
-          updated_at: DateTime.t() | nil
+          updated_at: DateTime.t() | nil,
+          deleted_at: DateTime.t() | nil
         }
 
   defstruct [
@@ -64,6 +65,7 @@ defmodule AgentSessionManager.Core.Session do
     :parent_session_id,
     :created_at,
     :updated_at,
+    :deleted_at,
     status: :pending,
     metadata: %{},
     context: %{},
@@ -156,7 +158,7 @@ defmodule AgentSessionManager.Core.Session do
   """
   @spec to_map(t()) :: map()
   def to_map(%__MODULE__{} = session) do
-    %{
+    map = %{
       "id" => session.id,
       "agent_id" => session.agent_id,
       "status" => Atom.to_string(session.status),
@@ -167,6 +169,12 @@ defmodule AgentSessionManager.Core.Session do
       "created_at" => DateTime.to_iso8601(session.created_at),
       "updated_at" => DateTime.to_iso8601(session.updated_at)
     }
+
+    if session.deleted_at do
+      Map.put(map, "deleted_at", DateTime.to_iso8601(session.deleted_at))
+    else
+      Map.put(map, "deleted_at", nil)
+    end
   end
 
   @doc """
@@ -188,7 +196,8 @@ defmodule AgentSessionManager.Core.Session do
         context: Serialization.atomize_keys(map["context"] || %{}),
         tags: map["tags"] || [],
         created_at: created_at,
-        updated_at: updated_at
+        updated_at: updated_at,
+        deleted_at: parse_optional_datetime(map["deleted_at"])
       }
 
       {:ok, session}
@@ -251,4 +260,13 @@ defmodule AgentSessionManager.Core.Session do
   end
 
   defp parse_datetime(_), do: {:error, Error.new(:validation_error, "datetime must be a string")}
+
+  defp parse_optional_datetime(nil), do: nil
+
+  defp parse_optional_datetime(datetime) when is_binary(datetime) do
+    case DateTime.from_iso8601(datetime) do
+      {:ok, dt, _} -> dt
+      {:error, _} -> nil
+    end
+  end
 end

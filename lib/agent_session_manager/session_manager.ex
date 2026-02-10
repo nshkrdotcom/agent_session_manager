@@ -57,12 +57,12 @@ defmodule AgentSessionManager.SessionManager do
     CapabilityResolver,
     Error,
     Event,
-    EventNormalizer,
     Run,
     Session,
     TranscriptBuilder
   }
 
+  alias AgentSessionManager.Persistence.EventPipeline
   alias AgentSessionManager.Policy.{AdapterCompiler, Policy, Preflight, Runtime}
   alias AgentSessionManager.Ports.{ArtifactStore, ProviderAdapter, SessionStore}
   alias AgentSessionManager.Telemetry
@@ -598,10 +598,28 @@ defmodule AgentSessionManager.SessionManager do
   defp build_event_callback(store, run, execution_session, user_callback, adapter, policy_runtime) do
     provider_name = ProviderAdapter.name(adapter)
 
+    pipeline_context = %{
+      session_id: run.session_id,
+      run_id: run.id,
+      provider: provider_name,
+      correlation_id: Map.get(execution_session.metadata, :correlation_id)
+    }
+
     fn event_data ->
-      handle_adapter_event(store, run, execution_session, event_data, provider_name)
-      maybe_enforce_policy(store, run, adapter, policy_runtime, event_data)
-      maybe_invoke_user_callback(user_callback, event_data)
+      enriched_event_data =
+        case EventPipeline.process(store, event_data, pipeline_context) do
+          {:ok, event} ->
+            event_data
+            |> Map.put(:type, event.type)
+            |> Map.put(:sequence_number, event.sequence_number)
+
+          {:error, _} ->
+            event_data
+        end
+
+      maybe_enforce_policy(store, run, adapter, policy_runtime, enriched_event_data)
+      maybe_invoke_user_callback(user_callback, enriched_event_data)
+      Telemetry.emit_adapter_event(run, execution_session, enriched_event_data)
     end
   end
 
@@ -1144,7 +1162,12 @@ defmodule AgentSessionManager.SessionManager do
 
     with {:ok, updated_run} <- Run.set_output(run, result.output),
          {:ok, run_with_usage} <- Run.update_token_usage(updated_run, result.token_usage),
-         final_run = update_run_metadata(run_with_usage, run_provider_metadata),
+         run_with_provider = %{
+           run_with_usage
+           | provider: provider_name,
+             provider_metadata: run_provider_metadata
+         },
+         final_run = update_run_metadata(run_with_provider, run_provider_metadata),
          :ok <- SessionStore.save_run(store, final_run),
          :ok <- update_session_provider_metadata(store, session, provider_metadata) do
       {:ok, result}
@@ -1207,88 +1230,7 @@ defmodule AgentSessionManager.SessionManager do
     end
   end
 
-  defp handle_adapter_event(store, run, session, event_data, provider_name) do
-    normalized_type = normalize_event_type(event_data, run)
-    normalized_event_data = Map.put(event_data, :type, normalized_type)
-    event_payload = ensure_map(Map.get(event_data, :data))
-
-    # Build metadata: merge adapter-provided metadata with provider identity
-    adapter_metadata = ensure_map(Map.get(event_data, :metadata))
-    event_metadata = Map.put(adapter_metadata, :provider, provider_name)
-
-    telemetry_event_data =
-      case Event.new(%{
-             type: normalized_type,
-             session_id: run.session_id,
-             run_id: run.id,
-             data: event_payload,
-             metadata: event_metadata
-           }) do
-        {:ok, event} ->
-          # Preserve adapter-provided timestamp if present
-          event = apply_adapter_timestamp(event, event_data)
-
-          case append_sequenced_event(store, event) do
-            {:ok, stored_event} ->
-              Map.put(normalized_event_data, :sequence_number, stored_event.sequence_number)
-
-            {:error, _} ->
-              normalized_event_data
-          end
-
-        {:error, _} ->
-          normalized_event_data
-      end
-
-    # Emit telemetry event for observability
-    Telemetry.emit_adapter_event(run, session, telemetry_event_data)
-  end
-
-  defp apply_adapter_timestamp(event, event_data) do
-    case Map.get(event_data, :timestamp) do
-      %DateTime{} = ts -> %{event | timestamp: ts}
-      _ -> event
-    end
-  end
-
-  defp normalize_event_type(event_data, run) do
-    case Map.get(event_data, :type) do
-      type when is_atom(type) ->
-        if Event.valid_type?(type) do
-          type
-        else
-          fallback_event_type(type)
-        end
-
-      _ ->
-        payload =
-          event_data
-          |> Map.get(:data)
-          |> ensure_map()
-          |> Map.put(:type, Map.get(event_data, :type))
-
-        context = %{
-          session_id: run.session_id,
-          run_id: run.id,
-          provider: Map.get(event_data, :provider, :generic)
-        }
-
-        case EventNormalizer.normalize(payload, context) do
-          {:ok, normalized} ->
-            normalized.type
-
-          {:error, _} ->
-            fallback_event_type(Map.get(event_data, :type))
-        end
-    end
-  end
-
-  defp fallback_event_type(type) when is_atom(type) do
-    if Event.valid_type?(type), do: type, else: :error_occurred
-  end
-
-  defp fallback_event_type(_), do: :error_occurred
-
+  @dialyzer {:nowarn_function, ensure_map: 1}
   defp ensure_map(value) when is_map(value), do: value
   defp ensure_map(_), do: %{}
 

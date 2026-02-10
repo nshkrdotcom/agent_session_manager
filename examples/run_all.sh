@@ -161,6 +161,48 @@ for p in "${PROVIDERS[@]}"; do
   PLAN_ARGS+=("")
 done
 
+# Persistence examples (no provider needed)
+PLAN_NAMES+=("SQLite SessionStore")
+PLAN_FILES+=("examples/sqlite_session_store_live.exs")
+PLAN_ARGS+=("")
+
+PLAN_NAMES+=("Ecto SessionStore")
+PLAN_FILES+=("examples/ecto_session_store_live.exs")
+PLAN_ARGS+=("")
+
+PLAN_NAMES+=("S3 ArtifactStore")
+PLAN_FILES+=("examples/s3_artifact_store_live.exs")
+PLAN_ARGS+=("")
+
+PLAN_NAMES+=("Composite Store")
+PLAN_FILES+=("examples/composite_store_live.exs")
+PLAN_ARGS+=("")
+
+# Persistence query, maintenance, and multi-run examples (no provider needed)
+PLAN_NAMES+=("Persistence Query API")
+PLAN_FILES+=("examples/persistence_query.exs")
+PLAN_ARGS+=("")
+
+PLAN_NAMES+=("Persistence Maintenance")
+PLAN_FILES+=("examples/persistence_maintenance.exs")
+PLAN_ARGS+=("")
+
+PLAN_NAMES+=("Persistence Multi-Run")
+PLAN_FILES+=("examples/persistence_multi_run.exs")
+PLAN_ARGS+=("")
+
+# Persistence live example (requires provider SDK)
+for p in "${PROVIDERS[@]}"; do
+  label="$(echo "${p:0:1}" | tr '[:lower:]' '[:upper:]')${p:1}"
+
+  PLAN_NAMES+=("Persistence Live ($label)")
+  PLAN_FILES+=("examples/persistence_live.exs")
+  PLAN_ARGS+=("--provider $p")
+done
+
+# Note: persistence_s3_minio.exs requires Docker/MinIO and is not included in the default run.
+# Run manually: MINIO_ROOT_USER=minioadmin MINIO_ROOT_PASSWORD=minioadmin mix run examples/persistence_s3_minio.exs
+
 TOTAL=${#PLAN_NAMES[@]}
 
 # ============================================================================

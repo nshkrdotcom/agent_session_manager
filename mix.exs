@@ -1,7 +1,7 @@
 defmodule AgentSessionManager.MixProject do
   use Mix.Project
 
-  @version "0.6.0"
+  @version "0.7.0"
   @source_url "https://github.com/nshkrdotcom/agent_session_manager"
 
   def project do
@@ -79,6 +79,7 @@ defmodule AgentSessionManager.MixProject do
         "guides/session_continuity.md",
         "guides/events_and_streaming.md",
         "guides/rendering.md",
+        "guides/stream_session.md",
         "guides/cursor_streaming_and_migration.md",
         "guides/workspace_snapshots.md",
         "guides/provider_routing.md",
@@ -108,6 +109,7 @@ defmodule AgentSessionManager.MixProject do
           "guides/session_continuity.md",
           "guides/events_and_streaming.md",
           "guides/rendering.md",
+          "guides/stream_session.md",
           "guides/cursor_streaming_and_migration.md",
           "guides/workspace_snapshots.md",
           "guides/provider_routing.md",
@@ -203,6 +205,10 @@ defmodule AgentSessionManager.MixProject do
           AgentSessionManager.Rendering.Sinks.FileSink,
           AgentSessionManager.Rendering.Sinks.JSONLSink,
           AgentSessionManager.Rendering.Sinks.CallbackSink
+        ],
+        "Stream Session": [
+          AgentSessionManager.StreamSession,
+          AgentSessionManager.StreamSession.Supervisor
         ],
         Observability: [
           AgentSessionManager.Config,

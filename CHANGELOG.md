@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-02-09
+
+### Added
+
+- **`StreamSession`** one-shot streaming session lifecycle module
+  - `StreamSession.start/1` replaces ~35 lines of hand-rolled boilerplate (store + adapter + task + Stream.resource + cleanup) with a single function call
+  - Returns `{:ok, stream, close_fun, meta}` — a lazy event stream, idempotent close function, and metadata map
+  - Automatic `InMemorySessionStore` creation when no store is provided
+  - Adapter startup from `{Module, opts}` tuples; passes through existing pids/names without ownership
+  - Ownership tracking: only terminates resources that StreamSession created
+  - Configurable idle timeout (default 120s) and shutdown grace period (default 5s)
+  - Error events emitted for adapter failures, task crashes, exceptions, and timeouts (never crashes the consumer)
+  - Atomic idempotent close via `:atomics.compare_exchange`
+- **`StreamSession.Supervisor`** convenience supervisor for production use
+  - Starts `Task.Supervisor` and `DynamicSupervisor` for managed task and adapter lifecycle
+  - Optional — StreamSession works without it using `Task.start_link` directly
+- **`StreamSession.Lifecycle`** resource acquisition and release (store, adapter, task)
+- **`StreamSession.EventStream`** lazy `Stream.resource` with receive-based state machine
+- New example: `stream_session.exs` demonstrating StreamSession in rendering and raw modes
+- New guide: `guides/stream_session.md`
+
+### Changed
+
+- Rendering examples (`rendering_compact.exs`, `rendering_verbose.exs`, `rendering_callback.exs`, `rendering_multi_sink.exs`) refactored to use `StreamSession.start/1`, eliminating duplicated `build_event_stream` boilerplate from each
+- `examples/run_all.sh` updated with StreamSession example entries
+
+### Documentation
+
+- Add `guides/stream_session.md` with quick start, options reference, rendering integration, error handling, supervision, and before/after comparison
+- Add `AgentSessionManager.StreamSession` and `AgentSessionManager.StreamSession.Supervisor` to HexDocs module groups
+- Update `examples/README.md` with StreamSession example documentation
+- Bump version to 0.7.0
+
 ## [0.6.0] - 2026-02-08
 
 ### Added
@@ -328,7 +361,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic project structure with mix.exs configuration
 - Project logo and assets
 
-[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.4.1...v0.5.0

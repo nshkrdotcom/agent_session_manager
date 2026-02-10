@@ -15,8 +15,7 @@ defmodule RenderingMultiSink do
   alias AgentSessionManager.Adapters.{
     AmpAdapter,
     ClaudeAdapter,
-    CodexAdapter,
-    InMemorySessionStore
+    CodexAdapter
   }
 
   alias AgentSessionManager.Rendering
@@ -30,7 +29,7 @@ defmodule RenderingMultiSink do
     TTYSink
   }
 
-  alias AgentSessionManager.SessionManager
+  alias AgentSessionManager.StreamSession
 
   @prompt "What are the three most important Elixir libraries for web development? One sentence each."
 
@@ -130,61 +129,67 @@ defmodule RenderingMultiSink do
     events_full_path = Path.join(tmp_dir, "events_full.jsonl")
     events_compact_path = Path.join(tmp_dir, "events_compact.jsonl")
 
-    with {:ok, store} <- InMemorySessionStore.start_link([]),
-         {:ok, adapter} <- start_adapter(provider) do
-      IO.puts("Prompt: #{@prompt}")
-      IO.puts("Log:    #{log_path}")
-      IO.puts("Events: #{events_full_path}")
-      IO.puts("        #{events_compact_path}")
-      IO.puts("")
+    IO.puts("Prompt: #{@prompt}")
+    IO.puts("Log:    #{log_path}")
+    IO.puts("Events: #{events_full_path}")
+    IO.puts("        #{events_compact_path}")
+    IO.puts("")
 
-      # Open log file and write a header before rendering starts
-      {:ok, log_io} = File.open(log_path, [:write, :utf8])
-      IO.binwrite(log_io, "Session: provider=#{provider} mode=#{opts.mode}\n\n")
+    # Open log file and write a header before rendering starts
+    {:ok, log_io} = File.open(log_path, [:write, :utf8])
+    IO.binwrite(log_io, "Session: provider=#{provider} mode=#{opts.mode}\n\n")
 
-      # Track events programmatically via CallbackSink
-      event_counts = :counters.new(1, [:atomics])
+    # Track events programmatically via CallbackSink
+    event_counts = :counters.new(1, [:atomics])
 
-      callback = fn event, _iodata ->
-        :counters.add(event_counts, 1, 1)
+    callback = fn event, _iodata ->
+      :counters.add(event_counts, 1, 1)
 
-        if event.type == :run_completed do
-          IO.puts("\n  [callback] Run completed (stop_reason: #{event[:data][:stop_reason]})")
-        end
+      if event.type == :run_completed do
+        IO.puts("\n  [callback] Run completed (stop_reason: #{event[:data][:stop_reason]})")
       end
+    end
 
-      stream = build_event_stream(store, adapter)
+    case StreamSession.start(
+           adapter: adapter_spec(provider),
+           input: %{messages: [%{role: "user", content: @prompt}]}
+         ) do
+      {:ok, stream, close_fun, _meta} ->
+        renderer = renderer_for_mode(opts.mode)
 
-      renderer = renderer_for_mode(opts.mode)
+        sinks = [
+          {TTYSink, []},
+          {FileSink, [io: log_io]},
+          {JSONLSink, [path: events_full_path, mode: :full]},
+          {JSONLSink, [path: events_compact_path, mode: :compact]},
+          {CallbackSink, [callback: callback]}
+        ]
 
-      sinks = [
-        {TTYSink, []},
-        {FileSink, [io: log_io]},
-        {JSONLSink, [path: events_full_path, mode: :full]},
-        {JSONLSink, [path: events_compact_path, mode: :compact]},
-        {CallbackSink, [callback: callback]}
-      ]
+        Rendering.stream(stream, renderer: renderer, sinks: sinks)
 
-      Rendering.stream(stream, renderer: renderer, sinks: sinks)
+        close_fun.()
+        File.close(log_io)
 
-      File.close(log_io)
+        total = :counters.get(event_counts, 1)
+        IO.puts("")
+        IO.puts("  [callback] Total events received: #{total}")
+        IO.puts("")
 
-      total = :counters.get(event_counts, 1)
-      IO.puts("")
-      IO.puts("  [callback] Total events received: #{total}")
-      IO.puts("")
+        # Show file contents
+        IO.puts("--- Log file (#{log_path}) ---")
+        IO.puts(File.read!(log_path))
 
-      # Show file contents
-      IO.puts("--- Log file (#{log_path}) ---")
-      IO.puts(File.read!(log_path))
+        IO.puts("--- Events full (first 5 lines) ---")
+        print_first_lines(events_full_path, 5)
 
-      IO.puts("--- Events full (first 5 lines) ---")
-      print_first_lines(events_full_path, 5)
+        IO.puts("--- Events compact (first 5 lines) ---")
+        print_first_lines(events_compact_path, 5)
 
-      IO.puts("--- Events compact (first 5 lines) ---")
-      print_first_lines(events_compact_path, 5)
+        :ok
 
-      :ok
+      {:error, reason} ->
+        File.close(log_io)
+        {:error, reason}
     end
   end
 
@@ -200,45 +205,9 @@ defmodule RenderingMultiSink do
     IO.puts("")
   end
 
-  defp build_event_stream(store, adapter) do
-    parent = self()
-    ref = make_ref()
-
-    event_callback = fn event -> send(parent, {ref, :event, event}) end
-
-    Task.start(fn ->
-      result =
-        SessionManager.run_once(
-          store,
-          adapter,
-          %{messages: [%{role: "user", content: @prompt}]},
-          event_callback: event_callback
-        )
-
-      send(parent, {ref, :done, result})
-    end)
-
-    Stream.resource(
-      fn -> :running end,
-      fn
-        :done ->
-          {:halt, :done}
-
-        :running ->
-          receive do
-            {^ref, :event, event} -> {[event], :running}
-            {^ref, :done, _result} -> {:halt, :done}
-          after
-            120_000 -> {:halt, :done}
-          end
-      end,
-      fn _ -> :ok end
-    )
-  end
-
-  defp start_adapter("claude"), do: ClaudeAdapter.start_link([])
-  defp start_adapter("codex"), do: CodexAdapter.start_link(working_directory: File.cwd!())
-  defp start_adapter("amp"), do: AmpAdapter.start_link(cwd: File.cwd!())
+  defp adapter_spec("claude"), do: {ClaudeAdapter, []}
+  defp adapter_spec("codex"), do: {CodexAdapter, working_directory: File.cwd!()}
+  defp adapter_spec("amp"), do: {AmpAdapter, cwd: File.cwd!()}
 end
 
 RenderingMultiSink.main(System.argv())

@@ -210,6 +210,23 @@ mix run examples/permission_mode.exs --provider amp
 mix run examples/permission_mode.exs --provider claude --mode dangerously_skip_permissions
 ```
 
+## StreamSession Example
+
+### `stream_session.exs` -- StreamSession One-Shot Lifecycle (Live Provider)
+
+- Demonstrates `StreamSession.start/1` replacing ~35 lines of hand-rolled stream boilerplate with a single call
+- Exercises two output modes:
+  - **rendering**: pipes the event stream through CompactRenderer + TTYSink
+  - **raw**: consumes events directly, prints streaming text and event summary
+- StreamSession automatically manages store creation, adapter lifecycle, task launch, and cleanup
+- Shows the idempotent `close_fun` for resource release
+
+```bash
+mix run examples/stream_session.exs --provider claude
+mix run examples/stream_session.exs --provider codex --mode raw
+mix run examples/stream_session.exs --provider amp --no-color
+```
+
 ## Rendering Pipeline Examples
 
 These examples demonstrate the Rendering system (Renderer x Sink architecture) using live provider execution.

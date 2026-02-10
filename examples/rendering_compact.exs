@@ -13,14 +13,13 @@ defmodule RenderingCompact do
   alias AgentSessionManager.Adapters.{
     AmpAdapter,
     ClaudeAdapter,
-    CodexAdapter,
-    InMemorySessionStore
+    CodexAdapter
   }
 
   alias AgentSessionManager.Rendering
   alias AgentSessionManager.Rendering.Renderers.CompactRenderer
   alias AgentSessionManager.Rendering.Sinks.TTYSink
-  alias AgentSessionManager.SessionManager
+  alias AgentSessionManager.StreamSession
 
   @prompt "List three Elixir OTP behaviours and describe each in one sentence."
 
@@ -100,59 +99,29 @@ defmodule RenderingCompact do
   # ============================================================================
 
   defp run(provider, opts) do
-    with {:ok, store} <- InMemorySessionStore.start_link([]),
-         {:ok, adapter} <- start_adapter(provider) do
-      IO.puts("Prompt: #{@prompt}")
-      IO.puts("")
+    IO.puts("Prompt: #{@prompt}")
+    IO.puts("")
 
-      stream = build_event_stream(store, adapter)
+    case StreamSession.start(
+           adapter: adapter_spec(provider),
+           input: %{messages: [%{role: "user", content: @prompt}]}
+         ) do
+      {:ok, stream, close_fun, _meta} ->
+        Rendering.stream(stream,
+          renderer: {CompactRenderer, [color: opts.color]},
+          sinks: [{TTYSink, []}]
+        )
 
-      Rendering.stream(stream,
-        renderer: {CompactRenderer, [color: opts.color]},
-        sinks: [{TTYSink, []}]
-      )
+        close_fun.()
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
-  defp build_event_stream(store, adapter) do
-    parent = self()
-    ref = make_ref()
-
-    callback = fn event -> send(parent, {ref, :event, event}) end
-
-    Task.start(fn ->
-      result =
-        SessionManager.run_once(
-          store,
-          adapter,
-          %{messages: [%{role: "user", content: @prompt}]},
-          event_callback: callback
-        )
-
-      send(parent, {ref, :done, result})
-    end)
-
-    Stream.resource(
-      fn -> :running end,
-      fn
-        :done ->
-          {:halt, :done}
-
-        :running ->
-          receive do
-            {^ref, :event, event} -> {[event], :running}
-            {^ref, :done, _result} -> {:halt, :done}
-          after
-            120_000 -> {:halt, :done}
-          end
-      end,
-      fn _ -> :ok end
-    )
-  end
-
-  defp start_adapter("claude"), do: ClaudeAdapter.start_link([])
-  defp start_adapter("codex"), do: CodexAdapter.start_link(working_directory: File.cwd!())
-  defp start_adapter("amp"), do: AmpAdapter.start_link(cwd: File.cwd!())
+  defp adapter_spec("claude"), do: {ClaudeAdapter, []}
+  defp adapter_spec("codex"), do: {CodexAdapter, working_directory: File.cwd!()}
+  defp adapter_spec("amp"), do: {AmpAdapter, cwd: File.cwd!()}
 end
 
 RenderingCompact.main(System.argv())

@@ -195,22 +195,6 @@ defmodule AgentSessionManager.ConfigTest do
     end
   end
 
-  # ── PubSub ──────────────────────────────────────────────────────────────────
-
-  describe "pubsub defaults" do
-    test "pubsub_prefix" do
-      assert Config.get(:pubsub_prefix) == "asm"
-    end
-
-    test "pubsub_scope" do
-      assert Config.get(:pubsub_scope) == :session
-    end
-
-    test "pubsub_wrapper" do
-      assert Config.get(:pubsub_wrapper) == :asm_event
-    end
-  end
-
   # ── Shell / Adapter ─────────────────────────────────────────────────────────
 
   describe "shell adapter defaults" do
@@ -259,11 +243,11 @@ defmodule AgentSessionManager.ConfigTest do
     end
 
     test "put/get/delete cycle works for string keys" do
-      Config.put(:pubsub_prefix, "custom")
-      assert Config.get(:pubsub_prefix) == "custom"
+      Config.put(:default_shell, "/bin/bash")
+      assert Config.get(:default_shell) == "/bin/bash"
 
-      Config.delete(:pubsub_prefix)
-      assert Config.get(:pubsub_prefix) == "asm"
+      Config.delete(:default_shell)
+      assert Config.get(:default_shell) == "/bin/sh"
     end
 
     test "put/get/delete cycle works for list keys" do

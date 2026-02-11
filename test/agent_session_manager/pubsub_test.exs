@@ -5,6 +5,8 @@ defmodule AgentSessionManager.PubSubTest do
   alias AgentSessionManager.PubSub.Topic
 
   setup do
+    {:ok, _} = Application.ensure_all_started(:phoenix_pubsub)
+
     # Start a real PubSub for this test
     pubsub_name = :"test_pubsub_#{System.unique_integer([:positive])}"
     start_supervised!({Phoenix.PubSub, name: pubsub_name})
@@ -49,6 +51,26 @@ defmodule AgentSessionManager.PubSubTest do
         type: :run_started,
         session_id: session_id,
         run_id: run_id,
+        data: %{},
+        provider: :claude
+      }
+
+      callback.(event)
+
+      assert_receive {:asm_event, ^session_id, ^event}
+    end
+
+    test "broadcasts to type-scoped topic when scope: :type", %{pubsub: pubsub} do
+      session_id = "ses_test_#{System.unique_integer([:positive])}"
+      topic = Topic.build_type_topic("asm", session_id, :run_started)
+      Phoenix.PubSub.subscribe(pubsub, topic)
+
+      callback = ASMPubSub.event_callback(pubsub, scope: :type)
+
+      event = %{
+        type: :run_started,
+        session_id: session_id,
+        run_id: "run_001",
         data: %{},
         provider: :claude
       }

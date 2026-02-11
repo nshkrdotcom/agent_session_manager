@@ -29,7 +29,6 @@ Override any default in `config/config.exs` or `config/runtime.exs`:
 config :agent_session_manager,
   command_timeout_ms: 60_000,
   max_parallel_sessions: 200,
-  pubsub_prefix: "my_app",
   event_buffer_size: 5_000
 ```
 
@@ -130,13 +129,7 @@ These defaults are used by `RetentionPolicy.new/0`. Per-policy overrides are sti
 |-----|---------|-------------|
 | `:chars_per_token` | `4` | Approximate characters per token for estimation |
 
-### PubSub
-
-| Key | Default | Description |
-|-----|---------|-------------|
-| `:pubsub_prefix` | `"asm"` | Topic prefix for PubSub messages |
-| `:pubsub_scope` | `:session` | Default topic scoping strategy |
-| `:pubsub_wrapper` | `:asm_event` | Message wrapper tuple tag |
+PubSub integration is configured per use via sink/callback options (`prefix`, `scope`, `message_wrapper`), not via `AgentSessionManager.Config` keys.
 
 ### Shell Adapter
 

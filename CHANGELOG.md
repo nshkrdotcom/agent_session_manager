@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- PubSub defaults are now configured per use (`PubSubSink` / `PubSub.event_callback`) and are no longer exposed as global `AgentSessionManager.Config` keys
 - Current-only contract cleanup:
   - Boolean continuation value `true` is no longer accepted; use `:auto`, `:replay`, `:native`, or `false`
   - Adapter tool events emit canonical keys only: `tool_call_id`, `tool_name`, `tool_input`, `tool_output`

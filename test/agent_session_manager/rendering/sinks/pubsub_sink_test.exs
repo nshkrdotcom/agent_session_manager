@@ -196,6 +196,17 @@ defmodule AgentSessionManager.Rendering.Sinks.PubSubSinkTest do
       assert_received {:broadcast, ^expected_topic, _}
     end
 
+    test "broadcasts to type-scoped topic" do
+      {:ok, state} =
+        PubSubSink.init(pubsub: self(), scope: :type, dispatcher: MockDispatcher)
+
+      event = run_started()
+      {:ok, _state} = PubSubSink.write_event(event, [], state)
+
+      expected_topic = "asm:session:#{event[:session_id]}:type:#{event[:type]}"
+      assert_received {:broadcast, ^expected_topic, _}
+    end
+
     test "broadcasts with custom prefix" do
       {:ok, state} =
         PubSubSink.init(

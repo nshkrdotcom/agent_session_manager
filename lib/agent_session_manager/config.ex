@@ -26,8 +26,7 @@ defmodule AgentSessionManager.Config do
       # config/config.exs
       config :agent_session_manager,
         command_timeout_ms: 60_000,
-        max_parallel_sessions: 200,
-        pubsub_prefix: "my_app"
+        max_parallel_sessions: 200
 
   See the [Configuration Reference guide](configuration_reference.md) for the
   full list of keys, types, and defaults.
@@ -114,14 +113,6 @@ defmodule AgentSessionManager.Config do
   |--------------------|---------|----------------------|
   | `:chars_per_token`  | `4`     | `TranscriptBuilder` |
 
-  ### PubSub
-
-  | Key              | Default      | Used By                   |
-  |------------------|-------------|---------------------------|
-  | `:pubsub_prefix` | `"asm"`     | `PubSub`, `Topic`, `PubSubSink` |
-  | `:pubsub_scope`  | `:session`  | `PubSub`, `PubSubSink`   |
-  | `:pubsub_wrapper`| `:asm_event`| `PubSub`, `PubSubSink`   |
-
   ### Shell Adapter
 
   | Key                          | Default    | Used By        |
@@ -187,10 +178,6 @@ defmodule AgentSessionManager.Config do
           | :retention_prune_event_types_first
           # Cost
           | :chars_per_token
-          # PubSub
-          | :pubsub_prefix
-          | :pubsub_scope
-          | :pubsub_wrapper
           # Shell
           | :default_shell
           | :default_success_exit_codes
@@ -244,10 +231,6 @@ defmodule AgentSessionManager.Config do
     :retention_prune_event_types_first,
     # Cost
     :chars_per_token,
-    # PubSub
-    :pubsub_prefix,
-    :pubsub_scope,
-    :pubsub_wrapper,
     # Shell
     :default_shell,
     :default_success_exit_codes,
@@ -354,10 +337,6 @@ defmodule AgentSessionManager.Config do
   def default(:retention_prune_event_types_first), do: [:message_streamed, :token_usage_updated]
   # Cost
   def default(:chars_per_token), do: 4
-  # PubSub
-  def default(:pubsub_prefix), do: "asm"
-  def default(:pubsub_scope), do: :session
-  def default(:pubsub_wrapper), do: :asm_event
   # Shell
   def default(:default_shell), do: "/bin/sh"
   def default(:default_success_exit_codes), do: [0]

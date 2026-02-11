@@ -22,7 +22,7 @@ defmodule AgentSessionManager.PubSub.Topic do
       "asm:session:ses_abc123:run:run_def456"
   """
 
-  alias AgentSessionManager.Config
+  @default_prefix "asm"
 
   @doc """
   Builds a topic string from an event map and options.
@@ -34,7 +34,7 @@ defmodule AgentSessionManager.PubSub.Topic do
   """
   @spec build(map(), keyword()) :: String.t()
   def build(event, opts \\ []) do
-    prefix = Keyword.get(opts, :prefix, Config.get(:pubsub_prefix))
+    prefix = Keyword.get(opts, :prefix, @default_prefix)
     scope = Keyword.get(opts, :scope, :session)
 
     case scope do
@@ -60,7 +60,7 @@ defmodule AgentSessionManager.PubSub.Topic do
       "asm:session:ses_abc123"
   """
   @spec build_session_topic(String.t(), String.t()) :: String.t()
-  def build_session_topic(prefix \\ Config.get(:pubsub_prefix), session_id) do
+  def build_session_topic(prefix \\ @default_prefix, session_id) do
     "#{prefix}:session:#{session_id}"
   end
 
@@ -71,7 +71,7 @@ defmodule AgentSessionManager.PubSub.Topic do
       "asm:session:ses_abc123:run:run_def456"
   """
   @spec build_run_topic(String.t(), String.t(), String.t()) :: String.t()
-  def build_run_topic(prefix \\ Config.get(:pubsub_prefix), session_id, run_id) do
+  def build_run_topic(prefix \\ @default_prefix, session_id, run_id) do
     "#{prefix}:session:#{session_id}:run:#{run_id}"
   end
 
@@ -82,7 +82,7 @@ defmodule AgentSessionManager.PubSub.Topic do
       "asm:session:ses_abc123:type:tool_call_started"
   """
   @spec build_type_topic(String.t(), String.t(), atom() | String.t()) :: String.t()
-  def build_type_topic(prefix \\ Config.get(:pubsub_prefix), session_id, type) do
+  def build_type_topic(prefix \\ @default_prefix, session_id, type) do
     "#{prefix}:session:#{session_id}:type:#{type}"
   end
 end

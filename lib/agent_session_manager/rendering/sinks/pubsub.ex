@@ -25,8 +25,11 @@ if Code.ensure_loaded?(Phoenix.PubSub) do
 
     @behaviour AgentSessionManager.Rendering.Sink
 
-    alias AgentSessionManager.Config
     alias AgentSessionManager.PubSub.Topic
+
+    @default_prefix "asm"
+    @default_scope :session
+    @default_wrapper :asm_event
 
     @impl true
     def init(opts) do
@@ -38,7 +41,7 @@ if Code.ensure_loaded?(Phoenix.PubSub) do
            pubsub: pubsub,
            topic_strategy: topic_strategy,
            dispatcher: dispatcher,
-           message_wrapper: Keyword.get(opts, :message_wrapper, Config.get(:pubsub_wrapper)),
+           message_wrapper: Keyword.get(opts, :message_wrapper, @default_wrapper),
            include_iodata: Keyword.get(opts, :include_iodata, false),
            broadcast_count: 0,
            error_count: 0
@@ -105,8 +108,8 @@ if Code.ensure_loaded?(Phoenix.PubSub) do
     defp resolve_topic_strategy(opts) do
       topic = Keyword.get(opts, :topic)
       topic_fn = Keyword.get(opts, :topic_fn)
-      prefix = Keyword.get(opts, :prefix, Config.get(:pubsub_prefix))
-      scope = Keyword.get(opts, :scope, Config.get(:pubsub_scope))
+      prefix = Keyword.get(opts, :prefix, @default_prefix)
+      scope = Keyword.get(opts, :scope, @default_scope)
 
       cond do
         topic && topic_fn ->

@@ -20,6 +20,7 @@ defmodule SessionSubscriptionExample do
   }
 
   alias AgentSessionManager.Core.Error
+  alias AgentSessionManager.Models
   alias AgentSessionManager.Runtime.SessionServer
 
   @prompts [
@@ -142,7 +143,7 @@ defmodule SessionSubscriptionExample do
   end
 
   defp start_adapter("claude") do
-    ClaudeAdapter.start_link(model: "claude-haiku-4-5-20251001", tools: [])
+    ClaudeAdapter.start_link(model: Models.default_model(:claude), tools: [])
   end
 
   defp start_adapter("codex") do

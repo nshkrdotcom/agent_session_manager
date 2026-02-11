@@ -35,6 +35,7 @@ defmodule LiveSession do
     Session
   }
 
+  alias AgentSessionManager.Models
   alias AgentSessionManager.Ports.ProviderAdapter
   alias AgentSessionManager.Adapters.{AmpAdapter, ClaudeAdapter, CodexAdapter}
 
@@ -225,9 +226,7 @@ defmodule LiveSession do
     {:ok, config}
   end
 
-  defp get_default_model("claude"), do: "claude-haiku-4-5-20251001"
-  defp get_default_model("codex"), do: nil
-  defp get_default_model("amp"), do: nil
+  defp get_default_model(provider), do: Models.default_model(String.to_existing_atom(provider))
 
   # ============================================================================
   # Capability Checking

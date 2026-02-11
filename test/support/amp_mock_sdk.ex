@@ -27,6 +27,8 @@ defmodule AgentSessionManager.Test.AmpMockSDK do
   use GenServer
   use Supertester.TestableGenServer
 
+  alias AgentSessionManager.Test.Models, as: TestModels
+
   alias AmpSdk.Types.{
     AssistantMessage,
     AssistantPayload,
@@ -142,7 +144,7 @@ defmodule AgentSessionManager.Test.AmpMockSDK do
         message: %AssistantPayload{
           id: "msg-1",
           role: "assistant",
-          model: "claude-sonnet-4-5-20250929",
+          model: TestModels.claude_sonnet_model(),
           content: [%TextContent{type: "text", text: content}],
           stop_reason: "end_turn",
           usage: %Usage{input_tokens: 10, output_tokens: 20}
@@ -183,7 +185,7 @@ defmodule AgentSessionManager.Test.AmpMockSDK do
           message: %AssistantPayload{
             id: "msg-#{idx}",
             role: "assistant",
-            model: "claude-sonnet-4-5-20250929",
+            model: TestModels.claude_sonnet_model(),
             content: [%TextContent{type: "text", text: chunk}],
             stop_reason: if(idx == length(chunks) - 1, do: "end_turn", else: nil),
             usage: %Usage{
@@ -232,7 +234,7 @@ defmodule AgentSessionManager.Test.AmpMockSDK do
         message: %AssistantPayload{
           id: "msg-1",
           role: "assistant",
-          model: "claude-sonnet-4-5-20250929",
+          model: TestModels.claude_sonnet_model(),
           content: [
             %ToolUseContent{
               type: "tool_use",
@@ -268,7 +270,7 @@ defmodule AgentSessionManager.Test.AmpMockSDK do
         message: %AssistantPayload{
           id: "msg-2",
           role: "assistant",
-          model: "claude-sonnet-4-5-20250929",
+          model: TestModels.claude_sonnet_model(),
           content: [%TextContent{type: "text", text: content}],
           stop_reason: "end_turn",
           usage: %Usage{input_tokens: 30, output_tokens: 50}

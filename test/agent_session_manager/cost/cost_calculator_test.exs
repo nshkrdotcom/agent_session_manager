@@ -2,52 +2,22 @@ defmodule AgentSessionManager.Cost.CostCalculatorTest do
   use AgentSessionManager.SupertesterCase, async: true
 
   alias AgentSessionManager.Cost.CostCalculator
+  alias AgentSessionManager.Models
+  alias AgentSessionManager.Test.Models, as: TestModels
 
-  @pricing_table %{
-    "claude" => %{
-      default: %{input: 0.000003, output: 0.000015},
-      models: %{
-        "claude-opus-4-6" => %{
-          input: 0.000015,
-          output: 0.000075,
-          cache_read: 0.0000015,
-          cache_creation: 0.00001875
-        },
-        "claude-sonnet-4-5" => %{
-          input: 0.000003,
-          output: 0.000015,
-          cache_read: 0.0000003,
-          cache_creation: 0.00000375
-        },
-        "claude-haiku-4-5" => %{
-          input: 0.0000008,
-          output: 0.000004,
-          cache_read: 0.00000008,
-          cache_creation: 0.000001
-        }
-      }
-    },
-    "codex" => %{
-      default: %{input: 0.000003, output: 0.000015},
-      models: %{
-        "o3" => %{input: 0.000010, output: 0.000040},
-        "o3-mini" => %{input: 0.0000011, output: 0.0000044},
-        "gpt-4o" => %{input: 0.0000025, output: 0.000010},
-        "gpt-4o-mini" => %{input: 0.00000015, output: 0.0000006}
-      }
-    },
-    "amp" => %{
-      default: %{input: 0.000003, output: 0.000015},
-      models: %{}
-    }
-  }
+  @pricing_table Models.default_pricing_table()
 
   describe "calculate/4" do
     test "exact model match returns correct cost" do
       tokens = %{input_tokens: 1000, output_tokens: 500}
 
       assert {:ok, cost} =
-               CostCalculator.calculate(tokens, "claude", "claude-opus-4-6", @pricing_table)
+               CostCalculator.calculate(
+                 tokens,
+                 "claude",
+                 TestModels.claude_opus_model(),
+                 @pricing_table
+               )
 
       expected = 1000 * 0.000015 + 500 * 0.000075
       assert_in_delta cost, expected, 0.0000001
@@ -60,7 +30,7 @@ defmodule AgentSessionManager.Cost.CostCalculatorTest do
                CostCalculator.calculate(
                  tokens,
                  "claude",
-                 "claude-sonnet-4-5-20250929",
+                 TestModels.claude_sonnet_model(),
                  @pricing_table
                )
 
@@ -104,7 +74,12 @@ defmodule AgentSessionManager.Cost.CostCalculatorTest do
       }
 
       assert {:ok, cost} =
-               CostCalculator.calculate(tokens, "claude", "claude-opus-4-6", @pricing_table)
+               CostCalculator.calculate(
+                 tokens,
+                 "claude",
+                 TestModels.claude_opus_model(),
+                 @pricing_table
+               )
 
       expected =
         1000 * 0.000015 + 500 * 0.000075 +
@@ -133,7 +108,12 @@ defmodule AgentSessionManager.Cost.CostCalculatorTest do
       tokens = %{input_tokens: 0, output_tokens: 0}
 
       assert {:ok, cost} =
-               CostCalculator.calculate(tokens, "claude", "claude-opus-4-6", @pricing_table)
+               CostCalculator.calculate(
+                 tokens,
+                 "claude",
+                 TestModels.claude_opus_model(),
+                 @pricing_table
+               )
 
       assert_in_delta cost, 0.0, 0.0000001
     end
@@ -142,7 +122,12 @@ defmodule AgentSessionManager.Cost.CostCalculatorTest do
       tokens = %{output_tokens: 500}
 
       assert {:ok, cost} =
-               CostCalculator.calculate(tokens, "claude", "claude-opus-4-6", @pricing_table)
+               CostCalculator.calculate(
+                 tokens,
+                 "claude",
+                 TestModels.claude_opus_model(),
+                 @pricing_table
+               )
 
       expected = 500 * 0.000075
       assert_in_delta cost, expected, 0.0000001
@@ -150,7 +135,12 @@ defmodule AgentSessionManager.Cost.CostCalculatorTest do
 
     test "empty token map returns zero cost" do
       assert {:ok, cost} =
-               CostCalculator.calculate(%{}, "claude", "claude-opus-4-6", @pricing_table)
+               CostCalculator.calculate(
+                 %{},
+                 "claude",
+                 TestModels.claude_opus_model(),
+                 @pricing_table
+               )
 
       assert_in_delta cost, 0.0, 0.0000001
     end
@@ -159,7 +149,11 @@ defmodule AgentSessionManager.Cost.CostCalculatorTest do
   describe "resolve_rates/3" do
     test "exact model match" do
       assert {:ok, rates} =
-               CostCalculator.resolve_rates("claude", "claude-opus-4-6", @pricing_table)
+               CostCalculator.resolve_rates(
+                 "claude",
+                 TestModels.claude_opus_model(),
+                 @pricing_table
+               )
 
       assert rates.input == 0.000015
       assert rates.output == 0.000075
@@ -170,7 +164,7 @@ defmodule AgentSessionManager.Cost.CostCalculatorTest do
       assert {:ok, rates} =
                CostCalculator.resolve_rates(
                  "claude",
-                 "claude-haiku-4-5-20251001",
+                 TestModels.claude_model(),
                  @pricing_table
                )
 

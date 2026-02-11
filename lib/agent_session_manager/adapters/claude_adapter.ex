@@ -52,9 +52,10 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
     use GenServer
 
     alias AgentSessionManager.Core.{Capability, Error}
+    alias AgentSessionManager.Models
     alias AgentSessionManager.Ports.ProviderAdapter
 
-    @default_model "claude-haiku-4-5-20251001"
+    @default_model Models.default_model(:claude)
     @emitted_events_key {__MODULE__, :emitted_events}
 
     defmodule RunState do

@@ -2,6 +2,7 @@ defmodule AgentSessionManager.Policy.RuntimeTest do
   use AgentSessionManager.SupertesterCase, async: true
 
   alias AgentSessionManager.Policy.{Policy, Runtime}
+  alias AgentSessionManager.Test.Models, as: TestModels
 
   describe "observe_event/2" do
     test "requests cancel exactly once for cancel-mode violations" do
@@ -59,7 +60,10 @@ defmodule AgentSessionManager.Policy.RuntimeTest do
       "claude" => %{
         default: %{input: 0.000003, output: 0.000015},
         models: %{
-          "claude-opus-4-6" => %{input: 0.000015, output: 0.000075}
+          TestModels.claude_opus_model() => %{
+            input: 0.000015,
+            output: 0.000075
+          }
         }
       }
     }
@@ -85,7 +89,7 @@ defmodule AgentSessionManager.Policy.RuntimeTest do
       {:ok, _} =
         Runtime.observe_event(runtime, %{
           type: :run_started,
-          data: %{model: "claude-opus-4-6"}
+          data: %{model: TestModels.claude_opus_model()}
         })
 
       {:ok, _} =

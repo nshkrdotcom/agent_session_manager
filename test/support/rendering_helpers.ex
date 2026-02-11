@@ -3,6 +3,8 @@ defmodule AgentSessionManager.Test.RenderingHelpers do
   Helpers for building canonical adapter events in rendering tests.
   """
 
+  alias AgentSessionManager.Test.Models, as: TestModels
+
   @default_session_id "ses_test_123"
   @default_run_id "run_test_456"
 
@@ -19,7 +21,7 @@ defmodule AgentSessionManager.Test.RenderingHelpers do
 
   def run_started(opts \\ []) do
     event(:run_started, %{
-      model: opts[:model] || "claude-sonnet-4-5-20250929",
+      model: opts[:model] || TestModels.claude_sonnet_model(),
       session_id: opts[:session_id] || @default_session_id
     })
   end

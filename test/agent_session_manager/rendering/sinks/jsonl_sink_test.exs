@@ -2,6 +2,7 @@ defmodule AgentSessionManager.Rendering.Sinks.JSONLSinkTest do
   use ExUnit.Case, async: true
 
   alias AgentSessionManager.Rendering.Sinks.JSONLSink
+  alias AgentSessionManager.Test.Models, as: TestModels
   import AgentSessionManager.Test.RenderingHelpers
 
   @moduletag :tmp_dir
@@ -84,7 +85,7 @@ defmodule AgentSessionManager.Rendering.Sinks.JSONLSinkTest do
     test "writes abbreviated event", %{path: path} do
       {:ok, state} = JSONLSink.init(path: path, mode: :compact)
 
-      event = run_started(model: "claude-sonnet-4-5-20250929")
+      event = run_started(model: TestModels.claude_sonnet_model())
       {:ok, state} = JSONLSink.write_event(event, "", state)
       JSONLSink.flush(state)
       JSONLSink.close(state)

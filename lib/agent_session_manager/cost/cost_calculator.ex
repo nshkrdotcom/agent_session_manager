@@ -5,6 +5,7 @@ defmodule AgentSessionManager.Cost.CostCalculator do
   """
 
   alias AgentSessionManager.Core.Run
+  alias AgentSessionManager.Models
 
   @type token_counts :: map()
   @type rate_entry :: map()
@@ -95,44 +96,7 @@ defmodule AgentSessionManager.Cost.CostCalculator do
 
   @spec default_pricing_table() :: pricing_table()
   def default_pricing_table do
-    %{
-      "claude" => %{
-        default: %{input: 0.000003, output: 0.000015},
-        models: %{
-          "claude-opus-4-6" => %{
-            input: 0.000015,
-            output: 0.000075,
-            cache_read: 0.0000015,
-            cache_creation: 0.00001875
-          },
-          "claude-sonnet-4-5" => %{
-            input: 0.000003,
-            output: 0.000015,
-            cache_read: 0.0000003,
-            cache_creation: 0.00000375
-          },
-          "claude-haiku-4-5" => %{
-            input: 0.0000008,
-            output: 0.000004,
-            cache_read: 0.00000008,
-            cache_creation: 0.000001
-          }
-        }
-      },
-      "codex" => %{
-        default: %{input: 0.000003, output: 0.000015},
-        models: %{
-          "o3" => %{input: 0.000010, output: 0.000040},
-          "o3-mini" => %{input: 0.0000011, output: 0.0000044},
-          "gpt-4o" => %{input: 0.0000025, output: 0.000010},
-          "gpt-4o-mini" => %{input: 0.00000015, output: 0.0000006}
-        }
-      },
-      "amp" => %{
-        default: %{input: 0.000003, output: 0.000015},
-        models: %{}
-      }
-    }
+    Models.default_pricing_table()
   end
 
   defp provider_default(provider_entry) do

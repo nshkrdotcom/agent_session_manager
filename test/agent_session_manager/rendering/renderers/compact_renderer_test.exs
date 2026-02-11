@@ -2,6 +2,7 @@ defmodule AgentSessionManager.Rendering.Renderers.CompactRendererTest do
   use ExUnit.Case, async: true
 
   alias AgentSessionManager.Rendering.Renderers.CompactRenderer
+  alias AgentSessionManager.Test.Models, as: TestModels
   import AgentSessionManager.Test.RenderingHelpers
 
   defp render_events(events, opts \\ []) do
@@ -54,7 +55,7 @@ defmodule AgentSessionManager.Rendering.Renderers.CompactRendererTest do
     end
 
     test "emits model abbreviation" do
-      event = run_started(model: "claude-opus-4-6-20250801")
+      event = run_started(model: TestModels.claude_opus_model() <> "-20250801")
       {text, _state} = render_single(event)
       plain = strip_ansi(text)
       assert plain =~ "opus"

@@ -23,6 +23,7 @@ defmodule PersistenceLive do
   alias AgentSessionManager.Adapters.EctoSessionStore.Migration
   alias AgentSessionManager.Adapters.EctoSessionStore.MigrationV2
   alias AgentSessionManager.Core.Error
+  alias AgentSessionManager.Models
   alias AgentSessionManager.Ports.SessionStore
   alias AgentSessionManager.SessionManager
 
@@ -192,7 +193,7 @@ defmodule PersistenceLive do
 
   defp start_adapter("claude") do
     case Code.ensure_loaded(ClaudeAdapter) do
-      {:module, _} -> ClaudeAdapter.start_link(model: "claude-haiku-4-5-20251001")
+      {:module, _} -> ClaudeAdapter.start_link(model: Models.default_model(:claude))
       _ -> {:error, Error.new(:sdk_not_available, "Claude SDK not available")}
     end
   end

@@ -16,6 +16,7 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
   alias AgentSessionManager.Adapters.CodexAdapter
   alias AgentSessionManager.Core.{Error, Transcript}
   alias AgentSessionManager.Test.CodexMockSDK
+  alias AgentSessionManager.Test.Models, as: TestModels
   alias Codex.Events
 
   defmodule FailingMockCodexSDK do
@@ -107,7 +108,7 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
       assert :ok =
                CodexAdapter.validate_config(adapter, %{
                  working_directory: "/tmp",
-                 model: "claude-haiku-4-5-20251001"
+                 model: TestModels.claude_model()
                })
     end
   end
@@ -193,12 +194,15 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
     end
 
     test "run_started includes CLI-confirmed model and reasoning when present in thread metadata" do
+      codex_model = TestModels.codex_model()
+      reasoning_high = TestModels.reasoning_effort_high()
+
       events = [
         %Events.ThreadStarted{
           thread_id: "thread-confirmed",
           metadata: %{
-            "model" => "gpt-5.3-codex",
-            "config" => %{"model_reasoning_effort" => "medium"}
+            "model" => codex_model,
+            "config" => %{"model_reasoning_effort" => reasoning_high}
           }
         },
         %Events.TurnStarted{thread_id: "thread-confirmed", turn_id: "turn-1"},
@@ -230,7 +234,7 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
       {:ok, adapter} =
         CodexAdapter.start_link(
           working_directory: "/tmp/test",
-          model: "gpt-5.3-codex",
+          model: codex_model,
           sdk_module: CodexMockSDK,
           sdk_pid: mock_sdk
         )
@@ -253,11 +257,11 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
         |> Enum.find(&(&1.type == :run_started))
 
       assert run_started != nil
-      assert run_started.data.configured_model == "gpt-5.3-codex"
-      assert run_started.data.confirmed_model == "gpt-5.3-codex"
-      assert run_started.data.confirmed_reasoning_effort == "medium"
+      assert run_started.data.configured_model == codex_model
+      assert run_started.data.confirmed_model == codex_model
+      assert run_started.data.confirmed_reasoning_effort == reasoning_high
       assert run_started.data.confirmation_source == "codex_cli.thread_started"
-      assert run_started.data.model == "gpt-5.3-codex"
+      assert run_started.data.model == codex_model
     end
   end
 
@@ -944,14 +948,17 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
     end
 
     test "codex option fields in sdk_opts are merged into codex options" do
+      codex_model = TestModels.codex_model()
+      reasoning_med = TestModels.reasoning_effort_medium()
+
       {:ok, mock_sdk} = CodexMockSDK.start_link(scenario: :simple_response)
       cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
 
       {:ok, adapter} =
         CodexAdapter.start_link(
           working_directory: "/tmp/test",
-          model: "gpt-5.3-codex",
-          sdk_opts: [reasoning_effort: :medium],
+          model: codex_model,
+          sdk_opts: [reasoning_effort: reasoning_med],
           sdk_module: CodexMockSDK,
           sdk_pid: mock_sdk
         )
@@ -961,8 +968,8 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
       state = :sys.get_state(adapter)
       {:ok, codex_opts} = CodexAdapter.build_codex_options_for_state(state)
 
-      assert codex_opts.model == "gpt-5.3-codex"
-      assert codex_opts.reasoning_effort == :medium
+      assert codex_opts.model == codex_model
+      assert codex_opts.reasoning_effort == reasoning_med
     end
 
     test "normalized options take precedence over sdk_opts" do

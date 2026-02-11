@@ -32,6 +32,7 @@ defmodule AgentSessionManager.Test.ClaudeAgentSDKMock do
 
   use GenServer
 
+  alias AgentSessionManager.Test.Models, as: TestModels
   alias ClaudeAgentSDK.Message
 
   @type scenario :: :simple_response | :streaming | :with_tool_use | :error
@@ -102,7 +103,7 @@ defmodule AgentSessionManager.Test.ClaudeAgentSDKMock do
           cwd: "/tmp/test",
           tools: [],
           mcp_servers: [],
-          model: "claude-haiku-4-5-20251001",
+          model: TestModels.claude_model(),
           permission_mode: "default",
           api_key_source: "test"
         },
@@ -155,7 +156,7 @@ defmodule AgentSessionManager.Test.ClaudeAgentSDKMock do
           cwd: "/tmp/test",
           tools: [],
           mcp_servers: [],
-          model: "claude-haiku-4-5-20251001",
+          model: TestModels.claude_model(),
           permission_mode: "default",
           api_key_source: "test"
         },
@@ -212,7 +213,7 @@ defmodule AgentSessionManager.Test.ClaudeAgentSDKMock do
           cwd: "/tmp/test",
           tools: [tool_name],
           mcp_servers: [],
-          model: "claude-haiku-4-5-20251001",
+          model: TestModels.claude_model(),
           permission_mode: "default",
           api_key_source: "test"
         },
@@ -287,7 +288,7 @@ defmodule AgentSessionManager.Test.ClaudeAgentSDKMock do
           cwd: "/tmp/test",
           tools: [],
           mcp_servers: [],
-          model: "claude-haiku-4-5-20251001",
+          model: TestModels.claude_model(),
           permission_mode: "default",
           api_key_source: "test"
         },

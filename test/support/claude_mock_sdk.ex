@@ -115,6 +115,7 @@ defmodule AgentSessionManager.Adapters.Claude.MockSDK do
   use GenServer
 
   alias AgentSessionManager.Core.Error
+  alias AgentSessionManager.Test.Models, as: TestModels
 
   @type scenario ::
           :successful_stream
@@ -315,7 +316,7 @@ defmodule AgentSessionManager.Adapters.Claude.MockSDK do
   @impl GenServer
   def init(opts) do
     scenario = Keyword.get(opts, :scenario, :successful_stream)
-    model = Keyword.get(opts, :model, "claude-haiku-4-5-20251001")
+    model = Keyword.get(opts, :model, TestModels.claude_model())
     message_id = generate_message_id()
 
     state = %{

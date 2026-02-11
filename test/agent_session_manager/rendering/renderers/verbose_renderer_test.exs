@@ -2,6 +2,7 @@ defmodule AgentSessionManager.Rendering.Renderers.VerboseRendererTest do
   use ExUnit.Case, async: true
 
   alias AgentSessionManager.Rendering.Renderers.VerboseRenderer
+  alias AgentSessionManager.Test.Models, as: TestModels
   import AgentSessionManager.Test.RenderingHelpers
 
   defp render_events(events, opts \\ []) do
@@ -38,7 +39,7 @@ defmodule AgentSessionManager.Rendering.Renderers.VerboseRendererTest do
     test "emits bracketed line with model" do
       {text, _state} = render_single(run_started())
       assert text =~ "[run_started]"
-      assert text =~ "claude-sonnet-4-5-20250929"
+      assert text =~ TestModels.claude_sonnet_model()
     end
 
     test "includes session_id when present" do

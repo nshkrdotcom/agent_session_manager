@@ -14,6 +14,7 @@ defmodule CommonSurface do
   }
 
   alias AgentSessionManager.Core.Error
+  alias AgentSessionManager.Models
   alias AgentSessionManager.Ports.SessionStore
   alias AgentSessionManager.SessionManager
 
@@ -140,7 +141,7 @@ defmodule CommonSurface do
   end
 
   defp start_adapter("claude") do
-    case ClaudeAdapter.start_link(model: "claude-haiku-4-5-20251001", tools: []) do
+    case ClaudeAdapter.start_link(model: Models.default_model(:claude), tools: []) do
       {:ok, adapter} ->
         {:ok, adapter}
 

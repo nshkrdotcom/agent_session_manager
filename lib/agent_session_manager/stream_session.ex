@@ -9,7 +9,7 @@ defmodule AgentSessionManager.StreamSession do
 
       {:ok, stream, close_fun, meta} =
         StreamSession.start(
-          adapter: {ClaudeAdapter, model: "claude-sonnet-4-5-20250929"},
+          adapter: {ClaudeAdapter, model: Models.default_model(:claude)},
           input: %{messages: [%{role: "user", content: "Hello"}]}
         )
 

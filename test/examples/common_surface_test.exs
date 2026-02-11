@@ -13,6 +13,7 @@ defmodule AgentSessionManager.Examples.CommonSurfaceTest do
 
   alias AgentSessionManager.Adapters.ClaudeAdapter
   alias AgentSessionManager.SessionManager
+  alias AgentSessionManager.Test.Models, as: TestModels
 
   setup ctx do
     if System.get_env("LIVE_TESTS") != "true" do
@@ -49,7 +50,7 @@ defmodule AgentSessionManager.Examples.CommonSurfaceTest do
         store = ctx.store
 
         {:ok, adapter} =
-          ClaudeAdapter.start_link(model: "claude-haiku-4-5-20251001")
+          ClaudeAdapter.start_link(model: TestModels.claude_model())
 
         cleanup_on_exit(fn -> safe_stop(adapter) end)
 
@@ -91,7 +92,7 @@ defmodule AgentSessionManager.Examples.CommonSurfaceTest do
         store = ctx.store
 
         {:ok, adapter} =
-          ClaudeAdapter.start_link(model: "claude-haiku-4-5-20251001")
+          ClaudeAdapter.start_link(model: TestModels.claude_model())
 
         cleanup_on_exit(fn -> safe_stop(adapter) end)
 

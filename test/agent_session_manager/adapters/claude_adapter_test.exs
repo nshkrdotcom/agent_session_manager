@@ -18,6 +18,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
   alias AgentSessionManager.Adapters.ClaudeAdapter
   alias AgentSessionManager.Core.{Capability, Error, NormalizedEvent, Run, Session, Transcript}
   alias AgentSessionManager.Test.ClaudeAgentSDKMock
+  alias AgentSessionManager.Test.Models, as: TestModels
 
   defmodule FailingAgentSDK do
     @moduledoc false
@@ -39,7 +40,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
         %Message{
           type: :system,
           subtype: :init,
-          data: %{session_id: "claude-session", model: "claude-haiku-4-5-20251001", tools: []},
+          data: %{session_id: "claude-session", model: TestModels.claude_model(), tools: []},
           raw: %{}
         },
         %Message{
@@ -64,7 +65,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
         %Message{
           type: :system,
           subtype: :init,
-          data: %{session_id: "claude-session", model: "claude-haiku-4-5-20251001", tools: []},
+          data: %{session_id: "claude-session", model: TestModels.claude_model(), tools: []},
           raw: %{}
         },
         %Message{
@@ -218,7 +219,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
       {:ok, adapter} = ClaudeAdapter.start_link(api_key: "test-key")
       cleanup_on_exit(fn -> safe_stop(adapter) end)
 
-      config = %{model: "claude-haiku-4-5-20251001"}
+      config = %{model: TestModels.claude_model()}
       assert :ok = ClaudeAdapter.validate_config(adapter, config)
     end
 
@@ -234,7 +235,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
       {:ok, adapter} = ClaudeAdapter.start_link(api_key: "test-key")
       cleanup_on_exit(fn -> safe_stop(adapter) end)
 
-      config = %{api_key: "sk-xxx", model: "claude-haiku-4-5-20251001"}
+      config = %{api_key: "sk-xxx", model: TestModels.claude_model()}
       assert :ok = ClaudeAdapter.validate_config(adapter, config)
     end
   end
@@ -1235,7 +1236,7 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
         %ClaudeAgentSDK.Message{
           type: :system,
           subtype: :init,
-          data: %{session_id: "cache-session", model: "claude-opus-4-6", tools: []},
+          data: %{session_id: "cache-session", model: TestModels.claude_opus_model(), tools: []},
           raw: %{}
         },
         %ClaudeAgentSDK.Message{

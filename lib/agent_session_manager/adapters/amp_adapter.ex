@@ -363,6 +363,7 @@ if Code.ensure_loaded?(AmpSdk) do
 
     defp do_execute(state, run, session, opts, _adapter_pid) do
       event_callback = Keyword.get(opts, :event_callback)
+      execute_timeout_ms = ProviderAdapter.resolve_execute_timeout_base(opts)
       reset_emitted_events()
       prompt = build_prompt(run.input, session)
 
@@ -375,7 +376,8 @@ if Code.ensure_loaded?(AmpSdk) do
         accumulated_content: "",
         tool_calls: [],
         token_usage: %{input_tokens: 0, output_tokens: 0},
-        session_id: nil
+        session_id: nil,
+        execute_timeout_ms: execute_timeout_ms
       }
 
       case state.sdk_module do
@@ -388,7 +390,7 @@ if Code.ensure_loaded?(AmpSdk) do
     end
 
     defp execute_with_real_sdk(state, ctx) do
-      options = build_amp_options(state)
+      options = build_amp_options(state, ctx)
       events_stream = AmpSdk.execute(ctx.prompt, options)
 
       events_stream
@@ -396,8 +398,9 @@ if Code.ensure_loaded?(AmpSdk) do
       |> handle_stream_result()
     end
 
-    defp execute_with_mock_sdk(sdk_module, sdk_pid, ctx, _state) do
-      events_stream = sdk_module.execute(sdk_pid, ctx.prompt, %{})
+    defp execute_with_mock_sdk(sdk_module, sdk_pid, ctx, state) do
+      options = build_amp_options(state, ctx)
+      events_stream = sdk_module.execute(sdk_pid, ctx.prompt, options)
 
       events_stream
       |> Enum.reduce_while(ctx, &process_single_message/2)
@@ -615,7 +618,7 @@ if Code.ensure_loaded?(AmpSdk) do
     @spec build_amp_options_for_state(map()) :: AmpSdk.Types.Options.t()
     def build_amp_options_for_state(state), do: build_amp_options(state)
 
-    defp build_amp_options(state) do
+    defp build_amp_options(state, ctx \\ %{}) do
       # Apply sdk_opts passthrough first (lowest precedence)
       opts = apply_sdk_opts(%AmpSdk.Types.Options{}, state.sdk_opts)
 
@@ -627,9 +630,21 @@ if Code.ensure_loaded?(AmpSdk) do
           dangerously_allow_all: dangerously_allow_all?(state.permission_mode),
           permissions: state.permissions,
           mcp_config: state.mcp_config,
-          thinking: state.thinking || false
+          thinking: state.thinking || false,
+          stream_timeout_ms:
+            resolve_stream_timeout_ms(ctx[:execute_timeout_ms], opts.stream_timeout_ms)
       }
     end
+
+    defp resolve_stream_timeout_ms(timeout_ms, _fallback)
+         when is_integer(timeout_ms) and timeout_ms > 0,
+         do: timeout_ms
+
+    defp resolve_stream_timeout_ms(_timeout_ms, fallback)
+         when is_integer(fallback) and fallback > 0,
+         do: fallback
+
+    defp resolve_stream_timeout_ms(_timeout_ms, _fallback), do: 600_000
 
     defp apply_sdk_opts(opts, []), do: opts
 

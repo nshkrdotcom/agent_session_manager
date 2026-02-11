@@ -1903,6 +1903,39 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
       assert_receive {:captured_sdk_options, opts}, 1_000
       assert opts.cwd == nil
     end
+
+    test "execute timeout is propagated to sdk options", %{session: session, run: run} do
+      {:ok, adapter} =
+        ClaudeAdapter.start_link(
+          api_key: "test-key",
+          sdk_module: OptionsCapturingSDK,
+          sdk_pid: self()
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      assert {:ok, _result} = ClaudeAdapter.execute(adapter, run, session, timeout: 123_000)
+      assert_receive {:captured_sdk_options, opts}, 1_000
+      assert opts.timeout_ms == 123_000
+    end
+
+    test "unbounded execute timeout maps to one-week emergency timeout in sdk options", %{
+      session: session,
+      run: run
+    } do
+      {:ok, adapter} =
+        ClaudeAdapter.start_link(
+          api_key: "test-key",
+          sdk_module: OptionsCapturingSDK,
+          sdk_pid: self()
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      assert {:ok, _result} = ClaudeAdapter.execute(adapter, run, session, timeout: :unbounded)
+      assert_receive {:captured_sdk_options, opts}, 1_000
+      assert opts.timeout_ms == 604_800_000
+    end
   end
 
   # ============================================================================

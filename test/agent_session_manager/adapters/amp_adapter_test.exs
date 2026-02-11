@@ -38,6 +38,19 @@ defmodule AgentSessionManager.Adapters.AmpAdapterTest do
     def cancel(_pid), do: :ok
   end
 
+  defmodule CapturingOptionsSDK do
+    @moduledoc false
+
+    alias AgentSessionManager.Test.AmpMockSDK
+
+    def execute(test_pid, _prompt, opts) do
+      send(test_pid, {:captured_amp_options, opts})
+      AmpMockSDK.build_event_stream(:simple_response)
+    end
+
+    def cancel(_pid), do: :ok
+  end
+
   describe "start_link/1 validation" do
     test "returns validation error when cwd is missing" do
       assert {:error, %Error{code: :validation_error, message: "cwd is required"}} =
@@ -1011,6 +1024,42 @@ defmodule AgentSessionManager.Adapters.AmpAdapterTest do
       # But it doesn't appear in amp options
       opts = AmpAdapter.build_amp_options_for_state(state)
       refute Map.has_key?(Map.from_struct(opts), :system_prompt)
+    end
+
+    test "execute timeout is propagated as stream_timeout_ms" do
+      {:ok, adapter} =
+        AmpAdapter.start_link(
+          cwd: "/tmp/test",
+          sdk_module: CapturingOptionsSDK,
+          sdk_pid: self()
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      session = build_test_session()
+      run = build_test_run(session_id: session.id, input: "Hello")
+
+      assert {:ok, _result} = AmpAdapter.execute(adapter, run, session, timeout: 123_000)
+      assert_receive {:captured_amp_options, opts}, 1_000
+      assert opts.stream_timeout_ms == 123_000
+    end
+
+    test "unbounded execute timeout maps to one-week emergency stream timeout" do
+      {:ok, adapter} =
+        AmpAdapter.start_link(
+          cwd: "/tmp/test",
+          sdk_module: CapturingOptionsSDK,
+          sdk_pid: self()
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      session = build_test_session()
+      run = build_test_run(session_id: session.id, input: "Hello")
+
+      assert {:ok, _result} = AmpAdapter.execute(adapter, run, session, timeout: :unbounded)
+      assert_receive {:captured_amp_options, opts}, 1_000
+      assert opts.stream_timeout_ms == 604_800_000
     end
   end
 

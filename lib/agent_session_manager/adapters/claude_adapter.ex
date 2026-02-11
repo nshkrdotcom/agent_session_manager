@@ -327,6 +327,7 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
 
     defp do_execute(state, run, session, opts, adapter_pid) do
       event_callback = Keyword.get(opts, :event_callback)
+      execute_timeout_ms = ProviderAdapter.resolve_execute_timeout_base(opts)
       reset_emitted_events()
       prepared_input = prepare_input(run.input, session)
 
@@ -342,7 +343,8 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
         tool_calls: [],
         token_usage: %{input_tokens: 0, output_tokens: 0},
         stop_reason: nil,
-        session_id: nil
+        session_id: nil,
+        execute_timeout_ms: execute_timeout_ms
       }
 
       # Determine which SDK interface to use
@@ -371,7 +373,7 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
     end
 
     defp execute_with_real_sdk(ctx, state) do
-      sdk_opts = build_sdk_options(state)
+      sdk_opts = build_sdk_options(state, ctx)
       prompt = extract_prompt(ctx.prepared_input)
 
       # Use ClaudeAgentSDK.Streaming for real token-level streaming deltas.
@@ -561,7 +563,7 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
 
     defp execute_with_agent_sdk(sdk_module, sdk_pid, ctx, state) do
       # Use the ClaudeAgentSDK-compatible interface
-      sdk_opts = build_sdk_options(state)
+      sdk_opts = build_sdk_options(state, ctx)
 
       case sdk_module.query(sdk_pid, ctx.prepared_input, sdk_opts) do
         {:error, %Error{} = error} ->
@@ -682,7 +684,7 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
     defp role_to_string(role) when is_binary(role), do: role
     defp role_to_string(_), do: "assistant"
 
-    defp build_sdk_options(state) do
+    defp build_sdk_options(state, ctx) do
       # ClaudeAgentSDK handles auth via `claude login` session or ANTHROPIC_API_KEY env var.
       # Apply sdk_opts passthrough first (lowest precedence)
       opts = apply_sdk_opts(%ClaudeAgentSDK.Options{}, state.sdk_opts)
@@ -692,7 +694,8 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
         opts
         | model: state.model,
           max_turns: state.max_turns,
-          permission_mode: map_permission_mode(state.permission_mode)
+          permission_mode: map_permission_mode(state.permission_mode),
+          timeout_ms: ctx[:execute_timeout_ms] || opts.timeout_ms
       }
 
       opts = if state.cwd, do: %{opts | cwd: state.cwd}, else: opts

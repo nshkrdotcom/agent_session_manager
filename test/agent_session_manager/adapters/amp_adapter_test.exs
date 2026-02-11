@@ -176,6 +176,36 @@ defmodule AgentSessionManager.Adapters.AmpAdapterTest do
       assert run_started.provider == :amp
     end
 
+    test "run_started includes configured model when provided at adapter start" do
+      {:ok, mock_sdk} = AmpMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        AmpAdapter.start_link(
+          cwd: "/tmp/test",
+          model: "amp-test-model",
+          sdk_module: AmpMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      session = build_test_session()
+      run = build_test_run(session_id: session.id, input: "Hello")
+      test_pid = self()
+
+      {:ok, _result} =
+        AmpAdapter.execute(adapter, run, session,
+          event_callback: fn event -> send(test_pid, {:event, event}) end,
+          timeout: 5_000
+        )
+
+      events = collect_events()
+      run_started = Enum.find(events, &(&1.type == :run_started))
+      assert run_started != nil
+      assert run_started.data.model == "amp-test-model"
+    end
+
     test "event ordering: run_started first, run_completed last" do
       {:ok, adapter} = start_test_adapter(scenario: :simple_response)
 

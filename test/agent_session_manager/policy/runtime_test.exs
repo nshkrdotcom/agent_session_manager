@@ -53,4 +53,110 @@ defmodule AgentSessionManager.Policy.RuntimeTest do
       assert length(status.violations) == 1
     end
   end
+
+  describe "model-aware cost tracking" do
+    @model_aware_rates %{
+      "claude" => %{
+        default: %{input: 0.000003, output: 0.000015},
+        models: %{
+          "claude-opus-4-6" => %{input: 0.000015, output: 0.000075}
+        }
+      }
+    }
+
+    test "captures model from run_started event and uses model-specific rates" do
+      {:ok, policy} =
+        Policy.new(
+          name: "cost-model",
+          limits: [{:max_cost_usd, 1.0}],
+          on_violation: :cancel
+        )
+
+      {:ok, runtime} =
+        Runtime.start_link(
+          policy: policy,
+          provider: "claude",
+          run_id: "run-model-1",
+          cost_rates: @model_aware_rates
+        )
+
+      cleanup_on_exit(fn -> safe_stop(runtime) end)
+
+      {:ok, _} =
+        Runtime.observe_event(runtime, %{
+          type: :run_started,
+          data: %{model: "claude-opus-4-6"}
+        })
+
+      {:ok, _} =
+        Runtime.observe_event(runtime, %{
+          type: :token_usage_updated,
+          data: %{input_tokens: 1000, output_tokens: 500}
+        })
+
+      status = Runtime.status(runtime)
+      expected_cost = 1000 * 0.000015 + 500 * 0.000075
+      assert_in_delta status.usage.accumulated_cost_usd, expected_cost, 0.000001
+    end
+
+    test "falls back to provider default rates when model not captured" do
+      {:ok, policy} =
+        Policy.new(
+          name: "cost-default",
+          limits: [{:max_cost_usd, 1.0}],
+          on_violation: :cancel
+        )
+
+      {:ok, runtime} =
+        Runtime.start_link(
+          policy: policy,
+          provider: "claude",
+          run_id: "run-model-2",
+          cost_rates: @model_aware_rates
+        )
+
+      cleanup_on_exit(fn -> safe_stop(runtime) end)
+
+      {:ok, _} =
+        Runtime.observe_event(runtime, %{
+          type: :token_usage_updated,
+          data: %{input_tokens: 1000, output_tokens: 500}
+        })
+
+      status = Runtime.status(runtime)
+      expected_cost = 1000 * 0.000003 + 500 * 0.000015
+      assert_in_delta status.usage.accumulated_cost_usd, expected_cost, 0.000001
+    end
+
+    test "legacy flat rates still work (backward compatibility)" do
+      legacy_rates = %{"claude" => %{input: 0.000003, output: 0.000015}}
+
+      {:ok, policy} =
+        Policy.new(
+          name: "cost-legacy",
+          limits: [{:max_cost_usd, 1.0}],
+          on_violation: :cancel
+        )
+
+      {:ok, runtime} =
+        Runtime.start_link(
+          policy: policy,
+          provider: "claude",
+          run_id: "run-legacy",
+          cost_rates: legacy_rates
+        )
+
+      cleanup_on_exit(fn -> safe_stop(runtime) end)
+
+      {:ok, _} =
+        Runtime.observe_event(runtime, %{
+          type: :token_usage_updated,
+          data: %{input_tokens: 1000, output_tokens: 500}
+        })
+
+      status = Runtime.status(runtime)
+      expected_cost = 1000 * 0.000003 + 500 * 0.000015
+      assert_in_delta status.usage.accumulated_cost_usd, expected_cost, 0.000001
+    end
+  end
 end

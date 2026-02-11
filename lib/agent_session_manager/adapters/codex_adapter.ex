@@ -1188,7 +1188,10 @@ if Code.ensure_loaded?(Codex) and Code.ensure_loaded?(Codex.Events) do
 
         input =
           item
+          |> normalize_value()
           |> Map.drop([
+            :__struct__,
+            "__struct__",
             :id,
             "id",
             :item_id,
@@ -1204,7 +1207,6 @@ if Code.ensure_loaded?(Codex) and Code.ensure_loaded?(Codex.Events) do
             :status,
             "status"
           ])
-          |> Enum.into(%{})
 
         %{
           id: extract_item_id(item),
@@ -1275,13 +1277,31 @@ if Code.ensure_loaded?(Codex) and Code.ensure_loaded?(Codex.Events) do
       |> Enum.reverse()
     end
 
-    defp normalize_tool_input(arguments) when is_map(arguments), do: arguments
+    defp normalize_tool_input(arguments) when is_map(arguments), do: normalize_value(arguments)
     defp normalize_tool_input(_), do: %{}
 
-    defp normalize_tool_output(output) when is_map(output), do: output
-    defp normalize_tool_output(output) when is_list(output), do: %{items: output}
+    defp normalize_tool_output(output) when is_map(output), do: normalize_value(output)
+    defp normalize_tool_output(output) when is_list(output), do: %{items: normalize_value(output)}
     defp normalize_tool_output(nil), do: %{}
-    defp normalize_tool_output(output), do: %{value: output}
+    defp normalize_tool_output(output), do: %{value: normalize_value(output)}
+
+    # Normalizes structs/maps/lists into plain JSON-safe terms so event payloads
+    # never depend on `Enumerable` implementations for provider structs.
+    defp normalize_value(%{__struct__: _} = struct) do
+      struct
+      |> Map.from_struct()
+      |> normalize_value()
+    end
+
+    defp normalize_value(map) when is_map(map) do
+      Map.new(map, fn {key, value} -> {key, normalize_value(value)} end)
+    end
+
+    defp normalize_value(list) when is_list(list) do
+      Enum.map(list, &normalize_value/1)
+    end
+
+    defp normalize_value(value), do: value
 
     defp build_capabilities do
       [

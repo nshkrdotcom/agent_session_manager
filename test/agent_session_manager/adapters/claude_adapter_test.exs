@@ -1225,6 +1225,61 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
       assert Map.has_key?(usage_event.data, :output_tokens)
     end
 
+    test "emits cache token fields when usage includes cache token counts", %{
+      adapter: adapter,
+      mock: mock,
+      session: session,
+      run: run
+    } do
+      messages = [
+        %ClaudeAgentSDK.Message{
+          type: :system,
+          subtype: :init,
+          data: %{session_id: "cache-session", model: "claude-opus-4-6", tools: []},
+          raw: %{}
+        },
+        %ClaudeAgentSDK.Message{
+          type: :assistant,
+          subtype: nil,
+          data: %{
+            message: %{
+              "role" => "assistant",
+              "content" => [%{"type" => "text", "text" => "cached response"}]
+            }
+          },
+          raw: %{}
+        },
+        %ClaudeAgentSDK.Message{
+          type: :result,
+          subtype: :success,
+          data: %{
+            usage: %{
+              "input_tokens" => 1000,
+              "output_tokens" => 500,
+              "cache_read_input_tokens" => 800,
+              "cache_creation_input_tokens" => 200
+            },
+            stop_reason: "end_turn"
+          },
+          raw: %{}
+        }
+      ]
+
+      :ok = ClaudeAgentSDKMock.set_messages(mock, messages)
+      test_pid = self()
+
+      {:ok, _result} =
+        ClaudeAdapter.execute(adapter, run, session,
+          event_callback: fn event -> send(test_pid, {:event, event}) end
+        )
+
+      events = collect_events(test_pid, 500)
+      usage_event = Enum.find(events, &(&1.type == :token_usage_updated))
+      assert usage_event != nil
+      assert usage_event.data.cache_read_tokens == 800
+      assert usage_event.data.cache_creation_tokens == 200
+    end
+
     test "emits message_received with accumulated content", %{
       adapter: adapter,
       session: session,

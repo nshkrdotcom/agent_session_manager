@@ -463,13 +463,20 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
       usage = event[:usage] || %{}
       raw_usage = get_in(event, [:raw_event, "message", "usage"]) || %{}
       input_tokens = usage[:input_tokens] || raw_usage["input_tokens"] || 0
+      cache_read = raw_usage["cache_read_input_tokens"] || 0
+      cache_creation = raw_usage["cache_creation_input_tokens"] || 0
 
       emit_event(ctx, :run_started, %{
         session_id: ctx.session_id,
         model: model
       })
 
-      new_token_usage = %{ctx.token_usage | input_tokens: input_tokens}
+      new_token_usage =
+        ctx.token_usage
+        |> Map.put(:input_tokens, input_tokens)
+        |> Map.put(:cache_read_tokens, cache_read)
+        |> Map.put(:cache_creation_tokens, cache_creation)
+
       {:cont, %{ctx | token_usage: new_token_usage}}
     end
 
@@ -516,7 +523,9 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
 
       emit_event(ctx, :token_usage_updated, %{
         input_tokens: ctx.token_usage.input_tokens,
-        output_tokens: ctx.token_usage.output_tokens
+        output_tokens: ctx.token_usage.output_tokens,
+        cache_read_tokens: Map.get(ctx.token_usage, :cache_read_tokens, 0),
+        cache_creation_tokens: Map.get(ctx.token_usage, :cache_creation_tokens, 0)
       })
 
       if stop_reason == "tool_use" do
@@ -811,14 +820,29 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
     end
 
     defp handle_sdk_message(%ClaudeAgentSDK.Message{type: :result, subtype: :success} = msg, ctx) do
-      {input_tokens, output_tokens} = extract_usage_counts(msg)
+      {input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens} =
+        extract_usage_counts(msg)
+
       stop_reason = extract_stop_reason(msg)
 
-      emit_success_events(ctx, msg, stop_reason, input_tokens, output_tokens)
+      emit_success_events(
+        ctx,
+        msg,
+        stop_reason,
+        input_tokens,
+        output_tokens,
+        cache_read_tokens,
+        cache_creation_tokens
+      )
 
       %{
         ctx
-        | token_usage: %{input_tokens: input_tokens, output_tokens: output_tokens},
+        | token_usage: %{
+            input_tokens: input_tokens,
+            output_tokens: output_tokens,
+            cache_read_tokens: cache_read_tokens,
+            cache_creation_tokens: cache_creation_tokens
+          },
           stop_reason: stop_reason
       }
     end
@@ -869,14 +893,28 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
       input_tokens = trunc(usage["input_tokens"] || usage[:input_tokens] || 0)
       output_tokens = trunc(usage["output_tokens"] || usage[:output_tokens] || 0)
 
-      {input_tokens, output_tokens}
+      cache_read_tokens =
+        trunc(usage["cache_read_input_tokens"] || usage[:cache_read_input_tokens] || 0)
+
+      cache_creation_tokens =
+        trunc(usage["cache_creation_input_tokens"] || usage[:cache_creation_input_tokens] || 0)
+
+      {input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens}
     end
 
     defp extract_stop_reason(msg) do
       msg.data[:stop_reason] || (msg.raw && msg.raw["stop_reason"]) || "end_turn"
     end
 
-    defp emit_success_events(ctx, msg, stop_reason, input_tokens, output_tokens) do
+    defp emit_success_events(
+           ctx,
+           msg,
+           stop_reason,
+           input_tokens,
+           output_tokens,
+           cache_read_tokens,
+           cache_creation_tokens
+         ) do
       emit_event(ctx, :message_received, %{
         content: ctx.accumulated_content,
         role: "assistant"
@@ -884,21 +922,53 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
 
       emit_event(ctx, :token_usage_updated, %{
         input_tokens: input_tokens,
-        output_tokens: output_tokens
+        output_tokens: output_tokens,
+        cache_read_tokens: cache_read_tokens,
+        cache_creation_tokens: cache_creation_tokens
       })
 
-      maybe_emit_run_completed(ctx, msg, stop_reason, input_tokens, output_tokens)
+      maybe_emit_run_completed(
+        ctx,
+        msg,
+        stop_reason,
+        input_tokens,
+        output_tokens,
+        cache_read_tokens,
+        cache_creation_tokens
+      )
     end
 
-    defp maybe_emit_run_completed(_ctx, _msg, "tool_use", _input_tokens, _output_tokens), do: :ok
+    defp maybe_emit_run_completed(
+           _ctx,
+           _msg,
+           "tool_use",
+           _input_tokens,
+           _output_tokens,
+           _cache_read_tokens,
+           _cache_creation_tokens
+         ),
+         do: :ok
 
-    defp maybe_emit_run_completed(ctx, msg, stop_reason, input_tokens, output_tokens) do
+    defp maybe_emit_run_completed(
+           ctx,
+           msg,
+           stop_reason,
+           input_tokens,
+           output_tokens,
+           cache_read_tokens,
+           cache_creation_tokens
+         ) do
       emit_event(ctx, :run_completed, %{
         stop_reason: stop_reason,
         session_id: ctx.session_id,
         num_turns: msg.data[:num_turns],
         total_cost_usd: msg.data[:total_cost_usd],
-        token_usage: %{input_tokens: input_tokens, output_tokens: output_tokens}
+        token_usage: %{
+          input_tokens: input_tokens,
+          output_tokens: output_tokens,
+          cache_read_tokens: cache_read_tokens,
+          cache_creation_tokens: cache_creation_tokens
+        }
       })
     end
 

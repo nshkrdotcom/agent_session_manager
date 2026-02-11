@@ -8,6 +8,7 @@ defmodule AgentSessionManager.Policy.Runtime do
 
   use GenServer
 
+  alias AgentSessionManager.Cost.CostCalculator
   alias AgentSessionManager.Policy.{Evaluator, Policy}
 
   @type decision :: %{
@@ -58,6 +59,7 @@ defmodule AgentSessionManager.Policy.Runtime do
            input_tokens: 0,
            output_tokens: 0,
            total_tokens: 0,
+           model: nil,
            accumulated_cost_usd: 0.0,
            cost_supported?: not has_cost_limit,
            has_cost_limit: has_cost_limit,
@@ -132,6 +134,7 @@ defmodule AgentSessionManager.Policy.Runtime do
         output_tokens: state.output_tokens,
         total_tokens: state.total_tokens,
         elapsed_ms: state.elapsed_ms,
+        model: state.model,
         accumulated_cost_usd: state.accumulated_cost_usd
       },
       metadata: %{
@@ -149,6 +152,7 @@ defmodule AgentSessionManager.Policy.Runtime do
   defp update_runtime_state(state, event) do
     state
     |> update_elapsed_ms()
+    |> maybe_capture_model(event)
     |> maybe_increment_tool_calls(event)
     |> maybe_update_token_usage(event)
   end
@@ -162,6 +166,15 @@ defmodule AgentSessionManager.Policy.Runtime do
   end
 
   defp maybe_increment_tool_calls(state, _event), do: state
+
+  defp maybe_capture_model(state, %{type: :run_started, data: data}) when is_map(data) do
+    case Map.get(data, :model) do
+      model when is_binary(model) -> %{state | model: model}
+      _ -> state
+    end
+  end
+
+  defp maybe_capture_model(state, _event), do: state
 
   defp maybe_update_token_usage(state, %{type: :token_usage_updated, data: data})
        when is_map(data) do
@@ -189,7 +202,7 @@ defmodule AgentSessionManager.Policy.Runtime do
   defp maybe_update_token_usage(state, _event), do: state
 
   defp maybe_update_cost(state, input_tokens, output_tokens) do
-    case fetch_provider_rates(state.cost_rates, state.provider) do
+    case fetch_rates(state.cost_rates, state.provider, state.model) do
       {:ok, %{input: input_rate, output: output_rate}} ->
         cost_delta = input_tokens * input_rate + output_tokens * output_rate
 
@@ -208,6 +221,28 @@ defmodule AgentSessionManager.Policy.Runtime do
         end
     end
   end
+
+  defp fetch_rates(cost_rates, provider, model)
+       when is_map(cost_rates) and is_binary(provider) do
+    case Map.get(cost_rates, provider) do
+      %{default: _} ->
+        case CostCalculator.resolve_rates(provider, model, cost_rates) do
+          {:ok, rates} -> {:ok, rates}
+          {:error, _} -> :error
+        end
+
+      %{"default" => _} ->
+        case CostCalculator.resolve_rates(provider, model, cost_rates) do
+          {:ok, rates} -> {:ok, rates}
+          {:error, _} -> :error
+        end
+
+      _ ->
+        fetch_provider_rates(cost_rates, provider)
+    end
+  end
+
+  defp fetch_rates(_cost_rates, _provider, _model), do: :error
 
   defp fetch_provider_rates(cost_rates, provider)
        when is_map(cost_rates) and is_binary(provider) do

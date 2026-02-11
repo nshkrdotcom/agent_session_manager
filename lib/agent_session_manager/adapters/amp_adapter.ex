@@ -112,6 +112,7 @@ if Code.ensure_loaded?(AmpSdk) do
     - `:permission_mode` - Optional. Normalized permission mode (see `AgentSessionManager.PermissionMode`).
     - `:permissions` - Optional. Permission rules.
     - `:mcp_config` - Optional. MCP server configuration.
+    - `:model` - Optional. Model identifier for metadata/cost tracking.
     - `:thinking` - Optional. Enable thinking mode.
     - `:sdk_module` - Optional. Mock SDK module for testing.
     - `:sdk_pid` - Optional. Mock SDK process for testing.
@@ -194,6 +195,7 @@ if Code.ensure_loaded?(AmpSdk) do
             sdk_opts: Keyword.get(opts, :sdk_opts, []),
             permissions: Keyword.get(opts, :permissions),
             mcp_config: Keyword.get(opts, :mcp_config),
+            model: Keyword.get(opts, :model),
             thinking: Keyword.get(opts, :thinking, false),
             sdk_module: Keyword.get(opts, :sdk_module),
             sdk_pid: Keyword.get(opts, :sdk_pid),
@@ -466,12 +468,16 @@ if Code.ensure_loaded?(AmpSdk) do
     # ============================================================================
 
     defp handle_amp_message(%SystemMessage{} = msg, ctx) do
-      emit_event(ctx, :run_started, %{
-        session_id: msg.session_id,
-        tools: msg.tools,
-        cwd: msg.cwd,
-        mcp_servers: msg.mcp_servers
-      })
+      data =
+        %{
+          session_id: msg.session_id,
+          tools: msg.tools,
+          cwd: msg.cwd,
+          mcp_servers: msg.mcp_servers
+        }
+        |> maybe_put(:model, ctx[:model])
+
+      emit_event(ctx, :run_started, data)
 
       %{ctx | session_id: msg.session_id}
     end

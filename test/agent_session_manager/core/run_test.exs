@@ -219,6 +219,14 @@ defmodule AgentSessionManager.Core.RunTest do
       assert map["metadata"] == %{"model" => "gpt-4"}
       assert is_binary(map["started_at"])
     end
+
+    test "includes cost_usd as nil for new runs" do
+      {:ok, run} = Run.new(%{session_id: "session-123"})
+      map = Run.to_map(run)
+
+      assert Map.has_key?(map, "cost_usd")
+      assert map["cost_usd"] == nil
+    end
   end
 
   describe "Run.from_map/1" do
@@ -237,6 +245,26 @@ defmodule AgentSessionManager.Core.RunTest do
       assert restored.session_id == original.session_id
       assert restored.status == original.status
       assert restored.input == original.input
+    end
+
+    test "restores cost_usd when present" do
+      {:ok, original} = Run.new(%{session_id: "session-123"})
+
+      map =
+        original
+        |> Run.to_map()
+        |> Map.put("cost_usd", 0.0523)
+
+      {:ok, restored} = Run.from_map(map)
+      assert restored.cost_usd == 0.0523
+    end
+
+    test "handles missing cost_usd as nil" do
+      {:ok, original} = Run.new(%{session_id: "session-123"})
+      map = original |> Run.to_map() |> Map.delete("cost_usd")
+
+      {:ok, restored} = Run.from_map(map)
+      assert restored.cost_usd == nil
     end
 
     test "returns error for invalid map" do

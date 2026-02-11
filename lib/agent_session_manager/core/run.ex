@@ -58,6 +58,7 @@ defmodule AgentSessionManager.Core.Run do
           metadata: map(),
           turn_count: non_neg_integer(),
           token_usage: map(),
+          cost_usd: float() | nil,
           started_at: DateTime.t() | nil,
           ended_at: DateTime.t() | nil,
           provider: String.t() | nil,
@@ -73,6 +74,7 @@ defmodule AgentSessionManager.Core.Run do
     :started_at,
     :ended_at,
     :provider,
+    :cost_usd,
     status: :pending,
     metadata: %{},
     turn_count: 0,
@@ -222,6 +224,7 @@ defmodule AgentSessionManager.Core.Run do
       "started_at" => format_datetime(run.started_at),
       "ended_at" => format_datetime(run.ended_at),
       "provider" => run.provider,
+      "cost_usd" => run.cost_usd,
       "provider_metadata" => Serialization.stringify_keys(run.provider_metadata)
     }
   end
@@ -245,6 +248,7 @@ defmodule AgentSessionManager.Core.Run do
         metadata: Serialization.atomize_keys(map["metadata"] || %{}),
         turn_count: map["turn_count"] || 0,
         token_usage: Serialization.atomize_keys(map["token_usage"] || %{}),
+        cost_usd: parse_optional_float(map["cost_usd"]),
         started_at: started_at,
         ended_at: parse_optional_datetime(map["ended_at"]),
         provider: map["provider"],
@@ -320,6 +324,11 @@ defmodule AgentSessionManager.Core.Run do
       {:error, _} -> nil
     end
   end
+
+  defp parse_optional_float(nil), do: nil
+  defp parse_optional_float(value) when is_float(value), do: value
+  defp parse_optional_float(value) when is_integer(value), do: value * 1.0
+  defp parse_optional_float(_), do: nil
 
   defp format_datetime(nil), do: nil
   defp format_datetime(datetime), do: DateTime.to_iso8601(datetime)

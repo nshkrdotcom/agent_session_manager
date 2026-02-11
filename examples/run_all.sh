@@ -223,6 +223,15 @@ PLAN_NAMES+=("Persistence Multi-Run")
 PLAN_FILES+=("examples/persistence_multi_run.exs")
 PLAN_ARGS+=("")
 
+# Shell execution example (requires real provider + shell adapter)
+for p in "${PROVIDERS[@]}"; do
+  label="$(echo "${p:0:1}" | tr '[:lower:]' '[:upper:]')${p:1}"
+
+  PLAN_NAMES+=("Shell Exec ($label)")
+  PLAN_FILES+=("examples/shell_exec.exs")
+  PLAN_ARGS+=("--provider $p")
+done
+
 # Persistence live example (requires provider SDK)
 for p in "${PROVIDERS[@]}"; do
   label="$(echo "${p:0:1}" | tr '[:lower:]' '[:upper:]')${p:1}"

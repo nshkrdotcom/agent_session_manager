@@ -96,6 +96,7 @@ defmodule AgentSessionManager.MixProject do
         "guides/policy_enforcement.md",
         "guides/advanced_patterns.md",
         "guides/provider_adapters.md",
+        "guides/shell_runner.md",
         "guides/capabilities.md",
         "guides/concurrency.md",
         "guides/telemetry_and_observability.md",
@@ -147,6 +148,7 @@ defmodule AgentSessionManager.MixProject do
         ],
         Integration: [
           "guides/provider_adapters.md",
+          "guides/shell_runner.md",
           "guides/concurrency.md",
           "guides/telemetry_and_observability.md"
         ],
@@ -202,6 +204,7 @@ defmodule AgentSessionManager.MixProject do
           AgentSessionManager.Adapters.ClaudeAdapter,
           AgentSessionManager.Adapters.CodexAdapter,
           AgentSessionManager.Adapters.AmpAdapter,
+          AgentSessionManager.Adapters.ShellAdapter,
           AgentSessionManager.Adapters.InMemorySessionStore,
           AgentSessionManager.Adapters.FileArtifactStore,
           AgentSessionManager.Adapters.EctoSessionStore,
@@ -220,6 +223,7 @@ defmodule AgentSessionManager.MixProject do
         ],
         Workspace: [
           AgentSessionManager.Workspace.Workspace,
+          AgentSessionManager.Workspace.Exec,
           AgentSessionManager.Workspace.Snapshot,
           AgentSessionManager.Workspace.Diff,
           AgentSessionManager.Workspace.GitBackend,

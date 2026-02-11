@@ -469,6 +469,24 @@ MINIO_ROOT_USER=minioadmin MINIO_ROOT_PASSWORD=minioadmin \
   mix run examples/persistence_s3_minio.exs
 ```
 
+## Shell Execution Examples
+
+These examples demonstrate the Shell Runner feature (ShellAdapter + Workspace.Exec)
+in a real mixed workflow with a real provider CLI adapter.
+
+### `shell_exec.exs` -- Shell Command Execution
+
+- Demonstrates mixed execution with a real provider adapter (`claude`, `codex`, or `amp`)
+- Demonstrates ShellAdapter as a ProviderAdapter for shell commands
+- Shows simple string commands, structured map input, and non-zero exit codes
+- Demonstrates direct Workspace.Exec usage without SessionManager overhead
+
+```bash
+mix run examples/shell_exec.exs --provider claude
+mix run examples/shell_exec.exs --provider codex
+mix run examples/shell_exec.exs --provider amp
+```
+
 ## Run All Examples
 
 ```bash

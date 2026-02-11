@@ -110,6 +110,36 @@ The Amp adapter integrates with the Sourcegraph Amp API via the Amp SDK.
 | `ResultMessage` | `:tool_call_completed`, `:run_completed` |
 | `ErrorResultMessage` | `:tool_call_failed`, `:run_failed` |
 
+### ShellAdapter (Shell Commands)
+
+The Shell adapter executes shell commands via `Workspace.Exec`. It requires no external SDK.
+
+```elixir
+{:ok, adapter} = AgentSessionManager.Adapters.ShellAdapter.start_link(
+  cwd: File.cwd!(),
+  timeout_ms: 60_000,                # optional, default 30_000
+  allowed_commands: ["mix", "npm"],  # optional, nil = all allowed
+  denied_commands: ["rm", "sudo"],   # optional, nil = none denied
+  success_exit_codes: [0],           # optional, default [0]
+  env: [{"MIX_ENV", "test"}]         # optional, additional env vars
+)
+```
+
+**Capabilities advertised:**
+- `command_execution` (`:code_execution`) -- shell command execution
+- `streaming` (`:sampling`) -- real-time output streaming
+
+**Event mapping from shell execution:**
+
+| Shell Event | Normalized Event |
+|---|---|
+| Command start | `:run_started` |
+| Execution begins | `:tool_call_started` (tool_name: "bash") |
+| Completion (exit 0) | `:tool_call_completed`, `:message_received`, `:run_completed` |
+| Failure (exit != 0) | `:tool_call_failed`, `:error_occurred`, `:run_failed` |
+| Timeout | `:tool_call_failed`, `:error_occurred`, `:run_failed` |
+| Cancellation | `:run_cancelled` |
+
 ## Permission Modes
 
 All built-in adapters accept an optional `:permission_mode` on `start_link`. This controls how each provider handles tool-call approvals and sandboxing.

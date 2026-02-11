@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `AgentSessionManager.PubSub` helper module with `event_callback/2` and `subscribe/2`
   - `AgentSessionManager.PubSub.Topic` for canonical topic naming (`asm:session:{id}`, `asm:session:{id}:run:{rid}`)
   - Optional dependency on `phoenix_pubsub ~> 2.1` with graceful stub fallback
+- `AgentSessionManager.WorkflowBridge` module for workflow/DAG engine integration
+- `WorkflowBridge.StepResult` normalized result type with routing signals
+- `WorkflowBridge.ErrorClassification` for retry/failover/abort decisions
+- `step_execute/3` supporting one-shot and multi-run execution modes
+- `setup_workflow_session/3` and `complete_workflow_session/3` lifecycle helpers
+- `classify_error/1` mapping ASM errors to workflow routing actions
+- `examples/workflow_bridge.exs` live example
+- `guides/workflow_bridge.md` integration guide
 
 ### Changed
 

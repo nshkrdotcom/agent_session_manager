@@ -136,6 +136,10 @@ for p in "${PROVIDERS[@]}"; do
   PLAN_FILES+=("examples/oneshot.exs")
   PLAN_ARGS+=("--provider $p")
 
+  PLAN_NAMES+=("Workflow Bridge ($label)")
+  PLAN_FILES+=("examples/workflow_bridge.exs")
+  PLAN_ARGS+=("--provider $p")
+
   PLAN_NAMES+=("Live Session ($label)")
   PLAN_FILES+=("examples/live_session.exs")
   PLAN_ARGS+=("--provider $p")

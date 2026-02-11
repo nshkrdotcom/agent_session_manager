@@ -98,6 +98,7 @@ defmodule AgentSessionManager.MixProject do
         "guides/provider_routing.md",
         "guides/policy_enforcement.md",
         "guides/advanced_patterns.md",
+        "guides/workflow_bridge.md",
         "guides/provider_adapters.md",
         "guides/shell_runner.md",
         "guides/capabilities.md",
@@ -152,6 +153,7 @@ defmodule AgentSessionManager.MixProject do
         ],
         Integration: [
           "guides/provider_adapters.md",
+          "guides/workflow_bridge.md",
           "guides/shell_runner.md",
           "guides/concurrency.md",
           "guides/telemetry_and_observability.md"
@@ -188,6 +190,11 @@ defmodule AgentSessionManager.MixProject do
         Orchestration: [
           AgentSessionManager.SessionManager,
           AgentSessionManager.Routing.ProviderRouter
+        ],
+        "Workflow Integration": [
+          AgentSessionManager.WorkflowBridge,
+          AgentSessionManager.WorkflowBridge.StepResult,
+          AgentSessionManager.WorkflowBridge.ErrorClassification
         ],
         "Routing and Policy": [
           AgentSessionManager.Routing.RoutingPolicy,

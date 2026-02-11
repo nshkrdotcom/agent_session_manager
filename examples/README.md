@@ -65,6 +65,21 @@ mix run examples/session_continuity.exs --provider codex
 mix run examples/session_continuity.exs --provider amp
 ```
 
+## Workflow Bridge Examples
+
+### `workflow_bridge.exs` -- Workflow DAG Integration Bridge
+
+- Demonstrates `WorkflowBridge.step_execute/3` for one-shot and multi-run modes
+- Shows `setup_workflow_session/3` and `complete_workflow_session/3` lifecycle
+- Exercises transcript continuity across workflow steps
+- Demonstrates `classify_error/1` for retry/failover routing decisions
+
+```bash
+mix run examples/workflow_bridge.exs --provider claude
+mix run examples/workflow_bridge.exs --provider codex
+mix run examples/workflow_bridge.exs --provider amp
+```
+
 ### `workspace_snapshot.exs` -- Workspace Snapshot + Diff + Rollback (Feature 3)
 
 - Creates a temporary git workspace and enables workspace instrumentation

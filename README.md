@@ -27,6 +27,7 @@ AgentSessionManager provides the infrastructure layer for building applications 
 - **Streaming events** -- Normalized event pipeline that maps provider-specific events to a canonical format
 - **Cursor-backed event streaming** -- Monotonic per-session sequence numbers with durable cursor queries (`after` / `before`) and optional long-poll support (`wait_timeout_ms`)
 - **Session continuity** -- Provider-agnostic transcript reconstruction, continuation modes (`:auto`, `:replay`, `:native`), per-provider session handles, and token-aware transcript truncation
+- **Workflow bridge** -- Thin integration layer for calling ASM from DAG/workflow engines, with step execution, normalized results, error classification for retry/failover routing, and multi-run session lifecycle helpers
 - **Workspace snapshots** -- Optional pre/post snapshots (including untracked files), diff summaries, patch capture caps, artifact-backed patch storage, configurable ignore rules, and git-only rollback on failure
 - **Provider routing** -- Router-as-adapter with capability-based selection, policy ordering, retryable failover, weighted scoring, session stickiness, circuit breaker, and routing telemetry
 - **Policy enforcement** -- Real-time budget/tool governance with cancel or warn actions, `:policy_violation` events, policy stacking with deterministic merge, provider-side enforcement, and preflight checks

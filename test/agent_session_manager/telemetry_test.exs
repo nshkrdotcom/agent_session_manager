@@ -554,7 +554,7 @@ defmodule AgentSessionManager.TelemetryTest do
 
       event_data = %{
         type: :tool_call_started,
-        data: %{tool_name: "read_file", tool_use_id: "call-123"},
+        data: %{tool_name: "read_file", tool_call_id: "call-123"},
         provider: :claude
       }
 
@@ -574,7 +574,7 @@ defmodule AgentSessionManager.TelemetryTest do
 
       event_data = %{
         type: :tool_call_completed,
-        data: %{tool_name: "write_file", tool_use_id: "call-456"},
+        data: %{tool_name: "write_file", tool_call_id: "call-456"},
         provider: :codex
       }
 

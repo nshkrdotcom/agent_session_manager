@@ -168,7 +168,7 @@ Feature options are available through the same `execute_run/4` API:
 
 ```elixir
 {:ok, result} = SessionManager.execute_run(store, adapter, run.id,
-  continuation: true,
+  continuation: :auto,
   continuation_opts: [max_messages: 100],
   adapter_opts: [timeout: 120_000],
   workspace: [
@@ -226,7 +226,8 @@ run_map = Run.to_map(run)
 
 ## Provider Metadata
 
-When runs execute through `SessionManager`, provider-specific metadata is automatically merged into the run and session metadata. This includes the provider name, provider session ID, and model used:
+When runs execute through `SessionManager`, provider-specific metadata is merged
+into run metadata and stored in `session.metadata[:provider_sessions]`:
 
 ```elixir
 {:ok, result} = SessionManager.execute_run(store, adapter, run.id)

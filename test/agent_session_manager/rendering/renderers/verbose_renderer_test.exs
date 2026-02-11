@@ -89,6 +89,12 @@ defmodule AgentSessionManager.Rendering.Renderers.VerboseRendererTest do
       {text, _state} = render_single(event)
       assert text =~ "/foo/bar.ex"
     end
+
+    test "ignores legacy tool id aliases" do
+      event = event(:tool_call_started, %{tool_name: "Read", tool_use_id: "legacy_1"})
+      {text, _state} = render_single(event)
+      refute text =~ "legacy_1"
+    end
   end
 
   describe "tool_call_completed" do

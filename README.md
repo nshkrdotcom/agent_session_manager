@@ -290,7 +290,7 @@ Adapter events also preserve provider timestamps and metadata:
 ```elixir
 {:ok, events} = SessionStore.get_events(store, session.id, run_id: run.id)
 event = Enum.find(events, &(&1.type == :run_started))
-event.metadata[:provider]  # => "claude"
+event.provider            # => "claude"
 event.timestamp            # => adapter-provided timestamp (when available)
 ```
 
@@ -307,7 +307,7 @@ before calling the adapter.
 )
 ```
 
-Continuation modes: `false` (disabled), `true` / `:auto` (replay fallback),
+Continuation modes: `false` (disabled), `:auto` (replay fallback),
 `:replay` (always replay), `:native` (provider-native, errors if unavailable).
 
 Token-aware truncation keeps the most recent messages within a character or

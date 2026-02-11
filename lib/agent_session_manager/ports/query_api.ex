@@ -27,7 +27,7 @@ defmodule AgentSessionManager.Ports.QueryAPI do
   alias AgentSessionManager.Core.{Error, Event, Run, Session}
 
   @type context :: term()
-  @type query_ref :: {module(), context()} | GenServer.server()
+  @type query_ref :: {module(), context()}
   @type cursor :: String.t() | nil
 
   # ============================================================================
@@ -162,63 +162,57 @@ defmodule AgentSessionManager.Ports.QueryAPI do
               {:ok, map()} | {:error, Error.t()}
 
   # ============================================================================
-  # Dispatch functions (module-backed, with GenServer compatibility)
+  # Dispatch functions (module-backed refs only)
   # ============================================================================
 
   @spec search_sessions(query_ref(), keyword()) ::
           {:ok, %{sessions: [Session.t()], cursor: cursor(), total_count: non_neg_integer()}}
           | {:error, Error.t()}
   def search_sessions(query_ref, opts \\ []) do
-    dispatch(query_ref, :search_sessions, [opts], {:search_sessions, opts})
+    dispatch(query_ref, :search_sessions, [opts])
   end
 
   @spec get_session_stats(query_ref(), String.t()) :: {:ok, map()} | {:error, Error.t()}
   def get_session_stats(query_ref, session_id) do
-    dispatch(
-      query_ref,
-      :get_session_stats,
-      [session_id],
-      {:get_session_stats, session_id}
-    )
+    dispatch(query_ref, :get_session_stats, [session_id])
   end
 
   @spec search_runs(query_ref(), keyword()) ::
           {:ok, %{runs: [Run.t()], cursor: cursor()}} | {:error, Error.t()}
   def search_runs(query_ref, opts \\ []) do
-    dispatch(query_ref, :search_runs, [opts], {:search_runs, opts})
+    dispatch(query_ref, :search_runs, [opts])
   end
 
   @spec get_usage_summary(query_ref(), keyword()) :: {:ok, map()} | {:error, Error.t()}
   def get_usage_summary(query_ref, opts \\ []) do
-    dispatch(query_ref, :get_usage_summary, [opts], {:get_usage_summary, opts})
+    dispatch(query_ref, :get_usage_summary, [opts])
   end
 
   @spec search_events(query_ref(), keyword()) ::
           {:ok, %{events: [Event.t()], cursor: cursor()}} | {:error, Error.t()}
   def search_events(query_ref, opts \\ []) do
-    dispatch(query_ref, :search_events, [opts], {:search_events, opts})
+    dispatch(query_ref, :search_events, [opts])
   end
 
   @spec count_events(query_ref(), keyword()) :: {:ok, non_neg_integer()} | {:error, Error.t()}
   def count_events(query_ref, opts \\ []) do
-    dispatch(query_ref, :count_events, [opts], {:count_events, opts})
+    dispatch(query_ref, :count_events, [opts])
   end
 
   @spec export_session(query_ref(), String.t(), keyword()) :: {:ok, map()} | {:error, Error.t()}
   def export_session(query_ref, session_id, opts \\ []) do
-    dispatch(
-      query_ref,
-      :export_session,
-      [session_id, opts],
-      {:export_session, session_id, opts}
-    )
+    dispatch(query_ref, :export_session, [session_id, opts])
   end
 
-  defp dispatch({module, context}, function_name, args, _legacy_call) when is_atom(module) do
+  defp dispatch({module, context}, function_name, args) when is_atom(module) do
     apply(module, function_name, [context | args])
   end
 
-  defp dispatch(server, _function_name, _args, legacy_call) do
-    GenServer.call(server, legacy_call)
+  defp dispatch(query_ref, _function_name, _args) do
+    {:error,
+     Error.new(
+       :validation_error,
+       "QueryAPI ref must be {module, context}, got: #{inspect(query_ref)}"
+     )}
   end
 end

@@ -1345,6 +1345,8 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
       assert started != nil
       assert started.data.tool_name == "read_file"
       assert started.data.tool_call_id == "toolu_test_abc123"
+      refute Map.has_key?(started.data, :tool_use_id)
+      refute Map.has_key?(started.data, :arguments)
     end
 
     test "emits tool_call_completed event", %{
@@ -1368,6 +1370,8 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
       assert completed.data.tool_name == "read_file"
       assert completed.data.tool_call_id == "toolu_test_abc123"
       assert completed.data.tool_input == %{"path" => "/test/file.txt"}
+      refute Map.has_key?(completed.data, :tool_use_id)
+      refute Map.has_key?(completed.data, :input)
     end
 
     test "includes tool_calls in result output", %{

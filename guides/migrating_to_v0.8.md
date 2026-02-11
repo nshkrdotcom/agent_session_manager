@@ -6,7 +6,7 @@ required updates for custom persistence integrations.
 ## Breaking Changes
 
 - **Removed modules**: `DurableStore` port, `NoopStore` adapter,
-  `SessionStoreBridge` adapter, and the legacy raw `SQLiteSessionStore`.
+  `SessionStoreBridge` adapter, and `SQLiteSessionStore`.
 - **`SessionStore` new callbacks**: `append_events/2` and `flush/2` are now
   required by the port.
 - **Event pipeline rename**: `EventEmitter` was renamed to `EventBuilder`.

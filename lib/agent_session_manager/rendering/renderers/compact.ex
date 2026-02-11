@@ -93,7 +93,7 @@ defmodule AgentSessionManager.Rendering.Renderers.CompactRenderer do
       state
       | tool_count: state.tool_count + 1,
         current_tool: name,
-        current_tool_id: data[:tool_call_id] || data[:tool_use_id],
+        current_tool_id: data[:tool_call_id],
         line_open: true
     }
 

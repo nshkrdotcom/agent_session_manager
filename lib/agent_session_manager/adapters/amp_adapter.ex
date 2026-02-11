@@ -545,10 +545,8 @@ if Code.ensure_loaded?(AmpSdk) do
 
       emit_event(ctx, :tool_call_started, %{
         tool_call_id: tool.id,
-        call_id: tool.id,
         tool_name: tool.name,
-        tool_input: tool_input,
-        input: tool.input
+        tool_input: tool_input
       })
 
       tool_call = %{
@@ -567,11 +565,9 @@ if Code.ensure_loaded?(AmpSdk) do
 
       emit_event(ctx, :tool_call_failed, %{
         tool_call_id: result.tool_use_id,
-        tool_use_id: result.tool_use_id,
         tool_name: tool_call && tool_call.name,
         tool_input: (tool_call && tool_call.input) || %{},
         tool_output: result.content,
-        content: result.content,
         is_error: true
       })
 
@@ -583,11 +579,9 @@ if Code.ensure_loaded?(AmpSdk) do
 
       emit_event(ctx, :tool_call_completed, %{
         tool_call_id: result.tool_use_id,
-        tool_use_id: result.tool_use_id,
         tool_name: tool_call && tool_call.name,
         tool_input: (tool_call && tool_call.input) || %{},
-        tool_output: result.content,
-        content: result.content
+        tool_output: result.content
       })
 
       ctx

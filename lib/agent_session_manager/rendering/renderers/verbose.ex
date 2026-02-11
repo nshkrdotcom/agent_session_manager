@@ -75,7 +75,7 @@ defmodule AgentSessionManager.Rendering.Renderers.VerboseRenderer do
   defp render(%{type: :tool_call_started, data: data}, state) do
     {break, state} = maybe_break_line(state)
     name = data[:tool_name] || "unknown"
-    id = data[:tool_call_id] || data[:tool_use_id] || ""
+    id = data[:tool_call_id] || ""
     input = format_tool_input(data[:tool_input])
 
     tag = colorize("[tool_call_started]", @green, state)

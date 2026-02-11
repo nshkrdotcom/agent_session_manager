@@ -133,23 +133,29 @@ defmodule AgentSessionManager.Persistence.EventPipelineTest do
     test "normalizes string event types via EventNormalizer mappings", %{store: store} do
       context = default_context()
 
-      {:ok, e1} = EventPipeline.process(store, %{type: "run_start"}, context)
-      {:ok, e2} = EventPipeline.process(store, %{type: "delta", data: %{content: "hi"}}, context)
+      {:ok, e1} = EventPipeline.process(store, %{type: "run_started"}, context)
+
+      {:ok, e2} =
+        EventPipeline.process(store, %{type: "message_streamed", data: %{content: "hi"}}, context)
 
       {:ok, e3} =
-        EventPipeline.process(store, %{type: "run_end", data: %{stop_reason: "done"}}, context)
+        EventPipeline.process(
+          store,
+          %{type: "run_completed", data: %{stop_reason: "done"}},
+          context
+        )
 
       assert e1.type == :run_started
       assert e2.type == :message_streamed
       assert e3.type == :run_completed
     end
 
-    test "copies provider into metadata for backward compatibility", %{store: store} do
+    test "stores provider on event struct only", %{store: store} do
       context = default_context(%{provider: "codex"})
       {:ok, event} = EventPipeline.process(store, %{type: :run_started}, context)
 
       assert event.provider == "codex"
-      assert event.metadata[:provider] == "codex"
+      refute Map.has_key?(event.metadata, :provider)
     end
 
     test "events are retrievable from store after processing", %{store: store} do

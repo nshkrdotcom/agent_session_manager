@@ -737,10 +737,8 @@ if Code.ensure_loaded?(Codex) and Code.ensure_loaded?(Codex.Events) do
             %{id: tool_call_id, name: tool_name, input: tool_input, output: tool_output} ->
               emit_event(ctx, :tool_call_completed, %{
                 tool_call_id: tool_call_id,
-                call_id: tool_call_id,
                 tool_name: tool_name,
                 tool_output: tool_output,
-                output: tool_output,
                 thread_id: event.thread_id,
                 turn_id: event.turn_id
               })
@@ -769,10 +767,8 @@ if Code.ensure_loaded?(Codex) and Code.ensure_loaded?(Codex.Events) do
         %{id: tool_call_id, name: tool_name, input: tool_input} ->
           emit_event(ctx, :tool_call_started, %{
             tool_call_id: tool_call_id,
-            call_id: tool_call_id,
             tool_name: tool_name,
             tool_input: tool_input,
-            arguments: tool_input,
             thread_id: event.thread_id,
             turn_id: event.turn_id
           })
@@ -814,10 +810,8 @@ if Code.ensure_loaded?(Codex) and Code.ensure_loaded?(Codex.Events) do
 
       emit_event(ctx, :tool_call_started, %{
         tool_call_id: event.call_id,
-        call_id: event.call_id,
         tool_name: event.tool_name,
         tool_input: tool_input,
-        arguments: event.arguments,
         thread_id: event.thread_id,
         turn_id: event.turn_id
       })
@@ -835,10 +829,8 @@ if Code.ensure_loaded?(Codex) and Code.ensure_loaded?(Codex.Events) do
 
       emit_event(ctx, :tool_call_completed, %{
         tool_call_id: event.call_id,
-        call_id: event.call_id,
         tool_name: event.tool_name,
         tool_output: event.output,
-        output: event.output,
         thread_id: event.thread_id,
         turn_id: event.turn_id
       })

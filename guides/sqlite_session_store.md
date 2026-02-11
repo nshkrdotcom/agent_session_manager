@@ -3,7 +3,7 @@
 `AgentSessionManager` supports SQLite through
 `AgentSessionManager.Adapters.EctoSessionStore` and `Ecto.Adapters.SQLite3`.
 
-This replaces the legacy dedicated `SQLiteSessionStore` adapter with a single
+This uses a single
 transactional persistence implementation shared across PostgreSQL and SQLite.
 
 ## Prerequisites

@@ -17,7 +17,7 @@ defmodule AgentSessionManager.Persistence.EventBuilderTest do
   describe "process/2" do
     test "builds, enriches, and validates event without persistence" do
       {:ok, event} =
-        EventBuilder.process(%{type: "run_start", data: %{model: "mock-model"}}, context())
+        EventBuilder.process(%{type: "run_started", data: %{model: "mock-model"}}, context())
 
       assert event.type == :run_started
       assert event.session_id == "ses_event_builder"
@@ -25,7 +25,7 @@ defmodule AgentSessionManager.Persistence.EventBuilderTest do
       assert event.provider == "mock"
       assert event.sequence_number == nil
       assert event.data == %{model: "mock-model"}
-      assert event.metadata[:provider] == "mock"
+      refute Map.has_key?(event.metadata, :provider)
     end
 
     test "preserves adapter-provided timestamp" do

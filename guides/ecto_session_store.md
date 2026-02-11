@@ -105,7 +105,7 @@ alias AgentSessionManager.Adapters.EctoSessionStore
 store_ref = {EctoSessionStore, MyApp.Repo}
 ```
 
-`start_link/1` remains available for supervision and backward compatibility:
+`start_link/1` is available for supervision use:
 
 ```elixir
 alias AgentSessionManager.Adapters.EctoSessionStore

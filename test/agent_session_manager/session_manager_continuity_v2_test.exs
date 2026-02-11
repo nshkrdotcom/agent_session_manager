@@ -3,7 +3,7 @@ defmodule AgentSessionManager.SessionManagerContinuityV2Test do
   Tests for Phase 2 Session Continuity v2 features:
   - continuation modes (:auto, :native, :replay)
   - per-provider continuation handles (provider_sessions)
-  - backward compatibility with boolean continuation
+  - current-only continuation options (boolean continuation rejected)
   """
 
   use AgentSessionManager.SupertesterCase, async: true
@@ -117,7 +117,7 @@ defmodule AgentSessionManager.SessionManagerContinuityV2Test do
   end
 
   describe "continuation mode parsing" do
-    test "continuation: true is accepted (backward compat) and injects transcript", ctx do
+    test "continuation: true is rejected", ctx do
       # First run to generate events
       {:ok, run1} =
         SessionManager.start_run(ctx.store, ctx.adapter, ctx.session.id, %{
@@ -126,14 +126,13 @@ defmodule AgentSessionManager.SessionManagerContinuityV2Test do
 
       {:ok, _} = SessionManager.execute_run(ctx.store, ctx.adapter, run1.id)
 
-      # Second run with continuation: true (Phase 1 backward compat)
       {:ok, run2} =
         SessionManager.start_run(ctx.store, ctx.adapter, ctx.session.id, %{
           messages: [%{role: "user", content: "again"}]
         })
 
-      {:ok, _} =
-        SessionManager.execute_run(ctx.store, ctx.adapter, run2.id, continuation: true)
+      assert {:error, %Error{code: :validation_error}} =
+               SessionManager.execute_run(ctx.store, ctx.adapter, run2.id, continuation: true)
     end
 
     test "continuation: :auto is accepted and injects transcript", ctx do
@@ -210,12 +209,9 @@ defmodule AgentSessionManager.SessionManagerContinuityV2Test do
 
       {:ok, session} = SessionStore.get_session(ctx.store, ctx.session.id)
 
-      # Backward compat: top-level keys still present
-      assert session.metadata[:provider_session_id] == "mock-ses-abc"
-      assert session.metadata[:model] == "mock-model-v2"
-
-      # Phase 2: per-provider keyed map
       assert is_map(session.metadata[:provider_sessions])
+      refute Map.has_key?(session.metadata, :provider_session_id)
+      refute Map.has_key?(session.metadata, :model)
 
       assert session.metadata[:provider_sessions]["mock-provider"][:provider_session_id] ==
                "mock-ses-abc"

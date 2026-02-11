@@ -615,14 +615,17 @@ defmodule AgentSessionManager.SessionManagerTest do
       assert hd(message_sent_events).data.role in ["user", :user]
     end
 
-    test "normalizes alias event types from adapters", %{store: store, adapter: adapter} do
+    test "normalizes canonical string event types from adapters", %{
+      store: store,
+      adapter: adapter
+    } do
       MockAdapter.set_response(adapter, :execute, %{
         content: "Normalized response",
         token_usage: %{input_tokens: 7, output_tokens: 11},
         events: [
-          %{type: "run_start", data: %{provider_session_id: "prov-123", model: "mock-v2"}},
-          %{type: "delta", data: %{content: "part-1"}},
-          %{type: "run_end", data: %{status: "success"}}
+          %{type: "run_started", data: %{provider_session_id: "prov-123", model: "mock-v2"}},
+          %{type: "message_streamed", data: %{content: "part-1"}},
+          %{type: "run_completed", data: %{stop_reason: "end_turn"}}
         ]
       })
 
@@ -726,7 +729,7 @@ defmodule AgentSessionManager.SessionManagerTest do
       {:ok, _} = SessionManager.execute_run(store, adapter, run_1.id)
 
       {:ok, run_2} = SessionManager.start_run(store, adapter, session.id, %{prompt: "second"})
-      {:ok, _} = SessionManager.execute_run(store, adapter, run_2.id, continuation: true)
+      {:ok, _} = SessionManager.execute_run(store, adapter, run_2.id, continuation: :auto)
 
       execute_session = MockAdapter.get_last_execute_session(adapter)
 
@@ -1169,7 +1172,7 @@ defmodule AgentSessionManager.SessionManagerTest do
       assert session.metadata.custom_field == "custom_value"
     end
 
-    test "execute_run updates session with provider_session_id from run_started event", %{
+    test "execute_run stores provider metadata under provider_sessions", %{
       store: store,
       adapter: adapter
     } do
@@ -1181,10 +1184,13 @@ defmodule AgentSessionManager.SessionManagerTest do
       # Retrieve updated session
       {:ok, updated_session} = SessionStore.get_session(store, session.id)
 
-      assert updated_session.metadata.provider_session_id == "mock-provider-session-123"
+      refute Map.has_key?(updated_session.metadata, :provider_session_id)
+
+      assert updated_session.metadata.provider_sessions["mock"].provider_session_id ==
+               "mock-provider-session-123"
     end
 
-    test "execute_run updates session with model info from run_started event", %{
+    test "execute_run stores model info under provider_sessions", %{
       store: store,
       adapter: adapter
     } do
@@ -1196,7 +1202,8 @@ defmodule AgentSessionManager.SessionManagerTest do
       # Retrieve updated session
       {:ok, updated_session} = SessionStore.get_session(store, session.id)
 
-      assert updated_session.metadata.model == "mock-model-v1"
+      refute Map.has_key?(updated_session.metadata, :model)
+      assert updated_session.metadata.provider_sessions["mock"].model == "mock-model-v1"
     end
 
     test "execute_run stores provider metadata in run metadata", %{
@@ -1214,7 +1221,7 @@ defmodule AgentSessionManager.SessionManagerTest do
       assert updated_run.metadata.provider_session_id == "mock-provider-session-123"
     end
 
-    test "subsequent runs preserve existing provider_session_id", %{
+    test "subsequent runs preserve provider session data in provider_sessions", %{
       store: store,
       adapter: adapter
     } do
@@ -1229,9 +1236,12 @@ defmodule AgentSessionManager.SessionManagerTest do
       {:ok, run2} = SessionManager.start_run(store, adapter, session.id, %{prompt: "Second"})
       {:ok, _} = SessionManager.execute_run(store, adapter, run2.id)
 
-      # Session should still have the provider_session_id
+      # Session should still have provider session data for this provider
       {:ok, updated_session} = SessionStore.get_session(store, session.id)
-      assert updated_session.metadata.provider_session_id == "mock-provider-session-123"
+      refute Map.has_key?(updated_session.metadata, :provider_session_id)
+
+      assert updated_session.metadata.provider_sessions["mock"].provider_session_id ==
+               "mock-provider-session-123"
 
       # Both runs should have provider metadata
       {:ok, updated_run1} = SessionStore.get_run(store, run1.id)
@@ -1480,7 +1490,7 @@ defmodule AgentSessionManager.SessionManagerTest do
       assert_received {:user_event, :message_received}
     end
 
-    test "works without event_callback (backward compat)", %{store: store, adapter: adapter} do
+    test "works without event_callback option", %{store: store, adapter: adapter} do
       {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
       {:ok, _} = SessionManager.activate_session(store, session.id)
       {:ok, run} = SessionManager.start_run(store, adapter, session.id, %{prompt: "Hello"})
@@ -1587,7 +1597,7 @@ defmodule AgentSessionManager.SessionManagerTest do
       assert message_received.metadata[:chunk_count] == 3
     end
 
-    test "persists provider name in Event.metadata for adapter events", %{
+    test "persists provider name on Event.provider for adapter events", %{
       store: store,
       adapter: adapter
     } do
@@ -1604,9 +1614,9 @@ defmodule AgentSessionManager.SessionManagerTest do
       assert adapter_events != []
 
       Enum.each(adapter_events, fn event ->
-        assert event.metadata[:provider] == "mock",
-               "Expected provider 'mock' in metadata for event type #{event.type}, " <>
-                 "got metadata: #{inspect(event.metadata)}"
+        assert event.provider == "mock",
+               "Expected provider 'mock' in event.provider for event type #{event.type}, " <>
+                 "got provider: #{inspect(event.provider)}"
       end)
     end
 

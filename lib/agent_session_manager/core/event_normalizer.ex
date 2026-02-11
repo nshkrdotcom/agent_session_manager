@@ -36,87 +36,42 @@ defmodule AgentSessionManager.Core.EventNormalizer do
 
   """
 
-  alias AgentSessionManager.Core.{Error, NormalizedEvent, Serialization}
-
-  # Type mappings from common provider patterns to canonical types
-  @type_mappings %{
-    # Message types
-    "user_message" => :message_sent,
-    "human_message" => :message_sent,
-    "user" => :message_sent,
-    "assistant_message" => :message_received,
-    "ai_message" => :message_received,
-    "assistant" => :message_received,
-    "message" => :message_received,
-    "delta" => :message_streamed,
-    "content_block_delta" => :message_streamed,
-    "text_delta" => :message_streamed,
-    "stream" => :message_streamed,
-    "chunk" => :message_streamed,
-
-    # Tool types
-    "tool_use" => :tool_call_started,
-    "tool_call" => :tool_call_started,
-    "function_call" => :tool_call_started,
-    "tool_result" => :tool_call_completed,
-    "function_result" => :tool_call_completed,
-
-    # Run lifecycle
-    "run_start" => :run_started,
-    "run_started" => :run_started,
-    "start" => :run_started,
-    "run_end" => :run_completed,
-    "run_completed" => :run_completed,
-    "end" => :run_completed,
-    "done" => :run_completed,
-    "complete" => :run_completed,
-
-    # Error types
-    "error" => :error_occurred,
-    "exception" => :error_occurred,
-
-    # Usage types
-    "usage" => :token_usage_updated,
-    "token_usage" => :token_usage_updated
-  }
+  alias AgentSessionManager.Core.{Error, Event, NormalizedEvent, Serialization}
 
   @doc """
   Resolves a raw event type (string or atom) to a canonical event atom type.
+  Canonical event names are the values in `Event.event_types/0`.
 
-  Uses the internal type mappings to convert common provider event type strings
-  (e.g., `"run_start"`, `"delta"`) into canonical atoms (`:run_started`, `:message_streamed`).
-
-  Returns `:error_occurred` for unrecognized types.
+  Returns `:error_occurred` for unrecognized or unsupported types.
 
   ## Examples
 
-      iex> EventNormalizer.resolve_type("run_start")
+      iex> EventNormalizer.resolve_type("run_started")
       :run_started
 
       iex> EventNormalizer.resolve_type(:run_started)
       :run_started
 
-      iex> EventNormalizer.resolve_type("totally_unknown")
+      iex> EventNormalizer.resolve_type("unknown_type")
       :error_occurred
 
   """
-  @spec resolve_type(atom() | String.t()) :: atom()
-  def resolve_type(type) when is_atom(type) and not is_nil(type), do: type
+  @spec resolve_type(atom() | String.t() | term()) :: atom()
+  def resolve_type(type) when is_atom(type) do
+    if Event.valid_type?(type), do: type, else: :error_occurred
+  end
 
   def resolve_type(type) when is_binary(type) do
-    case Map.get(@type_mappings, type) do
-      nil -> try_atom_conversion(type)
-      canonical -> canonical
+    case Serialization.maybe_to_existing_atom(type) do
+      atom when is_atom(atom) ->
+        if Event.valid_type?(atom), do: atom, else: :error_occurred
+
+      _ ->
+        :error_occurred
     end
   end
 
   def resolve_type(_), do: :error_occurred
-
-  defp try_atom_conversion(type_string) do
-    String.to_existing_atom(type_string)
-  rescue
-    ArgumentError -> :error_occurred
-  end
 
   @doc """
   Normalizes a raw event map into a NormalizedEvent.
@@ -128,7 +83,7 @@ defmodule AgentSessionManager.Core.EventNormalizer do
 
   ## Examples
 
-      iex> EventNormalizer.normalize(%{"type" => "message"}, %{session_id: "s1", run_id: "r1"})
+      iex> EventNormalizer.normalize(%{"type" => "message_received"}, %{session_id: "s1", run_id: "r1"})
       {:ok, %NormalizedEvent{type: :message_received, ...}}
 
   """
@@ -252,56 +207,14 @@ defmodule AgentSessionManager.Core.EventNormalizer do
   end
 
   defp determine_event_type(raw_event) do
-    raw_type = get_raw_type(raw_event)
-
-    case Map.get(@type_mappings, raw_type) do
-      nil -> infer_type_from_content(raw_event, raw_type)
-      type -> maybe_refine_type(type, raw_event)
-    end
+    raw_event
+    |> get_raw_type()
+    |> resolve_type()
   end
 
   defp get_raw_type(raw_event) do
-    raw_event["type"] || raw_event[:type] || raw_event["event"] || raw_event[:event] || ""
+    raw_event["type"] || raw_event[:type] || ""
   end
-
-  defp infer_type_from_content(raw_event, _original_type) do
-    infer_type_by_keys(raw_event)
-  end
-
-  defp infer_type_by_keys(raw_event) do
-    cond do
-      has_key?(raw_event, "delta") -> :message_streamed
-      has_key?(raw_event, "tool_use") -> :tool_call_started
-      has_key?(raw_event, "content") -> :message_received
-      has_key?(raw_event, "error") -> :error_occurred
-      true -> :error_occurred
-    end
-  end
-
-  defp has_key?(map, key), do: Serialization.has_key?(map, key)
-
-  defp maybe_refine_type(:run_completed, raw_event) do
-    status = raw_event["status"] || raw_event[:status]
-
-    case status do
-      s when s in ["error", "failed", :error, :failed] -> :run_failed
-      s when s in ["cancelled", "canceled", :cancelled, :canceled] -> :run_cancelled
-      s when s in ["timeout", :timeout] -> :run_timeout
-      _ -> :run_completed
-    end
-  end
-
-  defp maybe_refine_type(:tool_call_started, raw_event) do
-    status = raw_event["status"] || raw_event[:status]
-
-    case status do
-      s when s in ["completed", "done", :completed, :done] -> :tool_call_completed
-      s when s in ["failed", "error", :failed, :error] -> :tool_call_failed
-      _ -> :tool_call_started
-    end
-  end
-
-  defp maybe_refine_type(type, _raw_event), do: type
 
   defp build_event_data(raw_event, type) do
     base_data = %{
@@ -312,8 +225,12 @@ defmodule AgentSessionManager.Core.EventNormalizer do
     content = raw_event["content"] || raw_event[:content]
     delta = raw_event["delta"] || raw_event[:delta]
     role = raw_event["role"] || raw_event[:role]
-    tool_name = raw_event["name"] || raw_event[:name]
-    tool_input = raw_event["input"] || raw_event[:input]
+
+    tool_name =
+      raw_event["tool_name"] || raw_event[:tool_name] || raw_event["name"] || raw_event[:name]
+
+    tool_input = raw_event["tool_input"] || raw_event[:tool_input]
+    tool_output = raw_event["tool_output"] || raw_event[:tool_output]
 
     base_data
     |> maybe_put(:content, content)
@@ -321,6 +238,7 @@ defmodule AgentSessionManager.Core.EventNormalizer do
     |> maybe_put(:role, role)
     |> maybe_put(:tool_name, tool_name)
     |> maybe_put(:tool_input, tool_input)
+    |> maybe_put(:tool_output, tool_output)
     |> maybe_put_original_type(raw_event, type)
   end
 

@@ -502,7 +502,7 @@ defmodule AgentSessionManager.Test.Fixtures do
         timestamp: DateTime.add(base_time, 100, :millisecond),
         session_id: session_id,
         run_id: run_id,
-        data: %{tool_use_id: "toolu_test_001", tool_name: "get_weather", index: 1},
+        data: %{tool_call_id: "toolu_test_001", tool_name: "get_weather", index: 1},
         metadata: %{provider: :claude}
       },
       %Event{
@@ -512,9 +512,9 @@ defmodule AgentSessionManager.Test.Fixtures do
         session_id: session_id,
         run_id: run_id,
         data: %{
-          tool_use_id: "toolu_test_001",
+          tool_call_id: "toolu_test_001",
           tool_name: "get_weather",
-          input: %{"location" => "San Francisco"},
+          tool_output: %{"location" => "San Francisco"},
           index: 1
         },
         metadata: %{provider: :claude}

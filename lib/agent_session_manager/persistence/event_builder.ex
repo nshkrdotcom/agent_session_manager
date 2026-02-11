@@ -60,13 +60,10 @@ defmodule AgentSessionManager.Persistence.EventBuilder do
   end
 
   defp enrich(event, context) do
-    enriched_metadata = Map.put(event.metadata, :provider, context.provider)
-
     %{
       event
       | provider: context.provider,
-        correlation_id: Map.get(context, :correlation_id),
-        metadata: enriched_metadata
+        correlation_id: Map.get(context, :correlation_id)
     }
   end
 

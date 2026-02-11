@@ -501,14 +501,14 @@ defmodule AgentSessionManager.Ports.SessionStore do
     end
   end
 
-  defp dispatch(store, function_name, args, legacy_call, timeout \\ 5_000)
+  defp dispatch(store, function_name, args, genserver_call, timeout \\ 5_000)
 
-  defp dispatch({module, context}, function_name, args, _legacy_call, _timeout)
+  defp dispatch({module, context}, function_name, args, _genserver_call, _timeout)
        when is_atom(module) do
     apply(module, function_name, [context | args])
   end
 
-  defp dispatch(store, _function_name, _args, legacy_call, timeout) do
-    GenServer.call(store, legacy_call, timeout)
+  defp dispatch(store, _function_name, _args, genserver_call, timeout) do
+    GenServer.call(store, genserver_call, timeout)
   end
 end

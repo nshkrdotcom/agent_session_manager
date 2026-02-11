@@ -148,7 +148,7 @@ When an `artifact_store` is configured in workspace options, large patches are s
 {:ok, full_patch} = ArtifactStore.get(artifact_store, result.workspace.diff.patch_ref)
 ```
 
-Without an `artifact_store` configured, patches are embedded directly in the result (backward compatible).
+Without an `artifact_store` configured, patches are embedded directly in the result.
 
 ## Rollback Scope
 

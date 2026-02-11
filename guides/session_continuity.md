@@ -1,10 +1,8 @@
 # Session Continuity
 
-Feature 2 adds opt-in continuity across runs using a provider-agnostic transcript reconstructed from persisted events.
-
-## Why It Exists
-
-Without continuity, each `execute_run/4` call behaves like a one-shot interaction. With continuity enabled, `SessionManager` rebuilds prior context and injects it into the adapter input path.
+Session continuity is opt-in per run. When enabled, `SessionManager` rebuilds a
+provider-agnostic transcript from persisted events and injects it into
+`session.context[:transcript]` before adapter execution.
 
 ## Transcript Model
 
@@ -16,7 +14,7 @@ Continuity uses `AgentSessionManager.Core.Transcript`:
 - `last_timestamp`
 - `metadata`
 
-Each transcript message is normalized to a provider-agnostic shape:
+Each transcript message uses canonical fields:
 
 - `role` (`:system | :user | :assistant | :tool`)
 - `content`
@@ -27,8 +25,6 @@ Each transcript message is normalized to a provider-agnostic shape:
 - `metadata`
 
 ## Transcript Builder APIs
-
-`AgentSessionManager.Core.TranscriptBuilder` exposes three paths:
 
 ```elixir
 alias AgentSessionManager.Core.TranscriptBuilder
@@ -44,21 +40,11 @@ Ordering rules:
 2. Fall back to `timestamp`
 3. Use deterministic tie-breakers for stable output
 
-Tool call ID normalization:
-
-```elixir
-tool_call_id = data[:tool_call_id] || data[:tool_use_id] || data[:call_id]
-```
-
-`tool_call_id` is now emitted canonically by all built-in adapters; the fallback fields support legacy events.
-
 ## `execute_run/4` Continuation Options
-
-Continuity is opt-in:
 
 ```elixir
 {:ok, result} = SessionManager.execute_run(store, adapter, run.id,
-  continuation: true,
+  continuation: :auto,
   continuation_opts: [
     limit: 1_000,
     max_messages: 200
@@ -66,25 +52,14 @@ Continuity is opt-in:
 )
 ```
 
-When enabled, `SessionManager` injects the transcript into:
+## Continuation Modes
 
-```elixir
-session.context[:transcript]
-```
-
-Adapters consume this context when available. If provider-native thread/session reuse is unavailable, transcript replay is the fallback.
-
-### Continuation Modes (Phase 2)
-
-The `:continuation` option accepts expanded mode values:
-
-| Value     | Behavior |
-|-----------|----------|
-| `false`   | Disabled (default). No transcript injected. |
-| `true`    | Alias for `:auto`. Backward compatible. |
-| `:auto`   | Replay transcript from persisted events (falls back from native when unavailable). |
-| `:replay` | Always replay transcript from events, even if native continuation is available. |
-| `:native` | Use provider-native session continuation. Errors if the provider doesn't support it. |
+| Value | Behavior |
+|---|---|
+| `false` | Disabled (default). No transcript injected. |
+| `:auto` | Replay transcript from persisted events. |
+| `:replay` | Always replay transcript from persisted events. |
+| `:native` | Request provider-native continuation. Returns a validation error when unavailable. |
 
 ```elixir
 # Explicit replay mode
@@ -93,20 +68,15 @@ The `:continuation` option accepts expanded mode values:
   continuation_opts: [max_messages: 200]
 )
 
-# Auto mode (same as true, uses replay as fallback)
+# Auto mode
 {:ok, result} = SessionManager.execute_run(store, adapter, run.id,
   continuation: :auto
 )
-
-# Native mode (errors if unavailable)
-{:ok, result} = SessionManager.execute_run(store, adapter, run.id,
-  continuation: :native
-)
 ```
 
-### Token-Aware Truncation (Phase 2)
+## Token-Aware Truncation
 
-TranscriptBuilder supports character- and token-based truncation in addition to message count:
+TranscriptBuilder supports character- and token-based truncation:
 
 ```elixir
 {:ok, result} = SessionManager.execute_run(store, adapter, run.id,
@@ -119,21 +89,22 @@ TranscriptBuilder supports character- and token-based truncation in addition to 
 )
 ```
 
-- `max_chars` - hard character budget for the transcript content.
-- `max_tokens_approx` - approximate token budget, converted using a 4-chars-per-token heuristic.
-- When both are provided, the lower effective limit wins.
-- Truncation keeps the most recent messages within the budget.
+- `max_chars` - hard character budget for transcript content.
+- `max_tokens_approx` - approximate token budget using a 4-chars-per-token heuristic.
+- When both are set, the lower effective limit wins.
+- Truncation keeps the most recent messages within budget.
 
-### Per-Provider Continuation Handles (Phase 2)
+## Provider Session Metadata
 
-After execution, provider session metadata (e.g., `provider_session_id`, `model`) is stored both at the top level of `session.metadata` (backward compat) and under a per-provider key:
+Provider session metadata is stored under `session.metadata[:provider_sessions]`
+as a per-provider map:
 
 ```elixir
-session.metadata[:provider_session_id]          # top-level (backward compat)
-session.metadata[:provider_sessions]["claude"]  # per-provider keyed map
+session.metadata[:provider_sessions]["claude"]
+# => %{provider_session_id: "sess_...", model: "claude-haiku-4-5-20251001"}
 ```
 
-This allows sessions that interact with multiple providers to track continuation handles independently.
+This supports multi-provider sessions without duplicating top-level metadata keys.
 
 ## `run_once/4` Support
 
@@ -141,14 +112,12 @@ This allows sessions that interact with multiple providers to track continuation
 
 ```elixir
 {:ok, result} = SessionManager.run_once(store, adapter, input,
-  continuation: true,
+  continuation: :auto,
   continuation_opts: [max_messages: 100]
 )
 ```
 
 ## Adapter Options Pass-Through
-
-You can combine continuity with adapter-specific options:
 
 ```elixir
 {:ok, result} = SessionManager.execute_run(store, adapter, run.id,
@@ -158,8 +127,6 @@ You can combine continuity with adapter-specific options:
 )
 ```
 
-`adapter_opts` is passed through to `ProviderAdapter.execute/4` while `SessionManager` retains orchestration responsibilities.
+`adapter_opts` is forwarded to `ProviderAdapter.execute/4` while
+`SessionManager` handles orchestration.
 
-## Event Taxonomy
-
-Feature 2 does not add new event types. Continuity operates through transcript reconstruction and session context injection.

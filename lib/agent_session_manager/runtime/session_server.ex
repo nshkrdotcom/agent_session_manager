@@ -214,9 +214,7 @@ defmodule AgentSessionManager.Runtime.SessionServer do
       queued_count: RunQueue.size(state.queue),
       max_concurrent_runs: state.max_concurrent_runs,
       max_queued_runs: state.max_queued_runs,
-      subscribers: map_size(state.subscribers),
-      # Backward compat: active_run_id for single-slot callers
-      active_run_id: List.first(in_flight_runs)
+      subscribers: map_size(state.subscribers)
     }
 
     {:reply, status, state}

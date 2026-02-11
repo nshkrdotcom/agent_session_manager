@@ -616,6 +616,7 @@ defmodule AgentSessionManager.Runtime.SessionServerV2Test do
       assert status.max_concurrent_runs == 2
       assert status.max_queued_runs == 50
       assert status.subscribers == 0
+      refute Map.has_key?(status, :active_run_id)
     end
 
     test "drain/2 waits for queue and in-flight to reach zero", %{
@@ -754,7 +755,7 @@ defmodule AgentSessionManager.Runtime.SessionServerV2Test do
   # Backward compatibility tests (max_concurrent_runs: 1)
   # ============================================================================
 
-  describe "backward compatibility (sequential mode)" do
+  describe "sequential mode behavior" do
     test "max_concurrent_runs: 1 preserves strict sequential semantics", %{
       store: store,
       adapter: adapter

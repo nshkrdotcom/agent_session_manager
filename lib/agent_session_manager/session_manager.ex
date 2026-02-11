@@ -914,41 +914,58 @@ defmodule AgentSessionManager.SessionManager do
   end
 
   defp maybe_attach_transcript(store, session, opts) do
-    continuation_mode = resolve_continuation_mode(Keyword.get(opts, :continuation, false))
+    continuation = Keyword.get(opts, :continuation, false)
+    continuation_opts = Keyword.get(opts, :continuation_opts, [])
 
-    case continuation_mode do
-      :disabled ->
-        {:ok, session}
-
-      :native ->
-        {:error,
-         Error.new(
-           :invalid_operation,
-           "Native continuation is not available for this provider. " <>
-             "Use continuation: :auto to fall back to transcript replay."
-         )}
-
-      mode when mode in [:auto, :replay] ->
-        continuation_opts = Keyword.get(opts, :continuation_opts, [])
-
-        with {:ok, transcript} <-
-               TranscriptBuilder.from_store(store, session.id, continuation_opts) do
-          context =
-            session.context
-            |> ensure_map()
-            |> Map.put(:transcript, transcript)
-
-          {:ok, %{session | context: context}}
-        end
+    with {:ok, continuation_mode} <- resolve_continuation_mode(continuation) do
+      attach_transcript_for_mode(store, session, continuation_mode, continuation_opts)
     end
   end
 
-  defp resolve_continuation_mode(false), do: :disabled
-  defp resolve_continuation_mode(true), do: :auto
-  defp resolve_continuation_mode(:auto), do: :auto
-  defp resolve_continuation_mode(:native), do: :native
-  defp resolve_continuation_mode(:replay), do: :replay
-  defp resolve_continuation_mode(_), do: :disabled
+  defp attach_transcript_for_mode(_store, session, :disabled, _continuation_opts),
+    do: {:ok, session}
+
+  defp attach_transcript_for_mode(_store, _session, :native, _continuation_opts) do
+    {:error,
+     Error.new(
+       :invalid_operation,
+       "Native continuation is not available for this provider. " <>
+         "Use continuation: :auto to fall back to transcript replay."
+     )}
+  end
+
+  defp attach_transcript_for_mode(store, session, mode, continuation_opts)
+       when mode in [:auto, :replay] do
+    with {:ok, transcript} <- TranscriptBuilder.from_store(store, session.id, continuation_opts) do
+      context =
+        session.context
+        |> ensure_map()
+        |> Map.put(:transcript, transcript)
+
+      {:ok, %{session | context: context}}
+    end
+  end
+
+  defp resolve_continuation_mode(false), do: {:ok, :disabled}
+  defp resolve_continuation_mode(:auto), do: {:ok, :auto}
+  defp resolve_continuation_mode(:native), do: {:ok, :native}
+  defp resolve_continuation_mode(:replay), do: {:ok, :replay}
+
+  defp resolve_continuation_mode(true) do
+    {:error,
+     Error.new(
+       :validation_error,
+       "Boolean continuation is not supported. Use continuation: :auto, :replay, :native, or false."
+     )}
+  end
+
+  defp resolve_continuation_mode(other) do
+    {:error,
+     Error.new(
+       :validation_error,
+       "Invalid continuation value: #{inspect(other)}. Use :auto, :replay, :native, or false."
+     )}
+  end
 
   defp persist_input_messages(store, run) do
     run.input
@@ -1247,7 +1264,7 @@ defmodule AgentSessionManager.SessionManager do
 
       merged_metadata =
         session.metadata
-        |> Map.merge(metadata_to_add)
+        |> Map.drop([:provider_session_id, :model])
         |> Map.put(:provider_sessions, provider_sessions)
 
       %{session | metadata: merged_metadata, updated_at: DateTime.utc_now()}

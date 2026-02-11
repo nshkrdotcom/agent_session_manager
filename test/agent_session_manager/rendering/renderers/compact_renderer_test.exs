@@ -112,6 +112,12 @@ defmodule AgentSessionManager.Rendering.Renderers.CompactRendererTest do
       assert state.current_tool == "Read"
       assert state.tool_count == 1
     end
+
+    test "does not set current_tool_id from legacy aliases" do
+      event = event(:tool_call_started, %{tool_name: "Read", tool_use_id: "legacy_1"})
+      {_text, state} = render_single(event)
+      assert state.current_tool_id == nil
+    end
   end
 
   describe "tool_call_completed" do

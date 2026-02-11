@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Current-only contract cleanup:
+  - Boolean continuation value `true` is no longer accepted; use `:auto`, `:replay`, `:native`, or `false`
+  - Adapter tool events emit canonical keys only: `tool_call_id`, `tool_name`, `tool_input`, `tool_output`
+  - `TranscriptBuilder` and renderers consume canonical tool keys only
+  - `Event.from_map/1` requires explicit `schema_version`
+  - `QueryAPI` and `Maintenance` accept module-backed refs only
+  - `SessionServer.status/1` no longer includes the legacy active-run status field
+  - Session provider metadata is stored under `session.metadata[:provider_sessions]` without top-level duplication
+
 ## [0.8.0] - 2026-02-10
 
 ### Added
@@ -84,12 +95,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- Legacy persistence abstractions removed in favor of `SessionStore` + `flush/2`:
+- Persistence abstractions removed in favor of `SessionStore` + `flush/2`:
   - `AgentSessionManager.Ports.DurableStore`
   - `AgentSessionManager.Adapters.NoopStore`
   - `AgentSessionManager.Adapters.SessionStoreBridge`
-- Legacy raw `SQLiteSessionStore` replaced by `EctoSessionStore` + `ecto_sqlite3`
-- Legacy event emitter path removed; event build/validation/persistence flows through `EventBuilder` + `EventPipeline`
+- Raw `SQLiteSessionStore` replaced by `EctoSessionStore` + `ecto_sqlite3`
+- Event emitter path removed; event build/validation/persistence flows through `EventBuilder` + `EventPipeline`
 
 See `guides/migrating_to_v0.8.md` for migration details.
 
@@ -180,7 +191,7 @@ See `guides/migrating_to_v0.8.md` for migration details.
 - **Long-poll cursor reads** via optional `wait_timeout_ms` parameter on `SessionStore.get_events/3`
   - `InMemorySessionStore` implements deferred-reply long-poll using `GenServer.reply/2` without blocking the server loop
   - `SessionManager.stream_session_events/3` forwards `wait_timeout_ms` to the store, eliminating busy polling when supported
-  - Stores that do not support `wait_timeout_ms` ignore it and fall back to immediate return (backward compatible)
+  - Stores that do not support `wait_timeout_ms` ignore it and fall back to immediate return
   - `cursor_wait_follow.exs` live example demonstrating long-poll follow
 - **Adapter event metadata persistence** in `SessionManager.handle_adapter_event/4`
   - Adapter-provided `DateTime` timestamps stored in `Event.timestamp` instead of `DateTime.utc_now()`
@@ -199,7 +210,7 @@ See `guides/migrating_to_v0.8.md` for migration details.
 - **Workspace artifact storage** via `ArtifactStore` port and `FileArtifactStore` adapter
   - Large patches stored as artifacts with `patch_ref` in run metadata instead of embedding raw patches
   - `ArtifactStore.put/4`, `get/3`, `delete/3` API (opts optional)
-  - Without an artifact store configured, patches are embedded directly (backward compatible)
+  - Without an artifact store configured, patches are embedded directly
 - **Git snapshot untracked file support** using alternate `GIT_INDEX_FILE` to stage all content without mutating `HEAD`
   - Snapshot metadata includes `head_ref`, `dirty`, and `includes_untracked` fields
 - **Hash backend configurable ignore rules** via `ignore: [paths: [...], globs: [...]]`
@@ -270,14 +281,14 @@ See `guides/migrating_to_v0.8.md` for migration details.
 
 - **Canonical tool event payloads** across all three adapters (Claude, Codex, Amp)
   - All `tool_call_started`, `tool_call_completed`, and `tool_call_failed` events now emit canonical keys: `tool_call_id`, `tool_name`, `tool_input`, and `tool_output`
-  - Provider-native aliases (`call_id`, `tool_use_id`, `arguments`, `input`, `output`, `content`) are still emitted alongside canonical keys for backward compatibility
+  - Adapters emit canonical keys only (`tool_call_id`, `tool_name`, `tool_input`, `tool_output`)
   - `normalize_tool_input/1` helper added to each adapter to guarantee `tool_input` is always a map
   - `find_tool_call/2` helper added to AmpAdapter to enrich `tool_call_completed` and `tool_call_failed` events with `tool_name` and `tool_input` from the originating tool call
 
 ### Documentation
 
 - Update `guides/provider_adapters.md` with canonical tool event payload reference
-- Update `guides/session_continuity.md` with `tool_call_id` normalization note
+- Update `guides/session_continuity.md` with canonical `tool_call_id` guidance
 - Bump installation snippets in `README.md` and `guides/getting_started.md` to `~> 0.5.1`
 
 ## [0.5.0] - 2026-02-07
@@ -297,8 +308,8 @@ See `guides/migrating_to_v0.8.md` for migration details.
   - `Transcript` struct and `TranscriptBuilder` with `from_events/2`, `from_store/3`, and `update_from_store/2`
   - Sequence-based ordering with timestamp and deterministic tie-breaker fallbacks
   - Streaming chunk collapse into single assistant messages
-  - Tool call ID normalization across `tool_call_id`, `tool_use_id`, and `call_id` variants
-  - `continuation: true` and `continuation_opts` support in `execute_run/4` and `run_once/4`
+  - Canonical tool call ID handling via `tool_call_id`
+  - `continuation: :auto` and `continuation_opts` support in `execute_run/4` and `run_once/4`
   - Transcript-aware prompt building in all three adapters
   - `session_continuity.exs` live provider example
 - **Workspace snapshots** with pre/post snapshot, diff, and optional rollback instrumentation

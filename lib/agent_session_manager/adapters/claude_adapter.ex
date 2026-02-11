@@ -340,6 +340,7 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
         content_blocks: %{},
         tool_calls: [],
         token_usage: %{input_tokens: 0, output_tokens: 0},
+        stop_reason: nil,
         session_id: nil
       }
 
@@ -349,16 +350,12 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
         state.sdk_module && function_exported?(state.sdk_module, :query, 3) ->
           execute_with_agent_sdk(state.sdk_module, state.sdk_pid, ctx, state)
 
-        # Legacy mock SDK interface (subscribe/create_message)
-        state.sdk_module && function_exported?(state.sdk_module, :subscribe, 2) ->
-          execute_with_mock_sdk(state.sdk_module, state.sdk_pid, ctx, state)
-
         # Real ClaudeAgentSDK (not mocked)
         is_nil(state.sdk_module) ->
           execute_with_real_sdk(ctx, state)
 
         true ->
-          {:error, Error.new(:internal_error, "Unknown SDK interface")}
+          {:error, Error.new(:internal_error, "SDK module must implement query/3")}
       end
     end
 
@@ -491,7 +488,6 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
 
       emit_event(ctx, :tool_call_started, %{
         tool_call_id: event[:id],
-        tool_use_id: event[:id],
         tool_name: event[:name],
         tool_input: tool_input
       })
@@ -556,8 +552,24 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
     defp execute_with_agent_sdk(sdk_module, sdk_pid, ctx, state) do
       # Use the ClaudeAgentSDK-compatible interface
       sdk_opts = build_sdk_options(state)
-      stream = sdk_module.query(sdk_pid, ctx.prepared_input, sdk_opts)
-      process_agent_sdk_stream(stream, ctx)
+
+      case sdk_module.query(sdk_pid, ctx.prepared_input, sdk_opts) do
+        {:error, %Error{} = error} ->
+          emit_event(ctx, :error_occurred, %{
+            error_code: error.code,
+            error_message: error.message
+          })
+
+          emit_event(ctx, :run_failed, %{
+            error_code: error.code,
+            error_message: error.message
+          })
+
+          {:error, error}
+
+        stream ->
+          process_agent_sdk_stream(stream, ctx)
+      end
     end
 
     defp extract_prompt(input) when is_binary(input), do: input
@@ -726,6 +738,9 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
       new_ctx = handle_sdk_message(message, ctx)
 
       case message do
+        %{type: :result, subtype: :cancelled} ->
+          {:halt, {:cancelled, new_ctx}}
+
         %{type: :result, subtype: :error_during_execution} ->
           {:halt, {:error, message, new_ctx}}
 
@@ -771,18 +786,14 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
 
         emit_event(ctx, :tool_call_started, %{
           tool_call_id: tool_call.id,
-          tool_use_id: tool_call.id,
           tool_name: tool_call.name,
-          tool_input: tool_input,
-          arguments: tool_call.input
+          tool_input: tool_input
         })
 
         emit_event(ctx, :tool_call_completed, %{
           tool_call_id: tool_call.id,
-          tool_use_id: tool_call.id,
           tool_name: tool_call.name,
-          tool_input: tool_input,
-          input: tool_call.input
+          tool_input: tool_input
         })
       end)
 
@@ -794,38 +805,26 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
       %{
         ctx
         | accumulated_content: ctx.accumulated_content <> content,
-          tool_calls: ctx.tool_calls ++ new_tool_calls
+          tool_calls: ctx.tool_calls ++ new_tool_calls,
+          stop_reason: if(new_tool_calls == [], do: Map.get(ctx, :stop_reason), else: "tool_use")
       }
     end
 
     defp handle_sdk_message(%ClaudeAgentSDK.Message{type: :result, subtype: :success} = msg, ctx) do
-      # Usage may appear in data.usage, raw.usage, or at the raw top level
-      usage = msg.data[:usage] || (msg.raw && msg.raw["usage"]) || %{}
-      input_tokens = trunc(usage["input_tokens"] || usage[:input_tokens] || 0)
-      output_tokens = trunc(usage["output_tokens"] || usage[:output_tokens] || 0)
+      {input_tokens, output_tokens} = extract_usage_counts(msg)
+      stop_reason = extract_stop_reason(msg)
 
-      emit_event(ctx, :message_received, %{
-        content: ctx.accumulated_content,
-        role: "assistant"
-      })
-
-      emit_event(ctx, :token_usage_updated, %{
-        input_tokens: input_tokens,
-        output_tokens: output_tokens
-      })
-
-      emit_event(ctx, :run_completed, %{
-        stop_reason: "end_turn",
-        session_id: ctx.session_id,
-        num_turns: msg.data[:num_turns],
-        total_cost_usd: msg.data[:total_cost_usd],
-        token_usage: %{input_tokens: input_tokens, output_tokens: output_tokens}
-      })
+      emit_success_events(ctx, msg, stop_reason, input_tokens, output_tokens)
 
       %{
         ctx
-        | token_usage: %{input_tokens: input_tokens, output_tokens: output_tokens}
+        | token_usage: %{input_tokens: input_tokens, output_tokens: output_tokens},
+          stop_reason: stop_reason
       }
+    end
+
+    defp handle_sdk_message(%ClaudeAgentSDK.Message{type: :result, subtype: :cancelled}, ctx) do
+      ctx
     end
 
     defp handle_sdk_message(%ClaudeAgentSDK.Message{type: :result} = msg, ctx) do
@@ -862,6 +861,45 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
 
     defp handle_sdk_stream_result(ctx) do
       build_claude_result(ctx)
+    end
+
+    defp extract_usage_counts(msg) do
+      usage = msg.data[:usage] || (msg.raw && msg.raw["usage"]) || %{}
+
+      input_tokens = trunc(usage["input_tokens"] || usage[:input_tokens] || 0)
+      output_tokens = trunc(usage["output_tokens"] || usage[:output_tokens] || 0)
+
+      {input_tokens, output_tokens}
+    end
+
+    defp extract_stop_reason(msg) do
+      msg.data[:stop_reason] || (msg.raw && msg.raw["stop_reason"]) || "end_turn"
+    end
+
+    defp emit_success_events(ctx, msg, stop_reason, input_tokens, output_tokens) do
+      emit_event(ctx, :message_received, %{
+        content: ctx.accumulated_content,
+        role: "assistant"
+      })
+
+      emit_event(ctx, :token_usage_updated, %{
+        input_tokens: input_tokens,
+        output_tokens: output_tokens
+      })
+
+      maybe_emit_run_completed(ctx, msg, stop_reason, input_tokens, output_tokens)
+    end
+
+    defp maybe_emit_run_completed(_ctx, _msg, "tool_use", _input_tokens, _output_tokens), do: :ok
+
+    defp maybe_emit_run_completed(ctx, msg, stop_reason, input_tokens, output_tokens) do
+      emit_event(ctx, :run_completed, %{
+        stop_reason: stop_reason,
+        session_id: ctx.session_id,
+        num_turns: msg.data[:num_turns],
+        total_cost_usd: msg.data[:total_cost_usd],
+        token_usage: %{input_tokens: input_tokens, output_tokens: output_tokens}
+      })
     end
 
     defp extract_assistant_content(%ClaudeAgentSDK.Message{data: %{message: message}}) do
@@ -918,9 +956,11 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
     defp extract_tool_calls(_), do: []
 
     defp build_claude_result(ctx) do
+      stop_reason = Map.get(ctx, :stop_reason, "end_turn")
+
       output = %{
         content: ctx.accumulated_content,
-        stop_reason: "end_turn",
+        stop_reason: stop_reason,
         tool_calls: ctx.tool_calls
       }
 
@@ -930,312 +970,6 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
          token_usage: ctx.token_usage,
          events: emitted_events()
        }}
-    end
-
-    defp execute_with_mock_sdk(sdk_module, sdk_pid, ctx, state) do
-      # Subscribe to receive events
-      :ok = sdk_module.subscribe(sdk_pid, self())
-
-      # Create the message stream
-      case sdk_module.create_message(sdk_pid, %{}) do
-        {:ok, stream_ref} ->
-          # Store the stream ref for potential cancellation
-          GenServer.cast(ctx.adapter_pid, {:update_stream_ref, ctx.run.id, stream_ref})
-
-          # Process the event stream
-          process_event_stream(sdk_module, sdk_pid, ctx, state)
-
-        {:error, error} ->
-          # Emit error events
-          emit_event(ctx, :error_occurred, %{
-            error_code: error.code,
-            error_message: error.message
-          })
-
-          emit_event(ctx, :run_failed, %{
-            error_code: error.code,
-            error_message: error.message
-          })
-
-          {:error, error}
-      end
-    end
-
-    defp process_event_stream(sdk_module, sdk_pid, ctx, state) do
-      # Initial run_started event is emitted when we receive message_start
-      loop_result = receive_events(sdk_module, sdk_pid, ctx, state)
-
-      case loop_result do
-        {:ok, final_ctx} ->
-          # Build final result
-          result = build_result(final_ctx)
-          {:ok, result}
-
-        {:error, error, _final_ctx} ->
-          # Error already emitted during processing
-          {:error, error}
-
-        {:cancelled, _final_ctx} ->
-          {:error, Error.new(:cancelled, "Run was cancelled")}
-      end
-    end
-
-    defp receive_events(sdk_module, sdk_pid, ctx, state) do
-      # Check if cancelled by checking for a cancellation message first
-      receive do
-        {:cancelled_notification, _run_id} ->
-          # Emit cancellation event
-          emit_event(ctx, :run_cancelled, %{})
-          {:cancelled, ctx}
-      after
-        0 ->
-          # No cancellation pending, continue with events
-          receive_claude_events(sdk_module, sdk_pid, ctx, state)
-      end
-    end
-
-    defp receive_claude_events(sdk_module, sdk_pid, ctx, state) do
-      receive do
-        {:cancelled_notification, _run_id} ->
-          # Received cancellation while waiting for events
-          emit_event(ctx, :run_cancelled, %{})
-          {:cancelled, ctx}
-
-        {:claude_event, event} ->
-          new_ctx = handle_claude_event(event, ctx)
-
-          # Check if this is the final event
-          if event.type == "message_stop" do
-            {:ok, new_ctx}
-          else
-            receive_events(sdk_module, sdk_pid, new_ctx, state)
-          end
-
-        {:claude_error, error} ->
-          emit_event(ctx, :error_occurred, %{
-            error_code: error.code,
-            error_message: error.message
-          })
-
-          emit_event(ctx, :run_failed, %{
-            error_code: error.code,
-            error_message: error.message
-          })
-
-          {:error, error, ctx}
-
-        {:claude_cancelled, _stream_ref} ->
-          emit_event(ctx, :run_cancelled, %{})
-          {:cancelled, ctx}
-      after
-        30_000 ->
-          error = Error.new(:provider_timeout, "Timeout waiting for events")
-
-          emit_event(ctx, :error_occurred, %{
-            error_code: :provider_timeout,
-            error_message: "Timeout waiting for events"
-          })
-
-          emit_event(ctx, :run_failed, %{
-            error_code: :provider_timeout,
-            error_message: "Timeout waiting for events"
-          })
-
-          {:error, error, ctx}
-      end
-    end
-
-    defp handle_claude_event(%{type: "message_start"} = event, ctx) do
-      # Extract initial usage
-      usage = get_in(event, [:message, :usage]) || %{}
-
-      # Emit run_started
-      emit_event(ctx, :run_started, %{
-        message_id: get_in(event, [:message, :id]),
-        model: get_in(event, [:message, :model])
-      })
-
-      %{ctx | token_usage: Map.merge(ctx.token_usage, atomize_usage(usage))}
-    end
-
-    defp handle_claude_event(%{type: "content_block_start"} = event, ctx) do
-      index = event.index
-      content_block = event.content_block
-
-      case content_block.type do
-        "text" ->
-          # Track text content block
-          new_blocks =
-            Map.put(ctx.content_blocks, index, %{
-              type: :text,
-              content: ""
-            })
-
-          %{ctx | content_blocks: new_blocks}
-
-        "tool_use" ->
-          # Emit tool_call_started
-          emit_event(ctx, :tool_call_started, %{
-            tool_call_id: content_block.id,
-            tool_use_id: content_block.id,
-            tool_name: content_block.name,
-            tool_input: %{},
-            index: index
-          })
-
-          # Track tool use content block
-          new_blocks =
-            Map.put(ctx.content_blocks, index, %{
-              type: :tool_use,
-              id: content_block.id,
-              name: content_block.name,
-              input_json: ""
-            })
-
-          %{ctx | content_blocks: new_blocks}
-
-        _ ->
-          ctx
-      end
-    end
-
-    defp handle_claude_event(%{type: "content_block_delta"} = event, ctx) do
-      index = event.index
-      delta = event.delta
-      handle_delta(delta.type, delta, index, ctx)
-    end
-
-    defp handle_claude_event(%{type: "content_block_stop"} = event, ctx) do
-      index = event.index
-      block = Map.get(ctx.content_blocks, index)
-
-      case block do
-        %{type: :tool_use} = tool_block ->
-          # Parse the accumulated JSON
-          input =
-            case Jason.decode(tool_block.input_json) do
-              {:ok, parsed} -> parsed
-              {:error, _} -> %{}
-            end
-
-          # Emit tool_call_completed
-          emit_event(ctx, :tool_call_completed, %{
-            tool_call_id: tool_block.id,
-            tool_use_id: tool_block.id,
-            tool_name: tool_block.name,
-            tool_input: normalize_tool_input(input),
-            input: input,
-            index: index
-          })
-
-          # Add to tool calls list
-          tool_call = %{
-            id: tool_block.id,
-            name: tool_block.name,
-            input: input
-          }
-
-          %{ctx | tool_calls: ctx.tool_calls ++ [tool_call]}
-
-        _ ->
-          ctx
-      end
-    end
-
-    defp handle_claude_event(%{type: "message_delta"} = event, ctx) do
-      # Extract final usage and stop reason
-      usage = event.usage || %{}
-      stop_reason = get_in(event, [:delta, :stop_reason])
-
-      # Emit token usage updated
-      emit_event(ctx, :token_usage_updated, %{
-        input_tokens: ctx.token_usage.input_tokens,
-        output_tokens:
-          usage[:output_tokens] || usage["output_tokens"] || ctx.token_usage.output_tokens
-      })
-
-      new_usage = %{
-        ctx.token_usage
-        | output_tokens:
-            usage[:output_tokens] || usage["output_tokens"] || ctx.token_usage.output_tokens
-      }
-
-      Map.merge(ctx, %{token_usage: new_usage, stop_reason: stop_reason})
-    end
-
-    defp handle_claude_event(%{type: "message_stop"}, ctx) do
-      # Emit message_received with full content
-      emit_event(ctx, :message_received, %{
-        content: ctx.accumulated_content,
-        role: "assistant"
-      })
-
-      # Emit run_completed
-      emit_event(ctx, :run_completed, %{
-        stop_reason: Map.get(ctx, :stop_reason),
-        token_usage: ctx.token_usage
-      })
-
-      ctx
-    end
-
-    defp handle_claude_event(%{type: "__disconnect__"} = event, ctx) do
-      # Handle simulated disconnect
-      error = event.error
-
-      emit_event(ctx, :error_occurred, %{
-        error_code: error.code,
-        error_message: error.message
-      })
-
-      ctx
-    end
-
-    defp handle_claude_event(_event, ctx) do
-      # Unknown event type, ignore
-      ctx
-    end
-
-    defp handle_delta("text_delta", delta, index, ctx) do
-      text = delta.text
-
-      emit_event(ctx, :message_streamed, %{
-        content: text,
-        delta: text,
-        index: index
-      })
-
-      new_content = ctx.accumulated_content <> text
-      new_blocks = update_text_block(ctx.content_blocks, index, text)
-      %{ctx | accumulated_content: new_content, content_blocks: new_blocks}
-    end
-
-    defp handle_delta("input_json_delta", delta, index, ctx) do
-      partial_json = delta.partial_json
-      new_blocks = update_json_block(ctx.content_blocks, index, partial_json)
-      %{ctx | content_blocks: new_blocks}
-    end
-
-    defp handle_delta(_type, _delta, _index, ctx), do: ctx
-
-    defp update_text_block(blocks, index, text) do
-      case Map.get(blocks, index) do
-        nil ->
-          Map.put(blocks, index, %{type: :text, content: text})
-
-        block ->
-          Map.put(blocks, index, %{block | content: (block[:content] || "") <> text})
-      end
-    end
-
-    defp update_json_block(blocks, index, partial_json) do
-      case Map.get(blocks, index) do
-        nil ->
-          blocks
-
-        block ->
-          Map.put(blocks, index, %{block | input_json: (block[:input_json] || "") <> partial_json})
-      end
     end
 
     defp emit_event(ctx, type, data) do
@@ -1254,20 +988,6 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
 
       append_emitted_event(event)
       event
-    end
-
-    defp build_result(ctx) do
-      output = %{
-        content: ctx.accumulated_content,
-        stop_reason: Map.get(ctx, :stop_reason),
-        tool_calls: ctx.tool_calls
-      }
-
-      %{
-        output: output,
-        token_usage: ctx.token_usage,
-        events: emitted_events()
-      }
     end
 
     defp reset_emitted_events do
@@ -1321,13 +1041,6 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
           description: "Ability to interrupt/cancel in-progress requests"
         }
       ]
-    end
-
-    defp atomize_usage(usage) when is_map(usage) do
-      %{
-        input_tokens: usage[:input_tokens] || usage["input_tokens"] || 0,
-        output_tokens: usage[:output_tokens] || usage["output_tokens"] || 0
-      }
     end
   end
 else

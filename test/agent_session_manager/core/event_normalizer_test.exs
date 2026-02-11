@@ -14,7 +14,7 @@ defmodule AgentSessionManager.Core.EventNormalizerTest do
   describe "EventNormalizer.normalize/2 - basic normalization" do
     test "normalizes a raw event map into NormalizedEvent" do
       raw_event = %{
-        "type" => "message",
+        "type" => "message_received",
         "content" => "Hello, world!",
         "role" => "assistant"
       }
@@ -35,7 +35,7 @@ defmodule AgentSessionManager.Core.EventNormalizerTest do
 
     test "preserves raw data in event data field" do
       raw_event = %{
-        "type" => "message",
+        "type" => "message_received",
         "content" => "Test content",
         "metadata" => %{"key" => "value"}
       }
@@ -49,7 +49,7 @@ defmodule AgentSessionManager.Core.EventNormalizerTest do
     end
 
     test "requires session_id in context" do
-      raw_event = %{"type" => "message"}
+      raw_event = %{"type" => "message_received"}
       context = %{run_id: "run_456"}
 
       assert {:error, %Error{code: :validation_error}} =
@@ -57,7 +57,7 @@ defmodule AgentSessionManager.Core.EventNormalizerTest do
     end
 
     test "requires run_id in context" do
-      raw_event = %{"type" => "message"}
+      raw_event = %{"type" => "message_received"}
       context = %{session_id: "ses_123"}
 
       assert {:error, %Error{code: :validation_error}} =
@@ -68,9 +68,9 @@ defmodule AgentSessionManager.Core.EventNormalizerTest do
   describe "EventNormalizer.normalize_batch/2 - batch normalization" do
     test "normalizes a list of raw events" do
       raw_events = [
-        %{"type" => "message", "content" => "First"},
-        %{"type" => "message", "content" => "Second"},
-        %{"type" => "message", "content" => "Third"}
+        %{"type" => "message_received", "content" => "First"},
+        %{"type" => "message_received", "content" => "Second"},
+        %{"type" => "message_received", "content" => "Third"}
       ]
 
       context = %{session_id: "ses_123", run_id: "run_456", provider: :generic}
@@ -83,9 +83,9 @@ defmodule AgentSessionManager.Core.EventNormalizerTest do
 
     test "assigns sequential sequence numbers" do
       raw_events = [
-        %{"type" => "message", "content" => "First"},
-        %{"type" => "message", "content" => "Second"},
-        %{"type" => "message", "content" => "Third"}
+        %{"type" => "message_received", "content" => "First"},
+        %{"type" => "message_received", "content" => "Second"},
+        %{"type" => "message_received", "content" => "Third"}
       ]
 
       context = %{session_id: "ses_123", run_id: "run_456", provider: :generic}
@@ -98,8 +98,8 @@ defmodule AgentSessionManager.Core.EventNormalizerTest do
 
     test "assigns sequence numbers starting from given offset" do
       raw_events = [
-        %{"type" => "message", "content" => "First"},
-        %{"type" => "message", "content" => "Second"}
+        %{"type" => "message_received", "content" => "First"},
+        %{"type" => "message_received", "content" => "Second"}
       ]
 
       context = %{
@@ -119,10 +119,10 @@ defmodule AgentSessionManager.Core.EventNormalizerTest do
       # Events without a type are converted to error_occurred, not rejected
       # This allows the pipeline to continue processing without losing events
       raw_events = [
-        %{"type" => "message", "content" => "Valid"},
+        %{"type" => "message_received", "content" => "Valid"},
         # No type - will become error_occurred
         %{},
-        %{"type" => "message", "content" => "Also valid"}
+        %{"type" => "message_received", "content" => "Also valid"}
       ]
 
       context = %{session_id: "ses_123", run_id: "run_456", provider: :generic}
@@ -138,49 +138,22 @@ defmodule AgentSessionManager.Core.EventNormalizerTest do
   end
 
   describe "EventNormalizer - event type mapping" do
-    test "maps common message types" do
+    test "maps canonical string event types" do
       context = %{session_id: "ses_123", run_id: "run_456", provider: :generic}
 
-      # User message
-      {:ok, event} = EventNormalizer.normalize(%{"type" => "user_message"}, context)
-      assert event.type == :message_sent
-
-      # Assistant message
-      {:ok, event} = EventNormalizer.normalize(%{"type" => "assistant_message"}, context)
+      {:ok, event} = EventNormalizer.normalize(%{"type" => "message_received"}, context)
       assert event.type == :message_received
 
-      # Streaming chunk
-      {:ok, event} = EventNormalizer.normalize(%{"type" => "delta", "delta" => "text"}, context)
+      {:ok, event} =
+        EventNormalizer.normalize(%{"type" => "message_streamed", "delta" => "text"}, context)
+
       assert event.type == :message_streamed
-    end
-
-    test "maps tool call types" do
-      context = %{session_id: "ses_123", run_id: "run_456", provider: :generic}
-
-      {:ok, event} =
-        EventNormalizer.normalize(
-          %{"type" => "tool_use", "name" => "calculator", "status" => "started"},
-          context
-        )
-
+      {:ok, event} = EventNormalizer.normalize(%{"type" => "tool_call_started"}, context)
       assert event.type == :tool_call_started
-    end
-
-    test "maps run lifecycle types" do
-      context = %{session_id: "ses_123", run_id: "run_456", provider: :generic}
-
-      {:ok, event} = EventNormalizer.normalize(%{"type" => "run_start"}, context)
+      {:ok, event} = EventNormalizer.normalize(%{"type" => "run_started"}, context)
       assert event.type == :run_started
-
-      {:ok, event} =
-        EventNormalizer.normalize(%{"type" => "run_end", "status" => "success"}, context)
-
+      {:ok, event} = EventNormalizer.normalize(%{"type" => "run_completed"}, context)
       assert event.type == :run_completed
-
-      {:ok, event} =
-        EventNormalizer.normalize(%{"type" => "run_end", "status" => "error"}, context)
-
-      assert event.type == :run_failed
     end
 
     test "handles unknown types gracefully with error event" do
@@ -196,7 +169,7 @@ defmodule AgentSessionManager.Core.EventNormalizerTest do
 
   describe "EventNormalizer - ordering guarantees" do
     test "timestamps are monotonically increasing for batch events" do
-      raw_events = for i <- 1..10, do: %{"type" => "message", "index" => i}
+      raw_events = for i <- 1..10, do: %{"type" => "message_received", "index" => i}
       context = %{session_id: "ses_123", run_id: "run_456", provider: :generic}
 
       {:ok, normalized_list} = EventNormalizer.normalize_batch(raw_events, context)
@@ -213,7 +186,7 @@ defmodule AgentSessionManager.Core.EventNormalizerTest do
     end
 
     test "sequence numbers are strictly increasing" do
-      raw_events = for i <- 1..10, do: %{"type" => "message", "index" => i}
+      raw_events = for i <- 1..10, do: %{"type" => "message_received", "index" => i}
       context = %{session_id: "ses_123", run_id: "run_456", provider: :generic}
 
       {:ok, normalized_list} = EventNormalizer.normalize_batch(raw_events, context)
@@ -229,7 +202,7 @@ defmodule AgentSessionManager.Core.EventNormalizerTest do
     end
 
     test "event IDs are unique within a batch" do
-      raw_events = for _ <- 1..100, do: %{"type" => "message"}
+      raw_events = for _ <- 1..100, do: %{"type" => "message_received"}
       context = %{session_id: "ses_123", run_id: "run_456", provider: :generic}
 
       {:ok, normalized_list} = EventNormalizer.normalize_batch(raw_events, context)
@@ -241,7 +214,7 @@ defmodule AgentSessionManager.Core.EventNormalizerTest do
     end
 
     test "preserves original order of events" do
-      raw_events = for i <- 1..10, do: %{"type" => "message", "index" => i}
+      raw_events = for i <- 1..10, do: %{"type" => "message_received", "index" => i}
       context = %{session_id: "ses_123", run_id: "run_456", provider: :generic}
 
       {:ok, normalized_list} = EventNormalizer.normalize_batch(raw_events, context)

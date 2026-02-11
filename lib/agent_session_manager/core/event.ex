@@ -317,7 +317,8 @@ defmodule AgentSessionManager.Core.Event do
     with {:ok, id} <- get_required_string(map, "id"),
          {:ok, type} <- parse_type(map["type"]),
          {:ok, session_id} <- get_required_string(map, "session_id"),
-         {:ok, timestamp} <- parse_datetime(map["timestamp"]) do
+         {:ok, timestamp} <- parse_datetime(map["timestamp"]),
+         {:ok, schema_version} <- parse_schema_version(map["schema_version"]) do
       event = %__MODULE__{
         id: id,
         type: type,
@@ -327,7 +328,7 @@ defmodule AgentSessionManager.Core.Event do
         data: Serialization.atomize_keys(map["data"] || %{}),
         metadata: Serialization.atomize_keys(map["metadata"] || %{}),
         sequence_number: map["sequence_number"],
-        schema_version: map["schema_version"] || 1,
+        schema_version: schema_version,
         provider: map["provider"],
         correlation_id: map["correlation_id"]
       }
@@ -402,4 +403,17 @@ defmodule AgentSessionManager.Core.Event do
   end
 
   defp parse_datetime(_), do: {:error, Error.new(:validation_error, "timestamp must be a string")}
+
+  defp parse_schema_version(nil),
+    do: {:error, Error.new(:validation_error, "schema_version is required")}
+
+  defp parse_schema_version(value) when is_integer(value) and value >= 1, do: {:ok, value}
+
+  defp parse_schema_version(_),
+    do:
+      {:error,
+       Error.new(
+         :validation_error,
+         "schema_version must be an integer greater than or equal to 1"
+       )}
 end

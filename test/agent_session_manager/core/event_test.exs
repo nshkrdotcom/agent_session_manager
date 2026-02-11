@@ -326,22 +326,6 @@ defmodule AgentSessionManager.Core.EventTest do
       assert event.schema_version == 2
     end
 
-    test "events without schema_version (nil) are backward compatible" do
-      # Simulate an old event struct without schema_version
-      event = %Event{
-        id: "evt_old",
-        type: :session_created,
-        session_id: "session-123",
-        timestamp: DateTime.utc_now(),
-        schema_version: nil
-      }
-
-      # The struct should still work
-      assert event.id == "evt_old"
-      assert event.type == :session_created
-      assert event.schema_version == nil
-    end
-
     test "schema_version is included in to_map serialization" do
       {:ok, event} =
         Event.new(%{
@@ -366,7 +350,7 @@ defmodule AgentSessionManager.Core.EventTest do
       assert restored.schema_version == 1
     end
 
-    test "from_map defaults schema_version to 1 when missing" do
+    test "from_map requires schema_version when missing" do
       map = %{
         "id" => "evt_old",
         "type" => "session_created",
@@ -374,8 +358,19 @@ defmodule AgentSessionManager.Core.EventTest do
         "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601()
       }
 
-      {:ok, event} = Event.from_map(map)
-      assert event.schema_version == 1
+      assert {:error, %Error{code: :validation_error}} = Event.from_map(map)
+    end
+
+    test "from_map requires schema_version when nil" do
+      map = %{
+        "id" => "evt_old",
+        "type" => "session_created",
+        "session_id" => "session-123",
+        "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601(),
+        "schema_version" => nil
+      }
+
+      assert {:error, %Error{code: :validation_error}} = Event.from_map(map)
     end
 
     test "struct default for schema_version is 1" do

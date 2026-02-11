@@ -717,7 +717,7 @@ defmodule AgentSessionManager.Ports.SessionStoreContractTest do
       assert Enum.all?(events, &(&1.run_id == run.id))
     end
 
-    test "get_events/3 without wait_timeout_ms returns immediately (backward compat)", %{
+    test "get_events/3 without wait_timeout_ms returns immediately", %{
       store: store,
       session: session
     } do

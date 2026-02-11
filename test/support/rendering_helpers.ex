@@ -32,7 +32,6 @@ defmodule AgentSessionManager.Test.RenderingHelpers do
     event(:tool_call_started, %{
       tool_name: name,
       tool_call_id: opts[:id] || "tool_#{name}_001",
-      tool_use_id: opts[:id] || "tool_#{name}_001",
       tool_input: opts[:input] || %{}
     })
   end
@@ -41,7 +40,6 @@ defmodule AgentSessionManager.Test.RenderingHelpers do
     event(:tool_call_completed, %{
       tool_name: name,
       tool_call_id: opts[:id] || "tool_#{name}_001",
-      tool_use_id: opts[:id] || "tool_#{name}_001",
       tool_input: opts[:input] || %{},
       tool_output: opts[:output] || "done"
     })

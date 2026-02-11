@@ -17,7 +17,7 @@ defmodule AgentSessionManager.Ports.Maintenance do
   alias AgentSessionManager.Persistence.RetentionPolicy
 
   @type context :: term()
-  @type maintenance_ref :: {module(), context()} | GenServer.server()
+  @type maintenance_ref :: {module(), context()}
 
   @type maintenance_report :: %{
           sessions_soft_deleted: non_neg_integer(),
@@ -70,72 +70,53 @@ defmodule AgentSessionManager.Ports.Maintenance do
               {:ok, [String.t()]} | {:error, Error.t()}
 
   # ============================================================================
-  # Dispatch functions (module-backed, with GenServer compatibility)
+  # Dispatch functions (module-backed refs only)
   # ============================================================================
 
   @spec execute(maintenance_ref(), RetentionPolicy.t()) ::
           {:ok, maintenance_report()} | {:error, Error.t()}
   def execute(maintenance_ref, policy) do
-    dispatch(maintenance_ref, :execute, [policy], {:maintenance_execute, policy}, 60_000)
+    dispatch(maintenance_ref, :execute, [policy])
   end
 
   @spec prune_session_events(maintenance_ref(), String.t(), RetentionPolicy.t()) ::
           {:ok, non_neg_integer()} | {:error, Error.t()}
   def prune_session_events(maintenance_ref, session_id, policy) do
-    dispatch(
-      maintenance_ref,
-      :prune_session_events,
-      [session_id, policy],
-      {:maintenance_prune_events, session_id, policy}
-    )
+    dispatch(maintenance_ref, :prune_session_events, [session_id, policy])
   end
 
   @spec soft_delete_expired_sessions(maintenance_ref(), RetentionPolicy.t()) ::
           {:ok, non_neg_integer()} | {:error, Error.t()}
   def soft_delete_expired_sessions(maintenance_ref, policy) do
-    dispatch(
-      maintenance_ref,
-      :soft_delete_expired_sessions,
-      [policy],
-      {:maintenance_soft_delete_expired, policy}
-    )
+    dispatch(maintenance_ref, :soft_delete_expired_sessions, [policy])
   end
 
   @spec hard_delete_expired_sessions(maintenance_ref(), RetentionPolicy.t()) ::
           {:ok, non_neg_integer()} | {:error, Error.t()}
   def hard_delete_expired_sessions(maintenance_ref, policy) do
-    dispatch(
-      maintenance_ref,
-      :hard_delete_expired_sessions,
-      [policy],
-      {:maintenance_hard_delete_expired, policy}
-    )
+    dispatch(maintenance_ref, :hard_delete_expired_sessions, [policy])
   end
 
   @spec clean_orphaned_artifacts(maintenance_ref(), keyword()) ::
           {:ok, non_neg_integer()} | {:error, Error.t()}
   def clean_orphaned_artifacts(maintenance_ref, opts \\ []) do
-    dispatch(
-      maintenance_ref,
-      :clean_orphaned_artifacts,
-      [opts],
-      {:maintenance_clean_artifacts, opts}
-    )
+    dispatch(maintenance_ref, :clean_orphaned_artifacts, [opts])
   end
 
   @spec health_check(maintenance_ref()) :: {:ok, [String.t()]} | {:error, Error.t()}
   def health_check(maintenance_ref) do
-    dispatch(maintenance_ref, :health_check, [], {:maintenance_health_check})
+    dispatch(maintenance_ref, :health_check, [])
   end
 
-  defp dispatch(ref, function_name, args, legacy_call, timeout \\ 5_000)
-
-  defp dispatch({module, context}, function_name, args, _legacy_call, _timeout)
-       when is_atom(module) do
+  defp dispatch({module, context}, function_name, args) when is_atom(module) do
     apply(module, function_name, [context | args])
   end
 
-  defp dispatch(server, _function_name, _args, legacy_call, timeout) do
-    GenServer.call(server, legacy_call, timeout)
+  defp dispatch(maintenance_ref, _function_name, _args) do
+    {:error,
+     Error.new(
+       :validation_error,
+       "Maintenance ref must be {module, context}, got: #{inspect(maintenance_ref)}"
+     )}
   end
 end

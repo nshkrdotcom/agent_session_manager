@@ -253,13 +253,13 @@ defmodule AgentSessionManager.Core.TranscriptBuilder do
   end
 
   defp normalize_tool_call_id(data) when is_map(data) do
-    data[:tool_call_id] || data[:tool_use_id] || data[:call_id]
+    data[:tool_call_id]
   end
 
   defp normalize_tool_call_id(_), do: nil
 
   defp normalize_tool_input(data) when is_map(data) do
-    input = data[:tool_input] || data[:input] || data[:arguments]
+    input = data[:tool_input]
 
     if is_map(input), do: input, else: nil
   end
@@ -267,7 +267,7 @@ defmodule AgentSessionManager.Core.TranscriptBuilder do
   defp normalize_tool_input(_), do: nil
 
   defp normalize_tool_output(data) when is_map(data) do
-    data[:tool_output] || data[:output] || data[:content] || data[:result]
+    data[:tool_output]
   end
 
   defp normalize_tool_output(_), do: nil

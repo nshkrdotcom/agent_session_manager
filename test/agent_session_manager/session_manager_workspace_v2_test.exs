@@ -162,7 +162,7 @@ defmodule AgentSessionManager.SessionManagerWorkspaceV2Test do
       assert result.workspace.diff[:patch_ref] == nil
     end
 
-    test "works without artifact_store (backward compat - patch embedded)", ctx do
+    test "works without artifact_store (patch embedded)", ctx do
       repo = create_git_repo!()
       workspace_file = Path.join(repo, "file.txt")
 

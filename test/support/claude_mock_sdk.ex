@@ -133,7 +133,10 @@ defmodule AgentSessionManager.Adapters.Claude.MockSDK do
           completed: boolean(),
           error: Error.t() | nil,
           message_id: String.t(),
-          model: String.t()
+          model: String.t(),
+          usage: %{input_tokens: non_neg_integer(), output_tokens: non_neg_integer()},
+          stop_reason: String.t() | nil,
+          pending_tool: map() | nil
         }
 
   # ============================================================================
@@ -176,6 +179,59 @@ defmodule AgentSessionManager.Adapters.Claude.MockSDK do
   @spec subscribe(GenServer.server(), pid()) :: :ok
   def subscribe(server, pid) do
     GenServer.call(server, {:subscribe, pid})
+  end
+
+  @doc """
+  ClaudeAgentSDK-compatible query interface that returns an event stream.
+  """
+  @spec query(GenServer.server(), map(), keyword()) :: Enumerable.t() | {:error, Error.t()}
+  def query(server, _input, _opts \\ []) do
+    case GenServer.call(server, {:query, self()}) do
+      :ok ->
+        Stream.resource(
+          fn -> :open end,
+          fn
+            :done ->
+              {:halt, :done}
+
+            :open ->
+              receive do
+                {:claude_message, message} ->
+                  {[message], :open}
+
+                {:claude_error, %Error{} = error} ->
+                  message = %ClaudeAgentSDK.Message{
+                    type: :result,
+                    subtype: :error_during_execution,
+                    data: %{error: error.message},
+                    raw: %{}
+                  }
+
+                  {[message], :done}
+
+                {:cancelled_notification, _run_id} ->
+                  message = %ClaudeAgentSDK.Message{
+                    type: :result,
+                    subtype: :cancelled,
+                    data: %{},
+                    raw: %{}
+                  }
+
+                  {[message], :done}
+
+                {:claude_done} ->
+                  {:halt, :done}
+              after
+                5_000 ->
+                  {:halt, :done}
+              end
+          end,
+          fn _ -> :ok end
+        )
+
+      {:error, %Error{} = error} ->
+        {:error, error}
+    end
   end
 
   @doc """
@@ -271,7 +327,10 @@ defmodule AgentSessionManager.Adapters.Claude.MockSDK do
       error: nil,
       message_id: message_id,
       model: model,
-      stream_ref: nil
+      stream_ref: nil,
+      usage: %{input_tokens: 0, output_tokens: 0},
+      stop_reason: nil,
+      pending_tool: nil
     }
 
     {:ok, state}
@@ -279,6 +338,38 @@ defmodule AgentSessionManager.Adapters.Claude.MockSDK do
 
   @impl GenServer
   def handle_call({:subscribe, pid}, _from, state) do
+    {:reply, :ok, %{state | subscriber: pid}}
+  end
+
+  @impl GenServer
+  def handle_call({:query, _pid}, _from, %{scenario: :rate_limit_error} = state) do
+    error =
+      Error.new(:provider_rate_limited, "Rate limit exceeded",
+        provider_error: %{
+          status_code: 429,
+          headers: %{"retry-after" => "30"},
+          body: %{"error" => %{"type" => "rate_limit_error", "message" => "Rate limit exceeded"}}
+        }
+      )
+
+    {:reply, {:error, error}, state}
+  end
+
+  @impl GenServer
+  def handle_call({:query, _pid}, _from, %{scenario: :network_timeout} = state) do
+    error =
+      Error.new(:provider_timeout, "Request timed out",
+        provider_error: %{
+          reason: :timeout,
+          timeout_ms: 30_000
+        }
+      )
+
+    {:reply, {:error, error}, state}
+  end
+
+  @impl GenServer
+  def handle_call({:query, pid}, _from, state) do
     {:reply, :ok, %{state | subscriber: pid}}
   end
 
@@ -305,9 +396,7 @@ defmodule AgentSessionManager.Adapters.Claude.MockSDK do
   def handle_call(:emit_next, _from, state) do
     [event | remaining] = state.events
 
-    if state.subscriber do
-      send(state.subscriber, {:claude_event, event})
-    end
+    state = maybe_emit_message(event, state)
 
     new_state = %{
       state
@@ -315,6 +404,10 @@ defmodule AgentSessionManager.Adapters.Claude.MockSDK do
         emitted: state.emitted ++ [event],
         completed: remaining == []
     }
+
+    if new_state.completed and new_state.subscriber do
+      send(new_state.subscriber, {:claude_done})
+    end
 
     {:reply, {:ok, event}, new_state}
   end
@@ -327,11 +420,7 @@ defmodule AgentSessionManager.Adapters.Claude.MockSDK do
   @impl GenServer
   def handle_call(:complete, _from, state) do
     # Emit all remaining events
-    Enum.each(state.events, fn event ->
-      if state.subscriber do
-        send(state.subscriber, {:claude_event, event})
-      end
-    end)
+    state = Enum.reduce(state.events, state, &maybe_emit_message/2)
 
     new_state = %{
       state
@@ -339,6 +428,10 @@ defmodule AgentSessionManager.Adapters.Claude.MockSDK do
         emitted: state.emitted ++ state.events,
         completed: true
     }
+
+    if new_state.subscriber do
+      send(new_state.subscriber, {:claude_done})
+    end
 
     {:reply, {:ok, state.events}, new_state}
   end
@@ -406,6 +499,131 @@ defmodule AgentSessionManager.Adapters.Claude.MockSDK do
   # ============================================================================
   # Private Helpers
   # ============================================================================
+
+  defp maybe_emit_message(event, state) do
+    {state, maybe_message} = event_to_message(event, state)
+
+    if maybe_message && state.subscriber do
+      send(state.subscriber, {:claude_message, maybe_message})
+    end
+
+    state
+  end
+
+  defp event_to_message(%{type: "message_start", message: message}, state) do
+    usage = message[:usage] || %{}
+    input_tokens = usage[:input_tokens] || 0
+    output_tokens = usage[:output_tokens] || 0
+
+    sdk_message = %ClaudeAgentSDK.Message{
+      type: :system,
+      subtype: :init,
+      data: %{
+        session_id: state.message_id,
+        model: message[:model],
+        tools: []
+      },
+      raw: %{}
+    }
+
+    {%{
+       state
+       | usage: %{input_tokens: input_tokens, output_tokens: output_tokens},
+         stop_reason: nil
+     }, sdk_message}
+  end
+
+  defp event_to_message(
+         %{type: "content_block_start", content_block: %{type: "tool_use"} = block},
+         state
+       ) do
+    pending_tool = %{id: block[:id], name: block[:name], input_json: ""}
+    {%{state | pending_tool: pending_tool}, nil}
+  end
+
+  defp event_to_message(
+         %{type: "content_block_delta", delta: %{type: "input_json_delta"} = delta},
+         %{pending_tool: pending_tool} = state
+       )
+       when not is_nil(pending_tool) do
+    partial_json = delta[:partial_json] || ""
+
+    {%{
+       state
+       | pending_tool: %{pending_tool | input_json: pending_tool.input_json <> partial_json}
+     }, nil}
+  end
+
+  defp event_to_message(
+         %{type: "content_block_delta", delta: %{type: "text_delta", text: text}},
+         state
+       )
+       when is_binary(text) and text != "" do
+    sdk_message = %ClaudeAgentSDK.Message{
+      type: :assistant,
+      data: %{message: %{"content" => [%{"type" => "text", "text" => text}]}},
+      raw: %{}
+    }
+
+    {state, sdk_message}
+  end
+
+  defp event_to_message(%{type: "content_block_stop"}, %{pending_tool: pending_tool} = state)
+       when not is_nil(pending_tool) do
+    parsed_input =
+      case Jason.decode(pending_tool.input_json) do
+        {:ok, input} when is_map(input) -> input
+        _ -> %{}
+      end
+
+    sdk_message = %ClaudeAgentSDK.Message{
+      type: :assistant,
+      data: %{
+        message: %{
+          "content" => [
+            %{
+              "type" => "tool_use",
+              "id" => pending_tool.id,
+              "name" => pending_tool.name,
+              "input" => parsed_input
+            }
+          ]
+        }
+      },
+      raw: %{}
+    }
+
+    {%{state | pending_tool: nil}, sdk_message}
+  end
+
+  defp event_to_message(%{type: "message_delta", usage: usage} = event, state)
+       when is_map(usage) do
+    output_tokens = usage[:output_tokens] || state.usage.output_tokens
+    stop_reason = get_in(event, [:delta, :stop_reason]) || state.stop_reason
+
+    {%{state | usage: %{state.usage | output_tokens: output_tokens}, stop_reason: stop_reason},
+     nil}
+  end
+
+  defp event_to_message(%{type: "message_stop"}, state) do
+    usage = %{
+      "input_tokens" => state.usage.input_tokens,
+      "output_tokens" => state.usage.output_tokens
+    }
+
+    stop_reason = state.stop_reason || "end_turn"
+
+    sdk_message = %ClaudeAgentSDK.Message{
+      type: :result,
+      subtype: :success,
+      data: %{usage: usage, stop_reason: stop_reason},
+      raw: %{"usage" => usage, "stop_reason" => stop_reason}
+    }
+
+    {state, sdk_message}
+  end
+
+  defp event_to_message(_event, state), do: {state, nil}
 
   defp generate_message_id do
     random_suffix =

@@ -337,6 +337,8 @@ defmodule AgentSessionManager.Adapters.AmpAdapterTest do
       assert tool_started.data.tool_name == "write_file"
       assert tool_started.data.tool_call_id == "tool-use-42"
       assert tool_started.data.tool_input == %{"path" => "/output.txt", "content" => "Hello"}
+      refute Map.has_key?(tool_started.data, :call_id)
+      refute Map.has_key?(tool_started.data, :input)
     end
 
     test "tool_call_completed includes canonical tool output fields" do
@@ -364,6 +366,8 @@ defmodule AgentSessionManager.Adapters.AmpAdapterTest do
       assert tool_completed != nil
       assert tool_completed.data.tool_call_id == "tool-use-99"
       assert tool_completed.data.tool_output == "file written successfully"
+      refute Map.has_key?(tool_completed.data, :tool_use_id)
+      refute Map.has_key?(tool_completed.data, :content)
     end
 
     test "tool_call_failed when tool result has is_error: true" do

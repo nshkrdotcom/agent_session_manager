@@ -7,7 +7,7 @@ defmodule AgentSessionManager.Core.TranscriptBuilderTest do
   alias AgentSessionManager.Test.Fixtures
 
   describe "from_events/2" do
-    test "builds ordered transcript messages and normalizes tool call ids" do
+    test "builds ordered transcript messages from canonical tool event fields" do
       now = DateTime.utc_now()
 
       events = [
@@ -17,7 +17,7 @@ defmodule AgentSessionManager.Core.TranscriptBuilderTest do
           sequence_number: 4,
           timestamp: DateTime.add(now, 4, :second),
           type: :tool_call_completed,
-          data: %{call_id: "call-1", tool_name: "search", output: %{"result" => "ok"}}
+          data: %{tool_call_id: "call-1", tool_name: "search", tool_output: %{"result" => "ok"}}
         ),
         build_event(
           id: "evt-2",
@@ -25,7 +25,7 @@ defmodule AgentSessionManager.Core.TranscriptBuilderTest do
           sequence_number: 2,
           timestamp: DateTime.add(now, 2, :second),
           type: :tool_call_started,
-          data: %{tool_use_id: "toolu-1", tool_name: "search", input: %{"q" => "elixir"}}
+          data: %{tool_call_id: "call-1", tool_name: "search", tool_input: %{"q" => "elixir"}}
         ),
         build_event(
           id: "evt-1",
@@ -58,7 +58,7 @@ defmodule AgentSessionManager.Core.TranscriptBuilderTest do
       assert user_msg.content == "find me something"
 
       assert tool_start_msg.role == :assistant
-      assert tool_start_msg.tool_call_id == "toolu-1"
+      assert tool_start_msg.tool_call_id == "call-1"
       assert tool_start_msg.tool_name == "search"
       assert tool_start_msg.tool_input == %{"q" => "elixir"}
 
@@ -70,13 +70,45 @@ defmodule AgentSessionManager.Core.TranscriptBuilderTest do
       assert tool_msg.tool_output == %{"result" => "ok"}
     end
 
-    test "uses timestamp then deterministic tie-breakers for legacy events without sequence" do
+    test "does not consume legacy tool aliases" do
+      now = DateTime.utc_now()
+
+      events = [
+        build_event(
+          id: "evt-1",
+          session_id: "ses-transcript-alias",
+          sequence_number: 1,
+          timestamp: now,
+          type: :tool_call_started,
+          data: %{tool_use_id: "toolu-1", tool_name: "search", input: %{"q" => "elixir"}}
+        ),
+        build_event(
+          id: "evt-2",
+          session_id: "ses-transcript-alias",
+          sequence_number: 2,
+          timestamp: DateTime.add(now, 1, :second),
+          type: :tool_call_completed,
+          data: %{call_id: "toolu-1", tool_name: "search", output: %{"result" => "ok"}}
+        )
+      ]
+
+      assert {:ok, %Transcript{} = transcript} =
+               TranscriptBuilder.from_events(events, session_id: "ses-transcript-alias")
+
+      [tool_start_msg, tool_result_msg] = transcript.messages
+      assert tool_start_msg.tool_call_id == nil
+      assert tool_start_msg.tool_input == nil
+      assert tool_result_msg.tool_call_id == nil
+      assert tool_result_msg.tool_output == nil
+    end
+
+    test "uses timestamp then deterministic tie-breakers for events without sequence" do
       now = DateTime.utc_now()
 
       events = [
         build_event(
           id: "evt-c",
-          session_id: "ses-legacy",
+          session_id: "ses-unsequenced",
           sequence_number: nil,
           timestamp: DateTime.add(now, 1, :second),
           type: :message_received,
@@ -84,7 +116,7 @@ defmodule AgentSessionManager.Core.TranscriptBuilderTest do
         ),
         build_event(
           id: "evt-b",
-          session_id: "ses-legacy",
+          session_id: "ses-unsequenced",
           sequence_number: nil,
           timestamp: now,
           type: :message_received,
@@ -92,7 +124,7 @@ defmodule AgentSessionManager.Core.TranscriptBuilderTest do
         ),
         build_event(
           id: "evt-seq",
-          session_id: "ses-legacy",
+          session_id: "ses-unsequenced",
           sequence_number: 1,
           timestamp: DateTime.add(now, 10, :second),
           type: :message_received,
@@ -100,7 +132,7 @@ defmodule AgentSessionManager.Core.TranscriptBuilderTest do
         ),
         build_event(
           id: "evt-a",
-          session_id: "ses-legacy",
+          session_id: "ses-unsequenced",
           sequence_number: nil,
           timestamp: now,
           type: :message_received,
@@ -109,7 +141,7 @@ defmodule AgentSessionManager.Core.TranscriptBuilderTest do
       ]
 
       assert {:ok, %Transcript{} = transcript} =
-               TranscriptBuilder.from_events(events, session_id: "ses-legacy")
+               TranscriptBuilder.from_events(events, session_id: "ses-unsequenced")
 
       assert Enum.map(transcript.messages, & &1.content) == [
                "sequenced first",

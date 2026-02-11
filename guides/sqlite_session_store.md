@@ -41,7 +41,7 @@ config :my_app, MyApp.Repo,
 ## Run Migrations
 
 `EctoSessionStore` ships migration modules you can invoke from your project
-migrations. Apply both `Migration` and `MigrationV2` (in that order).
+migrations. Apply `Migration`.
 
 ```elixir
 defmodule MyApp.Repo.Migrations.AddAgentSessionManager do
@@ -49,15 +49,6 @@ defmodule MyApp.Repo.Migrations.AddAgentSessionManager do
 
   def up, do: AgentSessionManager.Adapters.EctoSessionStore.Migration.up()
   def down, do: AgentSessionManager.Adapters.EctoSessionStore.Migration.down()
-end
-```
-
-```elixir
-defmodule MyApp.Repo.Migrations.AddAgentSessionManagerV2 do
-  use Ecto.Migration
-
-  def up, do: AgentSessionManager.Adapters.EctoSessionStore.MigrationV2.up()
-  def down, do: AgentSessionManager.Adapters.EctoSessionStore.MigrationV2.down()
 end
 ```
 

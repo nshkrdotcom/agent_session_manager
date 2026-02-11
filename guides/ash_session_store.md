@@ -11,8 +11,6 @@ This guide shows how to use AgentSessionManager (ASM) with Ash Framework and Ash
 - PostgreSQL
 - ASM migrations applied:
   - `AgentSessionManager.Adapters.EctoSessionStore.Migration`
-  - `AgentSessionManager.Adapters.EctoSessionStore.MigrationV2`
-  - `AgentSessionManager.Adapters.EctoSessionStore.MigrationV3`
 - Optional deps in `mix.exs`:
 
 ```elixir

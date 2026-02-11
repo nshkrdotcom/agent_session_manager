@@ -3,8 +3,8 @@ if Code.ensure_loaded?(Ecto.Migration) do
     @moduledoc """
     Provides migration functions for the EctoSessionStore adapter.
 
-    This module can be called from your application's migration files
-    to create or drop the required tables.
+    This migration is canonical for the unreleased 0.8.0 persistence schema and
+    creates all required tables, columns, and indexes in one step.
 
     ## Usage
 
@@ -34,12 +34,14 @@ if Code.ensure_loaded?(Ecto.Migration) do
       create_runs_table()
       create_events_table()
       create_session_sequences_table()
+      create_artifacts_table()
     end
 
     @doc """
     Drops all tables created by `up/0`.
     """
     def down do
+      drop_if_exists(table(:asm_artifacts))
       drop_if_exists(table(:asm_session_sequences))
       drop_if_exists(table(:asm_events))
       drop_if_exists(table(:asm_runs))
@@ -57,10 +59,13 @@ if Code.ensure_loaded?(Ecto.Migration) do
         add(:tags, {:array, :string}, default: [])
         add(:created_at, :utc_datetime_usec, null: false)
         add(:updated_at, :utc_datetime_usec, null: false)
+        add(:deleted_at, :utc_datetime_usec, null: true)
       end
 
       create(index(:asm_sessions, [:status]))
       create(index(:asm_sessions, [:agent_id]))
+      create(index(:asm_sessions, [:created_at]))
+      create(index(:asm_sessions, [:deleted_at]))
     end
 
     defp create_runs_table do
@@ -76,9 +81,14 @@ if Code.ensure_loaded?(Ecto.Migration) do
         add(:token_usage, :map, default: %{})
         add(:started_at, :utc_datetime_usec, null: false)
         add(:ended_at, :utc_datetime_usec)
+        add(:provider, :string, null: true)
+        add(:provider_metadata, :map, null: false, default: %{})
+        add(:cost_usd, :float)
       end
 
       create(index(:asm_runs, [:session_id, :status]))
+      create(index(:asm_runs, [:provider]))
+      create(index(:asm_runs, [:started_at]))
     end
 
     defp create_events_table do
@@ -92,18 +102,45 @@ if Code.ensure_loaded?(Ecto.Migration) do
         add(:data, :map, default: %{})
         add(:metadata, :map, default: %{})
         add(:schema_version, :integer, null: false, default: 1)
+        add(:provider, :string, null: true)
+        add(:correlation_id, :string, null: true)
       end
 
       create(unique_index(:asm_events, [:session_id, :sequence_number]))
       create(index(:asm_events, [:session_id, :type]))
       create(index(:asm_events, [:session_id, :run_id]))
+      create(index(:asm_events, [:correlation_id]))
+      create(index(:asm_events, [:provider]))
+      create(index(:asm_events, [:timestamp]))
     end
 
     defp create_session_sequences_table do
       create table(:asm_session_sequences, primary_key: false) do
         add(:session_id, :string, primary_key: true)
         add(:last_sequence, :integer, null: false, default: 0)
+        add(:updated_at, :utc_datetime_usec, null: true)
       end
+    end
+
+    defp create_artifacts_table do
+      create table(:asm_artifacts, primary_key: false) do
+        add(:id, :string, primary_key: true)
+        add(:session_id, :string, null: true)
+        add(:run_id, :string, null: true)
+        add(:key, :string, null: false)
+        add(:content_type, :string, null: true)
+        add(:byte_size, :bigint, null: false)
+        add(:checksum_sha256, :string, null: false)
+        add(:storage_backend, :string, null: false)
+        add(:storage_ref, :string, null: false)
+        add(:metadata, :map, null: false, default: %{})
+        add(:created_at, :utc_datetime_usec, null: false)
+        add(:deleted_at, :utc_datetime_usec, null: true)
+      end
+
+      create(unique_index(:asm_artifacts, [:key]))
+      create(index(:asm_artifacts, [:session_id]))
+      create(index(:asm_artifacts, [:created_at]))
     end
   end
 else

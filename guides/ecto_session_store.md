@@ -26,12 +26,9 @@ one yet, follow the [Ecto getting started guide](https://hexdocs.pm/ecto/getting
 
 ## Running the Migrations
 
-`EctoSessionStore` requires both migration modules:
+`EctoSessionStore` requires the canonical `Migration` module.
 
-- `Migration` (base schema)
-- `MigrationV2` (soft-delete/provider/correlation/artifact columns)
-
-Generate migrations in your project and delegate to both modules in order:
+Generate a migration in your project and delegate to `Migration`:
 
 ```bash
 mix ecto.gen.migration add_agent_session_manager
@@ -59,41 +56,20 @@ Run the migration:
 mix ecto.migrate
 ```
 
-Then add and run the V2 migration:
-
-```bash
-mix ecto.gen.migration add_agent_session_manager_v2
-```
-
-```elixir
-defmodule MyApp.Repo.Migrations.AddAgentSessionManagerV2 do
-  use Ecto.Migration
-
-  def up do
-    AgentSessionManager.Adapters.EctoSessionStore.MigrationV2.up()
-  end
-
-  def down do
-    AgentSessionManager.Adapters.EctoSessionStore.MigrationV2.down()
-  end
-end
-```
-
-If V2 is missing, `EctoSessionStore.start_link/1` fails fast with `:migration_required`.
-
 ### Tables Created
 
-The migration creates four tables:
+The migration creates five tables:
 
 | Table | Purpose |
 |-------|---------|
-| `asm_sessions` | Session records with status, metadata, context, and tags |
-| `asm_runs` | Run records linked to sessions |
-| `asm_events` | Append-only event log with per-session sequence numbers |
+| `asm_sessions` | Session records with status, metadata, context, tags, and soft-delete timestamp |
+| `asm_runs` | Run records linked to sessions, including provider metadata and cost |
+| `asm_events` | Append-only event log with per-session sequence numbers, provider, and correlation ID |
 | `asm_session_sequences` | Atomic sequence counters for event ordering |
+| `asm_artifacts` | Artifact metadata registry |
 
-Indexes are added for status, agent_id, session_id, type, and a unique index on
-`(session_id, sequence_number)` for event ordering.
+Indexes are added for status, agent_id, timestamps, soft-delete/provider/correlation
+lookups, and a unique index on `(session_id, sequence_number)` for event ordering.
 
 ## Configuration
 
@@ -235,36 +211,14 @@ store = {EctoSessionStore, MyApp.Repo}
 })
 ```
 
-## Schema V2 Migration
-
-Version 0.8.0 introduces the required V2 migration that adds persistence redesign columns.
-Generate a second migration and delegate to `MigrationV2`:
-
-```bash
-mix ecto.gen.migration add_agent_session_manager_v2
-```
-
-```elixir
-defmodule MyApp.Repo.Migrations.AddAgentSessionManagerV2 do
-  use Ecto.Migration
-
-  def up do
-    AgentSessionManager.Adapters.EctoSessionStore.MigrationV2.up()
-  end
-
-  def down do
-    AgentSessionManager.Adapters.EctoSessionStore.MigrationV2.down()
-  end
-end
-```
-
-### V2 Schema Changes
+## Consolidated Schema Changes
 
 | Table | New Columns |
 |-------|-------------|
 | `asm_sessions` | `deleted_at` (soft-delete timestamp) |
-| `asm_runs` | `provider` (string), `provider_metadata` (JSON map) |
+| `asm_runs` | `provider` (string), `provider_metadata` (JSON map), `cost_usd` (float) |
 | `asm_events` | `provider` (string), `correlation_id` (string) |
+| `asm_session_sequences` | `updated_at` (datetime) |
 | `asm_artifacts` | New table for artifact metadata tracking |
 
 The `asm_artifacts` table schema:
@@ -286,8 +240,8 @@ The `asm_artifacts` table schema:
 
 ## QueryAPI and Maintenance
 
-With V2 migrations applied, you can use the QueryAPI and Maintenance adapters
-for cross-session queries and lifecycle management:
+With the consolidated migration applied, you can use the QueryAPI and Maintenance
+adapters for cross-session queries and lifecycle management:
 
 ```elixir
 alias AgentSessionManager.Adapters.{EctoQueryAPI, EctoMaintenance}

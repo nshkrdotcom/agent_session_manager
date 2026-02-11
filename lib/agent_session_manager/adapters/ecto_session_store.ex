@@ -14,14 +14,11 @@ if Code.ensure_loaded?(Ecto.Query) do
 
     ## Prerequisites
 
-    Run these migrations to create required tables and columns:
+    Run this migration to create required tables and columns:
 
         AgentSessionManager.Adapters.EctoSessionStore.Migration.up()
-        AgentSessionManager.Adapters.EctoSessionStore.MigrationV2.up()
-        AgentSessionManager.Adapters.EctoSessionStore.MigrationV4.up() # for existing V2 installs
 
-    See `AgentSessionManager.Adapters.EctoSessionStore.Migration` and
-    `AgentSessionManager.Adapters.EctoSessionStore.MigrationV2` for details.
+    See `AgentSessionManager.Adapters.EctoSessionStore.Migration` for details.
     """
 
     use GenServer
@@ -43,10 +40,15 @@ if Code.ensure_loaded?(Ecto.Query) do
       SessionSequenceSchema
     }
 
-    @required_v2_columns [
+    @required_schema_columns [
       {"asm_sessions", "deleted_at"},
       {"asm_runs", "provider"},
-      {"asm_events", "correlation_id"}
+      {"asm_runs", "provider_metadata"},
+      {"asm_runs", "cost_usd"},
+      {"asm_events", "provider"},
+      {"asm_events", "correlation_id"},
+      {"asm_session_sequences", "updated_at"},
+      {"asm_artifacts", "id"}
     ]
     alias AgentSessionManager.Config
 
@@ -437,7 +439,7 @@ if Code.ensure_loaded?(Ecto.Query) do
 
     defp ensure_required_schema(repo) do
       missing_column =
-        Enum.find_value(@required_v2_columns, fn {table, column} ->
+        Enum.find_value(@required_schema_columns, fn {table, column} ->
           case SQL.query(repo, "SELECT #{column} FROM #{table} LIMIT 1", []) do
             {:ok, _} -> nil
             {:error, _} -> "#{table}.#{column}"
@@ -448,7 +450,7 @@ if Code.ensure_loaded?(Ecto.Query) do
         {:error,
          Error.new(
            :migration_required,
-           "EctoSessionStore requires MigrationV2. Run AgentSessionManager.Adapters.EctoSessionStore.MigrationV2.up() before starting the store.",
+           "EctoSessionStore requires Migration. Run AgentSessionManager.Adapters.EctoSessionStore.Migration.up() before starting the store.",
            details: %{missing_column: missing_column}
          )}
       else
@@ -459,7 +461,7 @@ if Code.ensure_loaded?(Ecto.Query) do
         {:error,
          Error.new(
            :migration_required,
-           "EctoSessionStore could not verify required schema columns. Run AgentSessionManager.Adapters.EctoSessionStore.MigrationV2.up() before starting the store.",
+           "EctoSessionStore could not verify required schema columns. Run AgentSessionManager.Adapters.EctoSessionStore.Migration.up() before starting the store.",
            details: %{reason: Exception.message(exception)}
          )}
     end

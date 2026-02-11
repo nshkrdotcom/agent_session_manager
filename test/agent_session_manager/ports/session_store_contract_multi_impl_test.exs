@@ -6,7 +6,7 @@ defmodule AgentSessionManager.Ports.SessionStoreContractMultiImplTest do
   use AgentSessionManager.SupertesterCase, async: false
 
   alias AgentSessionManager.Adapters.{EctoSessionStore, InMemorySessionStore}
-  alias AgentSessionManager.Adapters.EctoSessionStore.{Migration, MigrationV2}
+  alias AgentSessionManager.Adapters.EctoSessionStore.Migration
 
   alias AgentSessionManager.Adapters.EctoSessionStore.Schemas.{
     EventSchema,
@@ -36,7 +36,6 @@ defmodule AgentSessionManager.Ports.SessionStoreContractMultiImplTest do
 
     {:ok, repo_pid} = ContractRepo.start_link()
     Ecto.Migrator.up(ContractRepo, 1, Migration, log: false)
-    Ecto.Migrator.up(ContractRepo, 2, MigrationV2, log: false)
 
     on_exit(fn ->
       try do

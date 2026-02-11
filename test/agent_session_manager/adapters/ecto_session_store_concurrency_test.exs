@@ -6,7 +6,7 @@ defmodule AgentSessionManager.Adapters.EctoSessionStoreConcurrencyTest do
   use AgentSessionManager.SupertesterCase, async: false
 
   alias AgentSessionManager.Adapters.EctoSessionStore
-  alias AgentSessionManager.Adapters.EctoSessionStore.{Migration, MigrationV2}
+  alias AgentSessionManager.Adapters.EctoSessionStore.Migration
 
   alias AgentSessionManager.Adapters.EctoSessionStore.Schemas.{
     EventSchema,
@@ -39,7 +39,6 @@ defmodule AgentSessionManager.Adapters.EctoSessionStoreConcurrencyTest do
 
     {:ok, repo_pid} = ConcurrencyRepo.start_link()
     Ecto.Migrator.up(ConcurrencyRepo, 1, Migration, log: false)
-    Ecto.Migrator.up(ConcurrencyRepo, 2, MigrationV2, log: false)
 
     on_exit(fn ->
       try do

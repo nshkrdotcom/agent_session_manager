@@ -4,8 +4,6 @@ defmodule AgentSessionManager.Cost.CostQueryTest do
   alias AgentSessionManager.Adapters.EctoQueryAPI
   alias AgentSessionManager.Adapters.EctoSessionStore
   alias AgentSessionManager.Adapters.EctoSessionStore.Migration
-  alias AgentSessionManager.Adapters.EctoSessionStore.MigrationV2
-  alias AgentSessionManager.Adapters.EctoSessionStore.MigrationV4
   alias AgentSessionManager.Core.{Run, Session}
   alias AgentSessionManager.Ports.{QueryAPI, SessionStore}
 
@@ -36,8 +34,6 @@ defmodule AgentSessionManager.Cost.CostQueryTest do
 
     {:ok, repo_pid} = CostQueryRepo.start_link()
     Ecto.Migrator.up(CostQueryRepo, 1, Migration, log: false)
-    Ecto.Migrator.up(CostQueryRepo, 2, MigrationV2, log: false)
-    Ecto.Migrator.up(CostQueryRepo, 4, MigrationV4, log: false)
 
     on_exit(fn ->
       safe_stop(repo_pid)
@@ -50,7 +46,7 @@ defmodule AgentSessionManager.Cost.CostQueryTest do
   end
 
   setup do
-    QueryAPIRepoCleaner.clean_all(CostQueryRepo)
+    __MODULE__.QueryAPIRepoCleaner.clean_all(CostQueryRepo)
     {:ok, store} = EctoSessionStore.start_link(repo: CostQueryRepo)
     %{store: store, query: {EctoQueryAPI, CostQueryRepo}}
   end

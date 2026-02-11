@@ -2,7 +2,7 @@ defmodule AgentSessionManager.Adapters.EctoSessionStoreTest do
   use AgentSessionManager.SupertesterCase, async: false
 
   alias AgentSessionManager.Adapters.EctoSessionStore
-  alias AgentSessionManager.Adapters.EctoSessionStore.{Migration, MigrationV2}
+  alias AgentSessionManager.Adapters.EctoSessionStore.Migration
 
   alias AgentSessionManager.Adapters.EctoSessionStore.Schemas.{
     ArtifactSchema,
@@ -33,7 +33,6 @@ defmodule AgentSessionManager.Adapters.EctoSessionStoreTest do
 
     {:ok, repo_pid} = TestRepo.start_link()
     Ecto.Migrator.up(TestRepo, 1, Migration, log: false)
-    Ecto.Migrator.up(TestRepo, 2, MigrationV2, log: false)
 
     on_exit(fn ->
       try do

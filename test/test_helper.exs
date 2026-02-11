@@ -49,19 +49,5 @@ if run_ash_tests? do
       AgentSessionManager.Adapters.EctoSessionStore.Migration,
       log: false
     )
-
-    Ecto.Migrator.up(
-      AgentSessionManager.Ash.TestRepo,
-      2,
-      AgentSessionManager.Adapters.EctoSessionStore.MigrationV2,
-      log: false
-    )
-
-    Ecto.Migrator.up(
-      AgentSessionManager.Ash.TestRepo,
-      3,
-      AgentSessionManager.Adapters.EctoSessionStore.MigrationV3,
-      log: false
-    )
   end
 end

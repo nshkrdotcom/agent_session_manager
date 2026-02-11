@@ -1,7 +1,7 @@
 defmodule AgentSessionManager.Adapters.EctoSessionStoreMigrationDownTest do
   use ExUnit.Case, async: false
 
-  alias AgentSessionManager.Adapters.EctoSessionStore.{Migration, MigrationV2}
+  alias AgentSessionManager.Adapters.EctoSessionStore.Migration
   alias Ecto.Adapters.SQL
 
   defmodule MigrationDownRepo do
@@ -39,25 +39,27 @@ defmodule AgentSessionManager.Adapters.EctoSessionStoreMigrationDownTest do
 
   setup do
     Ecto.Migrator.up(MigrationDownRepo, 1, Migration, log: false)
-    Ecto.Migrator.up(MigrationDownRepo, 2, MigrationV2, log: false)
     :ok
   end
 
-  test "MigrationV2.down drops artifacts table and v2 indexes on SQLite" do
+  test "Migration.down drops all tables and indexes on SQLite" do
+    assert table_exists?("asm_sessions")
+    assert table_exists?("asm_runs")
+    assert table_exists?("asm_events")
+    assert table_exists?("asm_session_sequences")
     assert table_exists?("asm_artifacts")
     assert index_exists?("asm_artifacts_key_index")
-    assert index_exists?("asm_artifacts_session_id_index")
-    assert index_exists?("asm_events_correlation_id_index")
+    assert index_exists?("asm_sessions_deleted_at_index")
 
-    :ok = Ecto.Migrator.down(MigrationDownRepo, 2, MigrationV2, log: false)
+    :ok = Ecto.Migrator.down(MigrationDownRepo, 1, Migration, log: false)
 
+    refute table_exists?("asm_sessions")
+    refute table_exists?("asm_runs")
+    refute table_exists?("asm_events")
+    refute table_exists?("asm_session_sequences")
     refute table_exists?("asm_artifacts")
     refute index_exists?("asm_artifacts_key_index")
-    refute index_exists?("asm_artifacts_session_id_index")
-    refute index_exists?("asm_events_correlation_id_index")
-
-    # SQLite keeps added columns after down/0 (drop column unsupported).
-    assert column_exists?("asm_sessions", "deleted_at")
+    refute index_exists?("asm_sessions_deleted_at_index")
   end
 
   defp table_exists?(table_name) do
@@ -83,22 +85,4 @@ defmodule AgentSessionManager.Adapters.EctoSessionStoreMigrationDownTest do
       _ -> false
     end
   end
-
-  defp column_exists?(table_name, column_name) do
-    table_name
-    |> table_columns()
-    |> Enum.member?(column_name)
-  end
-
-  defp table_columns(table_name) do
-    sql = "PRAGMA table_info(#{table_name})"
-
-    case SQL.query(MigrationDownRepo, sql, []) do
-      {:ok, %{rows: rows}} -> Enum.flat_map(rows, &extract_column_name/1)
-      _ -> []
-    end
-  end
-
-  defp extract_column_name([_cid, name | _rest]), do: [name]
-  defp extract_column_name(_row), do: []
 end

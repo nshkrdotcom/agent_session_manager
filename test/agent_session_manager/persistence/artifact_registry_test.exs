@@ -2,7 +2,6 @@ defmodule AgentSessionManager.Persistence.ArtifactRegistryTest do
   use ExUnit.Case, async: false
 
   alias AgentSessionManager.Adapters.EctoSessionStore.Migration
-  alias AgentSessionManager.Adapters.EctoSessionStore.MigrationV2
   alias AgentSessionManager.Persistence.ArtifactRegistry
 
   defmodule ArtifactTestRepo do
@@ -23,7 +22,6 @@ defmodule AgentSessionManager.Persistence.ArtifactRegistryTest do
 
     {:ok, repo_pid} = ArtifactTestRepo.start_link()
     Ecto.Migrator.up(ArtifactTestRepo, 1, Migration, log: false)
-    Ecto.Migrator.up(ArtifactTestRepo, 2, MigrationV2, log: false)
 
     on_exit(fn ->
       try do

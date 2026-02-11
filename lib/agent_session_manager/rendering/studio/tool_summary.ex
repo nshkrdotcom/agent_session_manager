@@ -17,91 +17,22 @@ defmodule AgentSessionManager.Rendering.Studio.ToolSummary do
 
   @spec spinner_text(tool_info()) :: String.t()
   def spinner_text(%{name: name} = tool_info) do
+    tool = normalize_name(name)
     input = normalize_input(tool_info)
-
-    case normalize_name(name) do
-      "bash" ->
-        case input_value(input, "command") do
-          nil -> "Running bash"
-          command -> "Running: #{truncate(command, 60)}"
-        end
-
-      "Read" ->
-        "Reading #{input_value(input, "file_path") || input_value(input, "path") || "file"}"
-
-      "Write" ->
-        "Writing #{input_value(input, "file_path") || input_value(input, "path") || "file"}"
-
-      "Edit" ->
-        "Editing #{input_value(input, "file_path") || input_value(input, "path") || "file"}"
-
-      "Glob" ->
-        "Searching for #{input_value(input, "pattern") || "files"}"
-
-      "Grep" ->
-        pattern = input_value(input, "pattern") || "pattern"
-        path = input_value(input, "path") || "."
-        "Searching \"#{pattern}\" in #{path}"
-
-      "Task" ->
-        "Running task: #{input_value(input, "description") || "task"}"
-
-      "WebFetch" ->
-        "Fetching #{extract_host(input_value(input, "url")) || "web resource"}"
-
-      "WebSearch" ->
-        query = input_value(input, "query") || ""
-        "Searching: \"#{query}\""
-
-      tool ->
-        "Using #{tool}"
-    end
+    spinner_text_for(tool, input)
   end
 
   def spinner_text(_), do: "Using tool"
 
   @spec summary_line(tool_info()) :: String.t()
   def summary_line(%{name: name} = tool_info) do
+    tool = normalize_name(name)
     input = normalize_input(tool_info)
     output = normalize_output(Map.get(tool_info, :output))
     status = normalize_status(tool_info)
     duration = format_duration(Map.get(tool_info, :duration_ms))
-    output_size = format_size(if(output in [nil, ""], do: nil, else: String.length(output)))
-
-    case normalize_name(name) do
-      "bash" ->
-        bash_summary(input, status, Map.get(tool_info, :exit_code), output_size, duration)
-
-      "Read" ->
-        path = input_value(input, "file_path") || input_value(input, "path") || "file"
-        "Read #{shorten_path(path)} (#{line_count(output)} lines)"
-
-      "Write" ->
-        path = input_value(input, "file_path") || input_value(input, "path") || "file"
-        content = input_value(input, "content") || ""
-        "Wrote #{shorten_path(path)} (#{line_count(content)} lines)"
-
-      "Edit" ->
-        path = input_value(input, "file_path") || input_value(input, "path") || "file"
-        "Edited #{shorten_path(path)}"
-
-      "Glob" ->
-        pattern = input_value(input, "pattern") || "*"
-        "Found #{line_count(output)} files matching #{pattern}"
-
-      "Grep" ->
-        pattern = input_value(input, "pattern") || "pattern"
-        "Found #{line_count(output)} matches for \"#{pattern}\""
-
-      "Task" ->
-        description = input_value(input, "description") || "task"
-        suffix = if duration == "", do: "", else: " (#{duration})"
-        "Task complete: #{description}#{suffix}"
-
-      tool ->
-        suffix = if output_size == "", do: "", else: " (#{output_size})"
-        "#{tool} complete#{suffix}"
-    end
+    output_size = format_size(if(output == "", do: nil, else: String.length(output)))
+    summary_line_for(tool, input, output, status, duration, output_size, tool_info)
   end
 
   def summary_line(_), do: "tool complete"
@@ -169,6 +100,82 @@ defmodule AgentSessionManager.Rendering.Studio.ToolSummary do
     "#{result_prefix} (#{details})"
   end
 
+  defp spinner_text_for("bash", input) do
+    case input_value(input, "command") do
+      nil -> "Running bash"
+      command -> "Running: #{truncate(command, 60)}"
+    end
+  end
+
+  defp spinner_text_for("Read", input), do: "Reading #{path_from_input(input)}"
+  defp spinner_text_for("Write", input), do: "Writing #{path_from_input(input)}"
+  defp spinner_text_for("Edit", input), do: "Editing #{path_from_input(input)}"
+
+  defp spinner_text_for("Glob", input),
+    do: "Searching for #{input_value(input, "pattern") || "files"}"
+
+  defp spinner_text_for("Grep", input) do
+    pattern = input_value(input, "pattern") || "pattern"
+    path = input_value(input, "path") || "."
+    "Searching \"#{pattern}\" in #{path}"
+  end
+
+  defp spinner_text_for("Task", input),
+    do: "Running task: #{input_value(input, "description") || "task"}"
+
+  defp spinner_text_for("WebFetch", input) do
+    "Fetching #{extract_host(input_value(input, "url")) || "web resource"}"
+  end
+
+  defp spinner_text_for("WebSearch", input) do
+    query = input_value(input, "query") || ""
+    "Searching: \"#{query}\""
+  end
+
+  defp spinner_text_for(tool, _input), do: "Using #{tool}"
+
+  defp summary_line_for("bash", input, _output, status, duration, output_size, tool_info) do
+    bash_summary(input, status, Map.get(tool_info, :exit_code), output_size, duration)
+  end
+
+  defp summary_line_for("Read", input, output, _status, _duration, _output_size, _tool_info) do
+    "Read #{shorten_path(path_from_input(input))} (#{line_count(output)} lines)"
+  end
+
+  defp summary_line_for("Write", input, _output, _status, _duration, _output_size, _tool_info) do
+    content = input_value(input, "content") || ""
+    "Wrote #{shorten_path(path_from_input(input))} (#{line_count(content)} lines)"
+  end
+
+  defp summary_line_for("Edit", input, _output, _status, _duration, _output_size, _tool_info) do
+    "Edited #{shorten_path(path_from_input(input))}"
+  end
+
+  defp summary_line_for("Glob", input, output, _status, _duration, _output_size, _tool_info) do
+    pattern = input_value(input, "pattern") || "*"
+    "Found #{line_count(output)} files matching #{pattern}"
+  end
+
+  defp summary_line_for("Grep", input, output, _status, _duration, _output_size, _tool_info) do
+    pattern = input_value(input, "pattern") || "pattern"
+    "Found #{line_count(output)} matches for \"#{pattern}\""
+  end
+
+  defp summary_line_for("Task", input, _output, _status, duration, _output_size, _tool_info) do
+    description = input_value(input, "description") || "task"
+    "Task complete: #{description}#{optional_suffix(duration)}"
+  end
+
+  defp summary_line_for(tool, _input, _output, _status, _duration, output_size, _tool_info) do
+    "#{tool} complete#{optional_suffix(output_size)}"
+  end
+
+  defp path_from_input(input),
+    do: input_value(input, "file_path") || input_value(input, "path") || "file"
+
+  defp optional_suffix(""), do: ""
+  defp optional_suffix(value), do: " (#{value})"
+
   defp normalize_name(name) when is_atom(name), do: normalize_name(Atom.to_string(name))
   defp normalize_name("Bash"), do: "bash"
   defp normalize_name("bash"), do: "bash"
@@ -206,8 +213,6 @@ defmodule AgentSessionManager.Rendering.Studio.ToolSummary do
     value = Map.get(input, key) || Map.get(input, key_to_atom(key))
     if value in [nil, ""], do: nil, else: to_string(value)
   end
-
-  defp input_value(_input, _key), do: nil
 
   defp key_to_atom("command"), do: :command
   defp key_to_atom("file_path"), do: :file_path

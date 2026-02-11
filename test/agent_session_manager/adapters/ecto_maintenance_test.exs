@@ -3,7 +3,6 @@ defmodule AgentSessionManager.Adapters.EctoMaintenanceTest do
 
   alias AgentSessionManager.Adapters.{EctoMaintenance, EctoSessionStore}
   alias AgentSessionManager.Adapters.EctoSessionStore.Migration
-  alias AgentSessionManager.Adapters.EctoSessionStore.MigrationV2
 
   alias AgentSessionManager.Adapters.EctoSessionStore.Schemas.{
     ArtifactSchema,
@@ -53,7 +52,6 @@ defmodule AgentSessionManager.Adapters.EctoMaintenanceTest do
 
     {:ok, repo_pid} = MaintTestRepo.start_link()
     Ecto.Migrator.up(MaintTestRepo, 1, Migration, log: false)
-    Ecto.Migrator.up(MaintTestRepo, 2, MigrationV2, log: false)
 
     on_exit(fn ->
       try do

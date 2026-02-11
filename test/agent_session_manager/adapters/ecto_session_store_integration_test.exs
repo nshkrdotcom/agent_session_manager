@@ -12,7 +12,7 @@ defmodule AgentSessionManager.Adapters.EctoSessionStoreIntegrationTest do
   use AgentSessionManager.SupertesterCase, async: false
 
   alias AgentSessionManager.Adapters.EctoSessionStore
-  alias AgentSessionManager.Adapters.EctoSessionStore.{Migration, MigrationV2, MigrationV3}
+  alias AgentSessionManager.Adapters.EctoSessionStore.Migration
 
   alias AgentSessionManager.Adapters.EctoSessionStore.Schemas.{
     EventSchema,
@@ -105,7 +105,6 @@ defmodule AgentSessionManager.Adapters.EctoSessionStoreIntegrationTest do
 
     {:ok, repo_pid} = IntegrationRepo.start_link()
     Ecto.Migrator.up(IntegrationRepo, 1, Migration, log: false)
-    Ecto.Migrator.up(IntegrationRepo, 2, MigrationV2, log: false)
 
     on_exit(fn ->
       try do
@@ -220,13 +219,6 @@ defmodule AgentSessionManager.Adapters.EctoSessionStoreIntegrationTest do
     test "getting non-existent run returns proper error", %{store: store} do
       {:error, %Error{code: :run_not_found}} =
         SessionStore.get_run(store, "run_does_not_exist")
-    end
-  end
-
-  describe "migrations" do
-    test "MigrationV3.up/0 runs successfully on SQLite" do
-      _ = Ecto.Migrator.up(IntegrationRepo, 3, MigrationV3, log: false)
-      assert true
     end
   end
 end

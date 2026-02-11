@@ -2,10 +2,10 @@ defmodule AgentSessionManager.Adapters.EctoSessionStoreMigrationCompatTest do
   use ExUnit.Case, async: false
 
   alias AgentSessionManager.Adapters.EctoSessionStore
-  alias AgentSessionManager.Adapters.EctoSessionStore.{Migration, MigrationV2}
+  alias AgentSessionManager.Adapters.EctoSessionStore.Migration
   alias AgentSessionManager.Core.Error
 
-  defmodule V1OnlyRepo do
+  defmodule CompatRepo do
     use Ecto.Repo, otp_app: :agent_session_manager, adapter: Ecto.Adapters.SQLite3
   end
 
@@ -20,13 +20,12 @@ defmodule AgentSessionManager.Adapters.EctoSessionStoreMigrationCompatTest do
     File.rm(db_path <> "-wal")
     File.rm(db_path <> "-shm")
 
-    Application.put_env(:agent_session_manager, V1OnlyRepo,
+    Application.put_env(:agent_session_manager, CompatRepo,
       database: db_path,
       pool_size: 1
     )
 
-    {:ok, repo_pid} = V1OnlyRepo.start_link()
-    Ecto.Migrator.up(V1OnlyRepo, 1, Migration, log: false)
+    {:ok, repo_pid} = CompatRepo.start_link()
 
     on_exit(fn ->
       try do
@@ -43,16 +42,16 @@ defmodule AgentSessionManager.Adapters.EctoSessionStoreMigrationCompatTest do
     :ok
   end
 
-  test "start_link fails with migration_required when only Migration (v1) is applied" do
+  test "start_link fails with migration_required when migration has not been applied" do
     assert {:error, %Error{code: :migration_required, message: message}} =
-             EctoSessionStore.start_link(repo: V1OnlyRepo)
+             EctoSessionStore.start_link(repo: CompatRepo)
 
-    assert message =~ "MigrationV2.up()"
+    assert message =~ "Migration.up()"
   end
 
-  test "start_link succeeds after MigrationV2 is applied" do
-    Ecto.Migrator.up(V1OnlyRepo, 2, MigrationV2, log: false)
-    assert {:ok, store} = EctoSessionStore.start_link(repo: V1OnlyRepo)
+  test "start_link succeeds after Migration is applied" do
+    Ecto.Migrator.up(CompatRepo, 1, Migration, log: false)
+    assert {:ok, store} = EctoSessionStore.start_link(repo: CompatRepo)
     GenServer.stop(store)
   end
 end

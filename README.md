@@ -91,10 +91,9 @@ def deps do
 end
 ```
 
-For `EctoSessionStore`, run both schema migrations in order:
+For `EctoSessionStore`, run the schema migration:
 
 1. `AgentSessionManager.Adapters.EctoSessionStore.Migration.up/0`
-2. `AgentSessionManager.Adapters.EctoSessionStore.MigrationV2.up/0`
 
 For Ash-based persistence adapters, also add:
 

@@ -13,7 +13,6 @@ defmodule AgentSessionManager.Adapters.CompositeSessionStoreIntegrationTest do
     CompositeSessionStore,
     EctoSessionStore,
     EctoSessionStore.Migration,
-    EctoSessionStore.MigrationV2,
     FileArtifactStore
   }
 
@@ -80,7 +79,6 @@ defmodule AgentSessionManager.Adapters.CompositeSessionStoreIntegrationTest do
 
     {:ok, repo_pid} = CompositeTestRepo.start_link()
     Ecto.Migrator.up(CompositeTestRepo, 1, Migration, log: false)
-    Ecto.Migrator.up(CompositeTestRepo, 2, MigrationV2, log: false)
 
     on_exit(fn ->
       try do

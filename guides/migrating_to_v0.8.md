@@ -49,8 +49,8 @@ you changed sequencing in v0.7, re-run the contract tests in
 
 ## Ecto Users
 
-- Apply the V2 migration (`MigrationV2`) for provider fields, soft delete, and
-  artifact metadata tables.
+- Apply the consolidated migration (`Migration`) that includes provider fields,
+  soft delete, and artifact metadata tables.
 - Replace GenServer usage with module-backed refs:
 
 ```elixir

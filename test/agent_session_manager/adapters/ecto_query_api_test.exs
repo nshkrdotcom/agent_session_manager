@@ -4,7 +4,6 @@ defmodule AgentSessionManager.Adapters.EctoQueryAPITest do
   alias AgentSessionManager.Adapters.EctoQueryAPI
   alias AgentSessionManager.Adapters.EctoSessionStore
   alias AgentSessionManager.Adapters.EctoSessionStore.Migration
-  alias AgentSessionManager.Adapters.EctoSessionStore.MigrationV2
   alias AgentSessionManager.Core.{Event, Run, Session}
   alias AgentSessionManager.Ports.{QueryAPI, SessionStore}
 
@@ -26,7 +25,6 @@ defmodule AgentSessionManager.Adapters.EctoQueryAPITest do
 
     {:ok, repo_pid} = QueryTestRepo.start_link()
     Ecto.Migrator.up(QueryTestRepo, 1, Migration, log: false)
-    Ecto.Migrator.up(QueryTestRepo, 2, MigrationV2, log: false)
 
     on_exit(fn ->
       try do

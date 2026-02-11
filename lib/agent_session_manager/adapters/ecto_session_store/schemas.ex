@@ -69,6 +69,7 @@ if Code.ensure_loaded?(Ecto.Schema) and Code.ensure_loaded?(Ecto.Changeset) do
         field(:started_at, :utc_datetime_usec)
         field(:ended_at, :utc_datetime_usec)
         field(:provider, :string)
+        field(:cost_usd, :float)
         field(:provider_metadata, :map, default: %{})
       end
 
@@ -87,6 +88,7 @@ if Code.ensure_loaded?(Ecto.Schema) and Code.ensure_loaded?(Ecto.Changeset) do
           :started_at,
           :ended_at,
           :provider,
+          :cost_usd,
           :provider_metadata
         ])
         |> validate_required([:id, :session_id, :status, :started_at])
@@ -241,6 +243,7 @@ else
         :started_at,
         :ended_at,
         :provider,
+        :cost_usd,
         :provider_metadata
       ]
 

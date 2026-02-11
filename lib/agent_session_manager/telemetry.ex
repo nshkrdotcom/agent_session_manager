@@ -165,6 +165,7 @@ defmodule AgentSessionManager.Telemetry do
         |> maybe_add_token_measurement(:input_tokens, token_usage)
         |> maybe_add_token_measurement(:output_tokens, token_usage)
         |> maybe_add_token_measurement(:total_tokens, token_usage)
+        |> maybe_add_cost_measurement(result)
 
       :telemetry.execute(
         [:agent_session_manager, :run, :stop],
@@ -416,6 +417,13 @@ defmodule AgentSessionManager.Telemetry do
     end
   end
 
+  defp maybe_add_cost_measurement(measurements, result) do
+    case Map.get(result, :cost_usd) do
+      cost when is_number(cost) -> Map.put(measurements, :cost_usd, cost)
+      _ -> measurements
+    end
+  end
+
   defp emit_run_end_with_duration(%Run{} = run, %Session{} = session, result, duration) do
     if enabled?() do
       token_usage = Map.get(result, :token_usage, %{})
@@ -428,6 +436,7 @@ defmodule AgentSessionManager.Telemetry do
         |> maybe_add_token_measurement(:input_tokens, token_usage)
         |> maybe_add_token_measurement(:output_tokens, token_usage)
         |> maybe_add_token_measurement(:total_tokens, token_usage)
+        |> maybe_add_cost_measurement(result)
 
       :telemetry.execute(
         [:agent_session_manager, :run, :stop],

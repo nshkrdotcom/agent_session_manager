@@ -65,6 +65,7 @@ defmodule AgentSessionManager.SessionManager do
     TranscriptBuilder
   }
 
+  alias AgentSessionManager.Cost.CostCalculator
   alias AgentSessionManager.Persistence.{EventPipeline, ExecutionState}
   alias AgentSessionManager.Policy.{AdapterCompiler, Policy, Preflight, Runtime}
   alias AgentSessionManager.Ports.{ArtifactStore, ProviderAdapter, SessionStore}
@@ -1279,8 +1280,8 @@ defmodule AgentSessionManager.SessionManager do
     # Build run metadata with provider info
     run_provider_metadata =
       %{provider: provider_name}
-      |> maybe_put(:provider_session_id, provider_metadata[:provider_session_id])
-      |> maybe_put(:model, provider_metadata[:model])
+      |> maybe_put(:provider_session_id, fetch_map_value(provider_metadata, :provider_session_id))
+      |> maybe_put(:model, fetch_map_value(provider_metadata, :model))
       |> Map.merge(extra_run_metadata)
 
     with {:ok, updated_run} <- Run.set_output(run, result.output),
@@ -1290,7 +1291,9 @@ defmodule AgentSessionManager.SessionManager do
            | provider: provider_name,
              provider_metadata: run_provider_metadata
          },
-         final_run = update_run_metadata(run_with_provider, run_provider_metadata),
+         cost_usd = calculate_cost_for_run(run_with_provider, provider_metadata, result),
+         run_with_cost = %{run_with_provider | cost_usd: cost_usd},
+         final_run = update_run_metadata(run_with_cost, run_provider_metadata),
          updated_session = merge_session_provider_metadata(session, provider_metadata),
          execution_state =
            updated_session
@@ -1298,7 +1301,12 @@ defmodule AgentSessionManager.SessionManager do
            |> ExecutionState.cache_provider_metadata(provider_metadata),
          execution_result = ExecutionState.to_result(execution_state),
          :ok <- safe_flush(store, execution_result, :finalize_successful_run) do
-      {:ok, Map.put(result, :persistence_failures, persistence_failures)}
+      result =
+        result
+        |> Map.put(:cost_usd, final_run.cost_usd)
+        |> Map.put(:persistence_failures, persistence_failures)
+
+      {:ok, result}
     end
   end
 
@@ -1313,8 +1321,8 @@ defmodule AgentSessionManager.SessionManager do
     # Only update if we have provider metadata to add
     metadata_to_add =
       %{}
-      |> maybe_put(:provider_session_id, provider_metadata[:provider_session_id])
-      |> maybe_put(:model, provider_metadata[:model])
+      |> maybe_put(:provider_session_id, fetch_map_value(provider_metadata, :provider_session_id))
+      |> maybe_put(:model, fetch_map_value(provider_metadata, :model))
 
     if map_size(metadata_to_add) > 0 do
       # Phase 2: also maintain per-provider keyed map under :provider_sessions
@@ -1337,6 +1345,74 @@ defmodule AgentSessionManager.SessionManager do
       session
     end
   end
+
+  defp calculate_cost_for_run(run, provider_metadata, result) do
+    case extract_sdk_cost(result) do
+      cost when is_number(cost) and cost > 0 ->
+        cost * 1.0
+
+      _ ->
+        pricing_table = get_pricing_table()
+        model = fetch_map_value(provider_metadata, :model)
+
+        run_for_calc = %{
+          run
+          | provider_metadata: Map.put(run.provider_metadata || %{}, :model, model)
+        }
+
+        case CostCalculator.calculate_run_cost(run_for_calc, pricing_table) do
+          {:ok, cost} -> cost
+          {:error, _} -> nil
+        end
+    end
+  end
+
+  defp extract_sdk_cost(result) when is_map(result) do
+    events =
+      Map.get(result, :events) ||
+        Map.get(result, "events") ||
+        []
+
+    Enum.find_value(events, fn
+      %{type: :run_completed, data: data} when is_map(data) ->
+        extract_total_cost_usd(data)
+
+      %{type: "run_completed", data: data} when is_map(data) ->
+        extract_total_cost_usd(data)
+
+      %{"type" => :run_completed, "data" => data} when is_map(data) ->
+        extract_total_cost_usd(data)
+
+      %{"type" => "run_completed", "data" => data} when is_map(data) ->
+        extract_total_cost_usd(data)
+
+      _ ->
+        nil
+    end)
+  end
+
+  defp extract_sdk_cost(_), do: nil
+
+  defp extract_total_cost_usd(data) do
+    case fetch_map_value(data, :total_cost_usd) do
+      cost when is_number(cost) and cost > 0 -> cost * 1.0
+      _ -> nil
+    end
+  end
+
+  defp get_pricing_table do
+    Application.get_env(
+      :agent_session_manager,
+      :pricing_table,
+      CostCalculator.default_pricing_table()
+    )
+  end
+
+  defp fetch_map_value(map, key) when is_map(map) and is_atom(key) do
+    Map.get(map, key) || Map.get(map, Atom.to_string(key))
+  end
+
+  defp fetch_map_value(_map, _key), do: nil
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)

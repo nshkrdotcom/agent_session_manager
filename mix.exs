@@ -102,6 +102,7 @@ defmodule AgentSessionManager.MixProject do
         "guides/workspace_snapshots.md",
         "guides/provider_routing.md",
         "guides/policy_enforcement.md",
+        "guides/cost_tracking.md",
         "guides/advanced_patterns.md",
         "guides/workflow_bridge.md",
         "guides/provider_adapters.md",
@@ -146,6 +147,7 @@ defmodule AgentSessionManager.MixProject do
           "guides/workspace_snapshots.md",
           "guides/provider_routing.md",
           "guides/policy_enforcement.md",
+          "guides/cost_tracking.md",
           "guides/advanced_patterns.md",
           "guides/capabilities.md"
         ],
@@ -214,6 +216,9 @@ defmodule AgentSessionManager.MixProject do
           AgentSessionManager.Policy.Runtime,
           AgentSessionManager.Policy.AdapterCompiler,
           AgentSessionManager.Policy.Preflight
+        ],
+        "Cost Tracking": [
+          AgentSessionManager.Cost.CostCalculator
         ],
         "Ports (Interfaces)": [
           AgentSessionManager.Ports.ProviderAdapter,
@@ -286,8 +291,7 @@ defmodule AgentSessionManager.MixProject do
         ],
         Configuration: [
           AgentSessionManager.Config,
-          AgentSessionManager.Models,
-          AgentSessionManager.Cost.CostCalculator
+          AgentSessionManager.Models
         ],
         Observability: [
           AgentSessionManager.Telemetry,

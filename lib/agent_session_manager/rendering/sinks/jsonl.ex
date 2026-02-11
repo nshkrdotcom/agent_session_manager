@@ -123,8 +123,14 @@ defmodule AgentSessionManager.Rendering.Sinks.JSONLSink do
   defp compact_event_fields(:tool_call_completed, data),
     do: drop_nil_values(%{"n" => data[:tool_name], "l" => safe_length(data[:tool_output])})
 
-  defp compact_event_fields(:token_usage_updated, data),
-    do: %{"i" => data[:input_tokens], "o" => data[:output_tokens]}
+  defp compact_event_fields(:token_usage_updated, data) do
+    base = %{"i" => data[:input_tokens], "o" => data[:output_tokens]}
+
+    case data[:cost_usd] do
+      cost when is_number(cost) -> Map.put(base, "$", cost)
+      _ -> base
+    end
+  end
 
   defp compact_event_fields(:run_completed, data),
     do: drop_nil_values(%{"sr" => short_reason(data[:stop_reason])})

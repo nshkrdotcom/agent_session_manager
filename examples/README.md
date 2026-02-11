@@ -166,6 +166,21 @@ mix run examples/approval_gates.exs --provider codex
 mix run examples/approval_gates.exs --provider amp
 ```
 
+## Cost Tracking Example
+
+### `cost_tracking.exs` -- Cost Tracking / USD Calculation
+
+- Configures a pricing table with per-model rates
+- Runs a real provider session and displays token usage with USD cost
+- Demonstrates `CostCalculator` model resolution (exact, prefix, provider default)
+- Shows cost in run results and policy budget metadata
+
+```bash
+mix run examples/cost_tracking.exs --provider claude
+mix run examples/cost_tracking.exs --provider codex
+mix run examples/cost_tracking.exs --provider amp
+```
+
 ## Session Server Runtime Examples
 
 These examples demonstrate Feature 6 using live provider execution.

@@ -127,6 +127,15 @@ defmodule AgentSessionManager.Rendering.Renderers.VerboseRendererTest do
       assert text =~ "100"
       assert text =~ "50"
     end
+
+    test "includes cost when cost_usd is present" do
+      event =
+        event(:token_usage_updated, %{input_tokens: 100, output_tokens: 50, cost_usd: 0.012345})
+
+      {text, _state} = render_single(event)
+
+      assert text =~ "cost=$0.012345"
+    end
   end
 
   describe "message_received" do
@@ -149,6 +158,13 @@ defmodule AgentSessionManager.Rendering.Renderers.VerboseRendererTest do
       {text, _state} = render_single(event)
       assert text =~ "200"
       assert text =~ "100"
+    end
+
+    test "includes cost when cost_usd is present" do
+      event = event(:run_completed, %{stop_reason: "end_turn", cost_usd: 0.111111})
+      {text, _state} = render_single(event)
+
+      assert text =~ "cost=$0.111111"
     end
   end
 

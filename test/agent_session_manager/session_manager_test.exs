@@ -654,6 +654,31 @@ defmodule AgentSessionManager.SessionManagerTest do
       assert completed_run.token_usage.output_tokens == 20
     end
 
+    test "stores cost_usd on run and returns it in execution result", %{
+      store: store,
+      adapter: adapter
+    } do
+      MockAdapter.set_response(adapter, :execute, %{
+        content: "Costed response",
+        token_usage: %{input_tokens: 100, output_tokens: 50},
+        events: [
+          %{type: :run_started, data: %{model: "mock-model-v1"}},
+          %{type: :message_received, data: %{content: "Costed response", role: "assistant"}},
+          %{type: :run_completed, data: %{stop_reason: "end_turn", total_cost_usd: 0.01234}}
+        ]
+      })
+
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+      {:ok, run} = SessionManager.start_run(store, adapter, session.id, %{prompt: "Hello"})
+
+      {:ok, result} = SessionManager.execute_run(store, adapter, run.id)
+      assert_in_delta result.cost_usd, 0.01234, 0.0000001
+
+      {:ok, completed_run} = SessionStore.get_run(store, run.id)
+      assert_in_delta completed_run.cost_usd, 0.01234, 0.0000001
+    end
+
     test "sets run status to failed on adapter error", %{store: store, adapter: adapter} do
       {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
       {:ok, _} = SessionManager.activate_session(store, session.id)

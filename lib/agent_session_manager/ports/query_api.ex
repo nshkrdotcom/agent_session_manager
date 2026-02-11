@@ -11,6 +11,7 @@ defmodule AgentSessionManager.Ports.QueryAPI do
   - `get_session_stats/2` — Aggregate statistics for a session
   - `search_runs/2` — Search runs across sessions
   - `get_usage_summary/2` — Token usage summary by provider
+  - `get_cost_summary/2` — Cost summary by provider/model
   - `search_events/2` — Search events across sessions
   - `count_events/2` — Count events matching filters
   - `export_session/3` — Export complete session data
@@ -116,6 +117,28 @@ defmodule AgentSessionManager.Ports.QueryAPI do
   @callback get_usage_summary(context(), keyword()) ::
               {:ok, map()} | {:error, Error.t()}
 
+  @doc """
+  Get cost summary across runs.
+
+  ## Options
+
+  - `:session_id` — scope to session
+  - `:agent_id` — scope to agent
+  - `:provider` — filter by provider
+  - `:since` — DateTime lower bound
+  - `:until` — DateTime upper bound
+  - `:pricing_table` — override default pricing (optional)
+
+  Returns a map with:
+  - `total_cost_usd` — float
+  - `run_count` — integer
+  - `by_provider` — per-provider cost breakdown
+  - `by_model` — per-model cost breakdown
+  - `unmapped_runs` — count of runs without cost
+  """
+  @callback get_cost_summary(context(), keyword()) ::
+              {:ok, map()} | {:error, Error.t()}
+
   # ============================================================================
   # Event Queries
   # ============================================================================
@@ -186,6 +209,11 @@ defmodule AgentSessionManager.Ports.QueryAPI do
   @spec get_usage_summary(query_ref(), keyword()) :: {:ok, map()} | {:error, Error.t()}
   def get_usage_summary(query_ref, opts \\ []) do
     dispatch(query_ref, :get_usage_summary, [opts])
+  end
+
+  @spec get_cost_summary(query_ref(), keyword()) :: {:ok, map()} | {:error, Error.t()}
+  def get_cost_summary(query_ref, opts \\ []) do
+    dispatch(query_ref, :get_cost_summary, [opts])
   end
 
   @spec search_events(query_ref(), keyword()) ::

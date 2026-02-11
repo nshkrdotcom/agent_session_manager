@@ -17,6 +17,7 @@ if Code.ensure_loaded?(Ecto.Query) do
 
     @behaviour AgentSessionManager.Ports.QueryAPI
 
+    alias AgentSessionManager.Cost.CostCalculator
     alias AgentSessionManager.Adapters.EctoSessionStore.Converters
     alias AgentSessionManager.Config
     alias AgentSessionManager.Core.{Error, Event, Serialization}
@@ -48,6 +49,9 @@ if Code.ensure_loaded?(Ecto.Query) do
 
     @impl QueryAPI
     def get_usage_summary(repo, opts \\ []), do: do_get_usage_summary(repo, opts)
+
+    @impl QueryAPI
+    def get_cost_summary(repo, opts \\ []), do: do_get_cost_summary(repo, opts)
 
     @impl QueryAPI
     def search_events(repo, opts \\ []), do: do_search_events(repo, opts)
@@ -605,12 +609,101 @@ if Code.ensure_loaded?(Ecto.Query) do
       e -> {:error, Error.new(:query_error, Exception.message(e))}
     end
 
+    defp do_get_cost_summary(repo, opts) do
+      pricing_table =
+        Keyword.get(
+          opts,
+          :pricing_table,
+          Application.get_env(
+            :agent_session_manager,
+            :pricing_table,
+            CostCalculator.default_pricing_table()
+          )
+        )
+
+      query =
+        RunSchema
+        |> apply_usage_filters(opts)
+        |> apply_cost_agent_filter(opts)
+
+      runs =
+        repo.all(
+          from(r in query,
+            select: %{
+              provider: r.provider,
+              token_usage: r.token_usage,
+              provider_metadata: r.provider_metadata,
+              cost_usd: r.cost_usd
+            }
+          )
+        )
+
+      {total_cost, by_provider, by_model, unmapped} =
+        Enum.reduce(runs, {0.0, %{}, %{}, 0}, fn run_data, {total, providers, models, unmapped} ->
+          cost = run_data.cost_usd || calculate_post_hoc_cost(run_data, pricing_table)
+
+          if is_number(cost) do
+            provider = run_data.provider || "unknown"
+            model = provider_model_name(run_data.provider_metadata)
+            usage = run_data.token_usage || %{}
+
+            provider_entry = Map.get(providers, provider, %{cost_usd: 0.0, run_count: 0})
+
+            updated_provider = %{
+              provider_entry
+              | cost_usd: provider_entry.cost_usd + cost,
+                run_count: provider_entry.run_count + 1
+            }
+
+            model_entry =
+              Map.get(models, model, %{cost_usd: 0.0, input_tokens: 0, output_tokens: 0})
+
+            updated_model = %{
+              model_entry
+              | cost_usd: model_entry.cost_usd + cost,
+                input_tokens: model_entry.input_tokens + get_token_val(usage, "input_tokens"),
+                output_tokens: model_entry.output_tokens + get_token_val(usage, "output_tokens")
+            }
+
+            {total + cost, Map.put(providers, provider, updated_provider),
+             Map.put(models, model, updated_model), unmapped}
+          else
+            {total, providers, models, unmapped + 1}
+          end
+        end)
+
+      {:ok,
+       %{
+         total_cost_usd: total_cost,
+         run_count: length(runs),
+         by_provider: by_provider,
+         by_model: by_model,
+         unmapped_runs: unmapped
+       }}
+    rescue
+      e -> {:error, Error.new(:query_error, Exception.message(e))}
+    end
+
     defp apply_usage_filters(query, opts) do
       query
       |> filter_run_session(opts)
       |> filter_run_provider(opts)
       |> filter_usage_since(opts)
       |> filter_usage_until(opts)
+    end
+
+    defp apply_cost_agent_filter(query, opts) do
+      case Keyword.get(opts, :agent_id) do
+        nil ->
+          query
+
+        agent_id ->
+          from(r in query,
+            join: s in SessionSchema,
+            on: r.session_id == s.id,
+            where: s.agent_id == ^agent_id
+          )
+      end
     end
 
     defp filter_usage_since(query, opts) do
@@ -626,6 +719,27 @@ if Code.ensure_loaded?(Ecto.Query) do
         dt -> where(query, [r], r.started_at <= ^dt)
       end
     end
+
+    defp calculate_post_hoc_cost(run_data, pricing_table) do
+      token_usage = run_data.token_usage || %{}
+      provider = run_data.provider
+      model = fetch_metadata_value(run_data.provider_metadata, :model)
+
+      case CostCalculator.calculate(token_usage, provider, model, pricing_table) do
+        {:ok, cost} -> cost
+        {:error, _} -> nil
+      end
+    end
+
+    defp provider_model_name(provider_metadata) do
+      fetch_metadata_value(provider_metadata, :model) || "unknown"
+    end
+
+    defp fetch_metadata_value(map, key) when is_map(map) and is_atom(key) do
+      Map.get(map, key) || Map.get(map, Atom.to_string(key))
+    end
+
+    defp fetch_metadata_value(_map, _key), do: nil
 
     # ============================================================================
     # Search Events
@@ -1131,6 +1245,10 @@ else
     @impl QueryAPI
     def get_usage_summary(_repo, _opts \\ []),
       do: {:error, missing_dependency_error(:get_usage_summary)}
+
+    @impl QueryAPI
+    def get_cost_summary(_repo, _opts \\ []),
+      do: {:error, missing_dependency_error(:get_cost_summary)}
 
     @impl QueryAPI
     def search_events(_repo, _opts \\ []), do: {:error, missing_dependency_error(:search_events)}

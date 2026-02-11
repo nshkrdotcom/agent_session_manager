@@ -14,10 +14,11 @@ if Code.ensure_loaded?(Ecto.Query) do
 
     ## Prerequisites
 
-    Run both migrations to create required tables and columns:
+    Run these migrations to create required tables and columns:
 
         AgentSessionManager.Adapters.EctoSessionStore.Migration.up()
         AgentSessionManager.Adapters.EctoSessionStore.MigrationV2.up()
+        AgentSessionManager.Adapters.EctoSessionStore.MigrationV4.up() # for existing V2 installs
 
     See `AgentSessionManager.Adapters.EctoSessionStore.Migration` and
     `AgentSessionManager.Adapters.EctoSessionStore.MigrationV2` for details.
@@ -849,6 +850,7 @@ if Code.ensure_loaded?(Ecto.Query) do
         started_at: r.started_at,
         ended_at: r.ended_at,
         provider: r.provider,
+        cost_usd: r.cost_usd,
         provider_metadata: stringify_keys(r.provider_metadata || %{})
       }
     end

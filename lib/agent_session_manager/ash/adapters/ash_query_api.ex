@@ -11,6 +11,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
 
     alias AgentSessionManager.Ash.Converters
     alias AgentSessionManager.Ash.Resources
+    alias AgentSessionManager.Cost.CostCalculator
     alias AgentSessionManager.Config
     alias AgentSessionManager.Core.{Error, Event, Serialization}
 
@@ -121,6 +122,69 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
            total_tokens: totals.total_tokens,
            run_count: length(runs),
            by_provider: by_provider
+         }}
+      end
+    rescue
+      e -> {:error, Error.new(:query_error, Exception.message(e))}
+    end
+
+    @impl true
+    def get_cost_summary(domain, opts \\ []) do
+      pricing_table =
+        Keyword.get(
+          opts,
+          :pricing_table,
+          Application.get_env(
+            :agent_session_manager,
+            :pricing_table,
+            CostCalculator.default_pricing_table()
+          )
+        )
+
+      with {:ok, runs} <- read_runs(domain, opts),
+           {:ok, scoped_runs} <- maybe_filter_runs_by_agent(domain, runs, opts) do
+        {total_cost, by_provider, by_model, unmapped} =
+          Enum.reduce(scoped_runs, {0.0, %{}, %{}, 0}, fn run,
+                                                          {total, providers, models, unmapped} ->
+            cost = run.cost_usd || calculate_post_hoc_cost(run, pricing_table)
+
+            if is_number(cost) do
+              provider = run.provider || "unknown"
+              model = provider_model_name(run.provider_metadata)
+              usage = run.token_usage || %{}
+
+              provider_entry = Map.get(providers, provider, %{cost_usd: 0.0, run_count: 0})
+
+              updated_provider = %{
+                provider_entry
+                | cost_usd: provider_entry.cost_usd + cost,
+                  run_count: provider_entry.run_count + 1
+              }
+
+              model_entry =
+                Map.get(models, model, %{cost_usd: 0.0, input_tokens: 0, output_tokens: 0})
+
+              updated_model = %{
+                model_entry
+                | cost_usd: model_entry.cost_usd + cost,
+                  input_tokens: model_entry.input_tokens + get_token_val(usage, "input_tokens"),
+                  output_tokens: model_entry.output_tokens + get_token_val(usage, "output_tokens")
+              }
+
+              {total + cost, Map.put(providers, provider, updated_provider),
+               Map.put(models, model, updated_model), unmapped}
+            else
+              {total, providers, models, unmapped + 1}
+            end
+          end)
+
+        {:ok,
+         %{
+           total_cost_usd: total_cost,
+           run_count: length(scoped_runs),
+           by_provider: by_provider,
+           by_model: by_model,
+           unmapped_runs: unmapped
          }}
       end
     rescue
@@ -544,6 +608,47 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
       end
     end
 
+    defp maybe_filter_runs_by_agent(domain, runs, opts) do
+      case Keyword.get(opts, :agent_id) do
+        nil ->
+          {:ok, runs}
+
+        wanted_agent_id ->
+          session_ids =
+            Resources.Session
+            |> Ash.Query.for_read(:read)
+            |> Ash.Query.filter(expr(agent_id == ^wanted_agent_id))
+            |> Ash.read!(domain: domain)
+            |> Enum.map(& &1.id)
+            |> MapSet.new()
+
+          {:ok, Enum.filter(runs, &MapSet.member?(session_ids, &1.session_id))}
+      end
+    rescue
+      e -> {:error, Error.new(:query_error, Exception.message(e))}
+    end
+
+    defp calculate_post_hoc_cost(run, pricing_table) do
+      token_usage = run.token_usage || %{}
+      provider = run.provider
+      model = fetch_metadata_value(run.provider_metadata, :model)
+
+      case CostCalculator.calculate(token_usage, provider, model, pricing_table) do
+        {:ok, cost} -> cost
+        {:error, _} -> nil
+      end
+    end
+
+    defp provider_model_name(provider_metadata) do
+      fetch_metadata_value(provider_metadata, :model) || "unknown"
+    end
+
+    defp fetch_metadata_value(map, key) when is_map(map) and is_atom(key) do
+      Map.get(map, key) || Map.get(map, Atom.to_string(key))
+    end
+
+    defp fetch_metadata_value(_map, _key), do: nil
+
     defp filter_sessions_by_provider(domain, sessions, provider) do
       session_ids = Enum.map(sessions, & &1.id)
 
@@ -700,6 +805,10 @@ else
     @impl true
     def get_usage_summary(_domain, _opts \\ []),
       do: {:error, missing_dep_error(:get_usage_summary)}
+
+    @impl true
+    def get_cost_summary(_domain, _opts \\ []),
+      do: {:error, missing_dep_error(:get_cost_summary)}
 
     @impl true
     def search_events(_domain, _opts \\ []), do: {:error, missing_dep_error(:search_events)}

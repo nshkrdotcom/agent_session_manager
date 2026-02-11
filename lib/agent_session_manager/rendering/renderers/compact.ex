@@ -129,7 +129,8 @@ defmodule AgentSessionManager.Rendering.Renderers.CompactRenderer do
     {closing, state} = end_stream(state)
     input_t = data[:input_tokens] || 0
     output_t = data[:output_tokens] || 0
-    token = emit_token(state, dim("tk:#{input_t}/#{output_t}", state))
+    cost_label = format_compact_cost(data[:cost_usd])
+    token = emit_token(state, dim("tk:#{input_t}/#{output_t}#{cost_label}", state))
     {[closing, token], %{state | line_open: true}}
   end
 
@@ -144,8 +145,9 @@ defmodule AgentSessionManager.Rendering.Renderers.CompactRenderer do
   defp render(%{type: :run_completed, data: data}, state) do
     {closing, state} = end_stream(state)
     reason = short_reason(data[:stop_reason])
+    cost_label = format_compact_cost(data[:cost_usd])
     label = if reason == "", do: "r-", else: "r-:#{reason}"
-    token = emit_token(state, colorize(label, @blue, state))
+    token = emit_token(state, colorize(label <> cost_label, @blue, state))
     {[closing, token], %{state | in_text: false, line_open: true}}
   end
 
@@ -241,6 +243,9 @@ defmodule AgentSessionManager.Rendering.Renderers.CompactRenderer do
       other -> other
     end
   end
+
+  defp format_compact_cost(nil), do: ""
+  defp format_compact_cost(cost) when is_number(cost), do: " $#{Float.round(cost * 1.0, 4)}"
 
   defp truncate(nil, _limit), do: ""
 

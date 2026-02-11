@@ -41,6 +41,7 @@ defmodule AgentSessionManager.Adapters.EctoSessionStore.Converters do
       started_at: run_schema.started_at,
       ended_at: run_schema.ended_at,
       provider: run_schema.provider,
+      cost_usd: run_schema.cost_usd,
       provider_metadata: atomize_keys(run_schema.provider_metadata || %{})
     }
   end

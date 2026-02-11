@@ -153,6 +153,16 @@ defmodule AgentSessionManager.Rendering.Renderers.CompactRendererTest do
       assert plain =~ "100"
       assert plain =~ "50"
     end
+
+    test "emits cost when cost_usd is present" do
+      event =
+        event(:token_usage_updated, %{input_tokens: 100, output_tokens: 50, cost_usd: 0.01234})
+
+      {text, _state} = render_single(event)
+      plain = strip_ansi(text)
+
+      assert plain =~ "$0.0123"
+    end
   end
 
   describe "message_received" do
@@ -182,6 +192,14 @@ defmodule AgentSessionManager.Rendering.Renderers.CompactRendererTest do
       {text, _state} = render_single(event)
       plain = strip_ansi(text)
       assert plain =~ "end"
+    end
+
+    test "includes cost when cost_usd is present" do
+      event = event(:run_completed, %{stop_reason: "end_turn", cost_usd: 0.11111})
+      {text, _state} = render_single(event)
+      plain = strip_ansi(text)
+
+      assert plain =~ "$0.1111"
     end
   end
 

@@ -7,7 +7,7 @@ if Code.ensure_loaded?(Ecto.Migration) do
     ## Changes
 
     - `asm_sessions`: adds `deleted_at`
-    - `asm_runs`: adds `provider`, `provider_metadata`
+    - `asm_runs`: adds `provider`, `provider_metadata`, `cost_usd`
     - `asm_events`: adds `provider`, `correlation_id`
     - `asm_session_sequences`: adds `updated_at`
     - Creates `asm_artifacts` table
@@ -64,6 +64,7 @@ if Code.ensure_loaded?(Ecto.Migration) do
       alter table(:asm_runs) do
         add(:provider, :string, null: true)
         add(:provider_metadata, :map, null: false, default: %{})
+        add_if_not_exists(:cost_usd, :float)
       end
     end
 

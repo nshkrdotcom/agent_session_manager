@@ -98,9 +98,10 @@ defmodule AgentSessionManager.Rendering.Renderers.VerboseRenderer do
     {break, state} = maybe_break_line(state)
     input_t = data[:input_tokens] || 0
     output_t = data[:output_tokens] || 0
+    cost_label = format_verbose_cost(data[:cost_usd])
 
     tag = dim("[token_usage]", state)
-    line = "#{tag} input=#{input_t} output=#{output_t}\n"
+    line = "#{tag} input=#{input_t} output=#{output_t}#{cost_label}\n"
     {[break, line], state}
   end
 
@@ -118,9 +119,10 @@ defmodule AgentSessionManager.Rendering.Renderers.VerboseRenderer do
     {break, state} = maybe_break_line(state)
     reason = data[:stop_reason] || "end_turn"
     usage = format_usage(data[:token_usage])
+    cost_label = format_verbose_cost(data[:cost_usd])
 
     tag = colorize("[run_completed]", @blue, state)
-    line = "#{tag} stop_reason=#{reason}#{usage}\n"
+    line = "#{tag} stop_reason=#{reason}#{usage}#{cost_label}\n"
     {[break, line], %{state | in_text: false}}
   end
 
@@ -199,6 +201,9 @@ defmodule AgentSessionManager.Rendering.Renderers.VerboseRenderer do
   end
 
   defp format_usage(_), do: ""
+
+  defp format_verbose_cost(nil), do: ""
+  defp format_verbose_cost(cost) when is_number(cost), do: " cost=$#{Float.round(cost * 1.0, 6)}"
 
   defp truncate(nil, _limit), do: ""
 

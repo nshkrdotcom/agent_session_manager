@@ -86,6 +86,8 @@ defmodule AgentSessionManager.Core.Error do
   @storage_codes [
     :storage_error,
     :storage_connection_failed,
+    :dependency_not_available,
+    :migration_required,
     :storage_write_failed,
     :storage_read_failed
   ]
@@ -161,6 +163,8 @@ defmodule AgentSessionManager.Core.Error do
     provider_quota_exceeded: "Provider quota exceeded",
     storage_error: "Storage error occurred",
     storage_connection_failed: "Storage connection failed",
+    dependency_not_available: "Required optional dependency is not available",
+    migration_required: "Required storage migration has not been applied",
     storage_write_failed: "Storage write operation failed",
     storage_read_failed: "Storage read operation failed",
     timeout: "Operation timed out",
@@ -207,6 +211,8 @@ defmodule AgentSessionManager.Core.Error do
           | :provider_quota_exceeded
           | :storage_error
           | :storage_connection_failed
+          | :dependency_not_available
+          | :migration_required
           | :storage_write_failed
           | :storage_read_failed
           | :timeout

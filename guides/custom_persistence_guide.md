@@ -22,6 +22,11 @@ Callback groups:
   `append_events/2`, `get_events/3`, `get_latest_sequence/2`
 - Atomic lifecycle callback: `flush/2`
 
+The SessionStore port accepts both:
+
+- GenServer-backed refs (pid/name)
+- module-backed refs (`{Module, context}`)
+
 ### Semantics your adapter should guarantee
 
 - Idempotent writes for duplicate IDs
@@ -51,6 +56,12 @@ maint_ref = {MyApp.MaintenanceAdapter, maintenance_context}
 
 This keeps read/reporting and maintenance operations independent from the
 SessionStore process lifecycle.
+
+For cursor pagination in custom `QueryAPI` adapters:
+
+- treat cursors as opaque tokens
+- encode enough state to preserve ordering (`order_by` + tie-break fields)
+- return `{:error, %Error{code: :invalid_cursor}}` for malformed or mismatched cursors
 
 ## Recommended implementation pattern
 

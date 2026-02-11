@@ -23,12 +23,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Implemented in `EctoSessionStore`, `InMemorySessionStore`, and `CompositeSessionStore`
 - **`EventBuilder` module** (`AgentSessionManager.Persistence.EventBuilder`) for pure event normalize/enrich/validate processing without persistence
 - **`ExecutionState` module** (`AgentSessionManager.Persistence.ExecutionState`) for in-memory run state accumulation (session, run, events, provider metadata)
-- **`OptionalDependency` module** (`AgentSessionManager.OptionalDependency`) for standardized error reporting when optional dependencies (Ecto, ExAws) are missing
-- **Conditional compilation** for optional Ecto and AWS dependencies
+- **`OptionalDependency` module** for standardized error reporting when optional dependencies (Ecto, ExAws) are missing
+- **`Runtime.ExitReasons` module** for shared adapter/store exit-reason classification across SessionManager + provider boundaries
+- **SessionManager subsystem modules** for cleaner orchestration boundaries
+  - `InputMessageNormalizer`
+  - `ProviderMetadataCollector`
+- **Top-level persistence convenience API** on `AgentSessionManager`
+  - `session_store/1` for `SessionStore` refs (`pid` or `{Module, context}`)
+  - `query_api/1` for `QueryAPI` refs
+  - `maintenance/1` for `Maintenance` refs
+- **Conditional compilation** for optional Ecto, AWS, and provider SDK dependencies
   - `EctoSessionStore`, `EctoQueryAPI`, `EctoMaintenance`, Ecto migrations/schemas wrapped in conditional blocks
   - `S3ArtifactStore.ExAwsClient` provides fallback when ExAws is missing
   - `ArtifactRegistry` Ecto-dependent metadata tracking wrapped with fallback logic
-  - Library can be used without Ecto or ExAws dependencies installed
+  - `AmpAdapter`, `ClaudeAdapter`, and `CodexAdapter` compile only when their SDK deps are available
+  - Library can be used without Ecto, ExAws, or provider SDK dependencies installed
 - **`SessionManager` store-failure hardening**
   - All `SessionStore` calls wrapped in `safe_store_call/2`
   - Store process exits converted to `:storage_connection_failed` errors
@@ -38,24 +47,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `:noproc`, `:timeout`, and unexpected exits normalized into `Core.Error` structs
   - `provider_unavailable` tolerance in `cancel_run` request path
 - **`Core.Serialization` module** consolidating `atomize_keys/1` and `stringify_keys/1` across `EctoSessionStore` and `EctoQueryAPI`
-- **Ecto migrations** (V1 base schema, V2 provider/artifact fields) and Ecto schemas for sessions, runs, and events
+- **Shared Ecto converters module** (`EctoSessionStore.Converters`) used by both store and query adapters for schema <-> core transformations
+- **Ecto migrations** (V1 base schema, V2 provider/artifact fields, V3 foreign keys) and Ecto schemas for sessions, runs, and events
 - **`Event` struct extensions**: `schema_version`, `provider`, `correlation_id` fields
 - **`Session` struct extension**: `deleted_at` for soft-delete support
+- **Persistence test hardening suites** for regression resistance
+  - `ecto_session_store_concurrency_test.exs` (concurrent append/session consistency)
+  - `session_store_contract_multi_impl_test.exs` (contract tests across InMemory + Ecto refs)
+  - `ecto_session_store_migration_compat_test.exs` and `ecto_session_store_migration_down_test.exs` (migration prerequisite + rollback coverage)
 - Persistence live examples: `sqlite_session_store_live.exs`, `ecto_session_store_live.exs`, `s3_artifact_store_live.exs`, `composite_store_live.exs`, `persistence_query.exs`, `persistence_maintenance.exs`, `persistence_multi_run.exs`, `persistence_live.exs`, `persistence_s3_minio.exs`
 
 ### Changed
 
 - **`SessionStore` is the single execution persistence boundary** -- event persistence remains per-event via `append_event_with_sequence/2`, with `append_events/2` available for batch paths and `flush/2` used during finalization
+- **`SessionStore` refs now support both `pid` and `{Module, context}` dispatch** -- Ecto-backed usage can call adapters directly (for example `{EctoSessionStore, Repo}`) instead of routing through a single GenServer
 - **`QueryAPI` and `Maintenance` refactored to module-backed refs** -- `{EctoQueryAPI, Repo}` and `{EctoMaintenance, Repo}` replace dedicated GenServer adapters, removing process lifecycle overhead
 - **`EventPipeline` processing** -- builds events via `EventBuilder`; `process/3` persists per-event with `append_event_with_sequence/2`, while `process_batch/3` persists via `append_events/2`
+- **Session lifecycle event persistence unified through `EventPipeline`** so internal lifecycle emissions and adapter callback events use the same validation/persistence path
+- **Session finalization integrates `ExecutionState`** for consistent in-memory accumulation and final flush behavior
 - **Provider metadata extraction** no longer depends on run-scoped `SessionStore.get_events/3` read-back; metadata is captured from callback/result event data during execution
+- **`ArtifactRegistry` decoupled from adapter schema modules** via behaviour-based injection to preserve persistence layering
+- **`InMemorySessionStore` event appends moved to queue-based buffering** to avoid O(n) append overhead under load
+- **`CompositeSessionStore` direct-call timeout handling** now propagates `wait_timeout_ms` and isolates artifact failures from session persistence paths
 - `crypto.strong_rand_bytes` used for workspace artifact keys instead of `System.unique_integer`
+
+### Fixed
+
+- **Cursor pagination correctness (C-1)** -- cursor tokens are decoded and applied via keyset filters with explicit ordering validation; invalid cursors return structured errors instead of silently repeating page 1
+- **`delete_session/2` and hard-delete cascade safety (C-2, C-5)** -- session/run/event deletion paths are transactional and delete dependent rows deterministically to prevent orphaned records
+- **Event persistence error handling (C-3)** -- `EventPipeline` persistence failures are surfaced to callers and SessionManager callback/store interactions are protected from teardown crashes
+- **Ecto insert crash path (C-4)** -- bang inserts in GenServer call paths replaced with safe insert + rollback handling to avoid store process crashes
+- **Migration prerequisite mismatch (C-6)** -- EctoSessionStore now fails fast when required V2 columns are missing, preventing runtime crashes from V1-only schemas
+- **Maintenance correctness (M-1, M-2, M-9)** -- health checks use `max(sequence_number)`, retention age checks use `updated_at`, and protected prune event types include `run_started`/`run_completed`
+- **Optional dependency error semantics (M-10)** -- missing optional dependencies now normalize to `:dependency_not_available` instead of generic storage failure codes
+- **Composite direct call timeout behavior (M-8 scoped)** -- `CompositeSessionStore.get_events/3` correctly adjusts call timeout for long-poll options
+
+### Removed
+
+- Legacy persistence abstractions removed in favor of `SessionStore` + `flush/2`:
+  - `AgentSessionManager.Ports.DurableStore`
+  - `AgentSessionManager.Adapters.NoopStore`
+  - `AgentSessionManager.Adapters.SessionStoreBridge`
+- Legacy raw `SQLiteSessionStore` replaced by `EctoSessionStore` + `ecto_sqlite3`
+- Legacy event emitter path removed; event build/validation/persistence flows through `EventBuilder` + `EventPipeline`
+
+See `guides/migrating_to_v0.8.md` for migration details.
 
 ### Documentation
 
 - Persistence guides: `persistence_overview.md`, `ecto_session_store.md`, `sqlite_session_store.md`, `s3_artifact_store.md`, `composite_store.md`, `event_schema_versioning.md`, `custom_persistence_guide.md`, `migrating_to_v0.8.md`
 - Persistence module group and guides added to HexDocs configuration
 - Update `README.md` and persistence overview with per-event persistence and `flush/2` finalization details
+- Document V2 migration prerequisites + V3 foreign-key migration expectations for SQLite and PostgreSQL flows
+- Document cursor semantics/order requirements, SessionStore ref shapes (`pid` vs `{Module, context}`), and optional SDK dependency behavior
 - Update `examples/README.md` with all persistence adapter and query/maintenance examples
 
 ## [0.7.0] - 2026-02-09

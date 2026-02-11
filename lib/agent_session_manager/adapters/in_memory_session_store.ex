@@ -167,8 +167,8 @@ defmodule AgentSessionManager.Adapters.InMemorySessionStore do
       sessions: sessions_table,
       runs: runs_table,
       event_ids: event_ids_table,
-      # Append-only event log - list of events in insertion order (newest last)
-      events: [],
+      # Append-only event log queue - preserves insertion order with O(1) appends
+      events: :queue.new(),
       # Latest assigned sequence number per session_id
       session_sequences: %{},
       # Waiters for long-poll: [{from, session_id, opts, timer_ref}]
@@ -291,7 +291,7 @@ defmodule AgentSessionManager.Adapters.InMemorySessionStore do
 
   def handle_call({:get_events, session_id, opts}, from, state) do
     events =
-      state.events
+      queue_to_events(state.events)
       |> Enum.filter(&(&1.session_id == session_id))
       |> filter_events(opts)
 
@@ -450,7 +450,7 @@ defmodule AgentSessionManager.Adapters.InMemorySessionStore do
     {resolved, remaining} =
       Enum.split_with(state.waiters, fn {_from, session_id, opts, _ref} ->
         events =
-          state.events
+          queue_to_events(state.events)
           |> Enum.filter(&(&1.session_id == session_id))
           |> filter_events(opts)
 
@@ -461,7 +461,7 @@ defmodule AgentSessionManager.Adapters.InMemorySessionStore do
       Process.cancel_timer(timer_ref)
 
       events =
-        state.events
+        queue_to_events(state.events)
         |> Enum.filter(&(&1.session_id == session_id))
         |> filter_events(opts)
 
@@ -485,7 +485,7 @@ defmodule AgentSessionManager.Adapters.InMemorySessionStore do
 
         new_state = %{
           state
-          | events: state.events ++ [sequenced_event],
+          | events: :queue.in(sequenced_event, state.events),
             session_sequences: Map.put(state.session_sequences, event.session_id, next_sequence)
         }
 
@@ -515,4 +515,6 @@ defmodule AgentSessionManager.Adapters.InMemorySessionStore do
       {:error, Error.new(:validation_error, "events must be Event structs")}
     end
   end
+
+  defp queue_to_events(events_queue), do: :queue.to_list(events_queue)
 end

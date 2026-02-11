@@ -13,11 +13,11 @@ These are defined by separate behaviour contracts (`SessionStore` and `ArtifactS
 
 ## Configuration
 
-The composite store requires two already-started backend processes:
+The composite store requires one SessionStore reference and one started ArtifactStore backend:
 
 | Option | Required | Description |
 |--------|----------|-------------|
-| `:session_store` | Yes | A pid or registered name of a running `SessionStore` implementation |
+| `:session_store` | Yes | Any `SessionStore` ref (pid/name or `{Module, context}`) |
 | `:artifact_store` | Yes | A pid or registered name of a running `ArtifactStore` implementation |
 | `:name` | No | Optional registered name for the composite GenServer |
 
@@ -32,8 +32,8 @@ alias AgentSessionManager.Adapters.{
   S3ArtifactStore
 }
 
-# Start the session backend
-{:ok, session_store} = EctoSessionStore.start_link(repo: MyApp.Repo)
+# Session backend can be module-backed
+session_store = {EctoSessionStore, MyApp.Repo}
 
 # Start the artifact backend
 {:ok, s3} = S3ArtifactStore.start_link(
@@ -165,11 +165,13 @@ alias AgentSessionManager.Adapters.{
 
 ## Notes and Caveats
 
-- **Start order matters.** Both backend processes must be running before you call `CompositeSessionStore.start_link/1`. If either pid is dead, calls through the composite will fail with a GenServer exit.
+- **Start order matters.** The artifact backend must be running before `CompositeSessionStore.start_link/1`. For session backends, module refs (e.g. `{EctoSessionStore, Repo}`) do not require a dedicated process.
 
 - **No cross-store transactions.** The composite delegates independently to each backend. There is no atomicity guarantee across a session write and an artifact write. If you need both to succeed or fail together, handle that in your application layer.
 
 - **Error passthrough.** Errors from the underlying backends are returned as-is. A `:storage_error` from the SessionStore or S3 propagates directly through the composite without wrapping.
+
+- **Artifact crash isolation.** Artifact backend crashes are isolated and returned as `{:error, %Error{code: :storage_error}}`; session operations remain available.
 
 - **Supervision.** In a supervision tree, start the backends as children before the composite, or use a dedicated supervisor that guarantees start order.
 

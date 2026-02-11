@@ -41,12 +41,15 @@ defmodule AgentSessionManager.Persistence.ArtifactRegistryTest do
   end
 
   setup do
-    ArtifactTestRepo.delete_all(
-      AgentSessionManager.Adapters.EctoSessionStore.Schemas.ArtifactSchema
-    )
+    ArtifactTestRepo.delete_all(ArtifactRegistry.ArtifactSchema)
 
     {:ok, registry} = ArtifactRegistry.start_link(repo: ArtifactTestRepo)
     %{registry: registry}
+  end
+
+  test "uses ArtifactRegistry local schema module" do
+    assert Code.ensure_loaded?(ArtifactRegistry.ArtifactSchema)
+    assert function_exported?(ArtifactRegistry.ArtifactSchema, :changeset, 2)
   end
 
   defp artifact_attrs(overrides \\ %{}) do

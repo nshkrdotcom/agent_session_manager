@@ -12,6 +12,41 @@ defmodule AgentSessionManager.Adapters.CompositeSessionStoreTest do
 
   import AgentSessionManager.Test.Fixtures
 
+  defmodule CrashingArtifactStore do
+    use GenServer
+
+    @behaviour AgentSessionManager.Ports.ArtifactStore
+
+    @impl AgentSessionManager.Ports.ArtifactStore
+    def put(store, key, data, opts \\ []),
+      do: GenServer.call(store, {:put_artifact, key, data, opts})
+
+    @impl AgentSessionManager.Ports.ArtifactStore
+    def get(store, key, opts \\ []), do: GenServer.call(store, {:get_artifact, key, opts})
+
+    @impl AgentSessionManager.Ports.ArtifactStore
+    def delete(store, key, opts \\ []),
+      do: GenServer.call(store, {:delete_artifact, key, opts})
+
+    def start_link(opts \\ []), do: GenServer.start_link(__MODULE__, opts)
+
+    @impl GenServer
+    def init(_opts), do: {:ok, %{}}
+
+    @impl GenServer
+    def handle_call({:put_artifact, _key, _data, _opts}, _from, _state) do
+      raise "simulated artifact store crash"
+    end
+
+    def handle_call({:get_artifact, _key, _opts}, _from, _state) do
+      raise "simulated artifact store crash"
+    end
+
+    def handle_call({:delete_artifact, _key, _opts}, _from, _state) do
+      raise "simulated artifact store crash"
+    end
+  end
+
   setup _ctx do
     {:ok, session_store} = InMemorySessionStore.start_link()
 
@@ -124,6 +159,33 @@ defmodule AgentSessionManager.Adapters.CompositeSessionStoreTest do
       {:ok, latest} = SessionStore.get_latest_sequence(store, e1.session_id)
       assert latest == 2
     end
+
+    test "direct get_events/3 call respects wait_timeout_ms timeout window", %{
+      composite: composite,
+      session_store: session_store
+    } do
+      session_id = "ses_wait_timeout_direct"
+      test_pid = self()
+
+      task =
+        Task.async(fn ->
+          send(test_pid, :reader_started)
+
+          CompositeSessionStore.get_events(composite, session_id,
+            after: 0,
+            wait_timeout_ms: 5_200
+          )
+        end)
+
+      assert_receive :reader_started, 1_000
+      Process.sleep(5_050)
+
+      event = build_event(index: 3301, session_id: session_id, type: :session_created)
+      {:ok, _} = SessionStore.append_event_with_sequence(session_store, event)
+
+      assert {:ok, [received]} = Task.await(task, 7_000)
+      assert received.session_id == session_id
+    end
   end
 
   # ============================================================================
@@ -172,6 +234,32 @@ defmodule AgentSessionManager.Adapters.CompositeSessionStoreTest do
       # Delete session doesn't affect artifact
       :ok = SessionStore.delete_session(store, session.id)
       {:ok, _} = ArtifactStore.get(store, "snapshot-#{session.id}")
+    end
+
+    @tag capture_log: true
+    test "artifact store crashes are isolated from session store operations" do
+      {:ok, session_store} = InMemorySessionStore.start_link()
+      {:ok, artifact_store} = GenServer.start(CrashingArtifactStore, [])
+
+      {:ok, composite} =
+        CompositeSessionStore.start_link(
+          session_store: session_store,
+          artifact_store: artifact_store
+        )
+
+      cleanup_on_exit(fn -> safe_stop(composite) end)
+      cleanup_on_exit(fn -> safe_stop(session_store) end)
+      cleanup_on_exit(fn -> safe_stop(artifact_store) end)
+
+      assert {:error, %Error{code: :storage_error}} =
+               ArtifactStore.put(composite, "boom", "data")
+
+      assert Process.alive?(composite)
+
+      session = build_session(index: 8801, agent_id: "still-works")
+      assert :ok = SessionStore.save_session(composite, session)
+      assert {:ok, retrieved} = SessionStore.get_session(composite, session.id)
+      assert retrieved.agent_id == "still-works"
     end
   end
 end

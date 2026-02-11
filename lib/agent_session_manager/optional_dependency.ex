@@ -6,7 +6,7 @@ defmodule AgentSessionManager.OptionalDependency do
   @spec error(atom(), module(), atom()) :: Error.t()
   def error(dependency, module, operation) when is_atom(dependency) and is_atom(operation) do
     Error.new(
-      :storage_connection_failed,
+      :dependency_not_available,
       "Optional dependency #{inspect(dependency)} is required for #{inspect(module)}",
       details: %{
         dependency: dependency,

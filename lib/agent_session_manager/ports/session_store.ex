@@ -38,7 +38,8 @@ defmodule AgentSessionManager.Ports.SessionStore do
 
   alias AgentSessionManager.Core.{Error, Event, Run, Session}
 
-  @type store :: GenServer.server() | pid() | atom()
+  @type context :: term()
+  @type store :: {module(), context()} | GenServer.server() | pid() | atom()
   @type session_id :: String.t()
   @type run_id :: String.t()
   @type filter_opts :: keyword()
@@ -361,7 +362,7 @@ defmodule AgentSessionManager.Ports.SessionStore do
   """
   @spec save_session(store(), Session.t()) :: :ok | {:error, Error.t()}
   def save_session(store, session) do
-    GenServer.call(store, {:save_session, session})
+    dispatch(store, :save_session, [session], {:save_session, session})
   end
 
   @doc """
@@ -369,7 +370,7 @@ defmodule AgentSessionManager.Ports.SessionStore do
   """
   @spec get_session(store(), session_id()) :: {:ok, Session.t()} | {:error, Error.t()}
   def get_session(store, session_id) do
-    GenServer.call(store, {:get_session, session_id})
+    dispatch(store, :get_session, [session_id], {:get_session, session_id})
   end
 
   @doc """
@@ -377,7 +378,7 @@ defmodule AgentSessionManager.Ports.SessionStore do
   """
   @spec list_sessions(store(), filter_opts()) :: {:ok, [Session.t()]}
   def list_sessions(store, opts \\ []) do
-    GenServer.call(store, {:list_sessions, opts})
+    dispatch(store, :list_sessions, [opts], {:list_sessions, opts})
   end
 
   @doc """
@@ -385,7 +386,7 @@ defmodule AgentSessionManager.Ports.SessionStore do
   """
   @spec delete_session(store(), session_id()) :: :ok
   def delete_session(store, session_id) do
-    GenServer.call(store, {:delete_session, session_id})
+    dispatch(store, :delete_session, [session_id], {:delete_session, session_id})
   end
 
   @doc """
@@ -393,7 +394,7 @@ defmodule AgentSessionManager.Ports.SessionStore do
   """
   @spec save_run(store(), Run.t()) :: :ok | {:error, Error.t()}
   def save_run(store, run) do
-    GenServer.call(store, {:save_run, run})
+    dispatch(store, :save_run, [run], {:save_run, run})
   end
 
   @doc """
@@ -401,7 +402,7 @@ defmodule AgentSessionManager.Ports.SessionStore do
   """
   @spec get_run(store(), run_id()) :: {:ok, Run.t()} | {:error, Error.t()}
   def get_run(store, run_id) do
-    GenServer.call(store, {:get_run, run_id})
+    dispatch(store, :get_run, [run_id], {:get_run, run_id})
   end
 
   @doc """
@@ -409,7 +410,7 @@ defmodule AgentSessionManager.Ports.SessionStore do
   """
   @spec list_runs(store(), session_id(), filter_opts()) :: {:ok, [Run.t()]}
   def list_runs(store, session_id, opts \\ []) do
-    GenServer.call(store, {:list_runs, session_id, opts})
+    dispatch(store, :list_runs, [session_id, opts], {:list_runs, session_id, opts})
   end
 
   @doc """
@@ -417,7 +418,7 @@ defmodule AgentSessionManager.Ports.SessionStore do
   """
   @spec get_active_run(store(), session_id()) :: {:ok, Run.t() | nil}
   def get_active_run(store, session_id) do
-    GenServer.call(store, {:get_active_run, session_id})
+    dispatch(store, :get_active_run, [session_id], {:get_active_run, session_id})
   end
 
   @doc """
@@ -425,7 +426,7 @@ defmodule AgentSessionManager.Ports.SessionStore do
   """
   @spec append_event(store(), Event.t()) :: :ok | {:error, Error.t()}
   def append_event(store, event) do
-    GenServer.call(store, {:append_event, event})
+    dispatch(store, :append_event, [event], {:append_event, event})
   end
 
   @doc """
@@ -434,7 +435,12 @@ defmodule AgentSessionManager.Ports.SessionStore do
   @spec append_event_with_sequence(store(), Event.t()) ::
           {:ok, Event.t()} | {:error, Error.t()}
   def append_event_with_sequence(store, event) do
-    GenServer.call(store, {:append_event_with_sequence, event})
+    dispatch(
+      store,
+      :append_event_with_sequence,
+      [event],
+      {:append_event_with_sequence, event}
+    )
   end
 
   @doc """
@@ -442,7 +448,7 @@ defmodule AgentSessionManager.Ports.SessionStore do
   """
   @spec append_events(store(), [Event.t()]) :: {:ok, [Event.t()]} | {:error, Error.t()}
   def append_events(store, events) do
-    GenServer.call(store, {:append_events, events})
+    dispatch(store, :append_events, [events], {:append_events, events})
   end
 
   @doc """
@@ -450,7 +456,7 @@ defmodule AgentSessionManager.Ports.SessionStore do
   """
   @spec flush(store(), execution_result()) :: :ok | {:error, Error.t()}
   def flush(store, execution_result) do
-    GenServer.call(store, {:flush, execution_result})
+    dispatch(store, :flush, [execution_result], {:flush, execution_result})
   end
 
   @doc """
@@ -462,7 +468,14 @@ defmodule AgentSessionManager.Ports.SessionStore do
   @spec get_events(store(), session_id(), filter_opts()) :: {:ok, [Event.t()]}
   def get_events(store, session_id, opts \\ []) do
     call_timeout = genserver_call_timeout(opts)
-    GenServer.call(store, {:get_events, session_id, opts}, call_timeout)
+
+    dispatch(
+      store,
+      :get_events,
+      [session_id, opts],
+      {:get_events, session_id, opts},
+      call_timeout
+    )
   end
 
   @doc """
@@ -471,7 +484,12 @@ defmodule AgentSessionManager.Ports.SessionStore do
   @spec get_latest_sequence(store(), session_id()) ::
           {:ok, non_neg_integer()} | {:error, Error.t()}
   def get_latest_sequence(store, session_id) do
-    GenServer.call(store, {:get_latest_sequence, session_id})
+    dispatch(
+      store,
+      :get_latest_sequence,
+      [session_id],
+      {:get_latest_sequence, session_id}
+    )
   end
 
   # When wait_timeout_ms is provided, the GenServer.call timeout must
@@ -481,5 +499,16 @@ defmodule AgentSessionManager.Ports.SessionStore do
       wait when is_integer(wait) and wait > 0 -> wait + 5_000
       _ -> 5_000
     end
+  end
+
+  defp dispatch(store, function_name, args, legacy_call, timeout \\ 5_000)
+
+  defp dispatch({module, context}, function_name, args, _legacy_call, _timeout)
+       when is_atom(module) do
+    apply(module, function_name, [context | args])
+  end
+
+  defp dispatch(store, _function_name, _args, legacy_call, timeout) do
+    GenServer.call(store, legacy_call, timeout)
   end
 end

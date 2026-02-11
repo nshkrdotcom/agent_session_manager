@@ -24,7 +24,14 @@ AgentSessionManager pulls in a small set of runtime dependencies:
 
 - `telemetry` -- for observability hooks
 - `jason` -- for JSON encoding/decoding
-- `claude_agent_sdk`, `codex_sdk`, and `amp_sdk` -- the underlying provider SDKs
+
+Provider SDK dependencies are optional and only needed when you use the matching adapter:
+
+- `claude_agent_sdk` -- required for `ClaudeAdapter`
+- `codex_sdk` -- required for `CodexAdapter`
+- `amp_sdk` -- required for `AmpAdapter`
+
+If you are running a persistence-only stack, add only `agent_session_manager` plus your chosen persistence deps (for example `ecto_sql` + `ecto_sqlite3`).
 
 ## Quick One-Shot Usage
 

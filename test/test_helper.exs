@@ -1,6 +1,3 @@
-# Suppress Ecto debug SQL logging during tests
-Logger.configure(level: :warning)
-
 # Configure ExUnit
 ExUnit.start(exclude: [:skip, :load_test])
 

@@ -119,7 +119,7 @@ if Code.ensure_loaded?(Ecto.Query) do
           from(s in SessionSchema,
             where: is_nil(s.deleted_at),
             where: s.status not in ^exempt_statuses,
-            where: s.created_at < ^cutoff
+            where: s.updated_at < ^cutoff
           )
 
         # Filter out exempt tags in Elixir (SQLite array compat)
@@ -170,18 +170,39 @@ if Code.ensure_loaded?(Ecto.Query) do
             )
           )
 
-        Enum.each(sessions, fn session_id ->
-          repo.delete_all(from(e in EventSchema, where: e.session_id == ^session_id))
-          repo.delete_all(from(r in RunSchema, where: r.session_id == ^session_id))
-          repo.delete_all(from(a in ArtifactSchema, where: a.session_id == ^session_id))
-          repo.delete_all(from(sq in SessionSequenceSchema, where: sq.session_id == ^session_id))
-          repo.delete_all(from(s in SessionSchema, where: s.id == ^session_id))
-        end)
-
-        {:ok, length(sessions)}
+        delete_hard_expired_sessions(repo, sessions)
       end
     rescue
       e -> {:error, Error.new(:maintenance_error, Exception.message(e))}
+    end
+
+    defp delete_hard_expired_sessions(repo, session_ids) do
+      Enum.reduce_while(session_ids, {:ok, 0}, fn session_id, {:ok, deleted_count} ->
+        case delete_session_cascade(repo, session_id) do
+          :ok ->
+            {:cont, {:ok, deleted_count + 1}}
+
+          {:error, %Error{} = error} ->
+            {:halt, {:error, error}}
+        end
+      end)
+    end
+
+    defp delete_session_cascade(repo, session_id) do
+      case repo.transaction(fn ->
+             repo.delete_all(from(e in EventSchema, where: e.session_id == ^session_id))
+             repo.delete_all(from(r in RunSchema, where: r.session_id == ^session_id))
+             repo.delete_all(from(a in ArtifactSchema, where: a.session_id == ^session_id))
+
+             repo.delete_all(
+               from(sq in SessionSequenceSchema, where: sq.session_id == ^session_id)
+             )
+
+             repo.delete_all(from(s in SessionSchema, where: s.id == ^session_id))
+           end) do
+        {:ok, _} -> :ok
+        {:error, reason} -> {:error, Error.new(:maintenance_error, inspect(reason))}
+      end
     end
 
     # ============================================================================
@@ -274,7 +295,7 @@ if Code.ensure_loaded?(Ecto.Query) do
       # Never prune: session_created, run_started (first), run_completed (last), error_occurred, run_failed
       protected_types =
         Enum.map(
-          [:session_created, :error_occurred, :run_failed],
+          [:session_created, :run_started, :run_completed, :error_occurred, :run_failed],
           &to_string/1
         )
 
@@ -382,14 +403,14 @@ if Code.ensure_loaded?(Ecto.Query) do
             left_join: e in EventSchema,
             on: sq.session_id == e.session_id,
             group_by: [sq.session_id, sq.last_sequence],
-            having: sq.last_sequence != count(e.id) and count(e.id) > 0,
-            select: {sq.session_id, sq.last_sequence, count(e.id)}
+            having: sq.last_sequence != max(e.sequence_number) and count(e.id) > 0,
+            select: {sq.session_id, sq.last_sequence, max(e.sequence_number)}
           )
         )
 
       issues =
-        Enum.reduce(mismatches, issues, fn {sid, expected, actual}, acc ->
-          acc ++ ["Sequence mismatch for #{sid}: counter=#{expected}, event_count=#{actual}"]
+        Enum.reduce(mismatches, issues, fn {sid, expected, actual_max}, acc ->
+          acc ++ ["Sequence mismatch for #{sid}: counter=#{expected}, max_sequence=#{actual_max}"]
         end)
 
       {:ok, issues}

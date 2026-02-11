@@ -25,6 +25,11 @@ Design guarantees:
 - Atomic sequence assignment for persisted events
 - Store-level thread safety
 
+Store references can be either:
+
+- a GenServer pid/name (`InMemorySessionStore`, `CompositeSessionStore`, etc.)
+- a module-backed ref (`{Module, context}`), for example `{EctoSessionStore, MyApp.Repo}`
+
 ### ArtifactStore
 
 `AgentSessionManager.Ports.ArtifactStore` stores binary artifacts.
@@ -92,7 +97,7 @@ policy = RetentionPolicy.new(max_completed_session_age_days: 90)
 - Recommended default for production and for durable local SQLite use
 
 ```elixir
-{:ok, store} = EctoSessionStore.start_link(repo: MyApp.Repo)
+store = {EctoSessionStore, MyApp.Repo}
 ```
 
 ### S3ArtifactStore
@@ -127,6 +132,17 @@ maint = {EctoMaintenance, MyApp.Repo}
 {:ok, issues} = Maintenance.health_check(maint)
 ```
 
+## QueryAPI Cursor Semantics
+
+`QueryAPI` cursors are opaque tokens tied to both resource type and `:order_by`.
+
+- Passing a cursor from one ordering into another returns `{:error, %Error{code: :invalid_cursor}}`
+- Invalid/tampered cursors return `{:error, %Error{code: :invalid_cursor}}`
+- Supported cursor orderings:
+  - sessions: `:created_at_asc`, `:created_at_desc`, `:updated_at_desc`
+  - runs: `:started_at_asc`, `:started_at_desc` (`:token_usage_desc` does not support cursors)
+  - events: `:sequence_asc`, `:timestamp_asc`, `:timestamp_desc`
+
 ## Event Persistence Flow
 
 `EventPipeline` enforces event build/validation and persistence:
@@ -158,5 +174,3 @@ Pass a SessionStore reference into `SessionManager` operations:
 ```elixir
 {:ok, result} = SessionManager.run_once(store, adapter, %{messages: messages})
 ```
-
-All store adapters are GenServers and can be supervised and registered by name.

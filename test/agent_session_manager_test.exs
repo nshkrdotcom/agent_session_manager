@@ -81,4 +81,19 @@ defmodule AgentSessionManagerTest do
       assert %Error{code: :test, message: "test"} = %Error{code: :test, message: "test"}
     end
   end
+
+  describe "persistence convenience refs" do
+    test "builds store/query/maintenance refs from repo context" do
+      repo = AgentSessionManager.TestRepo
+
+      assert AgentSessionManager.session_store(repo) ==
+               {AgentSessionManager.Adapters.EctoSessionStore, repo}
+
+      assert AgentSessionManager.query_api(repo) ==
+               {AgentSessionManager.Adapters.EctoQueryAPI, repo}
+
+      assert AgentSessionManager.maintenance(repo) ==
+               {AgentSessionManager.Adapters.EctoMaintenance, repo}
+    end
+  end
 end

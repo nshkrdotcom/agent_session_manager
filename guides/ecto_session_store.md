@@ -24,10 +24,14 @@ end
 You must have an Ecto Repo configured in your application. If you do not have
 one yet, follow the [Ecto getting started guide](https://hexdocs.pm/ecto/getting-started.html).
 
-## Running the Migration
+## Running the Migrations
 
-The adapter includes a migration module that creates the required tables. Generate
-a migration in your project and delegate to it:
+`EctoSessionStore` requires both migration modules:
+
+- `Migration` (base schema)
+- `MigrationV2` (soft-delete/provider/correlation/artifact columns)
+
+Generate migrations in your project and delegate to both modules in order:
 
 ```bash
 mix ecto.gen.migration add_agent_session_manager
@@ -55,6 +59,28 @@ Run the migration:
 mix ecto.migrate
 ```
 
+Then add and run the V2 migration:
+
+```bash
+mix ecto.gen.migration add_agent_session_manager_v2
+```
+
+```elixir
+defmodule MyApp.Repo.Migrations.AddAgentSessionManagerV2 do
+  use Ecto.Migration
+
+  def up do
+    AgentSessionManager.Adapters.EctoSessionStore.MigrationV2.up()
+  end
+
+  def down do
+    AgentSessionManager.Adapters.EctoSessionStore.MigrationV2.down()
+  end
+end
+```
+
+If V2 is missing, `EctoSessionStore.start_link/1` fails fast with `:migration_required`.
+
 ### Tables Created
 
 The migration creates four tables:
@@ -71,13 +97,18 @@ Indexes are added for status, agent_id, session_id, type, and a unique index on
 
 ## Configuration
 
-Start the adapter with a reference to your Ecto Repo:
+Use a module-backed store reference for best concurrency:
 
 ```elixir
 alias AgentSessionManager.Adapters.EctoSessionStore
 
-# Basic usage
-{:ok, store} = EctoSessionStore.start_link(repo: MyApp.Repo)
+store_ref = {EctoSessionStore, MyApp.Repo}
+```
+
+`start_link/1` remains available for supervision and backward compatibility:
+
+```elixir
+alias AgentSessionManager.Adapters.EctoSessionStore
 
 # With a registered name
 {:ok, store} = EctoSessionStore.start_link(
@@ -196,7 +227,7 @@ sequenced.sequence_number
 ```elixir
 alias AgentSessionManager.SessionManager
 
-{:ok, store} = EctoSessionStore.start_link(repo: MyApp.Repo)
+store = {EctoSessionStore, MyApp.Repo}
 {:ok, adapter} = ClaudeAdapter.start_link(api_key: api_key)
 
 {:ok, result} = SessionManager.run_once(store, adapter, %{
@@ -206,7 +237,7 @@ alias AgentSessionManager.SessionManager
 
 ## Schema V2 Migration
 
-Version 0.8.0 introduces a V2 migration that adds persistence redesign columns.
+Version 0.8.0 introduces the required V2 migration that adds persistence redesign columns.
 Generate a second migration and delegate to `MigrationV2`:
 
 ```bash

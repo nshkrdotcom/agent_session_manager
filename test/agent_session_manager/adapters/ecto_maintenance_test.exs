@@ -4,12 +4,39 @@ defmodule AgentSessionManager.Adapters.EctoMaintenanceTest do
   alias AgentSessionManager.Adapters.{EctoMaintenance, EctoSessionStore}
   alias AgentSessionManager.Adapters.EctoSessionStore.Migration
   alias AgentSessionManager.Adapters.EctoSessionStore.MigrationV2
-  alias AgentSessionManager.Core.{Event, Session}
+
+  alias AgentSessionManager.Adapters.EctoSessionStore.Schemas.{
+    ArtifactSchema,
+    EventSchema,
+    RunSchema,
+    SessionSequenceSchema
+  }
+
+  alias AgentSessionManager.Core.{Event, Run, Session}
   alias AgentSessionManager.Persistence.RetentionPolicy
   alias AgentSessionManager.Ports.{Maintenance, SessionStore}
 
   defmodule MaintTestRepo do
     use Ecto.Repo, otp_app: :agent_session_manager, adapter: Ecto.Adapters.SQLite3
+  end
+
+  defmodule RepoCrashAfterFirstDelete do
+    @real AgentSessionManager.Adapters.EctoMaintenanceTest.MaintTestRepo
+
+    def transaction(fun), do: @real.transaction(fun)
+    def all(query), do: @real.all(query)
+
+    def delete_all(query) do
+      key = {__MODULE__, :delete_count}
+      delete_count = Process.get(key, 0)
+      Process.put(key, delete_count + 1)
+
+      if delete_count == 0 do
+        @real.delete_all(query)
+      else
+        raise "simulated delete failure"
+      end
+    end
   end
 
   @db_path Path.join(System.tmp_dir!(), "asm_maintenance_test.db")
@@ -151,6 +178,20 @@ defmodule AgentSessionManager.Adapters.EctoMaintenanceTest do
       policy = RetentionPolicy.new(max_completed_session_age_days: :infinity)
       {:ok, 0} = Maintenance.soft_delete_expired_sessions(maint, policy)
     end
+
+    test "uses updated_at as completion proxy for retention cutoff", %{store: store, maint: maint} do
+      session = seed_old_session(store, "ses_recently_updated", 120, status: :completed)
+      recent_update = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+
+      :ok = SessionStore.save_session(store, %{session | updated_at: recent_update})
+
+      policy = RetentionPolicy.new(max_completed_session_age_days: 90)
+      {:ok, count} = Maintenance.soft_delete_expired_sessions(maint, policy)
+      assert count == 0
+
+      {:ok, refreshed} = SessionStore.get_session(store, "ses_recently_updated")
+      assert is_nil(refreshed.deleted_at)
+    end
   end
 
   # ============================================================================
@@ -181,6 +222,50 @@ defmodule AgentSessionManager.Adapters.EctoMaintenanceTest do
     test "returns 0 when policy is infinity", %{maint: maint} do
       policy = RetentionPolicy.new(hard_delete_after_days: :infinity)
       {:ok, 0} = Maintenance.hard_delete_expired_sessions(maint, policy)
+    end
+
+    test "rolls back all deletes when one delete in the cascade fails", %{store: store} do
+      session = seed_session(store, "ses_txn", status: :completed)
+
+      old_deleted_at =
+        DateTime.utc_now()
+        |> DateTime.add(-60, :day)
+        |> DateTime.truncate(:microsecond)
+
+      :ok = SessionStore.save_session(store, %{session | deleted_at: old_deleted_at})
+
+      {:ok, run} = Run.new(%{id: "run_txn", session_id: session.id})
+      :ok = SessionStore.save_run(store, run)
+
+      seed_event(store, session.id, :run_started)
+
+      now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+
+      MaintTestRepo.insert!(%ArtifactSchema{
+        id: "art_txn",
+        session_id: session.id,
+        run_id: run.id,
+        key: "artifacts/#{session.id}",
+        content_type: "application/octet-stream",
+        byte_size: 10,
+        checksum_sha256: String.duplicate("b", 64),
+        storage_backend: "file",
+        storage_ref: "file:///tmp/art_txn",
+        metadata: %{},
+        created_at: now
+      })
+
+      Process.put({RepoCrashAfterFirstDelete, :delete_count}, 0)
+
+      maint = {EctoMaintenance, RepoCrashAfterFirstDelete}
+      policy = RetentionPolicy.new(hard_delete_after_days: 30)
+
+      assert {:error, _} = Maintenance.hard_delete_expired_sessions(maint, policy)
+
+      assert MaintTestRepo.aggregate(EventSchema, :count, :id) == 1
+      assert MaintTestRepo.aggregate(RunSchema, :count, :id) == 1
+      assert MaintTestRepo.aggregate(ArtifactSchema, :count, :id) == 1
+      assert MaintTestRepo.aggregate(SessionSequenceSchema, :count, :session_id) == 1
     end
   end
 
@@ -216,6 +301,28 @@ defmodule AgentSessionManager.Adapters.EctoMaintenanceTest do
       policy = RetentionPolicy.new(max_events_per_session: :infinity)
       {:ok, 0} = Maintenance.prune_session_events(maint, "ses_inf", policy)
     end
+
+    test "preserves run_started and run_completed while pruning oldest events", %{
+      store: store,
+      maint: maint
+    } do
+      seed_session(store, "ses_keep_boundary_events")
+      seed_event(store, "ses_keep_boundary_events", :run_started)
+      seed_event(store, "ses_keep_boundary_events", :message_received)
+      seed_event(store, "ses_keep_boundary_events", :tool_call_started)
+      seed_event(store, "ses_keep_boundary_events", :message_streamed)
+      seed_event(store, "ses_keep_boundary_events", :run_completed)
+
+      policy = RetentionPolicy.new(max_events_per_session: 2)
+      {:ok, pruned} = Maintenance.prune_session_events(maint, "ses_keep_boundary_events", policy)
+      assert pruned > 0
+
+      {:ok, remaining} = SessionStore.get_events(store, "ses_keep_boundary_events")
+      remaining_types = Enum.map(remaining, & &1.type)
+
+      assert :run_started in remaining_types
+      assert :run_completed in remaining_types
+    end
   end
 
   # ============================================================================
@@ -228,7 +335,22 @@ defmodule AgentSessionManager.Adapters.EctoMaintenanceTest do
       seed_event(store, "ses_healthy", :run_started)
 
       {:ok, issues} = Maintenance.health_check(maint)
-      assert is_list(issues)
+      assert issues == []
+    end
+
+    test "does not report sequence mismatch after event pruning", %{store: store, maint: maint} do
+      seed_session(store, "ses_pruned")
+
+      for _ <- 1..8 do
+        seed_event(store, "ses_pruned", :message_streamed)
+      end
+
+      prune_policy = RetentionPolicy.new(max_events_per_session: 3)
+      {:ok, pruned} = Maintenance.prune_session_events(maint, "ses_pruned", prune_policy)
+      assert pruned > 0
+
+      {:ok, issues} = Maintenance.health_check(maint)
+      assert issues == []
     end
   end
 end

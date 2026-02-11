@@ -5,6 +5,7 @@ defmodule AgentSessionManager.Adapters.EctoSessionStoreTest do
   alias AgentSessionManager.Adapters.EctoSessionStore.{Migration, MigrationV2}
 
   alias AgentSessionManager.Adapters.EctoSessionStore.Schemas.{
+    ArtifactSchema,
     EventSchema,
     RunSchema,
     SessionSchema,
@@ -51,6 +52,7 @@ defmodule AgentSessionManager.Adapters.EctoSessionStoreTest do
 
   setup _ctx do
     # Clear all data between tests using schema-based deletes for portability
+    TestRepo.delete_all(ArtifactSchema)
     TestRepo.delete_all(EventSchema)
     TestRepo.delete_all(SessionSequenceSchema)
     TestRepo.delete_all(RunSchema)
@@ -88,6 +90,16 @@ defmodule AgentSessionManager.Adapters.EctoSessionStoreTest do
 
       {:ok, retrieved} = SessionStore.get_session(store, session.id)
       assert retrieved.status == :active
+    end
+
+    test "works through SessionStore port when using {EctoSessionStore, Repo} ref" do
+      store_ref = {EctoSessionStore, TestRepo}
+      session = build_session(index: 6100, agent_id: "module-ref-agent")
+
+      assert :ok = SessionStore.save_session(store_ref, session)
+      assert {:ok, fetched} = SessionStore.get_session(store_ref, session.id)
+      assert fetched.id == session.id
+      assert fetched.agent_id == "module-ref-agent"
     end
   end
 
@@ -182,6 +194,43 @@ defmodule AgentSessionManager.Adapters.EctoSessionStoreTest do
 
     test "is idempotent - deleting non-existent session returns :ok", %{store: store} do
       :ok = SessionStore.delete_session(store, "ses_nonexistent")
+    end
+
+    test "deletes related runs, events, artifacts, and sequence counters", %{store: store} do
+      session = build_session(index: 1100)
+      :ok = SessionStore.save_session(store, session)
+
+      run = build_run(index: 1101, session_id: session.id, status: :completed)
+      :ok = SessionStore.save_run(store, run)
+
+      event = build_event(index: 1102, session_id: session.id, run_id: run.id, type: :run_started)
+      {:ok, _} = SessionStore.append_event_with_sequence(store, event)
+
+      now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+
+      TestRepo.insert!(%ArtifactSchema{
+        id: "art_1100",
+        session_id: session.id,
+        run_id: run.id,
+        key: "artifact/#{session.id}",
+        content_type: "text/plain",
+        byte_size: 42,
+        checksum_sha256: String.duplicate("a", 64),
+        storage_backend: "file",
+        storage_ref: "file:///tmp/artifact_1100",
+        metadata: %{},
+        created_at: now
+      })
+
+      assert :ok = SessionStore.delete_session(store, session.id)
+
+      assert {:error, %Error{code: :session_not_found}} =
+               SessionStore.get_session(store, session.id)
+
+      assert TestRepo.aggregate(RunSchema, :count, :id) == 0
+      assert TestRepo.aggregate(EventSchema, :count, :id) == 0
+      assert TestRepo.aggregate(SessionSequenceSchema, :count, :session_id) == 0
+      assert TestRepo.aggregate(ArtifactSchema, :count, :id) == 0
     end
   end
 
@@ -395,6 +444,24 @@ defmodule AgentSessionManager.Adapters.EctoSessionStoreTest do
       assert stored1.sequence_number == 1
       assert stored2.sequence_number == 1
     end
+
+    test "returns error for invalid event and keeps store alive", %{store: store} do
+      invalid_event = build_event(index: 1200, timestamp: nil)
+
+      assert {:error, %Error{code: :validation_error}} =
+               SessionStore.append_event_with_sequence(store, invalid_event)
+
+      assert Process.alive?(store)
+
+      valid_event =
+        build_event(
+          index: 1201,
+          session_id: invalid_event.session_id,
+          type: :session_created
+        )
+
+      assert {:ok, _stored} = SessionStore.append_event_with_sequence(store, valid_event)
+    end
   end
 
   describe "append_events/2" do
@@ -421,6 +488,29 @@ defmodule AgentSessionManager.Adapters.EctoSessionStoreTest do
 
       {:ok, events} = SessionStore.get_events(store, event.session_id)
       assert length(events) == 1
+    end
+
+    test "handles large SQLite batches by chunking insert_all calls", %{store: store} do
+      session_id = "ses_large_batch"
+      run_id = "run_large_batch"
+      event_count = 3_000
+
+      events =
+        for index <- 1..event_count do
+          build_event(
+            index: 20_000 + index,
+            session_id: session_id,
+            run_id: run_id,
+            type: :message_received,
+            data: %{index: index}
+          )
+        end
+
+      assert {:ok, stored_events} = SessionStore.append_events(store, events)
+      assert length(stored_events) == event_count
+      assert hd(stored_events).sequence_number == 1
+      assert List.last(stored_events).sequence_number == event_count
+      assert {:ok, ^event_count} = SessionStore.get_latest_sequence(store, session_id)
     end
   end
 

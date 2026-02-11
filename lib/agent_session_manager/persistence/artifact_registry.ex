@@ -1,4 +1,5 @@
-if Code.ensure_loaded?(Ecto.Query) do
+if Code.ensure_loaded?(Ecto.Query) and Code.ensure_loaded?(Ecto.Schema) and
+     Code.ensure_loaded?(Ecto.Changeset) do
   defmodule AgentSessionManager.Persistence.ArtifactRegistry do
     @moduledoc """
     Tracks artifact metadata in the `asm_artifacts` table.
@@ -33,8 +34,57 @@ if Code.ensure_loaded?(Ecto.Query) do
 
     import Ecto.Query
 
-    alias AgentSessionManager.Adapters.EctoSessionStore.Schemas.ArtifactSchema
+    alias __MODULE__.ArtifactSchema
     alias AgentSessionManager.Core.Error
+
+    defmodule ArtifactSchema do
+      @moduledoc false
+
+      use Ecto.Schema
+      import Ecto.Changeset
+
+      @primary_key {:id, :string, autogenerate: false}
+      schema "asm_artifacts" do
+        field(:session_id, :string)
+        field(:run_id, :string)
+        field(:key, :string)
+        field(:content_type, :string)
+        field(:byte_size, :integer)
+        field(:checksum_sha256, :string)
+        field(:storage_backend, :string)
+        field(:storage_ref, :string)
+        field(:metadata, :map, default: %{})
+        field(:created_at, :utc_datetime_usec)
+        field(:deleted_at, :utc_datetime_usec)
+      end
+
+      def changeset(schema, attrs) do
+        schema
+        |> cast(attrs, [
+          :id,
+          :session_id,
+          :run_id,
+          :key,
+          :content_type,
+          :byte_size,
+          :checksum_sha256,
+          :storage_backend,
+          :storage_ref,
+          :metadata,
+          :created_at,
+          :deleted_at
+        ])
+        |> validate_required([
+          :id,
+          :key,
+          :byte_size,
+          :checksum_sha256,
+          :storage_backend,
+          :storage_ref,
+          :created_at
+        ])
+      end
+    end
 
     # ============================================================================
     # Client API

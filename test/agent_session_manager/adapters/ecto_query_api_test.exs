@@ -63,9 +63,16 @@ defmodule AgentSessionManager.Adapters.EctoQueryAPITest do
     agent_id = Keyword.get(opts, :agent_id, "agent-1")
     status = Keyword.get(opts, :status, :active)
     tags = Keyword.get(opts, :tags, [])
+    created_at = Keyword.get(opts, :created_at)
+    updated_at = Keyword.get(opts, :updated_at)
 
     {:ok, session} = Session.new(%{id: id, agent_id: agent_id, tags: tags})
-    session = %{session | status: status}
+
+    session =
+      session
+      |> Map.put(:status, status)
+      |> maybe_put_datetime(:created_at, created_at)
+      |> maybe_put_datetime(:updated_at, updated_at)
 
     :ok = SessionStore.save_session(store, session)
     session
@@ -99,6 +106,7 @@ defmodule AgentSessionManager.Adapters.EctoQueryAPITest do
   defp seed_event(store, session_id, run_id, type, opts \\ []) do
     provider = Keyword.get(opts, :provider, "claude")
     correlation_id = Keyword.get(opts, :correlation_id)
+    timestamp = Keyword.get(opts, :timestamp)
 
     {:ok, event} =
       Event.new(%{
@@ -110,9 +118,19 @@ defmodule AgentSessionManager.Adapters.EctoQueryAPITest do
         data: Keyword.get(opts, :data, %{})
       })
 
+    event =
+      if timestamp do
+        %{event | timestamp: timestamp}
+      else
+        event
+      end
+
     {:ok, persisted} = SessionStore.append_event_with_sequence(store, event)
     persisted
   end
+
+  defp maybe_put_datetime(item, _field, nil), do: item
+  defp maybe_put_datetime(item, field, %DateTime{} = value), do: Map.put(item, field, value)
 
   # ============================================================================
   # search_sessions
@@ -205,6 +223,63 @@ defmodule AgentSessionManager.Adapters.EctoQueryAPITest do
       assert length(sessions) == 1
       assert hd(sessions).id == "ses_1"
     end
+
+    test "cursor pagination returns different results when cursor is provided", %{
+      store: store,
+      query: query
+    } do
+      base = ~U[2026-02-10 00:00:00.000000Z]
+      older = DateTime.add(base, 10, :second)
+      middle = DateTime.add(base, 20, :second)
+      newest = DateTime.add(base, 30, :second)
+
+      seed_session(store, "ses_old", created_at: older, updated_at: older)
+      seed_session(store, "ses_mid", created_at: middle, updated_at: middle)
+      seed_session(store, "ses_new", created_at: newest, updated_at: newest)
+
+      {:ok, %{sessions: [first], cursor: cursor}} =
+        QueryAPI.search_sessions(query, limit: 1, order_by: :updated_at_desc)
+
+      {:ok, %{sessions: [second]}} =
+        QueryAPI.search_sessions(query, limit: 1, order_by: :updated_at_desc, cursor: cursor)
+
+      refute first.id == second.id
+      assert first.id == "ses_new"
+      assert second.id == "ses_mid"
+    end
+
+    test "cursor respects created_at_desc ordering", %{store: store, query: query} do
+      base = ~U[2026-02-10 01:00:00.000000Z]
+      first_ts = DateTime.add(base, 10, :second)
+      second_ts = DateTime.add(base, 20, :second)
+      third_ts = DateTime.add(base, 30, :second)
+
+      seed_session(store, "ses_1", created_at: first_ts, updated_at: first_ts)
+      seed_session(store, "ses_2", created_at: second_ts, updated_at: second_ts)
+      seed_session(store, "ses_3", created_at: third_ts, updated_at: third_ts)
+
+      {:ok, %{sessions: [page_1], cursor: cursor}} =
+        QueryAPI.search_sessions(query, limit: 1, order_by: :created_at_desc)
+
+      {:ok, %{sessions: [page_2]}} =
+        QueryAPI.search_sessions(query, limit: 1, order_by: :created_at_desc, cursor: cursor)
+
+      assert page_1.id == "ses_3"
+      assert page_2.id == "ses_2"
+    end
+
+    test "rejects negative limits", %{query: query} do
+      assert {:error, error} = QueryAPI.search_sessions(query, limit: -1)
+      assert error.code == :validation_error
+    end
+
+    test "rejects invalid status filter values", %{query: query} do
+      assert {:error, error} = QueryAPI.search_sessions(query, status: %{bad: "value"})
+      assert error.code == :validation_error
+
+      assert {:error, error} = QueryAPI.search_sessions(query, status: :does_not_exist)
+      assert error.code == :validation_error
+    end
   end
 
   # ============================================================================
@@ -289,6 +364,29 @@ defmodule AgentSessionManager.Adapters.EctoQueryAPITest do
       assert Enum.at(runs, 0).id == "run_2"
       assert Enum.at(runs, 1).id == "run_1"
     end
+
+    test "cursor respects started_at_desc ordering", %{store: store, query: query} do
+      seed_session(store, "ses_1")
+      base = ~U[2026-02-10 02:00:00.000000Z]
+
+      seed_run(store, "ses_1", "run_1", started_at: DateTime.add(base, 10, :second))
+      seed_run(store, "ses_1", "run_2", started_at: DateTime.add(base, 20, :second))
+      seed_run(store, "ses_1", "run_3", started_at: DateTime.add(base, 30, :second))
+
+      {:ok, %{runs: [page_1], cursor: cursor}} =
+        QueryAPI.search_runs(query, limit: 1, order_by: :started_at_desc)
+
+      {:ok, %{runs: [page_2]}} =
+        QueryAPI.search_runs(query, limit: 1, order_by: :started_at_desc, cursor: cursor)
+
+      assert page_1.id == "run_3"
+      assert page_2.id == "run_2"
+    end
+
+    test "rejects unbounded limits", %{query: query} do
+      assert {:error, error} = QueryAPI.search_runs(query, limit: 100_000)
+      assert error.code == :validation_error
+    end
   end
 
   # ============================================================================
@@ -372,6 +470,47 @@ defmodule AgentSessionManager.Adapters.EctoQueryAPITest do
 
       {:ok, %{events: [event]}} = QueryAPI.search_events(query, session_ids: ["ses_1"])
       assert event.data == %{unique_key => %{nested_key => "value"}}
+    end
+
+    test "cursor respects timestamp_desc ordering", %{store: store, query: query} do
+      seed_session(store, "ses_1")
+      base = ~U[2026-02-10 03:00:00.000000Z]
+
+      seed_event(store, "ses_1", "run_1", :run_started,
+        timestamp: DateTime.add(base, 10, :second)
+      )
+
+      seed_event(store, "ses_1", "run_1", :message_received,
+        timestamp: DateTime.add(base, 20, :second)
+      )
+
+      seed_event(store, "ses_1", "run_1", :run_completed,
+        timestamp: DateTime.add(base, 30, :second)
+      )
+
+      {:ok, %{events: [page_1], cursor: cursor}} =
+        QueryAPI.search_events(query, session_ids: ["ses_1"], order_by: :timestamp_desc, limit: 1)
+
+      {:ok, %{events: [page_2]}} =
+        QueryAPI.search_events(query,
+          session_ids: ["ses_1"],
+          order_by: :timestamp_desc,
+          limit: 1,
+          cursor: cursor
+        )
+
+      assert page_1.type == :run_completed
+      assert page_2.type == :message_received
+    end
+
+    test "rejects negative limits", %{query: query} do
+      assert {:error, error} = QueryAPI.search_events(query, limit: -10)
+      assert error.code == :validation_error
+    end
+
+    test "rejects unknown event types", %{query: query} do
+      assert {:error, error} = QueryAPI.search_events(query, types: [:not_a_real_event])
+      assert error.code == :validation_error
     end
   end
 

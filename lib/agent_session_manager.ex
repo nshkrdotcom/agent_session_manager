@@ -84,4 +84,22 @@ defmodule AgentSessionManager do
   defdelegate new_capability_resolver(opts),
     to: AgentSessionManager.Core.CapabilityResolver,
     as: :new
+
+  @doc """
+  Builds a module-backed `SessionStore` reference for an Ecto repo.
+  """
+  @spec session_store(term()) :: {module(), term()}
+  def session_store(repo), do: {AgentSessionManager.Adapters.EctoSessionStore, repo}
+
+  @doc """
+  Builds a module-backed `QueryAPI` reference for an Ecto repo.
+  """
+  @spec query_api(term()) :: {module(), term()}
+  def query_api(repo), do: {AgentSessionManager.Adapters.EctoQueryAPI, repo}
+
+  @doc """
+  Builds a module-backed `Maintenance` reference for an Ecto repo.
+  """
+  @spec maintenance(term()) :: {module(), term()}
+  def maintenance(repo), do: {AgentSessionManager.Adapters.EctoMaintenance, repo}
 end

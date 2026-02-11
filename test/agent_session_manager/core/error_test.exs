@@ -139,6 +139,14 @@ defmodule AgentSessionManager.Core.ErrorTest do
       assert Error.valid_code?(:storage_connection_failed)
     end
 
+    test "dependency_not_available is a valid code" do
+      assert Error.valid_code?(:dependency_not_available)
+    end
+
+    test "migration_required is a valid code" do
+      assert Error.valid_code?(:migration_required)
+    end
+
     test "storage_write_failed is a valid code" do
       assert Error.valid_code?(:storage_write_failed)
     end

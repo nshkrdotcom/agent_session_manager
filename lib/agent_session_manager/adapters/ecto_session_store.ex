@@ -14,80 +14,181 @@ if Code.ensure_loaded?(Ecto.Query) do
 
     ## Prerequisites
 
-    Run the migration to create required tables:
+    Run both migrations to create required tables and columns:
 
         AgentSessionManager.Adapters.EctoSessionStore.Migration.up()
+        AgentSessionManager.Adapters.EctoSessionStore.MigrationV2.up()
 
-    See `AgentSessionManager.Adapters.EctoSessionStore.Migration` for details.
+    See `AgentSessionManager.Adapters.EctoSessionStore.Migration` and
+    `AgentSessionManager.Adapters.EctoSessionStore.MigrationV2` for details.
     """
 
     use GenServer
 
     import Ecto.Query
+    alias Ecto.Adapters.SQL
 
     @behaviour AgentSessionManager.Ports.SessionStore
 
+    alias AgentSessionManager.Adapters.EctoSessionStore.Converters
     alias AgentSessionManager.Core.{Error, Event, Run, Serialization, Session}
     alias AgentSessionManager.Ports.SessionStore
 
     alias AgentSessionManager.Adapters.EctoSessionStore.Schemas.{
+      ArtifactSchema,
       EventSchema,
       RunSchema,
       SessionSchema,
       SessionSequenceSchema
     }
 
+    @required_v2_columns [
+      {"asm_sessions", "deleted_at"},
+      {"asm_runs", "provider"},
+      {"asm_events", "correlation_id"}
+    ]
+    @sqlite_max_bind_params 32_766
+    @sqlite_busy_retry_attempts 25
+    @sqlite_busy_retry_sleep_ms 10
+
     # ============================================================================
     # Client API (SessionStore behaviour)
     # ============================================================================
 
     @impl SessionStore
-    def save_session(store, session), do: GenServer.call(store, {:save_session, session})
+    def save_session(store, session) do
+      if repo_context?(store) do
+        case do_save_session(store, session) do
+          {:ok, _} -> :ok
+          {:error, reason} -> {:error, reason}
+        end
+      else
+        GenServer.call(store, {:save_session, session})
+      end
+    end
 
     @impl SessionStore
-    def get_session(store, session_id), do: GenServer.call(store, {:get_session, session_id})
+    def get_session(store, session_id) do
+      if repo_context?(store) do
+        do_get_session(store, session_id)
+      else
+        GenServer.call(store, {:get_session, session_id})
+      end
+    end
 
     @impl SessionStore
-    def list_sessions(store, opts \\ []), do: GenServer.call(store, {:list_sessions, opts})
+    def list_sessions(store, opts \\ []) do
+      if repo_context?(store) do
+        do_list_sessions(store, opts)
+      else
+        GenServer.call(store, {:list_sessions, opts})
+      end
+    end
 
     @impl SessionStore
-    def delete_session(store, session_id),
-      do: GenServer.call(store, {:delete_session, session_id})
+    def delete_session(store, session_id) do
+      if repo_context?(store) do
+        do_delete_session(store, session_id)
+      else
+        GenServer.call(store, {:delete_session, session_id})
+      end
+    end
 
     @impl SessionStore
-    def save_run(store, run), do: GenServer.call(store, {:save_run, run})
+    def save_run(store, run) do
+      if repo_context?(store) do
+        case do_save_run(store, run) do
+          {:ok, _} -> :ok
+          {:error, reason} -> {:error, reason}
+        end
+      else
+        GenServer.call(store, {:save_run, run})
+      end
+    end
 
     @impl SessionStore
-    def get_run(store, run_id), do: GenServer.call(store, {:get_run, run_id})
+    def get_run(store, run_id) do
+      if repo_context?(store) do
+        do_get_run(store, run_id)
+      else
+        GenServer.call(store, {:get_run, run_id})
+      end
+    end
 
     @impl SessionStore
-    def list_runs(store, session_id, opts \\ []),
-      do: GenServer.call(store, {:list_runs, session_id, opts})
+    def list_runs(store, session_id, opts \\ []) do
+      if repo_context?(store) do
+        do_list_runs(store, session_id, opts)
+      else
+        GenServer.call(store, {:list_runs, session_id, opts})
+      end
+    end
 
     @impl SessionStore
-    def get_active_run(store, session_id),
-      do: GenServer.call(store, {:get_active_run, session_id})
+    def get_active_run(store, session_id) do
+      if repo_context?(store) do
+        do_get_active_run(store, session_id)
+      else
+        GenServer.call(store, {:get_active_run, session_id})
+      end
+    end
 
     @impl SessionStore
-    def append_event(store, event), do: GenServer.call(store, {:append_event, event})
+    def append_event(store, event) do
+      if repo_context?(store) do
+        case do_append_event_with_sequence(store, event) do
+          {:ok, _stored} -> :ok
+          {:error, reason} -> {:error, reason}
+        end
+      else
+        GenServer.call(store, {:append_event, event})
+      end
+    end
 
     @impl SessionStore
-    def append_event_with_sequence(store, event),
-      do: GenServer.call(store, {:append_event_with_sequence, event})
+    def append_event_with_sequence(store, event) do
+      if repo_context?(store) do
+        do_append_event_with_sequence(store, event)
+      else
+        GenServer.call(store, {:append_event_with_sequence, event})
+      end
+    end
 
     @impl SessionStore
-    def append_events(store, events), do: GenServer.call(store, {:append_events, events})
+    def append_events(store, events) do
+      if repo_context?(store) do
+        do_append_events_with_sequence(store, events)
+      else
+        GenServer.call(store, {:append_events, events})
+      end
+    end
 
     @impl SessionStore
-    def flush(store, execution_result), do: GenServer.call(store, {:flush, execution_result})
+    def flush(store, execution_result) do
+      if repo_context?(store) do
+        do_flush(store, execution_result)
+      else
+        GenServer.call(store, {:flush, execution_result})
+      end
+    end
 
     @impl SessionStore
-    def get_events(store, session_id, opts \\ []),
-      do: GenServer.call(store, {:get_events, session_id, opts})
+    def get_events(store, session_id, opts \\ []) do
+      if repo_context?(store) do
+        do_get_events(store, session_id, opts)
+      else
+        GenServer.call(store, {:get_events, session_id, opts})
+      end
+    end
 
     @impl SessionStore
-    def get_latest_sequence(store, session_id),
-      do: GenServer.call(store, {:get_latest_sequence, session_id})
+    def get_latest_sequence(store, session_id) do
+      if repo_context?(store) do
+        do_get_latest_sequence(store, session_id)
+      else
+        GenServer.call(store, {:get_latest_sequence, session_id})
+      end
+    end
 
     # ============================================================================
     # GenServer Implementation
@@ -95,9 +196,16 @@ if Code.ensure_loaded?(Ecto.Query) do
 
     def start_link(opts) do
       repo = Keyword.fetch!(opts, :repo)
-      name = Keyword.get(opts, :name)
-      gen_opts = if name, do: [name: name], else: []
-      GenServer.start_link(__MODULE__, %{repo: repo}, gen_opts)
+
+      case ensure_required_schema(repo) do
+        :ok ->
+          name = Keyword.get(opts, :name)
+          gen_opts = if name, do: [name: name], else: []
+          GenServer.start_link(__MODULE__, %{repo: repo}, gen_opts)
+
+        {:error, %Error{} = error} ->
+          {:error, error}
+      end
     end
 
     @impl GenServer
@@ -114,31 +222,15 @@ if Code.ensure_loaded?(Ecto.Query) do
     end
 
     def handle_call({:get_session, session_id}, _from, %{repo: repo} = state) do
-      case repo.get(SessionSchema, session_id) do
-        nil ->
-          {:reply, {:error, Error.new(:session_not_found, "Session not found: #{session_id}")},
-           state}
-
-        schema ->
-          {:reply, {:ok, schema_to_session(schema)}, state}
-      end
+      {:reply, do_get_session(repo, session_id), state}
     end
 
     def handle_call({:list_sessions, opts}, _from, %{repo: repo} = state) do
-      sessions =
-        from(s in SessionSchema)
-        |> maybe_filter(:status, opts)
-        |> maybe_filter(:agent_id, opts)
-        |> maybe_limit(opts)
-        |> repo.all()
-        |> Enum.map(&schema_to_session/1)
-
-      {:reply, {:ok, sessions}, state}
+      {:reply, do_list_sessions(repo, opts), state}
     end
 
     def handle_call({:delete_session, session_id}, _from, %{repo: repo} = state) do
-      repo.delete_all(from(s in SessionSchema, where: s.id == ^session_id))
-      {:reply, :ok, state}
+      {:reply, do_delete_session(repo, session_id), state}
     end
 
     # -- Run Operations --
@@ -151,39 +243,15 @@ if Code.ensure_loaded?(Ecto.Query) do
     end
 
     def handle_call({:get_run, run_id}, _from, %{repo: repo} = state) do
-      case repo.get(RunSchema, run_id) do
-        nil ->
-          {:reply, {:error, Error.new(:run_not_found, "Run not found: #{run_id}")}, state}
-
-        schema ->
-          {:reply, {:ok, schema_to_run(schema)}, state}
-      end
+      {:reply, do_get_run(repo, run_id), state}
     end
 
     def handle_call({:list_runs, session_id, opts}, _from, %{repo: repo} = state) do
-      runs =
-        from(r in RunSchema, where: r.session_id == ^session_id)
-        |> maybe_filter(:status, opts)
-        |> maybe_limit(opts)
-        |> repo.all()
-        |> Enum.map(&schema_to_run/1)
-
-      {:reply, {:ok, runs}, state}
+      {:reply, do_list_runs(repo, session_id, opts), state}
     end
 
     def handle_call({:get_active_run, session_id}, _from, %{repo: repo} = state) do
-      result =
-        repo.one(
-          from(r in RunSchema,
-            where: r.session_id == ^session_id and r.status == "running",
-            limit: 1
-          )
-        )
-
-      case result do
-        nil -> {:reply, {:ok, nil}, state}
-        schema -> {:reply, {:ok, schema_to_run(schema)}, state}
-      end
+      {:reply, do_get_active_run(repo, session_id), state}
     end
 
     # -- Event Operations --
@@ -217,6 +285,103 @@ if Code.ensure_loaded?(Ecto.Query) do
     end
 
     def handle_call({:get_events, session_id, opts}, _from, %{repo: repo} = state) do
+      {:reply, do_get_events(repo, session_id, opts), state}
+    end
+
+    def handle_call({:get_latest_sequence, session_id}, _from, %{repo: repo} = state) do
+      {:reply, do_get_latest_sequence(repo, session_id), state}
+    end
+
+    # ============================================================================
+    # Private Helpers
+    # ============================================================================
+
+    defp repo_context?(repo) when is_atom(repo) do
+      function_exported?(repo, :__adapter__, 0) and
+        function_exported?(repo, :all, 1) and
+        function_exported?(repo, :insert, 2)
+    end
+
+    defp repo_context?(_repo), do: false
+
+    defp do_get_session(repo, session_id) do
+      case repo.get(SessionSchema, session_id) do
+        nil ->
+          {:error, Error.new(:session_not_found, "Session not found: #{session_id}")}
+
+        schema ->
+          {:ok, schema_to_session(schema)}
+      end
+    end
+
+    defp do_list_sessions(repo, opts) do
+      sessions =
+        from(s in SessionSchema)
+        |> maybe_filter(:status, opts)
+        |> maybe_filter(:agent_id, opts)
+        |> maybe_limit(opts)
+        |> repo.all()
+        |> Enum.map(&schema_to_session/1)
+
+      {:ok, sessions}
+    end
+
+    defp do_delete_session(repo, session_id) do
+      result =
+        repo.transaction(fn ->
+          repo.delete_all(from(e in EventSchema, where: e.session_id == ^session_id))
+          repo.delete_all(from(r in RunSchema, where: r.session_id == ^session_id))
+          repo.delete_all(from(a in ArtifactSchema, where: a.session_id == ^session_id))
+          repo.delete_all(from(sq in SessionSequenceSchema, where: sq.session_id == ^session_id))
+          repo.delete_all(from(s in SessionSchema, where: s.id == ^session_id))
+        end)
+
+      case result do
+        {:ok, _} ->
+          :ok
+
+        {:error, reason} ->
+          {:error, Error.new(:storage_error, "delete_session failed: #{inspect(reason)}")}
+      end
+    end
+
+    defp do_get_run(repo, run_id) do
+      case repo.get(RunSchema, run_id) do
+        nil ->
+          {:error, Error.new(:run_not_found, "Run not found: #{run_id}")}
+
+        schema ->
+          {:ok, schema_to_run(schema)}
+      end
+    end
+
+    defp do_list_runs(repo, session_id, opts) do
+      runs =
+        from(r in RunSchema, where: r.session_id == ^session_id)
+        |> maybe_filter(:status, opts)
+        |> maybe_limit(opts)
+        |> repo.all()
+        |> Enum.map(&schema_to_run/1)
+
+      {:ok, runs}
+    end
+
+    defp do_get_active_run(repo, session_id) do
+      result =
+        repo.one(
+          from(r in RunSchema,
+            where: r.session_id == ^session_id and r.status == "running",
+            limit: 1
+          )
+        )
+
+      case result do
+        nil -> {:ok, nil}
+        schema -> {:ok, schema_to_run(schema)}
+      end
+    end
+
+    defp do_get_events(repo, session_id, opts) do
       events =
         from(e in EventSchema,
           where: e.session_id == ^session_id,
@@ -231,27 +396,73 @@ if Code.ensure_loaded?(Ecto.Query) do
         |> repo.all()
         |> Enum.map(&schema_to_event/1)
 
-      {:reply, {:ok, events}, state}
+      {:ok, events}
     end
 
-    def handle_call({:get_latest_sequence, session_id}, _from, %{repo: repo} = state) do
+    defp do_get_latest_sequence(repo, session_id) do
       case repo.get(SessionSequenceSchema, session_id) do
-        nil -> {:reply, {:ok, 0}, state}
-        seq -> {:reply, {:ok, seq.last_sequence}, state}
+        nil -> {:ok, 0}
+        seq -> {:ok, seq.last_sequence}
       end
     end
 
-    # ============================================================================
-    # Private Helpers
-    # ============================================================================
-
     defp do_append_event_with_sequence(repo, event) do
-      repo.transaction(fn ->
-        case repo.get(EventSchema, event.id) do
-          nil -> insert_event_with_next_sequence(repo, event)
-          existing -> schema_to_event(existing)
-        end
-      end)
+      repo
+      |> transaction_append_event(event)
+      |> normalize_append_event_result()
+    end
+
+    defp transaction_append_event(repo, event) do
+      repo.transaction(fn -> append_event_in_tx(repo, event) end)
+    end
+
+    defp append_event_in_tx(repo, event) do
+      case repo.get(EventSchema, event.id) do
+        nil ->
+          case insert_event_with_next_sequence(repo, event) do
+            {:ok, stored} -> stored
+            {:error, reason} -> repo.rollback(reason)
+          end
+
+        existing ->
+          schema_to_event(existing)
+      end
+    end
+
+    defp normalize_append_event_result({:ok, stored_event}), do: {:ok, stored_event}
+    defp normalize_append_event_result({:error, %Error{} = error}), do: {:error, error}
+
+    defp normalize_append_event_result({:error, reason}) do
+      {:error, Error.new(:storage_error, "Failed to append event: #{inspect(reason)}")}
+    end
+
+    defp ensure_required_schema(repo) do
+      missing_column =
+        Enum.find_value(@required_v2_columns, fn {table, column} ->
+          case SQL.query(repo, "SELECT #{column} FROM #{table} LIMIT 1", []) do
+            {:ok, _} -> nil
+            {:error, _} -> "#{table}.#{column}"
+          end
+        end)
+
+      if missing_column do
+        {:error,
+         Error.new(
+           :migration_required,
+           "EctoSessionStore requires MigrationV2. Run AgentSessionManager.Adapters.EctoSessionStore.MigrationV2.up() before starting the store.",
+           details: %{missing_column: missing_column}
+         )}
+      else
+        :ok
+      end
+    rescue
+      exception ->
+        {:error,
+         Error.new(
+           :migration_required,
+           "EctoSessionStore could not verify required schema columns. Run AgentSessionManager.Adapters.EctoSessionStore.MigrationV2.up() before starting the store.",
+           details: %{reason: Exception.message(exception)}
+         )}
     end
 
     defp do_append_events_with_sequence(repo, events) when is_list(events) do
@@ -363,7 +574,7 @@ if Code.ensure_loaded?(Ecto.Query) do
           event_to_attrs_with_sequence(event, base_sequence + index)
         end)
 
-      case repo.insert_all(EventSchema, rows) do
+      case insert_event_rows(repo, rows) do
         {count, _} when count == length(rows) ->
           inserted =
             Enum.with_index(session_events, fn event, index ->
@@ -382,15 +593,44 @@ if Code.ensure_loaded?(Ecto.Query) do
       end
     end
 
+    defp insert_event_rows(_repo, []), do: {0, nil}
+
+    defp insert_event_rows(repo, rows) do
+      rows
+      |> Enum.chunk_every(batch_insert_chunk_size(repo, rows))
+      |> Enum.reduce_while({0, nil}, fn chunk, {count_acc, _last_meta} ->
+        case repo.insert_all(EventSchema, chunk) do
+          {chunk_count, chunk_meta} ->
+            {:cont, {count_acc + chunk_count, chunk_meta}}
+        end
+      end)
+    end
+
+    defp batch_insert_chunk_size(repo, rows) do
+      case repo.__adapter__() do
+        Ecto.Adapters.SQLite3 ->
+          fields_per_row = rows |> hd() |> map_size()
+          max(div(@sqlite_max_bind_params, max(fields_per_row, 1)), 1)
+
+        _other ->
+          length(rows)
+      end
+    end
+
     defp insert_event_with_next_sequence(repo, event) do
       next_seq = next_sequence(repo, event.session_id)
 
       attrs = event_to_attrs_with_sequence(event, next_seq)
 
       changeset = EventSchema.changeset(%EventSchema{}, attrs)
-      repo.insert!(changeset)
 
-      %Event{event | sequence_number: next_seq}
+      case repo.insert(changeset) do
+        {:ok, _schema} ->
+          {:ok, %Event{event | sequence_number: next_seq}}
+
+        {:error, changeset} ->
+          {:error, changeset_to_error(changeset)}
+      end
     end
 
     defp next_sequence(repo, session_id) do
@@ -399,13 +639,15 @@ if Code.ensure_loaded?(Ecto.Query) do
       on_conflict_query = from(s in SessionSequenceSchema, update: [inc: [last_sequence: 1]])
 
       {_count, [%{last_sequence: seq}]} =
-        repo.insert_all(
-          SessionSequenceSchema,
-          [%{session_id: session_id, last_sequence: 1}],
-          on_conflict: on_conflict_query,
-          conflict_target: :session_id,
-          returning: [:last_sequence]
-        )
+        with_sqlite_busy_retry(repo, fn ->
+          repo.insert_all(
+            SessionSequenceSchema,
+            [%{session_id: session_id, last_sequence: 1}],
+            on_conflict: on_conflict_query,
+            conflict_target: :session_id,
+            returning: [:last_sequence]
+          )
+        end)
 
       seq
     end
@@ -415,16 +657,52 @@ if Code.ensure_loaded?(Ecto.Query) do
         from(s in SessionSequenceSchema, update: [inc: [last_sequence: ^count]])
 
       {_count, [%{last_sequence: last_seq}]} =
-        repo.insert_all(
-          SessionSequenceSchema,
-          [%{session_id: session_id, last_sequence: count}],
-          on_conflict: on_conflict_query,
-          conflict_target: :session_id,
-          returning: [:last_sequence]
-        )
+        with_sqlite_busy_retry(repo, fn ->
+          repo.insert_all(
+            SessionSequenceSchema,
+            [%{session_id: session_id, last_sequence: count}],
+            on_conflict: on_conflict_query,
+            conflict_target: :session_id,
+            returning: [:last_sequence]
+          )
+        end)
 
       last_seq - count + 1
     end
+
+    defp with_sqlite_busy_retry(repo, fun, attempts \\ @sqlite_busy_retry_attempts)
+
+    defp with_sqlite_busy_retry(_repo, fun, attempts) when attempts <= 1, do: fun.()
+
+    defp with_sqlite_busy_retry(repo, fun, attempts) do
+      fun.()
+    rescue
+      exception ->
+        if sqlite_busy_retryable?(repo, exception) do
+          Process.sleep(@sqlite_busy_retry_sleep_ms)
+          with_sqlite_busy_retry(repo, fun, attempts - 1)
+        else
+          reraise(exception, __STACKTRACE__)
+        end
+    end
+
+    defp sqlite_busy_retryable?(repo, exception) do
+      sqlite_repo?(repo) and exqlite_error?(exception) and busy_message?(exception)
+    end
+
+    defp sqlite_repo?(repo) do
+      repo.__adapter__() == Ecto.Adapters.SQLite3
+    end
+
+    defp exqlite_error?(%{__exception__: true, __struct__: exception_struct}) do
+      exception_struct == Module.concat(Exqlite, Error)
+    end
+
+    defp busy_message?(%{message: message}) when is_binary(message) do
+      String.contains?(message, "Database busy")
+    end
+
+    defp busy_message?(_), do: false
 
     defp unique_events_by_id(events) do
       {_, unique_reversed} =
@@ -557,20 +835,7 @@ if Code.ensure_loaded?(Ecto.Query) do
       }
     end
 
-    defp schema_to_session(%SessionSchema{} = s) do
-      %Session{
-        id: s.id,
-        agent_id: s.agent_id,
-        status: safe_to_atom(s.status),
-        parent_session_id: s.parent_session_id,
-        metadata: atomize_keys(s.metadata || %{}),
-        context: atomize_keys(s.context || %{}),
-        tags: s.tags || [],
-        created_at: s.created_at,
-        updated_at: s.updated_at,
-        deleted_at: s.deleted_at
-      }
-    end
+    defp schema_to_session(schema), do: Converters.schema_to_session(schema)
 
     defp run_to_attrs(%Run{} = r) do
       %{
@@ -590,50 +855,12 @@ if Code.ensure_loaded?(Ecto.Query) do
       }
     end
 
-    defp schema_to_run(%RunSchema{} = r) do
-      %Run{
-        id: r.id,
-        session_id: r.session_id,
-        status: safe_to_atom(r.status),
-        input: atomize_keys_nullable(r.input),
-        output: atomize_keys_nullable(r.output),
-        error: atomize_keys_nullable(r.error),
-        metadata: atomize_keys(r.metadata || %{}),
-        turn_count: r.turn_count || 0,
-        token_usage: atomize_keys(r.token_usage || %{}),
-        started_at: r.started_at,
-        ended_at: r.ended_at,
-        provider: r.provider,
-        provider_metadata: atomize_keys(r.provider_metadata || %{})
-      }
-    end
-
-    defp schema_to_event(%EventSchema{} = e) do
-      %Event{
-        id: e.id,
-        type: safe_to_atom(e.type),
-        timestamp: e.timestamp,
-        session_id: e.session_id,
-        run_id: e.run_id,
-        sequence_number: e.sequence_number,
-        data: atomize_keys(e.data || %{}),
-        metadata: atomize_keys(e.metadata || %{}),
-        schema_version: e.schema_version || 1,
-        provider: e.provider,
-        correlation_id: e.correlation_id
-      }
-    end
+    defp schema_to_run(schema), do: Converters.schema_to_run(schema)
+    defp schema_to_event(schema), do: Converters.schema_to_event(schema)
 
     # -- Map key helpers --
 
     defp stringify_keys(value), do: Serialization.stringify_keys(value)
-    defp atomize_keys(value), do: Serialization.atomize_keys(value)
-
-    defp atomize_keys_nullable(nil), do: nil
-    defp atomize_keys_nullable(val), do: atomize_keys(val)
-
-    defp safe_to_atom(val) when is_binary(val), do: String.to_existing_atom(val)
-    defp safe_to_atom(val) when is_atom(val), do: val
 
     defp changeset_to_error(changeset) do
       message =

@@ -17,7 +17,8 @@ if Code.ensure_loaded?(Ecto.Query) do
 
     @behaviour AgentSessionManager.Ports.QueryAPI
 
-    alias AgentSessionManager.Core.{Error, Event, Run, Serialization, Session}
+    alias AgentSessionManager.Adapters.EctoSessionStore.Converters
+    alias AgentSessionManager.Core.{Error, Event, Serialization}
     alias AgentSessionManager.Ports.QueryAPI
 
     alias AgentSessionManager.Adapters.EctoSessionStore.Schemas.{
@@ -26,6 +27,11 @@ if Code.ensure_loaded?(Ecto.Query) do
       RunSchema,
       SessionSchema
     }
+
+    @max_query_limit 1_000
+    @valid_session_statuses ~w(pending active paused completed failed cancelled)
+    @valid_run_statuses ~w(pending running completed failed cancelled timeout)
+    @valid_event_types Enum.map(Event.all_types(), &Atom.to_string/1)
 
     # ============================================================================
     # QueryAPI callbacks
@@ -58,44 +64,30 @@ if Code.ensure_loaded?(Ecto.Query) do
     # ============================================================================
 
     defp do_search_sessions(repo, opts) do
-      limit = Keyword.get(opts, :limit, 50)
-      tags = normalize_tags_filter(opts)
+      with :ok <- validate_limit(opts),
+           :ok <- validate_session_status_filter(opts) do
+        limit = Keyword.get(opts, :limit, 50)
+        tags = normalize_tags_filter(opts)
+        order_by = normalize_session_order(Keyword.get(opts, :order_by, :updated_at_desc))
+        opts = Keyword.put(opts, :order_by, order_by)
 
-      base_query =
-        SessionSchema
-        |> apply_session_filters(opts)
-        |> apply_session_order(opts)
+        base_query =
+          SessionSchema
+          |> apply_session_filters(opts)
+          |> apply_session_order(opts)
 
-      page_query = base_query |> apply_cursor(opts, :session)
+        case apply_cursor(base_query, opts, :session, order_by) do
+          {:ok, page_query} ->
+            {sessions, total_count} =
+              build_session_page(repo, base_query, page_query, opts, tags, limit)
 
-      {sessions, total_count} =
-        if tags == [] do
-          query = page_query |> limit(^limit)
-          count_query = SessionSchema |> apply_session_filters(opts) |> select([s], count(s.id))
+            cursor = build_cursor(sessions, :session, order_by)
+            {:ok, %{sessions: sessions, cursor: cursor, total_count: total_count}}
 
-          sessions = repo.all(query) |> Enum.map(&schema_to_session/1)
-          total_count = repo.one(count_query)
-          {sessions, total_count}
-        else
-          total_sessions =
-            base_query
-            |> repo.all()
-            |> Enum.map(&schema_to_session/1)
-            |> filter_sessions_by_tags(tags)
-
-          sessions =
-            page_query
-            |> repo.all()
-            |> Enum.map(&schema_to_session/1)
-            |> filter_sessions_by_tags(tags)
-            |> Enum.take(limit)
-
-          total_count = length(total_sessions)
-          {sessions, total_count}
+          {:error, %Error{} = error} ->
+            {:error, error}
         end
-
-      cursor = build_cursor(sessions, :session)
-      {:ok, %{sessions: sessions, cursor: cursor, total_count: total_count}}
+      end
     rescue
       e -> {:error, Error.new(:query_error, Exception.message(e))}
     end
@@ -190,6 +182,33 @@ if Code.ensure_loaded?(Ecto.Query) do
         session_tags = Enum.map(session.tags || [], &to_string/1)
         Enum.all?(tags, &(&1 in session_tags))
       end)
+    end
+
+    defp build_session_page(repo, _base_query, page_query, opts, [], limit) do
+      query = page_query |> limit(^limit)
+      count_query = SessionSchema |> apply_session_filters(opts) |> select([s], count(s.id))
+
+      sessions = repo.all(query) |> Enum.map(&schema_to_session/1)
+      total_count = repo.one(count_query)
+      {sessions, total_count}
+    end
+
+    defp build_session_page(repo, base_query, page_query, _opts, tags, limit) do
+      total_sessions =
+        base_query
+        |> repo.all()
+        |> Enum.map(&schema_to_session/1)
+        |> filter_sessions_by_tags(tags)
+
+      sessions =
+        page_query
+        |> repo.all()
+        |> Enum.map(&schema_to_session/1)
+        |> filter_sessions_by_tags(tags)
+        |> Enum.take(limit)
+
+      total_count = length(total_sessions)
+      {sessions, total_count}
     end
 
     defp apply_session_order(query, opts) do
@@ -299,18 +318,26 @@ if Code.ensure_loaded?(Ecto.Query) do
 
     defp do_search_runs(repo, opts) do
       limit = Keyword.get(opts, :limit, 50)
+      order_by = normalize_run_order(Keyword.get(opts, :order_by, :started_at_desc))
+      opts = Keyword.put(opts, :order_by, order_by)
 
-      with :ok <- ensure_token_usage_support(repo, opts),
-           :ok <- validate_min_tokens(opts) do
-        query =
-          RunSchema
-          |> apply_run_filters(repo, opts)
-          |> apply_run_order(repo, opts)
-          |> apply_cursor(opts, :run)
-          |> limit(^limit)
+      with :ok <- validate_limit(opts),
+           :ok <- validate_run_status_filter(opts),
+           :ok <- ensure_token_usage_support(repo, opts),
+           :ok <- validate_min_tokens(opts),
+           {:ok, query_with_cursor} <-
+             apply_cursor(
+               RunSchema
+               |> apply_run_filters(repo, opts)
+               |> apply_run_order(repo, opts),
+               opts,
+               :run,
+               order_by
+             ) do
+        query = query_with_cursor |> limit(^limit)
 
         runs = repo.all(query) |> Enum.map(&schema_to_run/1)
-        cursor = build_cursor(runs, :run)
+        cursor = build_cursor(runs, :run, order_by)
 
         {:ok, %{runs: runs, cursor: cursor}}
       else
@@ -439,6 +466,76 @@ if Code.ensure_loaded?(Ecto.Query) do
       end
     end
 
+    defp validate_limit(opts) do
+      case Keyword.get(opts, :limit) do
+        nil ->
+          :ok
+
+        limit when is_integer(limit) and limit > 0 and limit <= @max_query_limit ->
+          :ok
+
+        limit when is_integer(limit) and limit > @max_query_limit ->
+          {:error,
+           Error.new(
+             :validation_error,
+             "limit must be <= #{@max_query_limit}"
+           )}
+
+        _limit ->
+          {:error, Error.new(:validation_error, "limit must be a positive integer")}
+      end
+    end
+
+    defp validate_session_status_filter(opts) do
+      validate_allowed_filter_values(
+        Keyword.get(opts, :status),
+        @valid_session_statuses,
+        "status"
+      )
+    end
+
+    defp validate_run_status_filter(opts) do
+      validate_allowed_filter_values(Keyword.get(opts, :status), @valid_run_statuses, "status")
+    end
+
+    defp validate_event_types_filter(opts) do
+      validate_allowed_filter_values(Keyword.get(opts, :types), @valid_event_types, "types")
+    end
+
+    defp validate_allowed_filter_values(nil, _allowed_values, _field_name), do: :ok
+    defp validate_allowed_filter_values([], _allowed_values, _field_name), do: :ok
+
+    defp validate_allowed_filter_values(values, allowed_values, field_name) do
+      values
+      |> List.wrap()
+      |> Enum.reduce_while(:ok, fn value, :ok ->
+        with {:ok, normalized} <- normalize_filter_value(value, field_name),
+             true <- normalized in allowed_values do
+          {:cont, :ok}
+        else
+          {:error, %Error{} = error} ->
+            {:halt, {:error, error}}
+
+          false ->
+            {:halt,
+             {:error,
+              Error.new(
+                :validation_error,
+                "#{field_name} contains unsupported value: #{inspect(value)}"
+              )}}
+        end
+      end)
+    end
+
+    defp normalize_filter_value(value, _field_name) when is_atom(value),
+      do: {:ok, Atom.to_string(value)}
+
+    defp normalize_filter_value(value, _field_name) when is_binary(value), do: {:ok, value}
+
+    defp normalize_filter_value(_value, field_name) do
+      {:error, Error.new(:validation_error, "#{field_name} values must be atoms or strings")}
+    end
+
     defp requires_token_usage_filter?(opts) do
       Keyword.has_key?(opts, :min_tokens) or Keyword.get(opts, :order_by) == :token_usage_desc
     end
@@ -538,31 +635,46 @@ if Code.ensure_loaded?(Ecto.Query) do
     # ============================================================================
 
     defp do_search_events(repo, opts) do
-      limit = Keyword.get(opts, :limit, 100)
+      with :ok <- validate_limit(opts),
+           :ok <- validate_event_types_filter(opts) do
+        limit = Keyword.get(opts, :limit, 100)
+        order_by = normalize_event_order(Keyword.get(opts, :order_by, :sequence_asc))
+        opts = Keyword.put(opts, :order_by, order_by)
 
-      query =
-        EventSchema
-        |> apply_event_filters(opts)
-        |> apply_event_order(opts)
-        |> apply_cursor(opts, :event)
-        |> limit(^limit)
+        case apply_cursor(
+               EventSchema
+               |> apply_event_filters(opts)
+               |> apply_event_order(opts),
+               opts,
+               :event,
+               order_by
+             ) do
+          {:ok, query_with_cursor} ->
+            query = query_with_cursor |> limit(^limit)
 
-      events = repo.all(query) |> Enum.map(&schema_to_event/1)
-      cursor = build_cursor(events, :event)
+            events = repo.all(query) |> Enum.map(&schema_to_event/1)
+            cursor = build_cursor(events, :event, order_by)
 
-      {:ok, %{events: events, cursor: cursor}}
+            {:ok, %{events: events, cursor: cursor}}
+
+          {:error, %Error{} = error} ->
+            {:error, error}
+        end
+      end
     rescue
       e -> {:error, Error.new(:query_error, Exception.message(e))}
     end
 
     defp do_count_events(repo, opts) do
-      count =
-        EventSchema
-        |> apply_event_filters(opts)
-        |> select([e], count(e.id))
-        |> repo.one()
+      with :ok <- validate_event_types_filter(opts) do
+        count =
+          EventSchema
+          |> apply_event_filters(opts)
+          |> select([e], count(e.id))
+          |> repo.one()
 
-      {:ok, count}
+        {:ok, count}
+      end
     rescue
       e -> {:error, Error.new(:query_error, Exception.message(e))}
     end
@@ -694,29 +806,291 @@ if Code.ensure_loaded?(Ecto.Query) do
     # Cursor helpers
     # ============================================================================
 
-    defp apply_cursor(query, opts, _type) do
+    defp apply_cursor(query, opts, type, order_by) do
       case Keyword.get(opts, :cursor) do
-        nil -> query
-        _cursor -> query
+        nil ->
+          {:ok, query}
+
+        cursor ->
+          with {:ok, parsed_cursor} <- decode_cursor(cursor, type),
+               :ok <- validate_cursor_order(type, order_by, parsed_cursor.order_by),
+               {:ok, _} = query_with_cursor <-
+                 apply_keyset_cursor(
+                   query,
+                   type,
+                   order_by,
+                   parsed_cursor.sort_value,
+                   parsed_cursor.id
+                 ) do
+            query_with_cursor
+          end
       end
     end
 
-    defp build_cursor([], _type), do: nil
+    defp build_cursor([], _type, _order_by), do: nil
 
-    defp build_cursor(items, :session) do
+    defp build_cursor(items, :session, order_by) do
       last = List.last(items)
-      encode_cursor({:session, last.updated_at || last.created_at, last.id})
+
+      sort_value =
+        case normalize_session_order(order_by) do
+          :created_at_asc -> last.created_at
+          :created_at_desc -> last.created_at
+          :updated_at_desc -> last.updated_at
+        end
+
+      encode_cursor({:session, normalize_session_order(order_by), sort_value, last.id})
     end
 
-    defp build_cursor(items, :run) do
+    defp build_cursor(items, :run, order_by) do
       last = List.last(items)
-      encode_cursor({:run, last.started_at, last.id})
+
+      case normalize_run_order(order_by) do
+        :token_usage_desc ->
+          nil
+
+        normalized_order ->
+          encode_cursor({:run, normalized_order, last.started_at, last.id})
+      end
     end
 
-    defp build_cursor(items, :event) do
+    defp build_cursor(items, :event, order_by) do
       last = List.last(items)
-      encode_cursor({:event, last.sequence_number, last.id})
+
+      sort_value =
+        case normalize_event_order(order_by) do
+          :sequence_asc -> last.sequence_number
+          :timestamp_asc -> last.timestamp
+          :timestamp_desc -> last.timestamp
+        end
+
+      encode_cursor({:event, normalize_event_order(order_by), sort_value, last.id})
     end
+
+    defp decode_cursor(cursor, type) when is_binary(cursor) do
+      with {:ok, binary} <- decode_cursor_binary(cursor),
+           {:ok, term} <- decode_cursor_term(binary),
+           {:ok, _} = parsed <- normalize_cursor_term(term, type),
+           do: parsed
+    end
+
+    defp decode_cursor(_cursor, _type) do
+      {:error, Error.new(:invalid_cursor, "Cursor must be a non-empty string")}
+    end
+
+    defp decode_cursor_binary(cursor) do
+      case Base.url_decode64(cursor) do
+        {:ok, decoded} ->
+          {:ok, decoded}
+
+        :error ->
+          case Base.url_decode64(cursor, padding: false) do
+            {:ok, decoded} -> {:ok, decoded}
+            :error -> {:error, Error.new(:invalid_cursor, "Cursor is not valid Base64")}
+          end
+      end
+    end
+
+    defp decode_cursor_term(binary) do
+      {:ok, :erlang.binary_to_term(binary, [:safe])}
+    rescue
+      _ ->
+        {:error, Error.new(:invalid_cursor, "Cursor payload could not be decoded")}
+    end
+
+    defp normalize_cursor_term({:session, order_by, sort_value, id}, :session)
+         when is_atom(order_by) and is_binary(id) do
+      {:ok, %{order_by: order_by, sort_value: sort_value, id: id}}
+    end
+
+    defp normalize_cursor_term({:session, sort_value, id}, :session) when is_binary(id) do
+      {:ok, %{order_by: nil, sort_value: sort_value, id: id}}
+    end
+
+    defp normalize_cursor_term({:run, order_by, sort_value, id}, :run)
+         when is_atom(order_by) and is_binary(id) do
+      {:ok, %{order_by: order_by, sort_value: sort_value, id: id}}
+    end
+
+    defp normalize_cursor_term({:run, sort_value, id}, :run) when is_binary(id) do
+      {:ok, %{order_by: nil, sort_value: sort_value, id: id}}
+    end
+
+    defp normalize_cursor_term({:event, order_by, sort_value, id}, :event)
+         when is_atom(order_by) and is_binary(id) do
+      {:ok, %{order_by: order_by, sort_value: sort_value, id: id}}
+    end
+
+    defp normalize_cursor_term({:event, sort_value, id}, :event) when is_binary(id) do
+      {:ok, %{order_by: nil, sort_value: sort_value, id: id}}
+    end
+
+    defp normalize_cursor_term(_term, _type) do
+      {:error, Error.new(:invalid_cursor, "Cursor does not match expected format")}
+    end
+
+    defp validate_cursor_order(type, requested_order, nil) do
+      if requested_order == default_order(type) do
+        :ok
+      else
+        {:error,
+         Error.new(
+           :invalid_cursor,
+           "Cursor order does not match requested order_by"
+         )}
+      end
+    end
+
+    defp validate_cursor_order(_type, requested_order, requested_order), do: :ok
+
+    defp validate_cursor_order(_type, _requested_order, _cursor_order) do
+      {:error, Error.new(:invalid_cursor, "Cursor order does not match requested order_by")}
+    end
+
+    defp apply_keyset_cursor(query, :session, order_by, sort_value, id) do
+      apply_session_keyset_cursor(query, order_by, sort_value, id)
+    end
+
+    defp apply_keyset_cursor(query, :run, order_by, sort_value, id) do
+      apply_run_keyset_cursor(query, order_by, sort_value, id)
+    end
+
+    defp apply_keyset_cursor(query, :event, order_by, sort_value, id) do
+      apply_event_keyset_cursor(query, order_by, sort_value, id)
+    end
+
+    defp apply_session_keyset_cursor(query, order_by, %DateTime{} = sort_value, id)
+         when is_binary(id) do
+      case normalize_session_order(order_by) do
+        :created_at_asc ->
+          apply_session_created_cursor(query, :asc, sort_value, id)
+
+        :created_at_desc ->
+          apply_session_created_cursor(query, :desc, sort_value, id)
+
+        :updated_at_desc ->
+          apply_session_updated_cursor(query, :desc, sort_value, id)
+      end
+    end
+
+    defp apply_session_keyset_cursor(_query, _order_by, _sort_value, _id) do
+      {:error, Error.new(:invalid_cursor, "Session cursor has invalid sort value")}
+    end
+
+    defp apply_session_created_cursor(query, :asc, sort_value, id) do
+      {:ok,
+       where(
+         query,
+         [s],
+         s.created_at > ^sort_value or (s.created_at == ^sort_value and s.id > ^id)
+       )}
+    end
+
+    defp apply_session_created_cursor(query, :desc, sort_value, id) do
+      {:ok,
+       where(
+         query,
+         [s],
+         s.created_at < ^sort_value or (s.created_at == ^sort_value and s.id < ^id)
+       )}
+    end
+
+    defp apply_session_updated_cursor(query, :desc, sort_value, id) do
+      {:ok,
+       where(
+         query,
+         [s],
+         s.updated_at < ^sort_value or (s.updated_at == ^sort_value and s.id < ^id)
+       )}
+    end
+
+    defp apply_run_keyset_cursor(query, order_by, %DateTime{} = sort_value, id)
+         when is_binary(id) do
+      case normalize_run_order(order_by) do
+        :started_at_asc ->
+          {:ok,
+           where(
+             query,
+             [r],
+             r.started_at > ^sort_value or (r.started_at == ^sort_value and r.id > ^id)
+           )}
+
+        :started_at_desc ->
+          {:ok,
+           where(
+             query,
+             [r],
+             r.started_at < ^sort_value or (r.started_at == ^sort_value and r.id < ^id)
+           )}
+
+        :token_usage_desc ->
+          {:error,
+           Error.new(
+             :invalid_cursor,
+             "Cursor pagination is not supported for order_by :token_usage_desc"
+           )}
+      end
+    end
+
+    defp apply_run_keyset_cursor(_query, _order_by, _sort_value, _id) do
+      {:error, Error.new(:invalid_cursor, "Run cursor has invalid sort value")}
+    end
+
+    defp apply_event_keyset_cursor(query, :sequence_asc, sort_value, id)
+         when is_integer(sort_value) and is_binary(id) do
+      {:ok,
+       where(
+         query,
+         [e],
+         e.sequence_number > ^sort_value or (e.sequence_number == ^sort_value and e.id > ^id)
+       )}
+    end
+
+    defp apply_event_keyset_cursor(query, :timestamp_asc, %DateTime{} = sort_value, id)
+         when is_binary(id) do
+      {:ok,
+       where(
+         query,
+         [e],
+         e.timestamp > ^sort_value or (e.timestamp == ^sort_value and e.id > ^id)
+       )}
+    end
+
+    defp apply_event_keyset_cursor(query, :timestamp_desc, %DateTime{} = sort_value, id)
+         when is_binary(id) do
+      {:ok,
+       where(
+         query,
+         [e],
+         e.timestamp < ^sort_value or (e.timestamp == ^sort_value and e.id < ^id)
+       )}
+    end
+
+    defp apply_event_keyset_cursor(_query, _order_by, _sort_value, _id) do
+      {:error, Error.new(:invalid_cursor, "Event cursor has invalid sort value")}
+    end
+
+    defp default_order(:session), do: :updated_at_desc
+    defp default_order(:run), do: :started_at_desc
+    defp default_order(:event), do: :sequence_asc
+
+    defp normalize_session_order(order_by)
+         when order_by in [:created_at_asc, :created_at_desc, :updated_at_desc],
+         do: order_by
+
+    defp normalize_session_order(_order_by), do: :updated_at_desc
+
+    defp normalize_run_order(order_by)
+         when order_by in [:started_at_asc, :started_at_desc, :token_usage_desc],
+         do: order_by
+
+    defp normalize_run_order(_order_by), do: :started_at_desc
+
+    defp normalize_event_order(order_by)
+         when order_by in [:sequence_asc, :timestamp_asc, :timestamp_desc],
+         do: order_by
+
+    defp normalize_event_order(_order_by), do: :sequence_asc
 
     defp encode_cursor(term) do
       term |> :erlang.term_to_binary() |> Base.url_encode64()
@@ -726,80 +1100,14 @@ if Code.ensure_loaded?(Ecto.Query) do
     # Schema conversion (shared with EctoSessionStore)
     # ============================================================================
 
-    defp schema_to_session(%SessionSchema{} = s) do
-      %Session{
-        id: s.id,
-        agent_id: s.agent_id,
-        status: safe_to_atom(s.status),
-        parent_session_id: s.parent_session_id,
-        metadata: atomize_keys(s.metadata || %{}),
-        context: atomize_keys(s.context || %{}),
-        tags: s.tags || [],
-        created_at: s.created_at,
-        updated_at: s.updated_at,
-        deleted_at: s.deleted_at
-      }
-    end
-
-    defp schema_to_run(%RunSchema{} = r) do
-      %Run{
-        id: r.id,
-        session_id: r.session_id,
-        status: safe_to_atom(r.status),
-        input: atomize_keys_nullable(r.input),
-        output: atomize_keys_nullable(r.output),
-        error: atomize_keys_nullable(r.error),
-        metadata: atomize_keys(r.metadata || %{}),
-        turn_count: r.turn_count || 0,
-        token_usage: atomize_keys(r.token_usage || %{}),
-        started_at: r.started_at,
-        ended_at: r.ended_at,
-        provider: r.provider,
-        provider_metadata: atomize_keys(r.provider_metadata || %{})
-      }
-    end
-
-    defp schema_to_event(%EventSchema{} = e) do
-      %Event{
-        id: e.id,
-        type: safe_to_atom(e.type),
-        timestamp: e.timestamp,
-        session_id: e.session_id,
-        run_id: e.run_id,
-        sequence_number: e.sequence_number,
-        data: atomize_keys(e.data || %{}),
-        metadata: atomize_keys(e.metadata || %{}),
-        schema_version: e.schema_version || 1,
-        provider: e.provider,
-        correlation_id: e.correlation_id
-      }
-    end
-
-    defp schema_to_artifact_meta(%ArtifactSchema{} = a) do
-      %{
-        id: a.id,
-        session_id: a.session_id,
-        run_id: a.run_id,
-        key: a.key,
-        content_type: a.content_type,
-        byte_size: a.byte_size,
-        checksum_sha256: a.checksum_sha256,
-        storage_backend: a.storage_backend,
-        storage_ref: a.storage_ref,
-        metadata: a.metadata,
-        created_at: a.created_at
-      }
-    end
+    defp schema_to_session(schema), do: Converters.schema_to_session(schema)
+    defp schema_to_run(schema), do: Converters.schema_to_run(schema)
+    defp schema_to_event(schema), do: Converters.schema_to_event(schema)
+    defp schema_to_artifact_meta(schema), do: Converters.schema_to_artifact_meta(schema)
 
     defp safe_to_atom(nil), do: nil
-    defp safe_to_atom(s) when is_atom(s), do: s
-    defp safe_to_atom(s) when is_binary(s), do: String.to_existing_atom(s)
-
-    defp atomize_keys(nil), do: %{}
-    defp atomize_keys(value), do: Serialization.atomize_keys(value)
-
-    defp atomize_keys_nullable(nil), do: nil
-    defp atomize_keys_nullable(map), do: Serialization.atomize_keys(map)
+    defp safe_to_atom(value) when is_atom(value), do: value
+    defp safe_to_atom(value) when is_binary(value), do: String.to_existing_atom(value)
   end
 else
   defmodule AgentSessionManager.Adapters.EctoQueryAPI do

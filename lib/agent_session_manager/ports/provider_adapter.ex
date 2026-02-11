@@ -53,6 +53,7 @@ defmodule AgentSessionManager.Ports.ProviderAdapter do
   """
 
   alias AgentSessionManager.Core.{Capability, Error, Run, Session}
+  alias AgentSessionManager.Runtime.ExitReasons
 
   @default_execute_timeout 60_000
   @execute_grace_timeout 5_000
@@ -323,7 +324,7 @@ defmodule AgentSessionManager.Ports.ProviderAdapter do
             "Provider #{operation} call timed out after #{timeout}ms"
           }
 
-        adapter_unavailable_exit_reason?(reason) ->
+        ExitReasons.adapter_unavailable?(reason) ->
           {
             :provider_unavailable,
             "Provider #{operation} call failed because adapter is unavailable"
@@ -354,10 +355,4 @@ defmodule AgentSessionManager.Ports.ProviderAdapter do
   defp missing_registered_process_reason?({:noproc, _}), do: true
   defp missing_registered_process_reason?({:shutdown, {:noproc, _}}), do: true
   defp missing_registered_process_reason?(_), do: false
-
-  defp adapter_unavailable_exit_reason?(:noproc), do: true
-  defp adapter_unavailable_exit_reason?({:noproc, _}), do: true
-  defp adapter_unavailable_exit_reason?({:shutdown, {:noproc, _}}), do: true
-  defp adapter_unavailable_exit_reason?({:shutdown, _}), do: true
-  defp adapter_unavailable_exit_reason?(_), do: false
 end

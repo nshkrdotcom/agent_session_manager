@@ -62,11 +62,15 @@ defmodule AgentSessionManager.SessionManager do
     TranscriptBuilder
   }
 
-  alias AgentSessionManager.Persistence.EventPipeline
+  alias AgentSessionManager.Persistence.{EventPipeline, ExecutionState}
   alias AgentSessionManager.Policy.{AdapterCompiler, Policy, Preflight, Runtime}
   alias AgentSessionManager.Ports.{ArtifactStore, ProviderAdapter, SessionStore}
+  alias AgentSessionManager.Runtime.ExitReasons
+  alias AgentSessionManager.SessionManager.InputMessageNormalizer
+  alias AgentSessionManager.SessionManager.ProviderMetadataCollector
   alias AgentSessionManager.Telemetry
   alias AgentSessionManager.Workspace.{Diff, Snapshot, Workspace}
+  require Logger
 
   @type store :: SessionStore.store()
   @type run_once_store :: store()
@@ -476,7 +480,7 @@ defmodule AgentSessionManager.SessionManager do
     end
   catch
     :exit, reason ->
-      if adapter_unavailable_exit_reason?(reason) do
+      if ExitReasons.adapter_unavailable?(reason) do
         :ok
       else
         {:error,
@@ -486,12 +490,6 @@ defmodule AgentSessionManager.SessionManager do
          )}
       end
   end
-
-  defp adapter_unavailable_exit_reason?(:noproc), do: true
-  defp adapter_unavailable_exit_reason?({:noproc, _}), do: true
-  defp adapter_unavailable_exit_reason?({:shutdown, {:noproc, _}}), do: true
-  defp adapter_unavailable_exit_reason?({:shutdown, _}), do: true
-  defp adapter_unavailable_exit_reason?(_), do: false
 
   # ============================================================================
   # Queries
@@ -620,7 +618,8 @@ defmodule AgentSessionManager.SessionManager do
       provider_result =
         ProviderAdapter.execute(adapter, run, execution_session, adapter_opts)
 
-      callback_provider_metadata = collect_provider_metadata(run.id)
+      callback_provider_metadata = ProviderMetadataCollector.collect(run.id)
+      persistence_failures = collect_persistence_failures(run.id)
 
       case apply_policy_result(provider_result, policy_runtime) do
         {:ok, result} ->
@@ -631,7 +630,8 @@ defmodule AgentSessionManager.SessionManager do
             provider_name,
             result,
             workspace_state,
-            callback_provider_metadata
+            callback_provider_metadata,
+            persistence_failures
           )
 
         {:error, error} ->
@@ -663,13 +663,19 @@ defmodule AgentSessionManager.SessionManager do
 
     fn event_data ->
       enriched_event_data =
-        case EventPipeline.process(store, event_data, pipeline_context) do
+        case safe_process_pipeline_event(store, event_data, pipeline_context) do
           {:ok, event} ->
             event_data
             |> Map.put(:type, event.type)
             |> Map.put(:sequence_number, event.sequence_number)
 
-          {:error, _} ->
+          {:error, %Error{} = error} ->
+            Logger.warning(
+              "Event persistence failed for run #{run.id} in session #{run.session_id}: " <>
+                "[#{error.code}] #{error.message}"
+            )
+
+            maybe_publish_persistence_failure(callback_owner, run.id, error)
             event_data
         end
 
@@ -687,13 +693,14 @@ defmodule AgentSessionManager.SessionManager do
          provider_name,
          result,
          workspace_state,
-         callback_provider_metadata
+         callback_provider_metadata,
+         persistence_failures
        ) do
     case maybe_finalize_workspace_success(store, run, result, workspace_state) do
       {:ok, result_with_workspace, workspace_metadata} ->
         provider_metadata =
           callback_provider_metadata
-          |> Map.merge(extract_provider_metadata_from_result(result_with_workspace))
+          |> Map.merge(ProviderMetadataCollector.extract_from_result(result_with_workspace))
 
         finalize_successful_run(
           store,
@@ -702,7 +709,8 @@ defmodule AgentSessionManager.SessionManager do
           result_with_workspace,
           provider_name,
           provider_metadata,
-          workspace_metadata
+          workspace_metadata,
+          persistence_failures
         )
 
       {:error, error} ->
@@ -863,7 +871,7 @@ defmodule AgentSessionManager.SessionManager do
   end
 
   defp maybe_publish_provider_metadata(owner_pid, run_id, event_data) when is_pid(owner_pid) do
-    case extract_provider_metadata_from_event_data(event_data) do
+    case ProviderMetadataCollector.extract_from_event_data(event_data) do
       metadata when map_size(metadata) > 0 ->
         send(owner_pid, {:provider_metadata, run_id, metadata})
         :ok
@@ -873,62 +881,32 @@ defmodule AgentSessionManager.SessionManager do
     end
   end
 
-  defp collect_provider_metadata(run_id, acc \\ %{}) do
+  defp maybe_publish_persistence_failure(owner_pid, run_id, %Error{} = error)
+       when is_pid(owner_pid) do
+    send(owner_pid, {:persistence_failure, run_id, error})
+    :ok
+  end
+
+  defp collect_persistence_failures(run_id, count \\ 0) do
     receive do
-      {:provider_metadata, ^run_id, metadata} when is_map(metadata) ->
-        collect_provider_metadata(run_id, Map.merge(acc, metadata))
+      {:persistence_failure, ^run_id, _error} ->
+        collect_persistence_failures(run_id, count + 1)
     after
       0 ->
-        acc
+        count
     end
   end
 
-  defp extract_provider_metadata_from_result(result) when is_map(result) do
-    events =
-      case Map.get(result, :events) do
-        event_list when is_list(event_list) -> event_list
-        _ -> []
-      end
-
-    case Enum.find(events, fn event -> event_type(event) == :run_started end) do
-      nil -> %{}
-      event -> extract_provider_metadata_from_event_data(event)
-    end
-  end
-
-  defp extract_provider_metadata_from_event_data(event_data) do
-    case event_type(event_data) do
-      :run_started ->
-        event_data
-        |> event_data_map()
-        |> normalize_provider_metadata()
-
-      _ ->
-        %{}
-    end
-  end
-
-  defp event_type(%Event{type: type}) when is_atom(type), do: type
-  defp event_type(%{type: type}) when is_atom(type), do: type
-  defp event_type(%{type: "run_started"}), do: :run_started
-  defp event_type(%{"type" => "run_started"}), do: :run_started
-  defp event_type(_), do: nil
-
-  defp event_data_map(%Event{data: data}) when is_map(data), do: data
-  defp event_data_map(%{data: data}) when is_map(data), do: data
-  defp event_data_map(%{"data" => data}) when is_map(data), do: data
-  defp event_data_map(_), do: %{}
-
-  defp normalize_provider_metadata(data) do
-    %{
-      provider_session_id:
-        map_get(data, :provider_session_id) || map_get(data, :session_id) ||
-          map_get(data, :thread_id),
-      model: map_get(data, :model),
-      tools: map_get(data, :tools)
-    }
-    |> Enum.reject(fn {_k, v} -> is_nil(v) end)
-    |> Map.new()
+  defp safe_process_pipeline_event(store, event_data, pipeline_context) do
+    EventPipeline.process(store, event_data, pipeline_context)
+  catch
+    :exit, reason ->
+      {:error,
+       Error.new(
+         :storage_connection_failed,
+         "Event persistence failed because the SessionStore became unavailable",
+         details: %{reason: inspect(reason)}
+       )}
   end
 
   defp map_get(map, key) when is_map(map) do
@@ -974,7 +952,7 @@ defmodule AgentSessionManager.SessionManager do
 
   defp persist_input_messages(store, run) do
     run.input
-    |> extract_input_messages()
+    |> InputMessageNormalizer.extract()
     |> Enum.reduce_while(:ok, fn message_data, :ok ->
       case emit_run_event(store, :message_sent, run, message_data) do
         :ok -> {:cont, :ok}
@@ -982,65 +960,6 @@ defmodule AgentSessionManager.SessionManager do
       end
     end)
   end
-
-  defp extract_input_messages(%{messages: messages}) when is_list(messages) do
-    normalize_run_input_messages(messages)
-  end
-
-  defp extract_input_messages(%{"messages" => messages}) when is_list(messages) do
-    normalize_run_input_messages(messages)
-  end
-
-  defp extract_input_messages(%{prompt: prompt}) when is_binary(prompt) and prompt != "" do
-    [%{role: "user", content: prompt}]
-  end
-
-  defp extract_input_messages(%{"prompt" => prompt}) when is_binary(prompt) and prompt != "" do
-    [%{role: "user", content: prompt}]
-  end
-
-  defp extract_input_messages(_), do: []
-
-  defp normalize_run_input_messages(messages) do
-    messages
-    |> Enum.map(&normalize_run_input_message/1)
-    |> Enum.reject(&is_nil/1)
-  end
-
-  defp normalize_run_input_message(message) when is_map(message) do
-    role = Map.get(message, :role) || Map.get(message, "role")
-    content = Map.get(message, :content) || Map.get(message, "content")
-    build_input_message_event(role, content)
-  end
-
-  defp normalize_run_input_message(_), do: nil
-
-  defp build_input_message_event(role, content) do
-    normalized_content = normalize_input_message_content(content)
-
-    if normalized_content == "" do
-      nil
-    else
-      %{
-        role: normalize_input_message_role(role),
-        content: normalized_content
-      }
-    end
-  end
-
-  defp normalize_input_message_role(role) when role in [:system, :user, :assistant, :tool] do
-    Atom.to_string(role)
-  end
-
-  defp normalize_input_message_role(role) when is_binary(role) and role != "" do
-    String.downcase(role)
-  end
-
-  defp normalize_input_message_role(_), do: "user"
-
-  defp normalize_input_message_content(nil), do: ""
-  defp normalize_input_message_content(content) when is_binary(content), do: content
-  defp normalize_input_message_content(content), do: inspect(content)
 
   defp maybe_prepare_workspace(store, run, opts) do
     workspace_opts =
@@ -1272,7 +1191,8 @@ defmodule AgentSessionManager.SessionManager do
          result,
          provider_name,
          provider_metadata,
-         extra_run_metadata
+         extra_run_metadata,
+         persistence_failures
        ) do
     # Build run metadata with provider info
     run_provider_metadata =
@@ -1290,14 +1210,13 @@ defmodule AgentSessionManager.SessionManager do
          },
          final_run = update_run_metadata(run_with_provider, run_provider_metadata),
          updated_session = merge_session_provider_metadata(session, provider_metadata),
-         execution_result = %{
-           session: updated_session,
-           run: final_run,
-           events: [],
-           provider_metadata: provider_metadata
-         },
+         execution_state =
+           updated_session
+           |> ExecutionState.new(final_run)
+           |> ExecutionState.cache_provider_metadata(provider_metadata),
+         execution_result = ExecutionState.to_result(execution_state),
          :ok <- safe_flush(store, execution_result, :finalize_successful_run) do
-      {:ok, result}
+      {:ok, Map.put(result, :persistence_failures, persistence_failures)}
     end
   end
 
@@ -1376,36 +1295,52 @@ defmodule AgentSessionManager.SessionManager do
   end
 
   defp emit_event(store, type, session, data \\ %{}) do
-    with {:ok, event} <-
-           Event.new(%{
-             type: type,
-             session_id: session.id,
-             data: data
-           }),
-         {:ok, _stored_event} <- append_sequenced_event(store, event) do
+    event_data = %{type: type, data: data}
+    context = internal_event_pipeline_context(session)
+
+    with {:ok, _stored_event} <- safe_process_pipeline_event(store, event_data, context) do
       :ok
     end
   end
 
   defp emit_run_event(store, type, run, data \\ %{}) do
-    with {:ok, event} <-
-           Event.new(%{
-             type: type,
-             session_id: run.session_id,
-             run_id: run.id,
-             data: data
-           }),
-         {:ok, _stored_event} <- append_sequenced_event(store, event) do
+    event_data = %{type: type, data: data}
+    context = internal_event_pipeline_context(run)
+
+    with {:ok, _stored_event} <- safe_process_pipeline_event(store, event_data, context) do
       :ok
     end
   end
 
-  defp append_sequenced_event(store, %Event{} = event) do
-    safe_store_call(
-      fn -> SessionStore.append_event_with_sequence(store, event) end,
-      :append_event_with_sequence
-    )
+  defp internal_event_pipeline_context(%Session{} = session) do
+    metadata = ensure_map(session.metadata)
+
+    %{
+      session_id: session.id,
+      run_id: nil,
+      provider: normalize_internal_provider(map_get(metadata, :provider)),
+      correlation_id: map_get(metadata, :correlation_id)
+    }
   end
+
+  defp internal_event_pipeline_context(%Run{} = run) do
+    metadata = ensure_map(run.metadata)
+
+    %{
+      session_id: run.session_id,
+      run_id: run.id,
+      provider: normalize_internal_provider(run.provider || map_get(metadata, :provider)),
+      correlation_id: map_get(metadata, :correlation_id)
+    }
+  end
+
+  defp normalize_internal_provider(provider) when is_binary(provider) and provider != "",
+    do: provider
+
+  defp normalize_internal_provider(provider) when is_atom(provider),
+    do: Atom.to_string(provider)
+
+  defp normalize_internal_provider(_provider), do: "session_manager"
 
   defp safe_get_session(store, session_id, operation) do
     safe_store_call(fn -> SessionStore.get_session(store, session_id) end, operation)

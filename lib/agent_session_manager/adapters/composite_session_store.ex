@@ -29,6 +29,7 @@ defmodule AgentSessionManager.Adapters.CompositeSessionStore do
   @behaviour AgentSessionManager.Ports.SessionStore
   @behaviour AgentSessionManager.Ports.ArtifactStore
 
+  alias AgentSessionManager.Core.Error
   alias AgentSessionManager.Ports.{ArtifactStore, SessionStore}
 
   # ============================================================================
@@ -77,7 +78,7 @@ defmodule AgentSessionManager.Adapters.CompositeSessionStore do
 
   @impl SessionStore
   def get_events(store, session_id, opts \\ []),
-    do: GenServer.call(store, {:get_events, session_id, opts})
+    do: GenServer.call(store, {:get_events, session_id, opts}, genserver_call_timeout(opts))
 
   @impl SessionStore
   def get_latest_sequence(store, session_id),
@@ -178,14 +179,58 @@ defmodule AgentSessionManager.Adapters.CompositeSessionStore do
   # -- Artifact delegations --
 
   def handle_call({:put_artifact, key, data, opts}, _from, state) do
-    {:reply, ArtifactStore.put(state.artifact_store, key, data, opts), state}
+    reply =
+      safe_artifact_call(
+        fn -> ArtifactStore.put(state.artifact_store, key, data, opts) end,
+        :put
+      )
+
+    {:reply, reply, state}
   end
 
   def handle_call({:get_artifact, key, opts}, _from, state) do
-    {:reply, ArtifactStore.get(state.artifact_store, key, opts), state}
+    reply =
+      safe_artifact_call(
+        fn -> ArtifactStore.get(state.artifact_store, key, opts) end,
+        :get
+      )
+
+    {:reply, reply, state}
   end
 
   def handle_call({:delete_artifact, key, opts}, _from, state) do
-    {:reply, ArtifactStore.delete(state.artifact_store, key, opts), state}
+    reply =
+      safe_artifact_call(
+        fn -> ArtifactStore.delete(state.artifact_store, key, opts) end,
+        :delete
+      )
+
+    {:reply, reply, state}
+  end
+
+  defp safe_artifact_call(fun, operation) when is_function(fun, 0) do
+    fun.()
+  rescue
+    exception ->
+      {:error,
+       Error.new(
+         :storage_error,
+         "Artifact store #{operation} failed: #{Exception.message(exception)}"
+       )}
+  catch
+    :exit, reason ->
+      {:error,
+       Error.new(
+         :storage_error,
+         "Artifact store #{operation} failed because backend is unavailable",
+         details: %{reason: inspect(reason)}
+       )}
+  end
+
+  defp genserver_call_timeout(opts) do
+    case Keyword.get(opts, :wait_timeout_ms, 0) do
+      wait when is_integer(wait) and wait > 0 -> wait + 5_000
+      _ -> 5_000
+    end
   end
 end

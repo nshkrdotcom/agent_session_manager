@@ -12,7 +12,7 @@ defmodule AgentSessionManager.Adapters.EctoSessionStoreIntegrationTest do
   use AgentSessionManager.SupertesterCase, async: false
 
   alias AgentSessionManager.Adapters.EctoSessionStore
-  alias AgentSessionManager.Adapters.EctoSessionStore.{Migration, MigrationV2}
+  alias AgentSessionManager.Adapters.EctoSessionStore.{Migration, MigrationV2, MigrationV3}
 
   alias AgentSessionManager.Adapters.EctoSessionStore.Schemas.{
     EventSchema,
@@ -177,6 +177,21 @@ defmodule AgentSessionManager.Adapters.EctoSessionStoreIntegrationTest do
       assert :session_created in types
     end
 
+    test "SessionManager works with module-backed SessionStore ref", %{adapter: adapter} do
+      store_ref = {EctoSessionStore, IntegrationRepo}
+
+      {:ok, session} =
+        SessionManager.start_session(store_ref, adapter, %{agent_id: "module-backed-agent"})
+
+      assert session.status == :pending
+
+      {:ok, _} = SessionManager.activate_session(store_ref, session.id)
+      {:ok, _run} = SessionManager.start_run(store_ref, adapter, session.id, %{prompt: "Hello"})
+
+      {:ok, runs} = SessionStore.list_runs(store_ref, session.id)
+      assert length(runs) == 1
+    end
+
     test "multiple sessions are isolated", %{store: store, adapter: adapter} do
       {:ok, s1} =
         SessionManager.start_session(store, adapter, %{agent_id: "agent-1"})
@@ -205,6 +220,13 @@ defmodule AgentSessionManager.Adapters.EctoSessionStoreIntegrationTest do
     test "getting non-existent run returns proper error", %{store: store} do
       {:error, %Error{code: :run_not_found}} =
         SessionStore.get_run(store, "run_does_not_exist")
+    end
+  end
+
+  describe "migrations" do
+    test "MigrationV3.up/0 runs successfully on SQLite" do
+      _ = Ecto.Migrator.up(IntegrationRepo, 3, MigrationV3, log: false)
+      assert true
     end
   end
 end

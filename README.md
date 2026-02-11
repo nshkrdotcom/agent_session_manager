@@ -54,8 +54,8 @@ ETS/DB   Claude/Codex/Amp -- adapters (implementations)
 
 The core domain types (`Session`, `Run`, `Event`, `Capability`, `Manifest`) are pure data structures with no side effects. The `SessionManager` coordinates between the storage port and the provider adapter port.
 
-`run_once/4` uses a `SessionStore` reference (pid or name) for persisted
-session/run/event execution semantics.
+`run_once/4` accepts any `SessionStore` reference supported by the port:
+pid/name (GenServer-backed stores) or `{Module, context}` (module-backed refs).
 
 ## Installation
 
@@ -74,6 +74,24 @@ Then run:
 ```bash
 mix deps.get
 ```
+
+Provider SDK integrations (`claude_agent_sdk`, `codex_sdk`, `amp_sdk`) are optional.
+If you are building a persistence-only deployment, you can install just the SQL/object-store dependencies you use.
+
+```elixir
+def deps do
+  [
+    {:agent_session_manager, "~> 0.8.0"},
+    {:ecto_sql, "~> 3.12"},
+    {:ecto_sqlite3, "~> 0.17"} # or {:postgrex, "~> 0.19"}
+  ]
+end
+```
+
+For `EctoSessionStore`, run both schema migrations in order:
+
+1. `AgentSessionManager.Adapters.EctoSessionStore.Migration.up/0`
+2. `AgentSessionManager.Adapters.EctoSessionStore.MigrationV2.up/0`
 
 ## Quick Start
 

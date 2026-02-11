@@ -41,7 +41,7 @@ config :my_app, MyApp.Repo,
 ## Run Migrations
 
 `EctoSessionStore` ships migration modules you can invoke from your project
-migrations.
+migrations. Apply both `Migration` and `MigrationV2` (in that order).
 
 ```elixir
 defmodule MyApp.Repo.Migrations.AddAgentSessionManager do
@@ -72,7 +72,7 @@ mix ecto.migrate
 ```elixir
 alias AgentSessionManager.Adapters.EctoSessionStore
 
-{:ok, store} = EctoSessionStore.start_link(repo: MyApp.Repo)
+store = {EctoSessionStore, MyApp.Repo}
 ```
 
 With a registered name:

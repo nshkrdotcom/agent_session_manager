@@ -358,6 +358,44 @@ defmodule AgentSessionManager.SessionManagerTest do
     end
   end
 
+  defmodule MessageEventFailingStore do
+    @moduledoc false
+
+    use GenServer
+
+    alias AgentSessionManager.Adapters.InMemorySessionStore
+    alias AgentSessionManager.Core.Error
+
+    @spec start_link(keyword()) :: GenServer.on_start()
+    def start_link(opts \\ []) do
+      GenServer.start_link(__MODULE__, opts)
+    end
+
+    @impl GenServer
+    def init(_opts) do
+      {:ok, store} = InMemorySessionStore.start_link()
+      {:ok, %{store: store}}
+    end
+
+    @impl GenServer
+    def handle_call({:append_event_with_sequence, %{type: :message_received}}, _from, state) do
+      {:reply, {:error, Error.new(:storage_write_failed, "simulated append failure")}, state}
+    end
+
+    def handle_call(request, _from, state) do
+      {:reply, GenServer.call(state.store, request), state}
+    end
+
+    @impl GenServer
+    def terminate(_reason, state) do
+      if Process.alive?(state.store) do
+        GenServer.stop(state.store, :normal)
+      end
+
+      :ok
+    end
+  end
+
   # ============================================================================
   # Test Setup
   # ============================================================================
@@ -653,6 +691,21 @@ defmodule AgentSessionManager.SessionManagerTest do
 
       assert {:error, %Error{code: :storage_connection_failed}} =
                SessionManager.execute_run(store, adapter, run.id)
+    end
+
+    @tag capture_log: true
+    test "returns persistence_failures when adapter events fail to persist", %{adapter: adapter} do
+      {:ok, store} = MessageEventFailingStore.start_link()
+      cleanup_on_exit(fn -> safe_stop(store) end)
+
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+      {:ok, run} = SessionManager.start_run(store, adapter, session.id, %{prompt: "Hello"})
+
+      {:ok, result} = SessionManager.execute_run(store, adapter, run.id)
+
+      assert is_integer(result.persistence_failures)
+      assert result.persistence_failures > 0
     end
 
     test "injects transcript into session context when continuation is enabled", %{
@@ -1195,6 +1248,23 @@ defmodule AgentSessionManager.SessionManagerTest do
       created_event = Enum.find(events, &(&1.type == :session_created))
 
       assert created_event.data.provider == "mock"
+    end
+
+    test "session lifecycle events include provider and correlation_id in persisted fields", %{
+      store: store,
+      adapter: adapter
+    } do
+      {:ok, session} =
+        SessionManager.start_session(store, adapter, %{
+          agent_id: "test-agent",
+          metadata: %{correlation_id: "corr_internal_1"}
+        })
+
+      {:ok, events} = SessionStore.get_events(store, session.id)
+      created_event = Enum.find(events, &(&1.type == :session_created))
+
+      assert created_event.provider == "mock"
+      assert created_event.correlation_id == "corr_internal_1"
     end
   end
 

@@ -218,6 +218,10 @@ PLAN_NAMES+=("Composite Store")
 PLAN_FILES+=("examples/composite_store_live.exs")
 PLAN_ARGS+=("")
 
+PLAN_NAMES+=("Ash SessionStore")
+PLAN_FILES+=("examples/ash_session_store.exs")
+PLAN_ARGS+=("")
+
 # Persistence query, maintenance, and multi-run examples (no provider needed)
 PLAN_NAMES+=("Persistence Query API")
 PLAN_FILES+=("examples/persistence_query.exs")

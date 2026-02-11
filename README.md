@@ -94,6 +94,13 @@ For `EctoSessionStore`, run both schema migrations in order:
 1. `AgentSessionManager.Adapters.EctoSessionStore.Migration.up/0`
 2. `AgentSessionManager.Adapters.EctoSessionStore.MigrationV2.up/0`
 
+For Ash-based persistence adapters, also add:
+
+```elixir
+{:ash, "~> 3.0"},
+{:ash_postgres, "~> 2.0"}
+```
+
 ## Quick Start
 
 ### One-shot (simplest)
@@ -619,6 +626,7 @@ The guides cover each subsystem in depth:
 - [Testing](guides/testing.md) -- Mock adapters, in-memory store, testing patterns
 - [Persistence Overview](guides/persistence_overview.md) -- Ports, adapters, and event persistence flow
 - [Ecto SessionStore](guides/ecto_session_store.md) -- Production Ecto adapter for PostgreSQL and SQLite
+- [Ash SessionStore](guides/ash_session_store.md) -- Ash resources and AshPostgres-backed persistence adapters
 - [SQLite with EctoSessionStore](guides/sqlite_session_store.md) -- Zero-dependency file-backed persistence via Ecto
 - [S3 ArtifactStore](guides/s3_artifact_store.md) -- S3-compatible object storage for artifacts
 - [CompositeSessionStore](guides/composite_store.md) -- Unified session + artifact backend

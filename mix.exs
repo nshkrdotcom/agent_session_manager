@@ -45,6 +45,9 @@ defmodule AgentSessionManager.MixProject do
       {:ecto_sql, "~> 3.12", optional: true},
       {:postgrex, "~> 0.19", optional: true},
       {:ecto_sqlite3, "~> 0.17", optional: true},
+      # Ash Framework (optional -- alternative to raw Ecto adapters)
+      {:ash, "~> 3.0", optional: true},
+      {:ash_postgres, "~> 2.0", optional: true},
       {:ex_aws, "~> 2.5", optional: true},
       {:ex_aws_s3, "~> 2.5", optional: true},
       {:sweet_xml, "~> 0.7", optional: true},
@@ -109,6 +112,7 @@ defmodule AgentSessionManager.MixProject do
         "guides/persistence_overview.md",
         "guides/migrating_to_v0.8.md",
         "guides/ecto_session_store.md",
+        "guides/ash_session_store.md",
         "guides/sqlite_session_store.md",
         "guides/s3_artifact_store.md",
         "guides/composite_store.md",
@@ -145,6 +149,7 @@ defmodule AgentSessionManager.MixProject do
           "guides/persistence_overview.md",
           "guides/migrating_to_v0.8.md",
           "guides/ecto_session_store.md",
+          "guides/ash_session_store.md",
           "guides/sqlite_session_store.md",
           "guides/s3_artifact_store.md",
           "guides/composite_store.md",
@@ -219,8 +224,22 @@ defmodule AgentSessionManager.MixProject do
           AgentSessionManager.Adapters.InMemorySessionStore,
           AgentSessionManager.Adapters.FileArtifactStore,
           AgentSessionManager.Adapters.EctoSessionStore,
+          AgentSessionManager.Ash.Adapters.AshSessionStore,
+          AgentSessionManager.Ash.Adapters.AshQueryAPI,
+          AgentSessionManager.Ash.Adapters.AshMaintenance,
           AgentSessionManager.Adapters.S3ArtifactStore,
           AgentSessionManager.Adapters.CompositeSessionStore
+        ],
+        "Ash Integration": [
+          AgentSessionManager.Ash.Domain,
+          AgentSessionManager.Ash.Resources.Session,
+          AgentSessionManager.Ash.Resources.Run,
+          AgentSessionManager.Ash.Resources.Event,
+          AgentSessionManager.Ash.Resources.SessionSequence,
+          AgentSessionManager.Ash.Resources.Artifact,
+          AgentSessionManager.Ash.Adapters.AshSessionStore,
+          AgentSessionManager.Ash.Adapters.AshQueryAPI,
+          AgentSessionManager.Ash.Adapters.AshMaintenance
         ],
         Concurrency: [
           AgentSessionManager.Concurrency.ConcurrencyLimiter,

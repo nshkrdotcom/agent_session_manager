@@ -435,6 +435,20 @@ mix run examples/s3_artifact_store_live.exs
 mix run examples/composite_store_live.exs
 ```
 
+### `ash_session_store.exs` -- Ash Framework SessionStore
+
+- Uses Ash resources backed by AshPostgres for persistence
+- Demonstrates AshSessionStore, AshQueryAPI, and AshMaintenance adapters
+- Shows the same SessionStore contract working with Ash
+- Requires PostgreSQL (not SQLite)
+
+```bash
+# First create the database:
+createdb asm_ash_example
+
+mix run examples/ash_session_store.exs
+```
+
 ## Persistence Query, Maintenance, and Multi-Run Examples
 
 These examples demonstrate the persistence query, maintenance, and multi-provider capabilities.

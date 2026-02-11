@@ -134,6 +134,60 @@ The file contains a module definition.
 --- 8 events, 1 tools ---
 ```
 
+## StudioRenderer
+
+The `StudioRenderer` produces CLI-grade interactive output designed for watching
+agent sessions live in a terminal. It replaces dense token streams with:
+
+- Status symbols during tool execution (`◐` running, `✓` success, `✗` failure)
+- Human-readable tool summaries instead of raw JSON
+- Clean text streaming with proper indentation
+- Visual separation between reasoning and tool actions
+
+### Quick Start
+
+    Rendering.stream(event_stream,
+      renderer: {StudioRenderer, []},
+      sinks: [{TTYSink, []}]
+    )
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `:color` | `boolean` | `true` | Enable ANSI colors |
+| `:tool_output` | `:summary \| :preview \| :full` | `:summary` | Tool output verbosity |
+| `:indent` | `integer` | `2` | Base indentation (spaces) |
+| `:tty` | `boolean` | auto-detect | Override TTY detection |
+
+### Tool Output Modes
+
+**`:summary`** — One line per tool:
+
+    ✓ Read lib/sink.ex (72 lines)
+    ✓ Ran: mix test (exit 0, 156 chars, 3.2s)
+
+**`:preview`** — Summary + last 3 lines of output:
+
+    ✓ Ran: mix test (exit 0, 3.2s)
+    │ .....
+    │ 5 tests, 0 failures
+    │ Finished in 1.2 seconds
+
+**`:full`** — Complete tool output:
+
+    ✓ Ran: mix test (exit 0, 3.2s)
+    ┊ Running ExUnit with seed: 12345
+    ┊ .....
+    ┊ 5 tests, 0 failures
+
+### Non-TTY Fallback
+
+When output is piped or redirected, StudioRenderer automatically:
+- Disables cursor control (no line overwriting)
+- Prints both status and summary as separate lines
+- Disables color (unless forced)
+
 ### PassthroughRenderer
 
 No-op renderer that returns empty iodata for every event. Use with sinks that process raw events directly (CallbackSink, JSONLSink).

@@ -491,7 +491,11 @@ Rendering.stream(event_stream,
 )
 ```
 
-Built-in renderers: `CompactRenderer` (single-line token format with ANSI colors), `VerboseRenderer` (bracketed line-by-line), `PassthroughRenderer` (no-op for programmatic sinks). Built-in sinks: `TTYSink`, `FileSink`, `JSONLSink` (full and compact modes), `CallbackSink`. See the [Rendering](guides/rendering.md) guide for details.
+Built-in renderers include `StudioRenderer` (recommended for interactive terminal use), `CompactRenderer` (single-line token format), `VerboseRenderer` (bracketed line-by-line), and `PassthroughRenderer` (no-op for programmatic sinks).
+
+`StudioRenderer` provides human-readable tool summaries, status symbols (`◐`, `✓`, `✗`, `●`), and configurable tool output levels (`:summary`, `:preview`, `:full`) with automatic non-TTY fallback.
+
+Built-in sinks: `TTYSink`, `FileSink`, `JSONLSink` (full and compact modes), and `CallbackSink`. See the [Rendering](guides/rendering.md) guide for details.
 
 ### Capability Negotiation
 

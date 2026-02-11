@@ -7,48 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- **Ash Framework persistence integration** as an optional alternative to raw Ecto adapters
-  - New Ash resources and domain for `asm_*` tables
-  - New adapters: `AshSessionStore`, `AshQueryAPI`, and `AshMaintenance`
-  - Atomic per-session sequence assignment via `AssignSequence`
-  - Ash-focused tests, guide (`guides/ash_session_store.md`), and live example (`examples/ash_session_store.exs`)
-- **PubSub integration** for real-time event broadcasting via Phoenix PubSub
-  - `PubSubSink` rendering sink broadcasts events to configurable PubSub topics
-  - `AgentSessionManager.PubSub` helper module with `event_callback/2` and `subscribe/2`
-  - `AgentSessionManager.PubSub.Topic` for canonical topic naming (`asm:session:{id}`, `asm:session:{id}:run:{rid}`)
-  - Optional dependency on `phoenix_pubsub ~> 2.1` with graceful stub fallback
-- `AgentSessionManager.WorkflowBridge` module for workflow/DAG engine integration
-- `WorkflowBridge.StepResult` normalized result type with routing signals
-- `WorkflowBridge.ErrorClassification` for retry/failover/abort decisions
-- `step_execute/3` supporting one-shot and multi-run execution modes
-- `setup_workflow_session/3` and `complete_workflow_session/3` lifecycle helpers
-- `classify_error/1` mapping ASM errors to workflow routing actions
-- `examples/workflow_bridge.exs` live example
-- `guides/workflow_bridge.md` integration guide
-- **Secrets redaction for persisted events** (`EventRedactor` module)
-  - Configurable pattern-based secret detection and `[REDACTED]` replacement
-  - Integrates into `EventBuilder` pipeline between build and enrich steps
-  - Default patterns for AWS keys, AI provider tokens, GitHub PATs, JWTs, passwords, connection strings, private keys, environment variables
-  - Custom pattern support via application config or per-pipeline context override
-  - `redact_map/2` public API for user callback and telemetry handler wrapping
-  - Opt-in via `redaction_enabled: true` (default: disabled for backward compatibility)
-  - Telemetry event `[:agent_session_manager, :persistence, :event_redacted]` emitted on redaction
-  - Five new `Config` keys: `redaction_enabled`, `redaction_patterns`, `redaction_replacement`, `redaction_deep_scan`, `redaction_scan_metadata`
-
-### Changed
-
-- PubSub defaults are now configured per use (`PubSubSink` / `PubSub.event_callback`) and are no longer exposed as global `AgentSessionManager.Config` keys
-- Current-only contract cleanup:
-  - Boolean continuation value `true` is no longer accepted; use `:auto`, `:replay`, `:native`, or `false`
-  - Adapter tool events emit canonical keys only: `tool_call_id`, `tool_name`, `tool_input`, `tool_output`
-  - `TranscriptBuilder` and renderers consume canonical tool keys only
-  - `Event.from_map/1` requires explicit `schema_version`
-  - `QueryAPI` and `Maintenance` accept module-backed refs only
-  - `SessionServer.status/1` no longer includes the legacy active-run status field
-  - Session provider metadata is stored under `session.metadata[:provider_sessions]` without top-level duplication
-
 ## [0.8.0] - 2026-02-10
 
 ### Added
@@ -107,6 +65,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Comprehensive tests for runtime enforcement and stacking, `approval_gates.exs` example, and updated policy enforcement guide
 - **Interactive interrupt example** (`interactive_interrupt.exs`) demonstrating mid-stream run cancellation and follow-up prompts within the same session
 - Case-insensitive tool name matching in `approval_gates.exs` policy rules (lowercase and title case variants)
+- **Shell Runner** (`ShellAdapter` provider and `Workspace.Exec`)
+  - `ShellAdapter` implements `ProviderAdapter` as a GenServer with `Task.Supervisor`-backed concurrent execution
+  - Three input formats: string (shell-wrapped via `/bin/sh -c`), structured map (explicit command/args/cwd), and messages (compatibility extraction from user content)
+  - Full canonical event sequence: `run_started`, `tool_call_started`, `tool_call_completed/failed`, `message_received`, `run_completed/failed/cancelled` with `provider: :shell` attribution
+  - Security controls: `allowed_commands` and `denied_commands` lists with denylist-takes-precedence semantics
+  - Configurable `success_exit_codes` for treating non-zero exits as success
+  - Cancellation kills both the Elixir task and underlying OS process via pid
+  - `Workspace.Exec` for low-level command execution via `Port.open` with timeout, output capture, max output bytes truncation, environment variables, and OS process management
+  - `run_streaming/3` returns lazy `Stream.resource` for incremental output
+  - `on_output` callback support in structured map input for streaming
+  - Advertises `command_execution` and `streaming` capabilities
+  - New guide: `guides/shell_runner.md`
+  - New example: `shell_exec.exs` demonstrating mixed provider + shell execution
+- **CodexAdapter `ItemStarted`/`ItemCompleted` event handling**
+  - Emit `tool_call_started` and `tool_call_completed` events for Codex command execution, file change, and MCP tool call items
+  - Normalize `CommandExecution` and `FileChange` item types to canonical tool event payloads
+  - ID-based `agent_messages` tracking with `streamed_agent_message_ids` to avoid content duplication across multi-message turns
+  - `active_tools` state preserves tool inputs during the call lifecycle
+- **Ash Framework persistence integration** as an optional alternative to raw Ecto adapters
+  - New Ash resources and domain for `asm_*` tables
+  - New adapters: `AshSessionStore`, `AshQueryAPI`, and `AshMaintenance`
+  - Atomic per-session sequence assignment via `AssignSequence`
+  - Ash-focused tests, guide (`guides/ash_session_store.md`), and live example (`examples/ash_session_store.exs`)
+- **PubSub integration** for real-time event broadcasting via Phoenix PubSub
+  - `PubSubSink` rendering sink broadcasts events to configurable PubSub topics
+  - `AgentSessionManager.PubSub` helper module with `event_callback/2` and `subscribe/2`
+  - `AgentSessionManager.PubSub.Topic` for canonical topic naming (`asm:session:{id}`, `asm:session:{id}:run:{rid}`)
+  - Optional dependency on `phoenix_pubsub ~> 2.1` with graceful stub fallback
+- `AgentSessionManager.WorkflowBridge` module for workflow/DAG engine integration
+- `WorkflowBridge.StepResult` normalized result type with routing signals
+- `WorkflowBridge.ErrorClassification` for retry/failover/abort decisions
+- `step_execute/3` supporting one-shot and multi-run execution modes
+- `setup_workflow_session/3` and `complete_workflow_session/3` lifecycle helpers
+- `classify_error/1` mapping ASM errors to workflow routing actions
+- `examples/workflow_bridge.exs` live example
+- `guides/workflow_bridge.md` integration guide
+- **Secrets redaction for persisted events** (`EventRedactor` module)
+  - Configurable pattern-based secret detection and `[REDACTED]` replacement
+  - Integrates into `EventBuilder` pipeline between build and enrich steps
+  - Default patterns for AWS keys, AI provider tokens, GitHub PATs, JWTs, passwords, connection strings, private keys, environment variables
+  - Custom pattern support via application config or per-pipeline context override
+  - `redact_map/2` public API for user callback and telemetry handler wrapping
+  - Opt-in via `redaction_enabled: true` (default: disabled for backward compatibility)
+  - Telemetry event `[:agent_session_manager, :persistence, :event_redacted]` emitted on redaction
+  - Five new `Config` keys: `redaction_enabled`, `redaction_patterns`, `redaction_replacement`, `redaction_deep_scan`, `redaction_scan_metadata`
+- **`StudioRenderer`** — CLI-grade interactive renderer for terminal display
+  - Human-readable tool summaries instead of raw JSON output
+  - Status symbols: `◐` (running), `✓` (success), `✗` (failure), `●` (info)
+  - Three tool output modes: `:summary`, `:preview`, `:full`
+  - Clean text streaming with indentation and visual phase separation
+  - Automatic non-TTY fallback (no cursor control when piped)
+  - `Studio.ANSI` shared utility module for colors, cursor control, and symbols
+  - `Studio.ToolSummary` per-tool summarization for bash, Read, Write, Edit, Glob, Grep, Task, WebFetch, WebSearch
+- New example: `rendering_studio.exs` demonstrating StudioRenderer with all three tool output modes
+- New guide section: StudioRenderer in `guides/rendering.md`
+- **`CostCalculator`** with model-aware pricing and USD cost tracking (`AgentSessionManager.Cost.CostCalculator`)
+  - Three-tier model resolution: exact match, prefix match with date suffix stripping, provider default fallback
+  - Cache token support for Claude prompt caching (`cache_read_tokens`, `cache_creation_tokens`)
+  - `cost_usd` field added to `Run` struct with serialization support
+  - `get_cost_summary/2` callback on `QueryAPI` with per-run aggregation (total, by_provider, by_model)
+  - Policy `Runtime` model-aware rate resolution via `CostCalculator.resolve_rates/3`
+  - `MigrationV4` adding `cost_usd` float column to `asm_runs` table
+  - Cost display in `CompactRenderer`, `VerboseRenderer`, and `JSONLSink`
+  - `SessionManager` finalization prefers SDK-provided `total_cost_usd`, falls back to `CostCalculator`
+  - New guide: `guides/cost_tracking.md`
+  - New example: `cost_tracking.exs`
+- **`AgentSessionManager.Config` centralization** of all operational defaults
+  - All library timeouts, buffer sizes, and limits moved into centralized Config with three-layer resolution (process-local, application env, hardcoded fallback)
+  - New guide: Configuration Reference
+- **`AgentSessionManager.Models`** central registry for model identifiers and pricing
+  - Runtime model name, default provider model, and per-token pricing lookup
+  - `AgentSessionManager.Test.Models` for test fixture management
+  - New guide: Model Configuration
 
 ### Changed
 
@@ -121,6 +152,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`InMemorySessionStore` event appends moved to queue-based buffering** to avoid O(n) append overhead under load
 - **`CompositeSessionStore` direct-call timeout handling** now propagates `wait_timeout_ms` and isolates artifact failures from session persistence paths
 - `crypto.strong_rand_bytes` used for workspace artifact keys instead of `System.unique_integer`
+- **Current-only contract cleanup** (backward-compatibility shims removed):
+  - Boolean continuation value `true` is no longer accepted; use `:auto`, `:replay`, `:native`, or `false`
+  - Adapter tool events emit canonical keys only: `tool_call_id`, `tool_name`, `tool_input`, `tool_output`; provider-native aliases (`call_id`, `tool_use_id`, `arguments`, `input`, `output`, `content`) removed
+  - `TranscriptBuilder` and renderers consume canonical tool keys only; fallback chains through legacy keys removed
+  - `Event.from_map/1` requires explicit `schema_version` (integer >= 1); `nil`/missing no longer defaults to 1
+  - `QueryAPI` and `Maintenance` accept module-backed `{Module, context}` refs only; GenServer dispatch paths return `:validation_error`
+  - `SessionServer.status/1` no longer includes the legacy `active_run_id` status field
+  - Session provider metadata is stored under `session.metadata[:provider_sessions]` without top-level duplication; top-level `:provider_session_id` and `:model` keys are no longer merged
+- **ClaudeAdapter refactoring**: removed `execute_with_mock_sdk` path and receive-based event stream processing (~300 lines); added stop_reason tracking through streaming context, `:cancelled` result subtype handling from SDK stream, and extracted `extract_usage_counts`, `extract_stop_reason`, `emit_success_events`, `maybe_emit_run_completed` helpers
+- **`EventBuilder`** no longer duplicates provider into `event.metadata`; provider lives on `Event.provider` struct field only
+- **`EventNormalizer`** removes type inference heuristics (content-key sniffing, status-based refinement, fuzzy type mappings); `resolve_type` validates against `Event.valid_type?/1` using canonical names only
+- `MockSDK` gains `query/3` interface returning `Stream.resource` with `ClaudeAgentSDK.Message` emission, including tool_use content block handling and error scenarios
+- `codex_sdk` dependency updated from path ref to `~> 0.8.0` hex package
+- PubSub defaults are now configured per use (`PubSubSink` / `PubSub.event_callback`) and are no longer exposed as global `AgentSessionManager.Config` keys
+- `FileSink` ANSI strip regex extended to also remove cursor control sequences (`\r`, `\e[2K`, `\e[NA`)
+- Execution timeout propagated to underlying SDK options: Amp (`stream_timeout_ms`) and Claude (`timeout_ms`) with configurable fallback
+- Unbounded/infinite timeout support across all adapters with 7-day (604,800,000 ms) emergency cap to prevent runaway processes
+- Codex adapter `sdk_opts` selective merge filtering against target module keys (supports both atom and string keys)
+- Codex adapter extracts confirmed model names and reasoning effort from thread metadata events
+- Amp adapter includes model state in execution context
+- Ash query filtering enhancements: `min_tokens` filter, `since`/`until` temporal filtering, multi-status filtering, strict limit validation, improved cursor pagination
+- All adapters (Shell, Ecto, Ash) use dynamic configuration from `Config` module
+- `RetentionPolicy` pulls defaults from central Config
+- `ConcurrencyLimiter` uses configurable parallel session limits from Config
+- `CostCalculator` uses centralized pricing table from `Models`
+- `ClaudeAdapter` and examples use dynamic default model from `Models`
+- Ash adapters use `expr` macro in query filters; large functions broken into focused helpers
+- `WorkflowBridge` keyword list normalization improved for adapter options and continuation parameters
+- Ash tests gated behind `RUN_ASH_TESTS` environment variable
 
 ### Fixed
 
@@ -148,13 +208,19 @@ See `guides/migrating_to_v0.8.md` for migration details.
 
 - Persistence guides: `persistence_overview.md`, `ecto_session_store.md`, `sqlite_session_store.md`, `s3_artifact_store.md`, `composite_store.md`, `event_schema_versioning.md`, `custom_persistence_guide.md`, `migrating_to_v0.8.md`
 - Persistence module group and guides added to HexDocs configuration
-- Update `README.md` with approval gate functionality and interactive interrupt example
-- Update `examples/README.md` with `interactive_interrupt.exs` and `approval_gates.exs` entries
-- Add `interactive_interrupt.exs` to `run_all.sh` automated test suite
+- New guide: `guides/shell_runner.md` covering `Workspace.Exec` and `ShellAdapter` usage, input formats, configuration, event mapping, security controls, and mixed AI+shell workflows
+- Update `guides/provider_adapters.md` with ShellAdapter section, event mapping table, and Shell Runner module group in HexDocs
+- Update `README.md` with approval gate functionality, interactive interrupt example, and Shell Runner feature
+- Update `examples/README.md` with `interactive_interrupt.exs`, `approval_gates.exs`, and `shell_exec.exs` entries
+- Add `interactive_interrupt.exs` and `shell_exec.exs` to `run_all.sh` automated test suite
 - Update `README.md` and persistence overview with per-event persistence and `flush/2` finalization details
 - Document V2 migration prerequisites + V3 foreign-key migration expectations for SQLite and PostgreSQL flows
 - Document cursor semantics/order requirements, SessionStore ref shapes (`pid` vs `{Module, context}`), and optional SDK dependency behavior
 - Update `examples/README.md` with all persistence adapter and query/maintenance examples
+- Rewrite `guides/event_schema_versioning.md` for strict-only contract (no backward-compatible defaults)
+- Remove "backward compatible" / "legacy" language from all guides
+- Update `guides/session_continuity.md`: remove boolean `true` documentation, simplify mode table
+- Update `guides/provider_adapters.md`: remove alias emission notes, canonical keys only
 
 ## [0.7.0] - 2026-02-09
 

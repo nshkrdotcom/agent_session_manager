@@ -64,6 +64,6 @@ defmodule AgentSessionManager.Rendering.Sinks.FileSink do
   def close(_state), do: :ok
 
   defp strip_ansi(text) do
-    String.replace(text, ~r/\x1b\[[0-9;]*m/, "")
+    String.replace(text, ~r/\x1b\[[0-9;]*[mABCDHJK]|\r(?!\n)/, "")
   end
 end

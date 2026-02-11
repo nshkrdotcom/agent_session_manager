@@ -317,6 +317,19 @@ mix run examples/rendering_verbose.exs --provider codex
 mix run examples/rendering_verbose.exs --provider amp
 ```
 
+### `rendering_studio.exs` -- StudioRenderer (Live Provider)
+
+- Runs a real provider session and renders using StudioRenderer
+- Demonstrates CLI-grade display with tool status symbols and human-readable summaries
+- Supports tool output verbosity via `--tool-output summary|preview|full`
+- Uses TTYSink for terminal output
+
+```bash
+mix run examples/rendering_studio.exs --provider claude
+mix run examples/rendering_studio.exs --provider codex --tool-output preview
+mix run examples/rendering_studio.exs --provider amp --tool-output full
+```
+
 ### `rendering_multi_sink.exs` -- Multi-Sink Pipeline (Live Provider)
 
 - Runs a real provider session through all four sink types simultaneously

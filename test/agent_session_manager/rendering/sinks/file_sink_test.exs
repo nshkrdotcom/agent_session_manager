@@ -54,6 +54,19 @@ defmodule AgentSessionManager.Rendering.Sinks.FileSinkTest do
       content = File.read!(path)
       assert content == "Hello world"
     end
+
+    test "strips cursor control escape sequences", %{path: path} do
+      {:ok, state} = FileSink.init(path: path)
+
+      {:ok, state} = FileSink.write("line one\r\e[2Kline two\n", state)
+      FileSink.flush(state)
+      FileSink.close(state)
+
+      content = File.read!(path)
+      assert content == "line oneline two\n"
+      refute content =~ "\r"
+      refute content =~ "\e[2K"
+    end
   end
 
   describe "write_event/3" do

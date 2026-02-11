@@ -188,6 +188,10 @@ for p in "${PROVIDERS[@]}"; do
   PLAN_FILES+=("examples/rendering_verbose.exs")
   PLAN_ARGS+=("--provider $p")
 
+  PLAN_NAMES+=("Rendering Studio ($label)")
+  PLAN_FILES+=("examples/rendering_studio.exs")
+  PLAN_ARGS+=("--provider $p")
+
   PLAN_NAMES+=("Rendering Multi-Sink ($label)")
   PLAN_FILES+=("examples/rendering_multi_sink.exs")
   PLAN_ARGS+=("--provider $p")

@@ -1,4 +1,4 @@
-if Code.ensure_loaded?(Ash.Resource) do
+if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLayer) do
   defmodule AgentSessionManager.Ash.ConvertersTest do
     use ExUnit.Case, async: true
     @moduletag :ash

@@ -141,6 +141,8 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
       query: query
     } do
       data = seed_session_with_runs_and_events(store)
+      created_between = DateTime.add(~U[2026-02-10 00:00:00.000000Z], 15, :second)
+      created_before = DateTime.add(~U[2026-02-10 00:00:00.000000Z], 25, :second)
 
       assert {:ok, %{sessions: sessions, total_count: count}} =
                QueryAPI.search_sessions(query, agent_id: "agent-q")
@@ -160,6 +162,36 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
                QueryAPI.search_sessions(query, provider: "codex")
 
       assert Enum.map(provider_sessions, & &1.id) == [data.session_1.id]
+
+      assert {:ok, %{sessions: tagged_sessions, total_count: tagged_count}} =
+               QueryAPI.search_sessions(query, tags: ["priority"], include_deleted: true)
+
+      assert tagged_count == 1
+      assert Enum.map(tagged_sessions, & &1.id) == [data.session_1.id]
+
+      assert {:ok, %{sessions: created_after_sessions}} =
+               QueryAPI.search_sessions(
+                 query,
+                 include_deleted: true,
+                 created_after: created_between
+               )
+
+      assert Enum.map(created_after_sessions, & &1.id) |> Enum.sort() == [
+               data.session_2.id,
+               data.session_3.id
+             ]
+
+      assert {:ok, %{sessions: created_before_sessions}} =
+               QueryAPI.search_sessions(
+                 query,
+                 include_deleted: true,
+                 created_before: created_before
+               )
+
+      assert Enum.map(created_before_sessions, & &1.id) |> Enum.sort() == [
+               data.session_1.id,
+               data.session_2.id
+             ]
 
       assert {:ok, %{sessions: deleted_hidden}} = QueryAPI.search_sessions(query)
       refute Enum.any?(deleted_hidden, &(&1.id == data.session_3.id))

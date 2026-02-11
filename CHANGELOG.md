@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Ash Framework persistence integration** as an optional alternative to raw Ecto adapters
+  - New Ash resources and domain for `asm_*` tables
+  - New adapters: `AshSessionStore`, `AshQueryAPI`, and `AshMaintenance`
+  - Atomic per-session sequence assignment via `AssignSequence`
+  - Ash-focused tests, guide (`guides/ash_session_store.md`), and live example (`examples/ash_session_store.exs`)
 - **PubSub integration** for real-time event broadcasting via Phoenix PubSub
   - `PubSubSink` rendering sink broadcasts events to configurable PubSub topics
   - `AgentSessionManager.PubSub` helper module with `event_callback/2` and `subscribe/2`

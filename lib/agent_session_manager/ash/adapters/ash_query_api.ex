@@ -167,6 +167,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
         {:ok, session} ->
           {:ok, runs} = read_runs(domain, session_id: session_id)
           {:ok, events} = read_events(domain, session_ids: [session_id])
+          events = Enum.sort_by(events, &{&1.sequence_number || 0, &1.id}, :asc)
 
           export = %{session: Converters.record_to_session(session), runs: runs, events: events}
 
@@ -194,6 +195,8 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
     end
 
     defp read_sessions(domain, opts) do
+      tags = normalize_tags_filter(opts)
+
       query =
         Resources.Session
         |> Ash.Query.for_read(:read)
@@ -209,6 +212,13 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
         case Keyword.get(opts, :provider) do
           nil -> sessions
           provider -> filter_sessions_by_provider(domain, sessions, provider)
+        end
+
+      sessions =
+        if tags == [] do
+          sessions
+        else
+          filter_sessions_by_tags(sessions, tags)
         end
 
       {:ok, sessions}
@@ -546,6 +556,21 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
         |> MapSet.new()
 
       Enum.filter(sessions, &MapSet.member?(provider_session_ids, &1.id))
+    end
+
+    defp normalize_tags_filter(opts) do
+      case Keyword.get(opts, :tags) do
+        nil -> []
+        [] -> []
+        tags -> Enum.map(tags, &to_string/1)
+      end
+    end
+
+    defp filter_sessions_by_tags(sessions, tags) do
+      Enum.filter(sessions, fn session ->
+        session_tags = Enum.map(session.tags || [], &to_string/1)
+        Enum.all?(tags, &(&1 in session_tags))
+      end)
     end
 
     defp sort_sessions(sessions, :created_at_asc),

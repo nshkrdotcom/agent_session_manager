@@ -47,7 +47,8 @@ defmodule ApprovalGatesExample do
     {:ok, policy} =
       Policy.new(
         name: "production-safety",
-        tool_rules: [{:deny, ["bash"]}],
+        # Provider tool names can differ by casing (for example "Bash" vs "bash")
+        tool_rules: [{:deny, ["bash", "Bash"]}],
         on_violation: :request_approval
       )
 
@@ -122,10 +123,25 @@ defmodule ApprovalGatesExample do
 
     {:ok, run2} =
       SessionManager.start_run(store, adapter, session.id, %{
-        messages: [%{role: "user", content: "List files in /home"}]
+        messages: [
+          %{
+            role: "user",
+            content:
+              "Count from 1 to 100 with one line per number and include a short explanation after each."
+          }
+        ]
       })
 
-    _ = SessionManager.execute_run(store, adapter, run2.id)
+    parent = self()
+
+    run2_task =
+      Task.async(fn ->
+        SessionManager.execute_run(store, adapter, run2.id,
+          event_callback: fn event_data ->
+            send(parent, {:run2_event, run2.id, Map.get(event_data, :type, :unknown)})
+          end
+        )
+      end)
 
     approval_data = %{
       tool_name: "bash",
@@ -135,15 +151,31 @@ defmodule ApprovalGatesExample do
       violation_kind: :tool_denied
     }
 
-    case SessionManager.cancel_for_approval(store, adapter, run2.id, approval_data) do
+    cancel_result =
+      case wait_for_run_event(run2.id, :run_started, 10_000) do
+        :ok ->
+          SessionManager.cancel_for_approval(store, adapter, run2.id, approval_data)
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+
+    case cancel_result do
       {:ok, _} ->
-        IO.puts("  cancel_for_approval succeeded for run: #{run2.id}")
+        IO.puts("  cancel_for_approval succeeded for in-flight run: #{run2.id}")
 
       {:error, error} ->
-        IO.puts(
-          "  cancel_for_approval: #{inspect(error.code)} (expected if run already completed)"
-        )
+        code = if is_map(error), do: Map.get(error, :code), else: error
+        IO.puts("  cancel_for_approval failed: #{inspect(code)}")
     end
+
+    run2_result =
+      case Task.yield(run2_task, 30_000) || Task.shutdown(run2_task, :brutal_kill) do
+        {:ok, result} -> result
+        nil -> {:error, :timeout}
+      end
+
+    IO.puts("  Run 2 execute result: #{inspect(summarize_result(run2_result))}")
 
     IO.puts("")
 
@@ -168,7 +200,7 @@ defmodule ApprovalGatesExample do
     {:ok, team_policy} =
       Policy.new(
         name: "team-review",
-        tool_rules: [{:deny, ["bash"]}],
+        tool_rules: [{:deny, ["bash", "Bash"]}],
         on_violation: :request_approval
       )
 
@@ -211,6 +243,31 @@ defmodule ApprovalGatesExample do
 
     Keyword.get(parsed, :provider, "claude")
   end
+
+  defp wait_for_run_event(run_id, event_type, timeout_ms) do
+    started_at = System.monotonic_time(:millisecond)
+    do_wait_for_run_event(run_id, event_type, timeout_ms, started_at)
+  end
+
+  defp do_wait_for_run_event(run_id, event_type, timeout_ms, started_at) do
+    elapsed = System.monotonic_time(:millisecond) - started_at
+    remaining = max(timeout_ms - elapsed, 0)
+
+    receive do
+      {:run2_event, ^run_id, ^event_type} ->
+        :ok
+
+      {:run2_event, ^run_id, _other} ->
+        do_wait_for_run_event(run_id, event_type, timeout_ms, started_at)
+    after
+      remaining ->
+        {:error, :timeout_waiting_for_run_event}
+    end
+  end
+
+  defp summarize_result({:ok, _result}), do: :ok
+  defp summarize_result({:error, error}) when is_map(error), do: {:error, Map.get(error, :code)}
+  defp summarize_result(other), do: other
 end
 
 ApprovalGatesExample.main(System.argv())

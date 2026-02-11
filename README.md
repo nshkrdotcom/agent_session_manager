@@ -551,6 +551,12 @@ mix run examples/policy_v2.exs --provider claude
 # Feature 6 v2: multi-slot concurrency
 mix run examples/session_concurrency.exs --provider claude
 
+# Approval gates (on_violation: :request_approval)
+mix run examples/approval_gates.exs --provider claude
+
+# Interrupt and continue in same session
+mix run examples/interactive_interrupt.exs --provider claude
+
 # Permission modes (full_auto, dangerously_skip_permissions, etc.)
 mix run examples/permission_mode.exs --provider claude --mode full_auto
 

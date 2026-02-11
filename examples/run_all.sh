@@ -116,6 +116,10 @@ for p in "${PROVIDERS[@]}"; do
   PLAN_FILES+=("examples/session_runtime.exs")
   PLAN_ARGS+=("--provider $p")
 
+  PLAN_NAMES+=("Interactive Interrupt ($label)")
+  PLAN_FILES+=("examples/interactive_interrupt.exs")
+  PLAN_ARGS+=("--provider $p")
+
   PLAN_NAMES+=("Session Subscriptions ($label)")
   PLAN_FILES+=("examples/session_subscription.exs")
   PLAN_ARGS+=("--provider $p")

@@ -167,6 +167,23 @@ mix run examples/session_runtime.exs --provider codex
 mix run examples/session_runtime.exs --provider amp
 ```
 
+### `interactive_interrupt.exs` -- Interrupt and Continue in Same Session
+
+Demonstrates the interrupt-and-continue pattern:
+
+- Starts a long-running response in a session
+- Cancels the run mid-stream after a configurable delay
+- Sends a follow-up prompt in the **same session** with `continuation: :replay`
+- Streams the follow-up response to completion
+- Shows event counts and types for both runs
+
+```bash
+mix run examples/interactive_interrupt.exs --provider claude
+mix run examples/interactive_interrupt.exs --provider claude --delay 2000
+mix run examples/interactive_interrupt.exs --provider codex
+mix run examples/interactive_interrupt.exs --provider amp
+```
+
 ### `session_subscription.exs` -- Session Subscriptions (Feature 6)
 
 - Subscribes to stored events via `SessionServer.subscribe/2`

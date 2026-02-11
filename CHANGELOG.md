@@ -67,6 +67,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `session_store_contract_multi_impl_test.exs` (contract tests across InMemory + Ecto refs)
   - `ecto_session_store_migration_compat_test.exs` and `ecto_session_store_migration_down_test.exs` (migration prerequisite + rollback coverage)
 - Persistence live examples: `sqlite_session_store_live.exs`, `ecto_session_store_live.exs`, `s3_artifact_store_live.exs`, `composite_store_live.exs`, `persistence_query.exs`, `persistence_maintenance.exs`, `persistence_multi_run.exs`, `persistence_live.exs`, `persistence_s3_minio.exs`
+- **Approval gates and human-in-the-loop policy enforcement**
+  - New `request_approval` policy action as a valid `on_violation` value, emitting `tool_approval_requested` events without automatically cancelling the run
+  - Strictness hierarchy for policy stacking: `cancel` > `request_approval` > `warn`
+  - Core event types for `tool_approval_requested`, `tool_approval_granted`, and `tool_approval_denied` with validation and persistence support
+  - `cancel_for_approval/4` in `SessionManager` for streamlined run cancellation pending human review
+  - `TranscriptBuilder` synthetic tool responses when a run is awaiting approval, reflecting the paused state in the transcript
+  - Comprehensive tests for runtime enforcement and stacking, `approval_gates.exs` example, and updated policy enforcement guide
+- **Interactive interrupt example** (`interactive_interrupt.exs`) demonstrating mid-stream run cancellation and follow-up prompts within the same session
+- Case-insensitive tool name matching in `approval_gates.exs` policy rules (lowercase and title case variants)
 
 ### Changed
 
@@ -108,6 +117,9 @@ See `guides/migrating_to_v0.8.md` for migration details.
 
 - Persistence guides: `persistence_overview.md`, `ecto_session_store.md`, `sqlite_session_store.md`, `s3_artifact_store.md`, `composite_store.md`, `event_schema_versioning.md`, `custom_persistence_guide.md`, `migrating_to_v0.8.md`
 - Persistence module group and guides added to HexDocs configuration
+- Update `README.md` with approval gate functionality and interactive interrupt example
+- Update `examples/README.md` with `interactive_interrupt.exs` and `approval_gates.exs` entries
+- Add `interactive_interrupt.exs` to `run_all.sh` automated test suite
 - Update `README.md` and persistence overview with per-event persistence and `flush/2` finalization details
 - Document V2 migration prerequisites + V3 foreign-key migration expectations for SQLite and PostgreSQL flows
 - Document cursor semantics/order requirements, SessionStore ref shapes (`pid` vs `{Module, context}`), and optional SDK dependency behavior

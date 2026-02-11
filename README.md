@@ -55,8 +55,10 @@ ETS/DB   Claude/Codex/Amp -- adapters (implementations)
 
 The core domain types (`Session`, `Run`, `Event`, `Capability`, `Manifest`) are pure data structures with no side effects. The `SessionManager` coordinates between the storage port and the provider adapter port.
 
-`run_once/4` accepts any `SessionStore` reference supported by the port:
-pid/name (GenServer-backed stores) or `{Module, context}` (module-backed refs).
+`run_once/4` accepts process-backed store references (`pid`, registered `atom`,
+`{:via, ...}`, `{:global, ...}`) and rejects module-backed refs
+(`{Module, context}`). Use `WorkflowBridge.step_execute/3` for one-shot
+execution when working with module-backed stores.
 
 ## Installation
 

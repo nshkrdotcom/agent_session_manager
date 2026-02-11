@@ -1,6 +1,7 @@
 if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLayer) do
   defmodule AgentSessionManager.Ash.Changes.AssignSequenceTest do
     use ExUnit.Case, async: false
+    @moduletag :ash
 
     alias AgentSessionManager.Ash.Changes.AssignSequence
     alias AgentSessionManager.Ash.Resources

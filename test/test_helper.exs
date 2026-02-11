@@ -1,5 +1,5 @@
 # Configure ExUnit
-ExUnit.start(exclude: [:skip, :load_test])
+ExUnit.start(exclude: [:skip, :load_test, :ash])
 
 # Define Mox mocks
 Mox.defmock(AgentSessionManager.MockS3Client,
@@ -21,28 +21,30 @@ Mox.defmock(AgentSessionManager.MockS3Client,
 # Or for simple tests without full supertester infrastructure:
 #   import AgentSessionManager.Test.Fixtures
 
-if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLayer) do
-  {:ok, _} = AgentSessionManager.Ash.TestRepo.start_link()
-  Ecto.Adapters.SQL.Sandbox.mode(AgentSessionManager.Ash.TestRepo, :manual)
+if System.get_env("RUN_ASH_TESTS") in ["1", "true", "TRUE"] and
+     Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLayer) do
+  with {:ok, _} <- AgentSessionManager.Ash.TestRepo.start_link() do
+    Ecto.Adapters.SQL.Sandbox.mode(AgentSessionManager.Ash.TestRepo, :manual)
 
-  Ecto.Migrator.up(
-    AgentSessionManager.Ash.TestRepo,
-    1,
-    AgentSessionManager.Adapters.EctoSessionStore.Migration,
-    log: false
-  )
+    Ecto.Migrator.up(
+      AgentSessionManager.Ash.TestRepo,
+      1,
+      AgentSessionManager.Adapters.EctoSessionStore.Migration,
+      log: false
+    )
 
-  Ecto.Migrator.up(
-    AgentSessionManager.Ash.TestRepo,
-    2,
-    AgentSessionManager.Adapters.EctoSessionStore.MigrationV2,
-    log: false
-  )
+    Ecto.Migrator.up(
+      AgentSessionManager.Ash.TestRepo,
+      2,
+      AgentSessionManager.Adapters.EctoSessionStore.MigrationV2,
+      log: false
+    )
 
-  Ecto.Migrator.up(
-    AgentSessionManager.Ash.TestRepo,
-    3,
-    AgentSessionManager.Adapters.EctoSessionStore.MigrationV3,
-    log: false
-  )
+    Ecto.Migrator.up(
+      AgentSessionManager.Ash.TestRepo,
+      3,
+      AgentSessionManager.Adapters.EctoSessionStore.MigrationV3,
+      log: false
+    )
+  end
 end

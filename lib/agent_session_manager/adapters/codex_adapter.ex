@@ -682,11 +682,23 @@ if Code.ensure_loaded?(Codex) and Code.ensure_loaded?(Codex.Events) do
     defp extract_error_message(_), do: "Unknown error"
 
     defp handle_codex_event(%Events.ThreadStarted{} = event, ctx) do
-      emit_event(ctx, :run_started, %{
-        thread_id: event.thread_id,
-        model: ctx[:model],
-        metadata: event.metadata
-      })
+      metadata = event.metadata || %{}
+      confirmed_model = get_flex(metadata, :model)
+      confirmed_reasoning_effort = extract_reasoning_effort_from_metadata(metadata)
+
+      run_started_data =
+        %{
+          thread_id: event.thread_id,
+          model: confirmed_model || ctx[:model],
+          configured_model: ctx[:model],
+          confirmed_model: confirmed_model,
+          confirmed_reasoning_effort: confirmed_reasoning_effort,
+          confirmation_source: "codex_cli.thread_started",
+          metadata: metadata
+        }
+        |> drop_nil_values()
+
+      emit_event(ctx, :run_started, run_started_data)
 
       %{ctx | thread_id: event.thread_id}
     end
@@ -1157,6 +1169,31 @@ if Code.ensure_loaded?(Codex) and Code.ensure_loaded?(Codex.Events) do
 
     defp get_flex(map, key) when is_atom(key) do
       Map.get(map, key) || Map.get(map, Atom.to_string(key))
+    end
+
+    defp extract_reasoning_effort_from_metadata(metadata) when is_map(metadata) do
+      metadata_reasoning =
+        get_flex(metadata, :reasoning_effort) || get_flex(metadata, :reasoningEffort)
+
+      config_reasoning =
+        case get_flex(metadata, :config) do
+          config when is_map(config) ->
+            get_flex(config, :model_reasoning_effort) || get_flex(config, :reasoning_effort) ||
+              get_flex(config, :reasoningEffort)
+
+          _ ->
+            nil
+        end
+
+      metadata_reasoning || config_reasoning
+    end
+
+    defp extract_reasoning_effort_from_metadata(_), do: nil
+
+    defp drop_nil_values(map) when is_map(map) do
+      map
+      |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+      |> Map.new()
     end
 
     defp normalize_generic_tool_item_from_map(item) do

@@ -228,11 +228,22 @@ defmodule AgentSessionManager.WorkflowBridge do
   end
 
   defp build_exec_opts(params) do
+    continuation = Map.get(params, :continuation)
+    continuation_opts = Map.get(params, :continuation_opts)
+
+    adapter_opts =
+      params
+      |> Map.get(:adapter_opts, [])
+      |> normalize_keyword()
+      |> maybe_put_keyword(:continuation, continuation)
+      |> maybe_put_keyword(:continuation_opts, continuation_opts)
+      |> empty_keyword_to_nil()
+
     []
     |> maybe_put_keyword(:event_callback, Map.get(params, :event_callback))
-    |> maybe_put_keyword(:continuation, Map.get(params, :continuation))
-    |> maybe_put_keyword(:continuation_opts, Map.get(params, :continuation_opts))
-    |> maybe_put_keyword(:adapter_opts, Map.get(params, :adapter_opts))
+    |> maybe_put_keyword(:continuation, continuation)
+    |> maybe_put_keyword(:continuation_opts, continuation_opts)
+    |> maybe_put_keyword(:adapter_opts, adapter_opts)
     |> maybe_put_keyword(:policy, Map.get(params, :policy))
     |> maybe_put_keyword(:workspace, Map.get(params, :workspace))
   end
@@ -304,6 +315,10 @@ defmodule AgentSessionManager.WorkflowBridge do
 
   defp maybe_put_keyword(keyword, _key, nil), do: keyword
   defp maybe_put_keyword(keyword, key, value), do: Keyword.put(keyword, key, value)
+  defp normalize_keyword(value) when is_list(value), do: value
+  defp normalize_keyword(_), do: []
+  defp empty_keyword_to_nil([]), do: nil
+  defp empty_keyword_to_nil(keyword), do: keyword
 
   defp normalize_error(%Error{} = error), do: error
   defp normalize_error(_), do: Error.new(:internal_error, "Workflow failed")

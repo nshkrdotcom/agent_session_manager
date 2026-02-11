@@ -16,6 +16,7 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
   alias AgentSessionManager.Adapters.CodexAdapter
   alias AgentSessionManager.Core.{Error, Transcript}
   alias AgentSessionManager.Test.CodexMockSDK
+  alias Codex.Events
 
   defmodule FailingMockCodexSDK do
     @moduledoc false
@@ -189,6 +190,74 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
       assert run_started != nil
       assert run_started.data.thread_id != nil
       assert run_started.provider == :codex
+    end
+
+    test "run_started includes CLI-confirmed model and reasoning when present in thread metadata" do
+      events = [
+        %Events.ThreadStarted{
+          thread_id: "thread-confirmed",
+          metadata: %{
+            "model" => "gpt-5.3-codex",
+            "config" => %{"model_reasoning_effort" => "xhigh"}
+          }
+        },
+        %Events.TurnStarted{thread_id: "thread-confirmed", turn_id: "turn-1"},
+        %Events.ItemAgentMessageDelta{
+          thread_id: "thread-confirmed",
+          turn_id: "turn-1",
+          item: %{
+            "id" => "item-1",
+            "type" => "agentMessage",
+            "content" => [%{"type" => "text", "text" => "ok"}]
+          }
+        },
+        %Events.ThreadTokenUsageUpdated{
+          thread_id: "thread-confirmed",
+          turn_id: "turn-1",
+          usage: %{"input_tokens" => 1, "output_tokens" => 1}
+        },
+        %Events.TurnCompleted{
+          thread_id: "thread-confirmed",
+          turn_id: "turn-1",
+          status: "completed",
+          usage: %{"input_tokens" => 1, "output_tokens" => 1}
+        }
+      ]
+
+      {:ok, mock_sdk} = CodexMockSDK.start_link(events: events)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        CodexAdapter.start_link(
+          working_directory: "/tmp/test",
+          model: "gpt-5.3-codex",
+          sdk_module: CodexMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      session = build_test_session()
+      run = build_test_run(session_id: session.id, input: "Hello")
+
+      test_pid = self()
+
+      {:ok, _result} =
+        CodexAdapter.execute(adapter, run, session,
+          event_callback: fn event -> send(test_pid, {:event, event}) end,
+          timeout: 5_000
+        )
+
+      run_started =
+        collect_events()
+        |> Enum.find(&(&1.type == :run_started))
+
+      assert run_started != nil
+      assert run_started.data.configured_model == "gpt-5.3-codex"
+      assert run_started.data.confirmed_model == "gpt-5.3-codex"
+      assert run_started.data.confirmed_reasoning_effort == "xhigh"
+      assert run_started.data.confirmation_source == "codex_cli.thread_started"
+      assert run_started.data.model == "gpt-5.3-codex"
     end
   end
 

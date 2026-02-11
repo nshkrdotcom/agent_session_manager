@@ -9,6 +9,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
     @behaviour AgentSessionManager.Ports.SessionStore
 
     import Ash.Expr
+    require Ash.Query
 
     alias AgentSessionManager.Ash.Changes.AssignSequence
     alias AgentSessionManager.Ash.Converters
@@ -59,7 +60,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
     end
 
     @impl true
-    def delete_session(domain, session_id) do
+    def delete_session(_domain, session_id) do
       repo = AshPostgres.DataLayer.Info.repo(Resources.Session, :mutate)
 
       case repo.transaction(fn ->
@@ -107,7 +108,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
       query =
         Resources.Run
         |> Ash.Query.for_read(:read)
-        |> Ash.Query.filter(session_id == ^session_id)
+        |> Ash.Query.filter(expr(session_id == ^session_id))
         |> maybe_filter_run_status(opts)
         |> maybe_limit(opts)
 
@@ -124,7 +125,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
       query =
         Resources.Run
         |> Ash.Query.for_read(:read)
-        |> Ash.Query.filter(session_id == ^session_id and status == "running")
+        |> Ash.Query.filter(expr(session_id == ^session_id and status == "running"))
         |> Ash.Query.limit(1)
 
       case Ash.read(query, domain: domain) do
@@ -199,7 +200,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
       query =
         Resources.Event
         |> Ash.Query.for_read(:read)
-        |> Ash.Query.filter(session_id == ^session_id)
+        |> Ash.Query.filter(expr(session_id == ^session_id))
         |> Ash.Query.sort(sequence_number: :asc)
         |> maybe_filter_event_run_id(opts)
         |> maybe_filter_event_type(opts)
@@ -264,7 +265,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
       existing_by_id =
         Resources.Event
         |> Ash.Query.for_read(:read)
-        |> Ash.Query.filter(id in ^unique_ids)
+        |> Ash.Query.filter(expr(id in ^unique_ids))
         |> then(&Ash.read(&1, domain: domain))
         |> case do
           {:ok, rows} ->
@@ -334,56 +335,56 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
     defp maybe_filter_session_status(query, opts) do
       case Keyword.get(opts, :status) do
         nil -> query
-        status -> Ash.Query.filter(query, status == ^Atom.to_string(status))
+        status -> Ash.Query.filter(query, expr(status == ^Atom.to_string(status)))
       end
     end
 
     defp maybe_filter_agent_id(query, opts) do
       case Keyword.get(opts, :agent_id) do
         nil -> query
-        agent_id -> Ash.Query.filter(query, agent_id == ^agent_id)
+        agent_id -> Ash.Query.filter(query, expr(agent_id == ^agent_id))
       end
     end
 
     defp maybe_filter_run_status(query, opts) do
       case Keyword.get(opts, :status) do
         nil -> query
-        status -> Ash.Query.filter(query, status == ^Atom.to_string(status))
+        status -> Ash.Query.filter(query, expr(status == ^Atom.to_string(status)))
       end
     end
 
     defp maybe_filter_event_run_id(query, opts) do
       case Keyword.get(opts, :run_id) do
         nil -> query
-        run_id -> Ash.Query.filter(query, run_id == ^run_id)
+        run_id -> Ash.Query.filter(query, expr(run_id == ^run_id))
       end
     end
 
     defp maybe_filter_event_type(query, opts) do
       case Keyword.get(opts, :type) do
         nil -> query
-        type -> Ash.Query.filter(query, type == ^Atom.to_string(type))
+        type -> Ash.Query.filter(query, expr(type == ^Atom.to_string(type)))
       end
     end
 
     defp maybe_filter_since(query, opts) do
       case Keyword.get(opts, :since) do
         nil -> query
-        since -> Ash.Query.filter(query, timestamp > ^since)
+        since -> Ash.Query.filter(query, expr(timestamp > ^since))
       end
     end
 
     defp maybe_filter_after(query, opts) do
       case Keyword.get(opts, :after) do
         nil -> query
-        seq -> Ash.Query.filter(query, sequence_number > ^seq)
+        seq -> Ash.Query.filter(query, expr(sequence_number > ^seq))
       end
     end
 
     defp maybe_filter_before(query, opts) do
       case Keyword.get(opts, :before) do
         nil -> query
-        seq -> Ash.Query.filter(query, sequence_number < ^seq)
+        seq -> Ash.Query.filter(query, expr(sequence_number < ^seq))
       end
     end
 

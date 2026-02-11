@@ -37,7 +37,7 @@ defmodule AgentSessionManager.MixProject do
       {:jason, "~> 1.4"},
 
       # Agent SDKs
-      {:codex_sdk, path: "../codex_sdk"},
+      {:codex_sdk, "~> 0.8.0", optional: true},
       {:claude_agent_sdk, "~> 0.12.0", optional: true},
       {:amp_sdk, "~> 0.2", optional: true},
 

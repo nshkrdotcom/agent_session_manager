@@ -1,6 +1,7 @@
 if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLayer) do
   defmodule AgentSessionManager.Ash.Adapters.AshMaintenanceTest do
     use ExUnit.Case, async: false
+    @moduletag :ash
 
     alias AgentSessionManager.Ash.Adapters.{AshMaintenance, AshSessionStore}
     alias AgentSessionManager.Persistence.RetentionPolicy

@@ -7,6 +7,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
     @behaviour AgentSessionManager.Ports.QueryAPI
 
     import Ash.Expr
+    require Ash.Query
 
     alias AgentSessionManager.Ash.Converters
     alias AgentSessionManager.Ash.Resources
@@ -151,7 +152,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
               artifacts =
                 Resources.Artifact
                 |> Ash.Query.for_read(:read)
-                |> Ash.Query.filter(session_id == ^session_id)
+                |> Ash.Query.filter(expr(session_id == ^session_id))
                 |> then(&Ash.read!(&1, domain: domain))
                 |> Enum.map(&artifact_to_meta/1)
 
@@ -227,7 +228,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
     defp maybe_filter_session_agent(query, opts) do
       case Keyword.get(opts, :agent_id) do
         nil -> query
-        agent_id -> Ash.Query.filter(query, agent_id == ^agent_id)
+        agent_id -> Ash.Query.filter(query, expr(agent_id == ^agent_id))
       end
     end
 
@@ -237,24 +238,24 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
           query
 
         statuses when is_list(statuses) ->
-          Ash.Query.filter(query, status in ^Enum.map(statuses, &to_string/1))
+          Ash.Query.filter(query, expr(status in ^Enum.map(statuses, &to_string/1)))
 
         status ->
-          Ash.Query.filter(query, status == ^to_string(status))
+          Ash.Query.filter(query, expr(status == ^to_string(status)))
       end
     end
 
     defp maybe_filter_session_created_after(query, opts) do
       case Keyword.get(opts, :created_after) do
         nil -> query
-        dt -> Ash.Query.filter(query, created_at >= ^dt)
+        dt -> Ash.Query.filter(query, expr(created_at >= ^dt))
       end
     end
 
     defp maybe_filter_session_created_before(query, opts) do
       case Keyword.get(opts, :created_before) do
         nil -> query
-        dt -> Ash.Query.filter(query, created_at <= ^dt)
+        dt -> Ash.Query.filter(query, expr(created_at <= ^dt))
       end
     end
 
@@ -262,42 +263,42 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
       if Keyword.get(opts, :include_deleted, false) do
         query
       else
-        Ash.Query.filter(query, is_nil(deleted_at))
+        Ash.Query.filter(query, expr(is_nil(deleted_at)))
       end
     end
 
     defp maybe_filter_run_session(query, opts) do
       case Keyword.get(opts, :session_id) do
         nil -> query
-        sid -> Ash.Query.filter(query, session_id == ^sid)
+        sid -> Ash.Query.filter(query, expr(session_id == ^sid))
       end
     end
 
     defp maybe_filter_run_provider(query, opts) do
       case Keyword.get(opts, :provider) do
         nil -> query
-        provider -> Ash.Query.filter(query, provider == ^provider)
+        provider -> Ash.Query.filter(query, expr(provider == ^provider))
       end
     end
 
     defp maybe_filter_run_status(query, opts) do
       case Keyword.get(opts, :status) do
         nil -> query
-        status -> Ash.Query.filter(query, status == ^to_string(status))
+        status -> Ash.Query.filter(query, expr(status == ^to_string(status)))
       end
     end
 
     defp maybe_filter_run_started_after(query, opts) do
       case Keyword.get(opts, :started_after) do
         nil -> query
-        dt -> Ash.Query.filter(query, started_at >= ^dt)
+        dt -> Ash.Query.filter(query, expr(started_at >= ^dt))
       end
     end
 
     defp maybe_filter_run_started_before(query, opts) do
       case Keyword.get(opts, :started_before) do
         nil -> query
-        dt -> Ash.Query.filter(query, started_at <= ^dt)
+        dt -> Ash.Query.filter(query, expr(started_at <= ^dt))
       end
     end
 
@@ -305,7 +306,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
       case Keyword.get(opts, :session_ids) do
         nil -> query
         [] -> query
-        ids -> Ash.Query.filter(query, session_id in ^ids)
+        ids -> Ash.Query.filter(query, expr(session_id in ^ids))
       end
     end
 
@@ -313,7 +314,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
       case Keyword.get(opts, :run_ids) do
         nil -> query
         [] -> query
-        ids -> Ash.Query.filter(query, run_id in ^ids)
+        ids -> Ash.Query.filter(query, expr(run_id in ^ids))
       end
     end
 
@@ -323,10 +324,10 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
           query
 
         types when is_list(types) ->
-          Ash.Query.filter(query, type in ^Enum.map(types, &to_string/1))
+          Ash.Query.filter(query, expr(type in ^Enum.map(types, &to_string/1)))
 
         type ->
-          Ash.Query.filter(query, type == ^to_string(type))
+          Ash.Query.filter(query, expr(type == ^to_string(type)))
       end
     end
 
@@ -334,28 +335,28 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
       case Keyword.get(opts, :providers) do
         nil -> query
         [] -> query
-        providers -> Ash.Query.filter(query, provider in ^providers)
+        providers -> Ash.Query.filter(query, expr(provider in ^providers))
       end
     end
 
     defp maybe_filter_event_since(query, opts) do
       case Keyword.get(opts, :since) do
         nil -> query
-        dt -> Ash.Query.filter(query, timestamp >= ^dt)
+        dt -> Ash.Query.filter(query, expr(timestamp >= ^dt))
       end
     end
 
     defp maybe_filter_event_until(query, opts) do
       case Keyword.get(opts, :until) do
         nil -> query
-        dt -> Ash.Query.filter(query, timestamp <= ^dt)
+        dt -> Ash.Query.filter(query, expr(timestamp <= ^dt))
       end
     end
 
     defp maybe_filter_event_correlation(query, opts) do
       case Keyword.get(opts, :correlation_id) do
         nil -> query
-        cid -> Ash.Query.filter(query, correlation_id == ^cid)
+        cid -> Ash.Query.filter(query, expr(correlation_id == ^cid))
       end
     end
 
@@ -372,16 +373,17 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
           |> List.wrap()
           |> Enum.reduce_while(:ok, fn value, :ok ->
             case normalize_filter_value(value, "status") do
-              {:ok, normalized} when normalized in allowed ->
-                {:cont, :ok}
-
-              {:ok, _} ->
-                {:halt,
-                 {:error,
-                  Error.new(
-                    :validation_error,
-                    "status contains unsupported value: #{inspect(value)}"
-                  )}}
+              {:ok, normalized} ->
+                if normalized in allowed do
+                  {:cont, :ok}
+                else
+                  {:halt,
+                   {:error,
+                    Error.new(
+                      :validation_error,
+                      "status contains unsupported value: #{inspect(value)}"
+                    )}}
+                end
 
               {:error, _} = error ->
                 {:halt, error}
@@ -453,7 +455,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
       provider_session_ids =
         Resources.Run
         |> Ash.Query.for_read(:read)
-        |> Ash.Query.filter(session_id in ^session_ids and provider == ^to_string(provider))
+        |> Ash.Query.filter(expr(session_id in ^session_ids and provider == ^to_string(provider)))
         |> Ash.read!(domain: domain)
         |> Enum.map(& &1.session_id)
         |> MapSet.new()

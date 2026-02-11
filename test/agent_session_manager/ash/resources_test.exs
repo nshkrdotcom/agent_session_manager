@@ -1,6 +1,7 @@
 if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLayer) do
   defmodule AgentSessionManager.Ash.ResourcesTest do
     use ExUnit.Case, async: true
+    @moduletag :ash
 
     alias AgentSessionManager.Ash.Resources
 

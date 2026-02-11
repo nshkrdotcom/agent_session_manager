@@ -6,6 +6,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
 
     @behaviour AgentSessionManager.Ports.Maintenance
     import Ash.Expr
+    require Ash.Query
 
     alias AgentSessionManager.Ash.Adapters.AshSessionStore
     alias AgentSessionManager.Ash.Converters
@@ -61,7 +62,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
         events =
           Resources.Event
           |> Ash.Query.for_read(:read)
-          |> Ash.Query.filter(session_id == ^session_id)
+          |> Ash.Query.filter(expr(session_id == ^session_id))
           |> Ash.Query.sort(sequence_number: :asc)
           |> Ash.read!(domain: domain)
           |> Enum.map(&Converters.record_to_event/1)
@@ -75,7 +76,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
 
           {first_pass, remaining_events} =
             events
-            |> Enum.split_with(&(&1.type |> (Atom.to_string() in prune_types)))
+            |> Enum.split_with(&(Atom.to_string(&1.type) in prune_types))
 
           protected_types =
             MapSet.new(
@@ -132,7 +133,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
         sessions =
           Resources.Session
           |> Ash.Query.for_read(:read)
-          |> Ash.Query.filter(is_nil(deleted_at) and updated_at < ^cutoff)
+          |> Ash.Query.filter(expr(is_nil(deleted_at) and updated_at < ^cutoff))
           |> Ash.read!(domain: domain)
 
         count =
@@ -162,7 +163,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
         sessions =
           Resources.Session
           |> Ash.Query.for_read(:read)
-          |> Ash.Query.filter(not is_nil(deleted_at) and deleted_at < ^cutoff)
+          |> Ash.Query.filter(expr(not is_nil(deleted_at) and deleted_at < ^cutoff))
           |> Ash.read!(domain: domain)
 
         store = {AshSessionStore, domain}

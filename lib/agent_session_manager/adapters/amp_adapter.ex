@@ -371,6 +371,7 @@ if Code.ensure_loaded?(AmpSdk) do
         session: session,
         prompt: prompt,
         event_callback: event_callback,
+        model: state.model,
         accumulated_content: "",
         tool_calls: [],
         token_usage: %{input_tokens: 0, output_tokens: 0},
@@ -598,6 +599,9 @@ if Code.ensure_loaded?(AmpSdk) do
     # ============================================================================
     # Helpers
     # ============================================================================
+
+    defp maybe_put(map, _key, nil), do: map
+    defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
     defp update_token_usage(ctx, nil), do: ctx
 

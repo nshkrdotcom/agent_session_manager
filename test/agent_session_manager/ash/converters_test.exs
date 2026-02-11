@@ -1,6 +1,7 @@
 if Code.ensure_loaded?(Ash.Resource) do
   defmodule AgentSessionManager.Ash.ConvertersTest do
     use ExUnit.Case, async: true
+    @moduletag :ash
 
     alias AgentSessionManager.Ash.Converters
     alias AgentSessionManager.Core.{Event, Run, Session}

@@ -30,6 +30,29 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
       assert 4 == AssignSequence.reserve_batch(repo, session_id, 2)
     end
 
+    test "concurrent next_sequence calls produce unique sequence numbers" do
+      repo = TestRepo
+      session_id = "seq_test_concurrent"
+      owner = self()
+
+      seqs =
+        1..20
+        |> Task.async_stream(
+          fn _ ->
+            Sandbox.allow(TestRepo, owner, self())
+            AssignSequence.next_sequence(repo, session_id)
+          end,
+          ordered: false,
+          max_concurrency: 8
+        )
+        |> Enum.map(fn {:ok, seq} -> seq end)
+
+      assert length(seqs) == 20
+      assert Enum.uniq(seqs) |> length() == 20
+      assert Enum.min(seqs) == 1
+      assert Enum.max(seqs) == 20
+    end
+
     test "append_with_sequence action assigns sequence_number" do
       now = DateTime.utc_now()
       sid = "seq_test_session"

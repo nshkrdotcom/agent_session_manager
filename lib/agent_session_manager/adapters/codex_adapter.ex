@@ -63,6 +63,7 @@ if Code.ensure_loaded?(Codex) and Code.ensure_loaded?(Codex.Events) do
     alias Codex.Items
 
     @emitted_events_key {__MODULE__, :emitted_events}
+    @emergency_execute_timeout_ms 7 * 86_400_000
 
     defmodule RunState do
       @moduledoc false
@@ -363,6 +364,7 @@ if Code.ensure_loaded?(Codex) and Code.ensure_loaded?(Codex.Events) do
 
     defp do_execute(state, run, session, opts, adapter_pid) do
       event_callback = Keyword.get(opts, :event_callback)
+      execute_timeout_ms = resolve_execute_timeout_ms(opts)
       reset_emitted_events()
       prompt = build_prompt(run.input, session)
 
@@ -381,7 +383,8 @@ if Code.ensure_loaded?(Codex) and Code.ensure_loaded?(Codex.Events) do
         tool_calls: [],
         active_tools: %{},
         token_usage: %{input_tokens: 0, output_tokens: 0},
-        thread_id: nil
+        thread_id: nil,
+        execute_timeout_ms: execute_timeout_ms
       }
 
       # Use mock SDK if configured, otherwise use real Codex SDK
@@ -410,7 +413,7 @@ if Code.ensure_loaded?(Codex) and Code.ensure_loaded?(Codex.Events) do
            {:ok, thread_opts} <- build_thread_options(state),
            {:ok, thread} <- Codex.start_thread(codex_opts, thread_opts),
            {:ok, streaming_result} <-
-             Codex.Thread.run_streamed(thread, ctx.prompt, build_run_options(state)) do
+             Codex.Thread.run_streamed(thread, ctx.prompt, build_run_options(state, ctx)) do
         # Notify the adapter about the streaming result for cancellation tracking
         GenServer.cast(ctx.adapter_pid, {:update_streaming_result, ctx.run.id, streaming_result})
 
@@ -450,7 +453,7 @@ if Code.ensure_loaded?(Codex) and Code.ensure_loaded?(Codex.Events) do
     @doc false
     @spec build_run_options_for_state(map()) :: map()
     def build_run_options_for_state(state) do
-      build_run_options(state)
+      build_run_options(state, %{})
     end
 
     defp build_thread_options(state) do
@@ -465,9 +468,10 @@ if Code.ensure_loaded?(Codex) and Code.ensure_loaded?(Codex.Events) do
       end
     end
 
-    defp build_run_options(state) do
+    defp build_run_options(state, ctx) do
       %{}
       |> maybe_put(:max_turns, state.max_turns)
+      |> maybe_put(:timeout_ms, ctx[:execute_timeout_ms])
     end
 
     defp build_codex_options(state) do
@@ -627,8 +631,43 @@ if Code.ensure_loaded?(Codex) and Code.ensure_loaded?(Codex.Events) do
       inspect(reason)
     end
 
-    defp execute_with_mock_sdk(sdk_module, sdk_pid, ctx, _state) do
-      case sdk_module.run_streamed(sdk_pid, nil, ctx.prompt, []) do
+    defp resolve_execute_timeout_ms(opts),
+      do: opts |> Keyword.get(:timeout) |> normalize_execute_timeout_ms()
+
+    defp normalize_execute_timeout_ms(timeout) when is_integer(timeout) and timeout > 0,
+      do: timeout
+
+    defp normalize_execute_timeout_ms(timeout) when timeout in [:unbounded, :infinity],
+      do: @emergency_execute_timeout_ms
+
+    defp normalize_execute_timeout_ms(timeout) when is_binary(timeout) do
+      case timeout |> String.trim() |> String.downcase() do
+        "unbounded" -> @emergency_execute_timeout_ms
+        "infinity" -> @emergency_execute_timeout_ms
+        "infinite" -> @emergency_execute_timeout_ms
+        value -> parse_timeout_candidate(value)
+      end
+    end
+
+    defp normalize_execute_timeout_ms(_timeout), do: nil
+
+    defp parse_timeout_candidate(value) do
+      case Integer.parse(value) do
+        {parsed, ""} when parsed > @emergency_execute_timeout_ms ->
+          @emergency_execute_timeout_ms
+
+        {parsed, ""} when parsed > 0 ->
+          parsed
+
+        _ ->
+          nil
+      end
+    end
+
+    defp execute_with_mock_sdk(sdk_module, sdk_pid, ctx, state) do
+      run_opts = build_run_options(state, ctx)
+
+      case sdk_module.run_streamed(sdk_pid, nil, ctx.prompt, run_opts) do
         {:ok, result} ->
           process_event_stream(sdk_module, result, ctx)
 

@@ -26,4 +26,23 @@ defmodule AgentSessionManager.Ports.ProviderAdapterErrorHandlingTest do
                ProviderAdapter.execute(adapter, run, session, timeout: 1)
     end
   end
+
+  describe "resolve_execute_timeout/1" do
+    test "supports unbounded timeout sentinels with one-week emergency cap" do
+      assert ProviderAdapter.resolve_execute_timeout_base(timeout: :unbounded) == 604_800_000
+      assert ProviderAdapter.resolve_execute_timeout_base(timeout: :infinity) == 604_800_000
+      assert ProviderAdapter.resolve_execute_timeout_base(timeout: "infinity") == 604_800_000
+      assert ProviderAdapter.resolve_execute_timeout_base(timeout: "unbounded") == 604_800_000
+    end
+
+    test "clamps oversized explicit timeout to the one-week emergency cap" do
+      assert ProviderAdapter.resolve_execute_timeout_base(timeout: 604_800_001) == 604_800_000
+      assert ProviderAdapter.resolve_execute_timeout_base(timeout: "604800999") == 604_800_000
+    end
+
+    test "adds execute grace timeout to normalized execute timeout" do
+      assert ProviderAdapter.resolve_execute_timeout(timeout: 1_000) == 6_000
+      assert ProviderAdapter.resolve_execute_timeout(timeout: :unbounded) == 604_805_000
+    end
+  end
 end

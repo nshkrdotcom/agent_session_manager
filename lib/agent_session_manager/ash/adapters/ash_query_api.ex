@@ -20,24 +20,26 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
 
     @impl true
     def search_sessions(domain, opts \\ []) do
-      with :ok <- validate_status_filter(opts, @valid_session_statuses),
+      with :ok <- validate_limit(opts),
+           :ok <- validate_status_filter(opts, @valid_session_statuses),
            {:ok, sessions} <- read_sessions(domain, opts) do
         sorted = sort_sessions(sessions, Keyword.get(opts, :order_by, :updated_at_desc))
-        filtered = maybe_filter_sessions_by_cursor(sorted, opts, :session)
 
-        limited =
-          maybe_take_limit(
-            filtered,
-            Keyword.get(opts, :limit, Config.get(:default_session_query_limit))
-          )
+        with {:ok, filtered} <- maybe_filter_sessions_by_cursor(sorted, opts, :session) do
+          limited =
+            maybe_take_limit(
+              filtered,
+              Keyword.get(opts, :limit, Config.get(:default_session_query_limit))
+            )
 
-        {:ok,
-         %{
-           sessions: limited,
-           cursor:
-             build_cursor(limited, :session, Keyword.get(opts, :order_by, :updated_at_desc)),
-           total_count: length(sorted)
-         }}
+          {:ok,
+           %{
+             sessions: limited,
+             cursor:
+               build_cursor(limited, :session, Keyword.get(opts, :order_by, :updated_at_desc)),
+             total_count: length(sorted)
+           }}
+        end
       else
         {:error, %Error{} = error} -> {:error, error}
         {:error, reason} -> {:error, Error.new(:query_error, inspect(reason))}
@@ -76,19 +78,22 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
 
     @impl true
     def search_runs(domain, opts \\ []) do
-      with :ok <- validate_status_filter(opts, @valid_run_statuses),
+      with :ok <- validate_limit(opts),
+           :ok <- validate_status_filter(opts, @valid_run_statuses),
+           :ok <- validate_min_tokens(opts),
            {:ok, runs} <- read_runs(domain, opts) do
         order = Keyword.get(opts, :order_by, :started_at_desc)
         sorted = sort_runs(runs, order)
-        filtered = maybe_filter_runs_by_cursor(sorted, opts, order)
 
-        limited =
-          maybe_take_limit(
-            filtered,
-            Keyword.get(opts, :limit, Config.get(:default_run_query_limit))
-          )
+        with {:ok, filtered} <- maybe_filter_runs_by_cursor(sorted, opts, order) do
+          limited =
+            maybe_take_limit(
+              filtered,
+              Keyword.get(opts, :limit, Config.get(:default_run_query_limit))
+            )
 
-        {:ok, %{runs: limited, cursor: build_cursor(limited, :run, order)}}
+          {:ok, %{runs: limited, cursor: build_cursor(limited, :run, order)}}
+        end
       else
         {:error, %Error{} = error} -> {:error, error}
         {:error, reason} -> {:error, Error.new(:query_error, inspect(reason))}
@@ -124,19 +129,21 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
 
     @impl true
     def search_events(domain, opts \\ []) do
-      with :ok <- validate_event_types_filter(opts),
+      with :ok <- validate_limit(opts),
+           :ok <- validate_event_types_filter(opts),
            {:ok, events} <- read_events(domain, opts) do
         order = Keyword.get(opts, :order_by, :sequence_asc)
         sorted = sort_events(events, order)
-        filtered = maybe_filter_events_by_cursor(sorted, opts, order)
 
-        limited =
-          maybe_take_limit(
-            filtered,
-            Keyword.get(opts, :limit, Config.get(:default_event_query_limit))
-          )
+        with {:ok, filtered} <- maybe_filter_events_by_cursor(sorted, opts, order) do
+          limited =
+            maybe_take_limit(
+              filtered,
+              Keyword.get(opts, :limit, Config.get(:default_event_query_limit))
+            )
 
-        {:ok, %{events: limited, cursor: build_cursor(limited, :event, order)}}
+          {:ok, %{events: limited, cursor: build_cursor(limited, :event, order)}}
+        end
       else
         {:error, %Error{} = error} -> {:error, error}
         {:error, reason} -> {:error, Error.new(:query_error, inspect(reason))}
@@ -218,8 +225,16 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
         |> maybe_filter_run_status(opts)
         |> maybe_filter_run_started_after(opts)
         |> maybe_filter_run_started_before(opts)
+        |> maybe_filter_usage_since(opts)
+        |> maybe_filter_usage_until(opts)
 
-      {:ok, Ash.read!(query, domain: domain) |> Enum.map(&Converters.record_to_run/1)}
+      runs =
+        query
+        |> Ash.read!(domain: domain)
+        |> Enum.map(&Converters.record_to_run/1)
+        |> maybe_filter_run_min_tokens(opts)
+
+      {:ok, runs}
     rescue
       e -> {:error, Error.new(:query_error, Exception.message(e))}
     end
@@ -299,8 +314,14 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
 
     defp maybe_filter_run_status(query, opts) do
       case Keyword.get(opts, :status) do
-        nil -> query
-        status -> Ash.Query.filter(query, expr(status == ^to_string(status)))
+        nil ->
+          query
+
+        statuses when is_list(statuses) ->
+          Ash.Query.filter(query, expr(status in ^Enum.map(statuses, &to_string/1)))
+
+        status ->
+          Ash.Query.filter(query, expr(status == ^to_string(status)))
       end
     end
 
@@ -313,6 +334,20 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
 
     defp maybe_filter_run_started_before(query, opts) do
       case Keyword.get(opts, :started_before) do
+        nil -> query
+        dt -> Ash.Query.filter(query, expr(started_at <= ^dt))
+      end
+    end
+
+    defp maybe_filter_usage_since(query, opts) do
+      case Keyword.get(opts, :since) do
+        nil -> query
+        dt -> Ash.Query.filter(query, expr(started_at >= ^dt))
+      end
+    end
+
+    defp maybe_filter_usage_until(query, opts) do
+      case Keyword.get(opts, :until) do
         nil -> query
         dt -> Ash.Query.filter(query, expr(started_at <= ^dt))
       end
@@ -389,6 +424,33 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
       end
     end
 
+    defp validate_min_tokens(opts) do
+      case Keyword.get(opts, :min_tokens) do
+        nil -> :ok
+        min when is_integer(min) and min >= 0 -> :ok
+        _ -> {:error, Error.new(:query_error, "min_tokens must be a non-negative integer")}
+      end
+    end
+
+    defp validate_limit(opts) do
+      max = Config.get(:max_query_limit)
+
+      case Keyword.get(opts, :limit) do
+        nil ->
+          :ok
+
+        limit when is_integer(limit) and limit > 0 ->
+          if limit <= max do
+            :ok
+          else
+            {:error, Error.new(:validation_error, "limit must be <= #{max}")}
+          end
+
+        _ ->
+          {:error, Error.new(:validation_error, "limit must be a positive integer")}
+      end
+    end
+
     defp check_status_value(value, :ok, allowed) do
       case normalize_filter_value(value, "status") do
         {:ok, normalized} ->
@@ -460,6 +522,18 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
       if is_number(val), do: val, else: 0
     end
 
+    defp maybe_filter_run_min_tokens(runs, opts) do
+      case Keyword.get(opts, :min_tokens) do
+        nil ->
+          runs
+
+        min_tokens when is_integer(min_tokens) ->
+          Enum.filter(runs, fn run ->
+            get_token_val(run.token_usage || %{}, "total_tokens") >= min_tokens
+          end)
+      end
+    end
+
     defp filter_sessions_by_provider(domain, sessions, provider) do
       session_ids = Enum.map(sessions, & &1.id)
 
@@ -514,15 +588,23 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
     defp maybe_filter_by_cursor(list, opts, type) do
       case Keyword.get(opts, :cursor) do
         nil ->
-          list
+          {:ok, list}
 
         cursor ->
-          with {:ok, %{id: cursor_id}} <- decode_cursor(cursor, type),
-               idx when is_integer(idx) <- Enum.find_index(list, &(&1.id == cursor_id)) do
-            Enum.drop(list, idx + 1)
-          else
-            _ -> list
+          case decode_cursor(cursor, type) do
+            {:ok, %{id: cursor_id}} ->
+              {:ok, drop_after_cursor_id(list, cursor_id)}
+
+            {:error, %Error{} = error} ->
+              {:error, error}
           end
+      end
+    end
+
+    defp drop_after_cursor_id(list, cursor_id) do
+      case Enum.find_index(list, &(&1.id == cursor_id)) do
+        idx when is_integer(idx) -> Enum.drop(list, idx + 1)
+        nil -> list
       end
     end
 

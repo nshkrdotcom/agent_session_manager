@@ -56,6 +56,8 @@ defmodule AgentSessionManager.Ports.ProviderAdapter do
   alias AgentSessionManager.Core.{Capability, Error, Run, Session}
   alias AgentSessionManager.Runtime.ExitReasons
 
+  @emergency_execute_timeout_ms 7 * 86_400_000
+
   @type adapter :: GenServer.server() | pid() | atom() | module()
   @type run_result :: %{
           output: map(),
@@ -63,7 +65,8 @@ defmodule AgentSessionManager.Ports.ProviderAdapter do
           events: [map()]
         }
   @type execute_opts :: [
-          {:event_callback, (map() -> any())} | {:timeout, pos_integer()}
+          {:event_callback, (map() -> any())}
+          | {:timeout, pos_integer() | :unbounded | :infinity | String.t()}
         ]
 
   # ============================================================================
@@ -297,9 +300,45 @@ defmodule AgentSessionManager.Ports.ProviderAdapter do
   """
   @spec resolve_execute_timeout(keyword()) :: pos_integer()
   def resolve_execute_timeout(opts) do
-    Keyword.get(opts, :timeout, Config.get(:execute_timeout_ms)) +
-      Config.get(:execute_grace_timeout_ms)
+    resolve_execute_timeout_base(opts) + Config.get(:execute_grace_timeout_ms)
   end
+
+  @doc false
+  @spec resolve_execute_timeout_base(keyword()) :: pos_integer()
+  def resolve_execute_timeout_base(opts) do
+    opts
+    |> Keyword.get(:timeout, Config.get(:execute_timeout_ms))
+    |> normalize_execute_timeout()
+  end
+
+  defp normalize_execute_timeout(timeout) when is_integer(timeout) and timeout > 0,
+    do: clamp_execute_timeout(timeout)
+
+  defp normalize_execute_timeout(timeout) when timeout in [:unbounded, :infinity],
+    do: @emergency_execute_timeout_ms
+
+  defp normalize_execute_timeout(timeout) when is_binary(timeout) do
+    case timeout |> String.trim() |> String.downcase() do
+      "unbounded" -> @emergency_execute_timeout_ms
+      "infinity" -> @emergency_execute_timeout_ms
+      "infinite" -> @emergency_execute_timeout_ms
+      value -> parse_numeric_timeout(value)
+    end
+  end
+
+  defp normalize_execute_timeout(_timeout), do: Config.get(:execute_timeout_ms)
+
+  defp parse_numeric_timeout(value) do
+    case Integer.parse(value) do
+      {parsed, ""} when parsed > 0 -> clamp_execute_timeout(parsed)
+      _ -> Config.get(:execute_timeout_ms)
+    end
+  end
+
+  defp clamp_execute_timeout(timeout) when timeout > @emergency_execute_timeout_ms,
+    do: @emergency_execute_timeout_ms
+
+  defp clamp_execute_timeout(timeout), do: timeout
 
   defp call_registered_or_fallback(adapter, request, fallback, timeout, operation) do
     GenServer.call(adapter, request, timeout)

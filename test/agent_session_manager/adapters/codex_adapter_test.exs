@@ -62,6 +62,32 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
     def cancel(_pid), do: :ok
   end
 
+  defmodule CapturingRunOptsSDK do
+    @moduledoc false
+
+    alias Codex.Events
+
+    def run_streamed(test_pid, _thread, _input, opts) do
+      send(test_pid, {:captured_run_opts, opts})
+
+      events = [
+        %Events.ThreadStarted{thread_id: "thread-run-opts", metadata: %{}},
+        %Events.TurnStarted{thread_id: "thread-run-opts", turn_id: "turn-1"},
+        %Events.TurnCompleted{
+          thread_id: "thread-run-opts",
+          turn_id: "turn-1",
+          status: "completed",
+          usage: %{"input_tokens" => 1, "output_tokens" => 1}
+        }
+      ]
+
+      {:ok, %{raw_events_fn: fn -> events end}}
+    end
+
+    def raw_events(%{raw_events_fn: fun}), do: fun.()
+    def cancel(_pid), do: :ok
+  end
+
   describe "start_link/1 validation" do
     test "returns validation error when working_directory is missing" do
       assert {:error, %Error{code: :validation_error, message: "working_directory is required"}} =
@@ -114,6 +140,40 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
   end
 
   describe "execute/4 with simple response" do
+    test "passes execute timeout through run options to sdk as timeout_ms" do
+      {:ok, adapter} =
+        CodexAdapter.start_link(
+          working_directory: "/tmp/test",
+          sdk_module: CapturingRunOptsSDK,
+          sdk_pid: self()
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      session = build_test_session()
+      run = build_test_run(session_id: session.id, input: "Hello")
+
+      assert {:ok, _result} = CodexAdapter.execute(adapter, run, session, timeout: 91_000)
+      assert_receive {:captured_run_opts, %{timeout_ms: 91_000}}
+    end
+
+    test "maps unbounded execute timeout sentinel to one-week timeout_ms in sdk options" do
+      {:ok, adapter} =
+        CodexAdapter.start_link(
+          working_directory: "/tmp/test",
+          sdk_module: CapturingRunOptsSDK,
+          sdk_pid: self()
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      session = build_test_session()
+      run = build_test_run(session_id: session.id, input: "Hello")
+
+      assert {:ok, _result} = CodexAdapter.execute(adapter, run, session, timeout: :unbounded)
+      assert_receive {:captured_run_opts, %{timeout_ms: 604_800_000}}
+    end
+
     test "executes and returns result with output" do
       {:ok, adapter} = start_test_adapter(scenario: :simple_response)
 

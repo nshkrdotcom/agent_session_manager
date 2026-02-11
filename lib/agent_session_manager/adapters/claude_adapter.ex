@@ -888,18 +888,22 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
     end
 
     defp extract_usage_counts(msg) do
-      usage = msg.data[:usage] || (msg.raw && msg.raw["usage"]) || %{}
+      usage = extract_usage_map(msg)
 
-      input_tokens = trunc(usage["input_tokens"] || usage[:input_tokens] || 0)
-      output_tokens = trunc(usage["output_tokens"] || usage[:output_tokens] || 0)
+      {
+        usage_value(usage, "input_tokens", :input_tokens),
+        usage_value(usage, "output_tokens", :output_tokens),
+        usage_value(usage, "cache_read_input_tokens", :cache_read_input_tokens),
+        usage_value(usage, "cache_creation_input_tokens", :cache_creation_input_tokens)
+      }
+    end
 
-      cache_read_tokens =
-        trunc(usage["cache_read_input_tokens"] || usage[:cache_read_input_tokens] || 0)
+    defp extract_usage_map(msg) do
+      msg.data[:usage] || (msg.raw && msg.raw["usage"]) || %{}
+    end
 
-      cache_creation_tokens =
-        trunc(usage["cache_creation_input_tokens"] || usage[:cache_creation_input_tokens] || 0)
-
-      {input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens}
+    defp usage_value(usage, string_key, atom_key) do
+      trunc(usage[string_key] || usage[atom_key] || 0)
     end
 
     defp extract_stop_reason(msg) do

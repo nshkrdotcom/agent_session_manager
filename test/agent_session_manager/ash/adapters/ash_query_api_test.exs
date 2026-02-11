@@ -6,9 +6,11 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
     alias AgentSessionManager.Ash.Adapters.{AshQueryAPI, AshSessionStore}
     alias AgentSessionManager.Ports.{QueryAPI, SessionStore}
     import AgentSessionManager.Test.Fixtures
+    alias AgentSessionManager.Ash.TestRepo
+    alias Ecto.Adapters.SQL.Sandbox
 
     setup do
-      :ok = Ecto.Adapters.SQL.Sandbox.checkout(AgentSessionManager.Ash.TestRepo)
+      :ok = Sandbox.checkout(TestRepo)
       store = {AshSessionStore, AgentSessionManager.Ash.TestDomain}
       query = {AshQueryAPI, AgentSessionManager.Ash.TestDomain}
 
@@ -71,7 +73,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
     test "export_session", %{query: query, session: session} do
       assert {:ok, export} = QueryAPI.export_session(query, session.id)
       assert export.session.id == session.id
-      assert length(export.runs) >= 1
+      assert export.runs != []
       assert length(export.events) >= 2
     end
   end

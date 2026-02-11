@@ -15,6 +15,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
     alias AgentSessionManager.Ash.Converters
     alias AgentSessionManager.Ash.Resources
     alias AgentSessionManager.Core.{Error, Event, Run, Session}
+    alias AshPostgres.DataLayer.Info, as: DataLayerInfo
 
     @impl true
     def save_session(domain, %Session{} = session) do
@@ -61,7 +62,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
 
     @impl true
     def delete_session(_domain, session_id) do
-      repo = AshPostgres.DataLayer.Info.repo(Resources.Session, :mutate)
+      repo = DataLayerInfo.repo(Resources.Session, :mutate)
 
       case repo.transaction(fn ->
              repo.query!("DELETE FROM asm_events WHERE session_id = $1", [session_id])
@@ -147,9 +148,8 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
 
     @impl true
     def append_event_with_sequence(domain, %Event{} = event) do
-      with {:ok, existing} <- fetch_event(domain, event.id),
-           {:ok, persisted} <- maybe_create_event_with_sequence(domain, event, existing) do
-        {:ok, persisted}
+      with {:ok, existing} <- fetch_event(domain, event.id) do
+        maybe_create_event_with_sequence(domain, event, existing)
       end
     rescue
       e -> {:error, storage_error("append_event_with_sequence failed", e)}
@@ -172,17 +172,9 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
     @impl true
     def flush(domain, %{session: %Session{} = session, run: %Run{} = run, events: events})
         when is_list(events) do
-      repo = AshPostgres.DataLayer.Info.repo(Resources.Session, :mutate)
+      repo = DataLayerInfo.repo(Resources.Session, :mutate)
 
-      case repo.transaction(fn ->
-             with :ok <- save_session(domain, session),
-                  :ok <- save_run(domain, run),
-                  {:ok, _} <- append_events(domain, events) do
-               :ok
-             else
-               {:error, reason} -> repo.rollback(reason)
-             end
-           end) do
+      case repo.transaction(fn -> flush_in_transaction(domain, repo, session, run, events) end) do
         {:ok, :ok} -> :ok
         {:error, %Error{} = error} -> {:error, error}
         {:error, reason} -> {:error, storage_error("flush failed", reason)}
@@ -228,6 +220,16 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
       e -> {:error, storage_error("get_latest_sequence failed", e)}
     end
 
+    defp flush_in_transaction(domain, repo, session, run, events) do
+      with :ok <- save_session(domain, session),
+           :ok <- save_run(domain, run),
+           {:ok, _} <- append_events(domain, events) do
+        :ok
+      else
+        {:error, reason} -> repo.rollback(reason)
+      end
+    end
+
     defp fetch_event(domain, event_id) do
       case Ash.get(Resources.Event, event_id, domain: domain) do
         {:ok, nil} -> {:ok, nil}
@@ -240,7 +242,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
       do: {:ok, existing}
 
     defp maybe_create_event_with_sequence(domain, event, nil) do
-      repo = AshPostgres.DataLayer.Info.repo(Resources.Event, :mutate)
+      repo = DataLayerInfo.repo(Resources.Event, :mutate)
       seq = AssignSequence.next_sequence(repo, event.session_id)
       attrs = Converters.event_to_attrs_with_sequence(event, seq)
 
@@ -290,31 +292,33 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
     defp insert_new_events(_domain, []), do: {:ok, %{}}
 
     defp insert_new_events(domain, events) do
-      repo = AshPostgres.DataLayer.Info.repo(Resources.Event, :mutate)
+      repo = DataLayerInfo.repo(Resources.Event, :mutate)
       grouped = Enum.group_by(events, & &1.session_id)
 
       Enum.reduce_while(grouped, {:ok, %{}}, fn {session_id, session_events}, {:ok, acc} ->
         first_seq = AssignSequence.reserve_batch(repo, session_id, length(session_events))
 
-        inserted =
-          Enum.with_index(session_events)
-          |> Enum.reduce_while({:ok, %{}}, fn {event, idx}, {:ok, event_acc} ->
-            seq = first_seq + idx
-            attrs = Converters.event_to_attrs_with_sequence(event, seq)
-
-            case Ash.create(Resources.Event, attrs, action: :create, domain: domain) do
-              {:ok, record} ->
-                stored = Converters.record_to_event(record)
-                {:cont, {:ok, Map.put(event_acc, stored.id, stored)}}
-
-              {:error, error} ->
-                {:halt, {:error, storage_error("insert event batch failed", error)}}
-            end
-          end)
-
-        case inserted do
+        case insert_session_events(domain, session_events, first_seq) do
           {:ok, inserted_map} -> {:cont, {:ok, Map.merge(acc, inserted_map)}}
           {:error, _} = error -> {:halt, error}
+        end
+      end)
+    end
+
+    defp insert_session_events(domain, session_events, first_seq) do
+      session_events
+      |> Enum.with_index()
+      |> Enum.reduce_while({:ok, %{}}, fn {event, idx}, {:ok, event_acc} ->
+        seq = first_seq + idx
+        attrs = Converters.event_to_attrs_with_sequence(event, seq)
+
+        case Ash.create(Resources.Event, attrs, action: :create, domain: domain) do
+          {:ok, record} ->
+            stored = Converters.record_to_event(record)
+            {:cont, {:ok, Map.put(event_acc, stored.id, stored)}}
+
+          {:error, error} ->
+            {:halt, {:error, storage_error("insert event batch failed", error)}}
         end
       end)
     end

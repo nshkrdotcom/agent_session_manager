@@ -1188,8 +1188,6 @@ if Code.ensure_loaded?(Codex) and Code.ensure_loaded?(Codex.Events) do
       metadata_reasoning || config_reasoning
     end
 
-    defp extract_reasoning_effort_from_metadata(_), do: nil
-
     defp drop_nil_values(map) when is_map(map) do
       map
       |> Enum.reject(fn {_k, v} -> is_nil(v) end)

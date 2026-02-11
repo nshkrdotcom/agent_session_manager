@@ -4,11 +4,13 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
 
     use Ash.Resource.Change
 
+    alias AshPostgres.DataLayer.Info
+
     @impl true
     def change(changeset, _opts, _context) do
       Ash.Changeset.before_action(changeset, fn changeset ->
         session_id = Ash.Changeset.get_attribute(changeset, :session_id)
-        repo = AshPostgres.DataLayer.Info.repo(changeset.resource, :mutate)
+        repo = Info.repo(changeset.resource, :mutate)
 
         seq = next_sequence(repo, session_id)
         Ash.Changeset.force_change_attribute(changeset, :sequence_number, seq)

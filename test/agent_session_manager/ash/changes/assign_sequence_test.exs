@@ -5,14 +5,16 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
 
     alias AgentSessionManager.Ash.Changes.AssignSequence
     alias AgentSessionManager.Ash.Resources
+    alias AgentSessionManager.Ash.TestRepo
+    alias Ecto.Adapters.SQL.Sandbox
 
     setup do
-      :ok = Ecto.Adapters.SQL.Sandbox.checkout(AgentSessionManager.Ash.TestRepo)
+      :ok = Sandbox.checkout(TestRepo)
       :ok
     end
 
     test "next_sequence increments atomically" do
-      repo = AgentSessionManager.Ash.TestRepo
+      repo = TestRepo
       session_id = "seq_test_1"
 
       assert 1 == AssignSequence.next_sequence(repo, session_id)
@@ -21,7 +23,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
     end
 
     test "reserve_batch returns first sequence in contiguous range" do
-      repo = AgentSessionManager.Ash.TestRepo
+      repo = TestRepo
       session_id = "seq_test_2"
 
       assert 1 == AssignSequence.reserve_batch(repo, session_id, 3)

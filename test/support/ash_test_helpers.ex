@@ -1,5 +1,6 @@
 if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLayer) do
   defmodule AgentSessionManager.Ash.TestRepo do
+    @moduledoc false
     use AshPostgres.Repo,
       otp_app: :agent_session_manager,
       warn_on_missing_ash_functions?: false
@@ -10,6 +11,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
   end
 
   defmodule AgentSessionManager.Ash.TestDomain do
+    @moduledoc false
     use Ash.Domain
 
     resources do

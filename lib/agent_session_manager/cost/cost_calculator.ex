@@ -44,29 +44,32 @@ defmodule AgentSessionManager.Cost.CostCalculator do
     pricing_table = normalize_legacy_rates(pricing_table)
 
     case Map.get(pricing_table, provider) do
-      nil ->
-        {:error, :no_rates}
-
-      provider_entry when is_map(provider_entry) ->
-        models = map_get(provider_entry, :models, %{})
-
-        cond do
-          is_binary(model) and is_map(models) and Map.has_key?(models, model) ->
-            normalize_rate_entry(Map.get(models, model))
-
-          is_binary(model) and is_map(models) ->
-            case longest_prefix_match(models, model) do
-              {:ok, matched_rates} -> normalize_rate_entry(matched_rates)
-              :error -> provider_default(provider_entry)
-            end
-
-          true ->
-            provider_default(provider_entry)
-        end
+      nil -> {:error, :no_rates}
+      provider_entry when is_map(provider_entry) -> resolve_model_rates(provider_entry, model)
     end
   end
 
   def resolve_rates(_provider, _model, _pricing_table), do: {:error, :no_rates}
+
+  defp resolve_model_rates(provider_entry, model) when is_binary(model) do
+    models = map_get(provider_entry, :models, %{})
+    find_model_rates(models, model, provider_entry)
+  end
+
+  defp resolve_model_rates(provider_entry, _model), do: provider_default(provider_entry)
+
+  defp find_model_rates(models, model, provider_entry) when is_map(models) do
+    if Map.has_key?(models, model) do
+      normalize_rate_entry(Map.get(models, model))
+    else
+      case longest_prefix_match(models, model) do
+        {:ok, matched_rates} -> normalize_rate_entry(matched_rates)
+        :error -> provider_default(provider_entry)
+      end
+    end
+  end
+
+  defp find_model_rates(_models, _model, provider_entry), do: provider_default(provider_entry)
 
   @spec calculate_run_cost(Run.t(), pricing_table()) :: {:ok, float()} | {:error, :no_rates}
   def calculate_run_cost(%Run{} = run, pricing_table) when is_map(pricing_table) do
@@ -84,12 +87,7 @@ defmodule AgentSessionManager.Cost.CostCalculator do
     if structured_pricing_table?(pricing_table) do
       pricing_table
     else
-      Enum.reduce(pricing_table, %{}, fn {provider, rates}, acc ->
-        case normalize_flat_rates(rates) do
-          {:ok, normalized} -> Map.put(acc, provider, normalized)
-          :error -> Map.put(acc, provider, rates)
-        end
-      end)
+      Map.new(pricing_table, &normalize_provider_rates/1)
     end
   end
 
@@ -141,6 +139,13 @@ defmodule AgentSessionManager.Cost.CostCalculator do
     provider_entry
     |> map_get(:default)
     |> normalize_rate_entry()
+  end
+
+  defp normalize_provider_rates({provider, rates}) do
+    case normalize_flat_rates(rates) do
+      {:ok, normalized} -> {provider, normalized}
+      :error -> {provider, rates}
+    end
   end
 
   defp normalize_rate_entry(%{} = rates) do

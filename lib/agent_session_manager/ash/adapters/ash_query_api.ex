@@ -369,57 +369,52 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
           :ok
 
         values ->
-          values
-          |> List.wrap()
-          |> Enum.reduce_while(:ok, fn value, :ok ->
-            case normalize_filter_value(value, "status") do
-              {:ok, normalized} ->
-                if normalized in allowed do
-                  {:cont, :ok}
-                else
-                  {:halt,
-                   {:error,
-                    Error.new(
-                      :validation_error,
-                      "status contains unsupported value: #{inspect(value)}"
-                    )}}
-                end
+          values |> List.wrap() |> Enum.reduce_while(:ok, &check_status_value(&1, &2, allowed))
+      end
+    end
 
-              {:error, _} = error ->
-                {:halt, error}
-            end
-          end)
+    defp check_status_value(value, :ok, allowed) do
+      case normalize_filter_value(value, "status") do
+        {:ok, normalized} ->
+          if normalized in allowed do
+            {:cont, :ok}
+          else
+            {:halt,
+             {:error,
+              Error.new(
+                :validation_error,
+                "status contains unsupported value: #{inspect(value)}"
+              )}}
+          end
+
+        {:error, _} = error ->
+          {:halt, error}
       end
     end
 
     defp validate_event_types_filter(opts) do
       case Keyword.get(opts, :types) do
-        nil ->
-          :ok
+        nil -> :ok
+        [] -> :ok
+        values -> values |> List.wrap() |> Enum.reduce_while(:ok, &check_event_type_value/2)
+      end
+    end
 
-        [] ->
-          :ok
+    defp check_event_type_value(value, :ok) do
+      case normalize_filter_value(value, "types") do
+        {:ok, normalized} when normalized in @valid_event_types ->
+          {:cont, :ok}
 
-        values ->
-          values
-          |> List.wrap()
-          |> Enum.reduce_while(:ok, fn value, :ok ->
-            case normalize_filter_value(value, "types") do
-              {:ok, normalized} when normalized in @valid_event_types ->
-                {:cont, :ok}
+        {:ok, _} ->
+          {:halt,
+           {:error,
+            Error.new(
+              :validation_error,
+              "types contains unsupported value: #{inspect(value)}"
+            )}}
 
-              {:ok, _} ->
-                {:halt,
-                 {:error,
-                  Error.new(
-                    :validation_error,
-                    "types contains unsupported value: #{inspect(value)}"
-                  )}}
-
-              {:error, _} = error ->
-                {:halt, error}
-            end
-          end)
+        {:error, _} = error ->
+          {:halt, error}
       end
     end
 

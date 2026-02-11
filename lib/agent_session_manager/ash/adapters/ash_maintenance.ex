@@ -68,55 +68,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
           |> Enum.map(&Converters.record_to_event/1)
 
         to_prune = length(events) - policy.max_events_per_session
-
-        if to_prune <= 0 do
-          {:ok, 0}
-        else
-          prune_types = Enum.map(policy.prune_event_types_first, &Atom.to_string/1)
-
-          {first_pass, remaining_events} =
-            events
-            |> Enum.split_with(&(Atom.to_string(&1.type) in prune_types))
-
-          protected_types =
-            MapSet.new(
-              Enum.map(
-                [:session_created, :run_started, :run_completed, :error_occurred, :run_failed],
-                &Atom.to_string/1
-              )
-            )
-
-          first = Enum.take(first_pass, to_prune)
-          remaining_to_prune = to_prune - length(first)
-
-          second =
-            remaining_events
-            |> Enum.reject(&MapSet.member?(protected_types, Atom.to_string(&1.type)))
-            |> Enum.take(max(remaining_to_prune, 0))
-
-          prune_ids = Enum.map(first ++ second, & &1.id)
-
-          count =
-            prune_ids
-            |> Enum.reduce(0, fn id, acc ->
-              case Ash.get(Resources.Event, id, domain: domain) do
-                {:ok, nil} ->
-                  acc
-
-                {:ok, row} ->
-                  case Ash.destroy(row, action: :destroy, domain: domain) do
-                    :ok -> acc + 1
-                    {:ok, _} -> acc + 1
-                    _ -> acc
-                  end
-
-                _ ->
-                  acc
-              end
-            end)
-
-          {:ok, count}
-        end
+        do_prune_events(domain, events, to_prune, policy)
       end
     rescue
       e -> {:error, Error.new(:maintenance_error, Exception.message(e))}
@@ -136,15 +88,16 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
           |> Ash.Query.filter(expr(is_nil(deleted_at) and updated_at < ^cutoff))
           |> Ash.read!(domain: domain)
 
+        exempt_tags = policy.exempt_tags
+
         count =
           sessions
-          |> Enum.reject(&(&1.status in exempt_statuses))
-          |> Enum.reject(fn s -> Enum.any?(policy.exempt_tags, &(&1 in (s.tags || []))) end)
+          |> Enum.reject(fn s ->
+            s.status in exempt_statuses or
+              Enum.any?(exempt_tags, &(&1 in (s.tags || [])))
+          end)
           |> Enum.reduce(0, fn s, acc ->
-            case Ash.update(s, %{deleted_at: DateTime.utc_now()}, action: :update, domain: domain) do
-              {:ok, _} -> acc + 1
-              _ -> acc
-            end
+            try_soft_delete(s, domain, acc)
           end)
 
         {:ok, count}
@@ -166,14 +119,9 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
           |> Ash.Query.filter(expr(not is_nil(deleted_at) and deleted_at < ^cutoff))
           |> Ash.read!(domain: domain)
 
-        store = {AshSessionStore, domain}
-
         count =
           Enum.reduce(sessions, 0, fn s, acc ->
-            case AshSessionStore.delete_session(elem(store, 1), s.id) do
-              :ok -> acc + 1
-              _ -> acc
-            end
+            try_hard_delete(s, domain, acc)
           end)
 
         {:ok, count}
@@ -194,15 +142,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
 
       count =
         Enum.reduce(artifacts, 0, fn artifact, acc ->
-          if artifact.session_id && not MapSet.member?(session_ids, artifact.session_id) do
-            case Ash.destroy(artifact, action: :destroy, domain: domain) do
-              :ok -> acc + 1
-              {:ok, _} -> acc + 1
-              _ -> acc
-            end
-          else
-            acc
-          end
+          destroy_if_orphaned(artifact, session_ids, domain, acc)
         end)
 
       {:ok, count}
@@ -283,6 +223,39 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
       {:ok, total}
     end
 
+    defp do_prune_events(_domain, _events, to_prune, _policy) when to_prune <= 0, do: {:ok, 0}
+
+    defp do_prune_events(domain, events, to_prune, policy) do
+      prune_ids = select_events_to_prune(events, to_prune, policy)
+      count = Enum.reduce(prune_ids, 0, fn id, acc -> destroy_event_by_id(id, domain, acc) end)
+      {:ok, count}
+    end
+
+    defp select_events_to_prune(events, to_prune, policy) do
+      prune_types = Enum.map(policy.prune_event_types_first, &Atom.to_string/1)
+
+      {first_pass, remaining_events} =
+        Enum.split_with(events, &(Atom.to_string(&1.type) in prune_types))
+
+      protected_types =
+        MapSet.new(
+          Enum.map(
+            [:session_created, :run_started, :run_completed, :error_occurred, :run_failed],
+            &Atom.to_string/1
+          )
+        )
+
+      first = Enum.take(first_pass, to_prune)
+      remaining_to_prune = to_prune - length(first)
+
+      second =
+        remaining_events
+        |> Enum.reject(&MapSet.member?(protected_types, Atom.to_string(&1.type)))
+        |> Enum.take(max(remaining_to_prune, 0))
+
+      Enum.map(first ++ second, & &1.id)
+    end
+
     defp clean_orphaned_sequences(domain) do
       session_ids =
         Resources.Session
@@ -295,18 +268,48 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
 
       count =
         Enum.reduce(sequences, 0, fn seq, acc ->
-          if MapSet.member?(session_ids, seq.session_id) do
-            acc
-          else
-            case Ash.destroy(seq, action: :destroy, domain: domain) do
-              :ok -> acc + 1
-              {:ok, _} -> acc + 1
-              _ -> acc
-            end
-          end
+          destroy_if_orphaned(seq, session_ids, domain, acc)
         end)
 
       {:ok, count}
+    end
+
+    defp try_destroy(record, domain, acc) do
+      case Ash.destroy(record, action: :destroy, domain: domain) do
+        :ok -> acc + 1
+        {:ok, _} -> acc + 1
+        _ -> acc
+      end
+    end
+
+    defp destroy_event_by_id(id, domain, acc) do
+      case Ash.get(Resources.Event, id, domain: domain) do
+        {:ok, nil} -> acc
+        {:ok, row} -> try_destroy(row, domain, acc)
+        _ -> acc
+      end
+    end
+
+    defp try_soft_delete(session, domain, acc) do
+      case Ash.update(session, %{deleted_at: DateTime.utc_now()}, action: :update, domain: domain) do
+        {:ok, _} -> acc + 1
+        _ -> acc
+      end
+    end
+
+    defp try_hard_delete(session, domain, acc) do
+      case AshSessionStore.delete_session(domain, session.id) do
+        :ok -> acc + 1
+        _ -> acc
+      end
+    end
+
+    defp destroy_if_orphaned(record, valid_ids, domain, acc) do
+      if record.session_id && not MapSet.member?(valid_ids, record.session_id) do
+        try_destroy(record, domain, acc)
+      else
+        acc
+      end
     end
 
     defp safe_op(func, errors) do

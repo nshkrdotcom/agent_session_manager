@@ -7,9 +7,11 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
     alias AgentSessionManager.Persistence.RetentionPolicy
     alias AgentSessionManager.Ports.{Maintenance, SessionStore}
     import AgentSessionManager.Test.Fixtures
+    alias AgentSessionManager.Ash.TestRepo
+    alias Ecto.Adapters.SQL.Sandbox
 
     setup do
-      :ok = Ecto.Adapters.SQL.Sandbox.checkout(AgentSessionManager.Ash.TestRepo)
+      :ok = Sandbox.checkout(TestRepo)
       maint = {AshMaintenance, AgentSessionManager.Ash.TestDomain}
       store = {AshSessionStore, AgentSessionManager.Ash.TestDomain}
       {:ok, maint: maint, store: store}

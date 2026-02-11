@@ -163,4 +163,54 @@ defmodule AgentSessionManager.Persistence.EventValidatorTest do
       assert [] = EventValidator.validate_shape(event)
     end
   end
+
+  describe "validate_shape/1 for approval events" do
+    test "tool_approval_requested validates tool_name is required" do
+      event =
+        build_event(%{
+          type: :tool_approval_requested,
+          session_id: "ses-1",
+          data: %{policy_name: "test"}
+        })
+
+      warnings = EventValidator.validate_shape(event)
+      assert Enum.any?(warnings, &String.contains?(&1, "tool_name"))
+    end
+
+    test "tool_approval_requested passes with valid data" do
+      event =
+        build_event(%{
+          type: :tool_approval_requested,
+          session_id: "ses-1",
+          data: %{tool_name: "bash", policy_name: "test-policy"}
+        })
+
+      warnings = EventValidator.validate_shape(event)
+      assert warnings == []
+    end
+
+    test "tool_approval_granted validates tool_name is required" do
+      event =
+        build_event(%{
+          type: :tool_approval_granted,
+          session_id: "ses-1",
+          data: %{}
+        })
+
+      warnings = EventValidator.validate_shape(event)
+      assert Enum.any?(warnings, &String.contains?(&1, "tool_name"))
+    end
+
+    test "tool_approval_denied validates tool_name is required" do
+      event =
+        build_event(%{
+          type: :tool_approval_denied,
+          session_id: "ses-1",
+          data: %{}
+        })
+
+      warnings = EventValidator.validate_shape(event)
+      assert Enum.any?(warnings, &String.contains?(&1, "tool_name"))
+    end
+  end
 end

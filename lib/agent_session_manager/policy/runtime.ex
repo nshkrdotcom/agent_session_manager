@@ -1,6 +1,9 @@
 defmodule AgentSessionManager.Policy.Runtime do
   @moduledoc """
   Mutable per-run policy state for real-time enforcement decisions.
+
+  Runtime decisions can request either immediate cancellation (`cancel?`)
+  or an approval signal (`request_approval?`) depending on policy action.
   """
 
   use GenServer
@@ -9,7 +12,8 @@ defmodule AgentSessionManager.Policy.Runtime do
 
   @type decision :: %{
           violations: [Evaluator.violation()],
-          cancel?: boolean()
+          cancel?: boolean(),
+          request_approval?: boolean()
         }
 
   @spec start_link(keyword()) :: GenServer.on_start()
@@ -60,7 +64,8 @@ defmodule AgentSessionManager.Policy.Runtime do
            cost_rates: cost_rates,
            warnings: [],
            violations: [],
-           cancel_requested?: false
+           cancel_requested?: false,
+           approval_requested?: false
          }}
 
       {:error, reason} ->
@@ -92,15 +97,21 @@ defmodule AgentSessionManager.Policy.Runtime do
       updated_state.policy.on_violation == :cancel and violations != [] and
         not updated_state.cancel_requested?
 
+    request_approval? =
+      updated_state.policy.on_violation == :request_approval and violations != [] and
+        not updated_state.approval_requested?
+
     new_state = %{
       updated_state
       | violations: updated_state.violations ++ violations,
-        cancel_requested?: updated_state.cancel_requested? or cancel_now?
+        cancel_requested?: updated_state.cancel_requested? or cancel_now?,
+        approval_requested?: updated_state.approval_requested? or request_approval?
     }
 
     decision = %{
       violations: violations,
-      cancel?: cancel_now?
+      cancel?: cancel_now?,
+      request_approval?: request_approval?
     }
 
     {:reply, {:ok, decision}, new_state}
@@ -114,6 +125,7 @@ defmodule AgentSessionManager.Policy.Runtime do
       violated?: state.violations != [],
       violations: state.violations,
       cancel_requested?: state.cancel_requested?,
+      approval_requested?: state.approval_requested?,
       usage: %{
         tool_calls: state.tool_calls,
         input_tokens: state.input_tokens,

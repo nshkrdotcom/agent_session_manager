@@ -167,6 +167,32 @@ defmodule AgentSessionManager.Core.EventNormalizerTest do
     end
   end
 
+  describe "resolve_type/1 for approval events" do
+    test "resolves :tool_approval_requested atom" do
+      assert EventNormalizer.resolve_type(:tool_approval_requested) == :tool_approval_requested
+    end
+
+    test "resolves :tool_approval_granted atom" do
+      assert EventNormalizer.resolve_type(:tool_approval_granted) == :tool_approval_granted
+    end
+
+    test "resolves :tool_approval_denied atom" do
+      assert EventNormalizer.resolve_type(:tool_approval_denied) == :tool_approval_denied
+    end
+
+    test "resolves \"tool_approval_requested\" string" do
+      assert EventNormalizer.resolve_type("tool_approval_requested") == :tool_approval_requested
+    end
+
+    test "resolves \"tool_approval_granted\" string" do
+      assert EventNormalizer.resolve_type("tool_approval_granted") == :tool_approval_granted
+    end
+
+    test "resolves \"tool_approval_denied\" string" do
+      assert EventNormalizer.resolve_type("tool_approval_denied") == :tool_approval_denied
+    end
+  end
+
   describe "EventNormalizer - ordering guarantees" do
     test "timestamps are monotonically increasing for batch events" do
       raw_events = for i <- 1..10, do: %{"type" => "message_received", "index" => i}

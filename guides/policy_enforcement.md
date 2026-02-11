@@ -111,7 +111,7 @@ Merge semantics (deterministic, left-to-right):
 - **Names**: joined with ` + ` separator (`"org + team"`)
 - **Limits**: later values override earlier values of the same type
 - **Tool rules**: concatenated from all policies
-- **on_violation**: strictest wins (`:cancel` > `:warn`)
+- **on_violation**: strictest wins (`:cancel` > `:request_approval` > `:warn`)
 - **Metadata**: deep-merged (later keys override)
 
 When both `:policies` and `:policy` are provided, `:policies` takes precedence.
@@ -206,3 +206,70 @@ case Preflight.check(policy) do
   {:error, %Error{code: :policy_violation}} -> # impossible policy
 end
 ```
+
+## Approval Gates (`on_violation: :request_approval`)
+
+A third violation action, `:request_approval`, is available for workflows that
+require human approval before certain tool calls proceed.
+
+### Behavior
+
+When `on_violation: :request_approval` is set and a policy violation occurs:
+
+1. A `:policy_violation` event is emitted (same as `:cancel` and `:warn`)
+2. A `:tool_approval_requested` event is emitted with tool call details
+3. The run is **NOT** cancelled (unlike `:cancel`)
+4. The run result includes policy metadata (like `:warn`)
+
+The `:tool_approval_requested` event is a signal to an external orchestrator.
+ASM does not implement the approval UI, blocking logic, or timeout handling.
+
+### Strictness Ordering
+
+When stacking multiple policies, the strictest `on_violation` wins:
+
+```
+:cancel > :request_approval > :warn
+```
+
+### Example
+
+```elixir
+{:ok, policy} = Policy.new(
+  name: "approval-required",
+  tool_rules: [{:deny, ["bash", "write_file"]}],
+  on_violation: :request_approval
+)
+
+{:ok, result} = SessionManager.execute_run(store, adapter, run_id,
+  policy: policy
+)
+
+# result.policy.action == :request_approval
+# result.policy.violations contains the tool violations
+```
+
+### Cancel-and-Resume Pattern
+
+For tools that must NOT execute without approval, use `cancel_for_approval/4`:
+
+```elixir
+SessionManager.cancel_for_approval(store, adapter, run_id, %{
+  tool_name: "bash",
+  tool_call_id: "toolu_123",
+  tool_input: %{command: "rm -rf /tmp"},
+  policy_name: "production-safety",
+  violation_kind: :tool_denied
+})
+```
+
+This cancels the run and emits both `:run_cancelled` and `:tool_approval_requested`.
+On approval, start a new run with `continuation: :replay`.
+
+### Approval Event Types
+
+| Event | Emitter | Purpose |
+|---|---|---|
+| `:tool_approval_requested` | ASM (policy enforcement) or `cancel_for_approval/4` | Signal that approval is needed |
+| `:tool_approval_granted` | External orchestrator | Record that a human approved |
+| `:tool_approval_denied` | External orchestrator | Record that a human denied |

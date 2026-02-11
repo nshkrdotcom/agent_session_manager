@@ -152,6 +152,10 @@ for p in "${PROVIDERS[@]}"; do
   PLAN_FILES+=("examples/policy_v2.exs")
   PLAN_ARGS+=("--provider $p")
 
+  PLAN_NAMES+=("Approval Gates ($label)")
+  PLAN_FILES+=("examples/approval_gates.exs")
+  PLAN_ARGS+=("--provider $p")
+
   PLAN_NAMES+=("Permission Mode ($label)")
   PLAN_FILES+=("examples/permission_mode.exs")
   PLAN_ARGS+=("--provider $p")

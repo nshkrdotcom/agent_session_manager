@@ -109,6 +109,16 @@ defmodule AgentSessionManager.Persistence.EventValidator do
     policy_violation: [
       {:required, :policy, :string},
       {:required, :kind, :string}
+    ],
+    tool_approval_requested: [
+      {:required, :tool_name, :string},
+      {:required, :policy_name, :string}
+    ],
+    tool_approval_granted: [
+      {:required, :tool_name, :string}
+    ],
+    tool_approval_denied: [
+      {:required, :tool_name, :string}
     ]
   }
 

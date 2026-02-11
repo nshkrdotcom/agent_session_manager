@@ -187,6 +187,94 @@ defmodule AgentSessionManager.Core.TranscriptBuilderTest do
     end
   end
 
+  describe "approval event handling in transcript" do
+    test "tool_approval_requested injects synthetic tool result" do
+      now = DateTime.utc_now()
+
+      events = [
+        build_event(
+          id: "evt-1",
+          session_id: "ses-approval",
+          sequence_number: 1,
+          timestamp: now,
+          type: :message_sent,
+          data: %{content: "Run ls", role: "user"}
+        ),
+        build_event(
+          id: "evt-2",
+          session_id: "ses-approval",
+          sequence_number: 2,
+          timestamp: DateTime.add(now, 1, :second),
+          type: :tool_call_started,
+          data: %{tool_call_id: "tc1", tool_name: "bash", tool_input: %{command: "ls"}}
+        ),
+        build_event(
+          id: "evt-3",
+          session_id: "ses-approval",
+          sequence_number: 3,
+          timestamp: DateTime.add(now, 2, :second),
+          type: :tool_approval_requested,
+          data: %{tool_call_id: "tc1", tool_name: "bash", policy_name: "test"}
+        )
+      ]
+
+      assert {:ok, transcript} =
+               TranscriptBuilder.from_events(events, session_id: "ses-approval")
+
+      assert length(transcript.messages) == 3
+
+      [user_msg, tool_start_msg, approval_msg] = transcript.messages
+
+      assert user_msg.role == :user
+      assert user_msg.content == "Run ls"
+
+      assert tool_start_msg.role == :assistant
+      assert tool_start_msg.tool_name == "bash"
+
+      assert approval_msg.role == :tool
+      assert approval_msg.tool_call_id == "tc1"
+      assert approval_msg.tool_output =~ "awaiting human approval"
+    end
+
+    test "tool_approval_granted and tool_approval_denied are ignored in transcript" do
+      now = DateTime.utc_now()
+
+      events = [
+        build_event(
+          id: "evt-1",
+          session_id: "ses-approval-2",
+          sequence_number: 1,
+          timestamp: now,
+          type: :message_sent,
+          data: %{content: "Hello", role: "user"}
+        ),
+        build_event(
+          id: "evt-2",
+          session_id: "ses-approval-2",
+          sequence_number: 2,
+          timestamp: DateTime.add(now, 1, :second),
+          type: :tool_approval_granted,
+          data: %{tool_name: "bash", approved_by: "admin"}
+        ),
+        build_event(
+          id: "evt-3",
+          session_id: "ses-approval-2",
+          sequence_number: 3,
+          timestamp: DateTime.add(now, 2, :second),
+          type: :tool_approval_denied,
+          data: %{tool_name: "bash", denial_reason: "too risky"}
+        )
+      ]
+
+      assert {:ok, transcript} =
+               TranscriptBuilder.from_events(events, session_id: "ses-approval-2")
+
+      # Only the user message should be in the transcript
+      assert length(transcript.messages) == 1
+      assert hd(transcript.messages).role == :user
+    end
+  end
+
   describe "token-aware truncation" do
     test "max_chars truncates messages to fit approximate character budget" do
       events =

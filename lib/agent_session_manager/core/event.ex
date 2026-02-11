@@ -49,6 +49,11 @@ defmodule AgentSessionManager.Core.Event do
   ### Policy Events
   - `:policy_violation` - Policy violation was detected during execution
 
+  ### Approval Events
+  - `:tool_approval_requested` - Tool execution requires human approval
+  - `:tool_approval_granted` - Human approved the tool execution
+  - `:tool_approval_denied` - Human denied the tool execution
+
   ## Usage
 
       # Create an event
@@ -123,6 +128,13 @@ defmodule AgentSessionManager.Core.Event do
     :policy_violation
   ]
 
+  # Approval events
+  @approval_events [
+    :tool_approval_requested,
+    :tool_approval_granted,
+    :tool_approval_denied
+  ]
+
   @all_types @session_events ++
                @run_events ++
                @message_events ++
@@ -130,7 +142,8 @@ defmodule AgentSessionManager.Core.Event do
                @error_events ++
                @usage_events ++
                @workspace_events ++
-               @policy_events
+               @policy_events ++
+               @approval_events
 
   @type event_type ::
           :session_created
@@ -158,6 +171,9 @@ defmodule AgentSessionManager.Core.Event do
           | :workspace_snapshot_taken
           | :workspace_diff_computed
           | :policy_violation
+          | :tool_approval_requested
+          | :tool_approval_granted
+          | :tool_approval_denied
 
   @type t :: %__MODULE__{
           id: String.t() | nil,
@@ -241,6 +257,12 @@ defmodule AgentSessionManager.Core.Event do
   """
   @spec policy_events() :: [event_type()]
   def policy_events, do: @policy_events
+
+  @doc """
+  Returns approval event types.
+  """
+  @spec approval_events() :: [event_type()]
+  def approval_events, do: @approval_events
 
   @doc """
   Creates a new event with the given attributes.

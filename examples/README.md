@@ -138,6 +138,19 @@ mix run examples/policy_v2.exs --provider codex
 mix run examples/policy_v2.exs --provider amp
 ```
 
+### `approval_gates.exs` -- Approval Gates / Human-in-the-Loop (Section 4.5)
+
+- Demonstrates `on_violation: :request_approval` policy action
+- Shows `:tool_approval_requested` event emission (does NOT cancel the run)
+- Demonstrates `cancel_for_approval/4` helper for the cancel-and-resume pattern
+- Shows policy stacking with the new strictness ordering: `:cancel` > `:request_approval` > `:warn`
+
+```bash
+mix run examples/approval_gates.exs --provider claude
+mix run examples/approval_gates.exs --provider codex
+mix run examples/approval_gates.exs --provider amp
+```
+
 ## Session Server Runtime Examples
 
 These examples demonstrate Feature 6 using live provider execution.

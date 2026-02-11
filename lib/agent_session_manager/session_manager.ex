@@ -50,6 +50,7 @@ defmodule AgentSessionManager.SessionManager do
   1. Session lifecycle: `:session_created`, `:session_started`, `:session_completed`, etc.
   2. Run lifecycle: `:run_started`, `:run_completed`, `:run_failed`, etc.
   3. Provider events: Adapter events are normalized and stored
+  4. Policy/approval events: `:policy_violation`, `:tool_approval_requested`, etc.
 
   """
 
@@ -464,6 +465,41 @@ defmodule AgentSessionManager.SessionManager do
     end
   end
 
+  @doc """
+  Cancels a run for approval and emits a `:tool_approval_requested` event.
+
+  This is a convenience function that combines cancellation with approval
+  event emission in a single call. The external orchestrator can call this
+  instead of manually cancelling and emitting events.
+
+  ## Parameters
+
+  - `store` - The session store
+  - `adapter` - The provider adapter
+  - `run_id` - The run to cancel
+  - `approval_data` - Map with tool details: `:tool_name`, `:tool_call_id`,
+    `:tool_input`, `:policy_name`, `:violation_kind`
+
+  ## Returns
+
+  - `{:ok, run_id}` - Run was cancelled and approval event emitted
+  - `{:error, Error.t()}` - If cancellation fails
+
+  """
+  @spec cancel_for_approval(store(), adapter(), String.t(), map()) ::
+          {:ok, String.t()} | {:error, Error.t()}
+  def cancel_for_approval(store, adapter, run_id, approval_data \\ %{}) do
+    with {:ok, run} <- safe_get_run(store, run_id, :cancel_for_approval),
+         :ok <- request_run_cancel(adapter, run_id),
+         {:ok, cancelled_run} <- Run.update_status(run, :cancelled),
+         :ok <- safe_save_run(store, cancelled_run, :cancel_for_approval),
+         :ok <-
+           emit_run_event(store, :run_cancelled, cancelled_run, %{reason: :approval_requested}),
+         :ok <- emit_run_event(store, :tool_approval_requested, cancelled_run, approval_data) do
+      {:ok, run_id}
+    end
+  end
+
   @spec request_run_cancel(adapter(), String.t()) :: :ok | {:error, Error.t()}
   defp request_run_cancel(adapter, run_id) do
     case ProviderAdapter.cancel(adapter, run_id) do
@@ -796,11 +832,11 @@ defmodule AgentSessionManager.SessionManager do
       policy_status.violated? and policy_status.action == :cancel ->
         {:error, policy_violation_error(policy_status)}
 
-      policy_status.violated? and policy_status.action == :warn ->
+      policy_status.violated? and policy_status.action in [:warn, :request_approval] ->
         case provider_result do
           {:ok, result} ->
             policy_metadata = %{
-              action: :warn,
+              action: policy_status.action,
               violations: policy_status.violations,
               metadata: policy_status.metadata
             }
@@ -841,13 +877,17 @@ defmodule AgentSessionManager.SessionManager do
 
   defp maybe_enforce_policy(store, run, adapter, policy_runtime, event_data) do
     case Runtime.observe_event(policy_runtime, event_data) do
-      {:ok, %{violations: violations, cancel?: cancel_now?}} ->
+      {:ok, %{violations: violations, cancel?: cancel_now?, request_approval?: request_approval?}} ->
         Enum.each(violations, fn violation ->
           _ = emit_policy_violation_event(store, run, violation)
         end)
 
         if cancel_now? do
           _ = ProviderAdapter.cancel(adapter, run.id)
+        end
+
+        if request_approval? do
+          _ = emit_approval_requested_event(store, run, violations, event_data)
         end
 
         :ok
@@ -860,6 +900,26 @@ defmodule AgentSessionManager.SessionManager do
       kind: violation.kind,
       action: violation.action,
       details: violation.details
+    })
+  end
+
+  defp emit_approval_requested_event(store, run, violations, event_data) do
+    tool_name =
+      get_in(event_data, [:data, :tool_name]) || get_in(event_data, [:data, :name])
+
+    tool_call_id = get_in(event_data, [:data, :tool_call_id])
+    tool_input = get_in(event_data, [:data, :tool_input])
+
+    violation = List.first(violations)
+    policy_name = if violation, do: violation.policy, else: "unknown"
+    violation_kind = if violation, do: violation.kind, else: :unknown
+
+    emit_run_event(store, :tool_approval_requested, run, %{
+      tool_name: tool_name,
+      tool_call_id: tool_call_id,
+      tool_input: tool_input,
+      policy_name: policy_name,
+      violation_kind: violation_kind
     })
   end
 

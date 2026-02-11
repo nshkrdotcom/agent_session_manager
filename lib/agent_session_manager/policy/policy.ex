@@ -1,6 +1,8 @@
 defmodule AgentSessionManager.Policy.Policy do
   @moduledoc """
   Declarative policy definition for runtime enforcement.
+
+  Supports `on_violation` actions: `:cancel`, `:request_approval`, and `:warn`.
   """
 
   alias AgentSessionManager.Core.Error
@@ -13,7 +15,7 @@ defmodule AgentSessionManager.Policy.Policy do
 
   @type tool_rule :: {:allow, [String.t()]} | {:deny, [String.t()]}
 
-  @type on_violation :: :cancel | :warn
+  @type on_violation :: :cancel | :request_approval | :warn
 
   @type t :: %__MODULE__{
           name: String.t(),
@@ -90,7 +92,7 @@ defmodule AgentSessionManager.Policy.Policy do
   - `limits`: later policies override limit types that appear in both;
     limits unique to either side are preserved
   - `tool_rules`: concatenated (all rules apply)
-  - `on_violation`: the **strictest** action wins (`:cancel` > `:warn`)
+  - `on_violation`: the **strictest** action wins (`:cancel` > `:request_approval` > `:warn`)
   - `metadata`: deep-merged (later keys override)
 
   Returns a single `%Policy{}`.
@@ -149,6 +151,8 @@ defmodule AgentSessionManager.Policy.Policy do
 
   defp strictest_action(:cancel, _), do: :cancel
   defp strictest_action(_, :cancel), do: :cancel
+  defp strictest_action(:request_approval, _), do: :request_approval
+  defp strictest_action(_, :request_approval), do: :request_approval
   defp strictest_action(a, _), do: a
 
   defp default_policy do
@@ -238,10 +242,12 @@ defmodule AgentSessionManager.Policy.Policy do
     {:error, Error.new(:validation_error, "tool rule list must contain tool names")}
   end
 
-  defp validate_on_violation(action) when action in [:cancel, :warn], do: {:ok, action}
+  defp validate_on_violation(action) when action in [:cancel, :request_approval, :warn],
+    do: {:ok, action}
 
   defp validate_on_violation(_invalid) do
-    {:error, Error.new(:validation_error, "on_violation must be :cancel or :warn")}
+    {:error,
+     Error.new(:validation_error, "on_violation must be :cancel, :request_approval, or :warn")}
   end
 
   defp validate_metadata(metadata) when is_map(metadata), do: {:ok, metadata}

@@ -155,6 +155,9 @@ defmodule AgentSessionManager.Core.TranscriptBuilder do
         :tool_call_failed ->
           append_tool_result(messages, pending_stream, event)
 
+        :tool_approval_requested ->
+          append_tool_approval_requested(messages, pending_stream, event)
+
         _ ->
           {messages, pending_stream}
       end
@@ -246,6 +249,23 @@ defmodule AgentSessionManager.Core.TranscriptBuilder do
       tool_name: to_string_or_nil(event.data[:tool_name]),
       tool_input: nil,
       tool_output: tool_output,
+      metadata: event_metadata(event)
+    }
+
+    {flushed ++ [message], nil}
+  end
+
+  defp append_tool_approval_requested(messages, pending_stream, %Event{} = event) do
+    flushed = maybe_flush_stream(messages, pending_stream)
+    tool_call_id = normalize_tool_call_id(event.data)
+
+    message = %{
+      role: :tool,
+      content: nil,
+      tool_call_id: tool_call_id,
+      tool_name: to_string_or_nil(event.data[:tool_name]),
+      tool_input: nil,
+      tool_output: "[Execution paused: awaiting human approval]",
       metadata: event_metadata(event)
     }
 

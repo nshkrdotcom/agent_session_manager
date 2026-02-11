@@ -317,6 +317,23 @@ mix run examples/rendering_callback.exs --provider codex
 mix run examples/rendering_callback.exs --provider amp
 ```
 
+## PubSub Integration Example
+
+### `pubsub_sink.exs` -- PubSubSink + Event Callback Bridge (Live Provider)
+
+- Starts a local Phoenix.PubSub server
+- Demonstrates two PubSub integration paths:
+  - **Path 1**: PubSubSink in the rendering pipeline (broadcasts events from stream)
+  - **Path 2**: `PubSub.event_callback` bridge (broadcasts events from SessionManager callback)
+- Subscribes to session-scoped topics and shows events arriving via PubSub
+- Uses canonical topic naming (`asm:session:{session_id}`)
+
+```bash
+mix run examples/pubsub_sink.exs --provider claude
+mix run examples/pubsub_sink.exs --provider codex
+mix run examples/pubsub_sink.exs --provider amp
+```
+
 ## Other Live Provider Examples
 
 ### `oneshot.exs` -- One-Shot Execution

@@ -304,7 +304,47 @@ end
 
 ## Writing a Custom Sink
 
-Implement the `AgentSessionManager.Rendering.Sink` behaviour:
+### PubSubSink (Built-in)
+
+ASM now ships a built-in `AgentSessionManager.Rendering.Sinks.PubSubSink`.
+It broadcasts events via Phoenix PubSub and ignores rendered text unless
+`include_iodata: true` is set.
+
+Requires the optional `phoenix_pubsub` dependency:
+
+```elixir
+# mix.exs
+{:phoenix_pubsub, "~> 2.1"}
+```
+
+```elixir
+alias AgentSessionManager.Rendering.Sinks.PubSubSink
+
+# Broadcast to per-session topics
+{PubSubSink, pubsub: MyApp.PubSub, scope: :session}
+
+# Broadcast to a static topic
+{PubSubSink, pubsub: MyApp.PubSub, topic: "agent:events"}
+
+# Dynamic topics (single or multi-topic)
+{PubSubSink, pubsub: MyApp.PubSub, topic_fn: fn event ->
+  alias AgentSessionManager.PubSub.Topic
+  [
+    Topic.build_session_topic("asm", event[:session_id]),
+    Topic.build_run_topic("asm", event[:session_id], event[:run_id])
+  ]
+end}
+```
+
+Subscribers receive `{:asm_event, session_id, event}` by default.
+
+See the [PubSub Integration guide](pubsub_integration.md) for full documentation,
+including the event-callback bridge for non-rendering usage.
+
+### Before (custom)
+
+If you need a custom sink for non-standard behavior, implement the
+`AgentSessionManager.Rendering.Sink` behaviour directly:
 
 ```elixir
 defmodule MyApp.PubSubSink do

@@ -49,6 +49,8 @@ defmodule AgentSessionManager.MixProject do
       {:ex_aws_s3, "~> 2.5", optional: true},
       {:sweet_xml, "~> 0.7", optional: true},
       {:hackney, "~> 1.20", optional: true},
+      # PubSub integration (optional)
+      {:phoenix_pubsub, "~> 2.1", optional: true},
 
       # Development and documentation
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},
@@ -89,6 +91,7 @@ defmodule AgentSessionManager.MixProject do
         "guides/session_continuity.md",
         "guides/events_and_streaming.md",
         "guides/rendering.md",
+        "guides/pubsub_integration.md",
         "guides/stream_session.md",
         "guides/cursor_streaming_and_migration.md",
         "guides/workspace_snapshots.md",
@@ -128,6 +131,7 @@ defmodule AgentSessionManager.MixProject do
           "guides/session_continuity.md",
           "guides/events_and_streaming.md",
           "guides/rendering.md",
+          "guides/pubsub_integration.md",
           "guides/stream_session.md",
           "guides/cursor_streaming_and_migration.md",
           "guides/workspace_snapshots.md",
@@ -239,11 +243,16 @@ defmodule AgentSessionManager.MixProject do
           AgentSessionManager.Rendering.Sinks.TTYSink,
           AgentSessionManager.Rendering.Sinks.FileSink,
           AgentSessionManager.Rendering.Sinks.JSONLSink,
-          AgentSessionManager.Rendering.Sinks.CallbackSink
+          AgentSessionManager.Rendering.Sinks.CallbackSink,
+          AgentSessionManager.Rendering.Sinks.PubSubSink
         ],
         "Stream Session": [
           AgentSessionManager.StreamSession,
           AgentSessionManager.StreamSession.Supervisor
+        ],
+        "PubSub Integration": [
+          AgentSessionManager.PubSub,
+          AgentSessionManager.PubSub.Topic
         ],
         Observability: [
           AgentSessionManager.Config,

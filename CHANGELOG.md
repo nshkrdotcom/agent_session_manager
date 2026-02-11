@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **PubSub integration** for real-time event broadcasting via Phoenix PubSub
+  - `PubSubSink` rendering sink broadcasts events to configurable PubSub topics
+  - `AgentSessionManager.PubSub` helper module with `event_callback/2` and `subscribe/2`
+  - `AgentSessionManager.PubSub.Topic` for canonical topic naming (`asm:session:{id}`, `asm:session:{id}:run:{rid}`)
+  - Optional dependency on `phoenix_pubsub ~> 2.1` with graceful stub fallback
+
 ### Changed
 
 - Current-only contract cleanup:

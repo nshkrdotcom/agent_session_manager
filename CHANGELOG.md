@@ -27,6 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `classify_error/1` mapping ASM errors to workflow routing actions
 - `examples/workflow_bridge.exs` live example
 - `guides/workflow_bridge.md` integration guide
+- **Secrets redaction for persisted events** (`EventRedactor` module)
+  - Configurable pattern-based secret detection and `[REDACTED]` replacement
+  - Integrates into `EventBuilder` pipeline between build and enrich steps
+  - Default patterns for AWS keys, AI provider tokens, GitHub PATs, JWTs, passwords, connection strings, private keys, environment variables
+  - Custom pattern support via application config or per-pipeline context override
+  - `redact_map/2` public API for user callback and telemetry handler wrapping
+  - Opt-in via `redaction_enabled: true` (default: disabled for backward compatibility)
+  - Telemetry event `[:agent_session_manager, :persistence, :event_redacted]` emitted on redaction
+  - Five new `Config` keys: `redaction_enabled`, `redaction_patterns`, `redaction_replacement`, `redaction_deep_scan`, `redaction_scan_metadata`
 
 ### Changed
 

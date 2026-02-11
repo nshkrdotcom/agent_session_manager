@@ -120,6 +120,7 @@ defmodule AgentSessionManager.MixProject do
         "guides/s3_artifact_store.md",
         "guides/composite_store.md",
         "guides/event_schema_versioning.md",
+        "guides/secrets_redaction.md",
         "guides/custom_persistence_guide.md",
         "CHANGELOG.md",
         "LICENSE"
@@ -160,6 +161,7 @@ defmodule AgentSessionManager.MixProject do
           "guides/s3_artifact_store.md",
           "guides/composite_store.md",
           "guides/event_schema_versioning.md",
+          "guides/secrets_redaction.md",
           "guides/custom_persistence_guide.md"
         ],
         Integration: [
@@ -191,7 +193,8 @@ defmodule AgentSessionManager.MixProject do
         "Event Pipeline": [
           AgentSessionManager.Core.EventNormalizer,
           AgentSessionManager.Core.EventStream,
-          AgentSessionManager.Core.TranscriptBuilder
+          AgentSessionManager.Core.TranscriptBuilder,
+          AgentSessionManager.Persistence.EventRedactor
         ],
         "Capability System": [
           AgentSessionManager.Core.CapabilityResolver,

@@ -45,4 +45,56 @@ defmodule AgentSessionManager.Persistence.EventBuilderTest do
       assert length(event.metadata._validation_warnings) == 2
     end
   end
+
+  describe "process/2 with redaction" do
+    test "redacts secrets when enabled via context override" do
+      context =
+        context(%{
+          redaction: %{enabled: true, replacement: :categorized}
+        })
+
+      raw = %{
+        type: :tool_call_completed,
+        data: %{
+          tool_name: "bash",
+          tool_output: "Found key: AKIAIOSFODNN7EXAMPLE",
+          tool_input: %{command: "env"}
+        }
+      }
+
+      {:ok, event} = EventBuilder.process(raw, context)
+      refute event.data.tool_output =~ "AKIAIOSFODNN7EXAMPLE"
+      assert event.data.tool_output =~ "[REDACTED:aws_access_key]"
+      assert event.data.tool_input == %{command: "env"}
+    end
+
+    test "passes through unchanged when redaction is disabled" do
+      raw = %{
+        type: :tool_call_completed,
+        data: %{
+          tool_name: "bash",
+          tool_output: "key=AKIAIOSFODNN7EXAMPLE"
+        }
+      }
+
+      {:ok, event} = EventBuilder.process(raw, context())
+      assert event.data.tool_output =~ "AKIAIOSFODNN7EXAMPLE"
+    end
+
+    test "redaction does not interfere with validation" do
+      context = context(%{redaction: %{enabled: true}})
+
+      raw = %{
+        type: :message_received,
+        data: %{
+          content: "Your key is ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZaBcDeFgHiJkL",
+          role: "assistant"
+        }
+      }
+
+      {:ok, event} = EventBuilder.process(raw, context)
+      refute event.data.content =~ "ghp_"
+      refute Map.has_key?(event.metadata, :_validation_warnings)
+    end
+  end
 end

@@ -169,6 +169,46 @@ defmodule AgentSessionManager.Persistence.EventPipelineTest do
     end
   end
 
+  describe "process/3 with redaction" do
+    test "redacted events are persisted without secrets", %{store: store} do
+      AgentSessionManager.Config.put(:redaction_enabled, true)
+      on_exit(fn -> AgentSessionManager.Config.delete(:redaction_enabled) end)
+
+      context = default_context()
+
+      raw = %{
+        type: :tool_call_completed,
+        data: %{
+          tool_name: "bash",
+          tool_output: "export API_KEY=sk-ant-api03-secretvaluehere1234567890",
+          tool_input: %{command: "env"}
+        }
+      }
+
+      {:ok, event} = EventPipeline.process(store, raw, context)
+      refute event.data.tool_output =~ "sk-ant-api03"
+
+      {:ok, events} = SessionStore.get_events(store, "ses_pipeline_test")
+      persisted = List.last(events)
+      refute persisted.data.tool_output =~ "sk-ant-api03"
+    end
+
+    test "disabled redaction preserves original data", %{store: store} do
+      context = default_context()
+
+      raw = %{
+        type: :tool_call_completed,
+        data: %{
+          tool_name: "bash",
+          tool_output: "password=secret123"
+        }
+      }
+
+      {:ok, event} = EventPipeline.process(store, raw, context)
+      assert event.data.tool_output == "password=secret123"
+    end
+  end
+
   # ============================================================================
   # process_batch/3
   # ============================================================================
@@ -220,6 +260,36 @@ defmodule AgentSessionManager.Persistence.EventPipelineTest do
     end
   end
 
+  describe "process_batch/3 with redaction" do
+    test "batch processing redacts all events", %{store: store} do
+      AgentSessionManager.Config.put(:redaction_enabled, true)
+      on_exit(fn -> AgentSessionManager.Config.delete(:redaction_enabled) end)
+
+      context = default_context()
+
+      raw_events = [
+        %{
+          type: :tool_call_completed,
+          data: %{
+            tool_name: "bash",
+            tool_output: "password=secret123"
+          }
+        },
+        %{
+          type: :message_received,
+          data: %{
+            content: "Your key is ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZaBcDeFgHiJkL",
+            role: "assistant"
+          }
+        }
+      ]
+
+      {:ok, events} = EventPipeline.process_batch(store, raw_events, context)
+      refute Enum.any?(events, fn event -> inspect(event.data) =~ "secret123" end)
+      refute Enum.any?(events, fn event -> inspect(event.data) =~ "ghp_" end)
+    end
+  end
+
   # ============================================================================
   # Telemetry
   # ============================================================================
@@ -262,6 +332,51 @@ defmodule AgentSessionManager.Persistence.EventPipelineTest do
 
       assert_received {[:agent_session_manager, :persistence, :event_rejected], ^ref,
                        %{system_time: _}, %{session_id: ""}}
+    end
+  end
+
+  describe "telemetry with redaction" do
+    test "emits event_redacted telemetry when secrets are found", %{store: store} do
+      ref =
+        :telemetry_test.attach_event_handlers(self(), [
+          [:agent_session_manager, :persistence, :event_redacted]
+        ])
+
+      AgentSessionManager.Config.put(:redaction_enabled, true)
+      on_exit(fn -> AgentSessionManager.Config.delete(:redaction_enabled) end)
+
+      context = default_context()
+
+      raw = %{
+        type: :tool_call_completed,
+        data: %{
+          tool_name: "bash",
+          tool_output: "password=secret123"
+        }
+      }
+
+      {:ok, _event} = EventPipeline.process(store, raw, context)
+
+      assert_received {[:agent_session_manager, :persistence, :event_redacted], ^ref,
+                       %{redaction_count: count}, %{type: :tool_call_completed}}
+
+      assert count > 0
+    end
+
+    test "does not emit event_redacted telemetry when no secrets found", %{store: store} do
+      ref =
+        :telemetry_test.attach_event_handlers(self(), [
+          [:agent_session_manager, :persistence, :event_redacted]
+        ])
+
+      AgentSessionManager.Config.put(:redaction_enabled, true)
+      on_exit(fn -> AgentSessionManager.Config.delete(:redaction_enabled) end)
+
+      context = default_context()
+      raw = %{type: :run_started, data: %{model: "claude-haiku"}}
+      {:ok, _event} = EventPipeline.process(store, raw, context)
+
+      refute_received {[:agent_session_manager, :persistence, :event_redacted], ^ref, _, _}
     end
   end
 end

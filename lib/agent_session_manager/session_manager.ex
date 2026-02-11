@@ -1357,7 +1357,7 @@ defmodule AgentSessionManager.SessionManager do
 
         run_for_calc = %{
           run
-          | provider_metadata: Map.put(run.provider_metadata || %{}, :model, model)
+          | provider_metadata: Map.put(run.provider_metadata, :model, model)
         }
 
         case CostCalculator.calculate_run_cost(run_for_calc, pricing_table) do
@@ -1390,8 +1390,6 @@ defmodule AgentSessionManager.SessionManager do
         nil
     end)
   end
-
-  defp extract_sdk_cost(_), do: nil
 
   defp extract_total_cost_usd(data) do
     case fetch_map_value(data, :total_cost_usd) do

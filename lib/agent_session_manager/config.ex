@@ -39,6 +39,16 @@ defmodule AgentSessionManager.Config do
   |--------------------------|-----------|---------|---------------|
   | `:telemetry_enabled`     | `boolean` | `true`  | `Telemetry`   |
   | `:audit_logging_enabled` | `boolean` | `true`  | `AuditLogger` |
+  | `:redaction_enabled`     | `boolean` | `false` | `EventBuilder` |
+
+  ### Redaction
+
+  | Key                       | Type                              | Default        | Used By       |
+  |---------------------------|-----------------------------------|----------------|---------------|
+  | `:redaction_patterns`     | `:default \| list`                | `:default`     | `EventBuilder` |
+  | `:redaction_replacement`  | `String.t() \| :categorized`      | `"[REDACTED]"` | `EventBuilder` |
+  | `:redaction_deep_scan`    | `boolean`                         | `true`         | `EventBuilder` |
+  | `:redaction_scan_metadata`| `boolean`                         | `false`        | `EventBuilder` |
 
   ### Timeouts (milliseconds)
 
@@ -137,6 +147,11 @@ defmodule AgentSessionManager.Config do
   @type key ::
           :telemetry_enabled
           | :audit_logging_enabled
+          | :redaction_enabled
+          | :redaction_patterns
+          | :redaction_replacement
+          | :redaction_deep_scan
+          | :redaction_scan_metadata
           # Timeouts
           | :stream_idle_timeout_ms
           | :task_shutdown_timeout_ms
@@ -190,6 +205,11 @@ defmodule AgentSessionManager.Config do
     # Feature flags
     :telemetry_enabled,
     :audit_logging_enabled,
+    :redaction_enabled,
+    :redaction_patterns,
+    :redaction_replacement,
+    :redaction_deep_scan,
+    :redaction_scan_metadata,
     # Timeouts
     :stream_idle_timeout_ms,
     :task_shutdown_timeout_ms,
@@ -296,6 +316,11 @@ defmodule AgentSessionManager.Config do
   # Feature flags
   def default(:telemetry_enabled), do: true
   def default(:audit_logging_enabled), do: true
+  def default(:redaction_enabled), do: false
+  def default(:redaction_patterns), do: :default
+  def default(:redaction_replacement), do: "[REDACTED]"
+  def default(:redaction_deep_scan), do: true
+  def default(:redaction_scan_metadata), do: false
   # Timeouts
   def default(:stream_idle_timeout_ms), do: 120_000
   def default(:task_shutdown_timeout_ms), do: 5_000

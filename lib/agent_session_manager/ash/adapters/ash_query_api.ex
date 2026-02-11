@@ -11,9 +11,9 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
 
     alias AgentSessionManager.Ash.Converters
     alias AgentSessionManager.Ash.Resources
-    alias AgentSessionManager.Cost.CostCalculator
     alias AgentSessionManager.Config
     alias AgentSessionManager.Core.{Error, Event, Serialization}
+    alias AgentSessionManager.Cost.CostCalculator
 
     @valid_session_statuses ~w(pending active paused completed failed cancelled)
     @valid_run_statuses ~w(pending running completed failed cancelled timeout)
@@ -144,38 +144,8 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
       with {:ok, runs} <- read_runs(domain, opts),
            {:ok, scoped_runs} <- maybe_filter_runs_by_agent(domain, runs, opts) do
         {total_cost, by_provider, by_model, unmapped} =
-          Enum.reduce(scoped_runs, {0.0, %{}, %{}, 0}, fn run,
-                                                          {total, providers, models, unmapped} ->
-            cost = run.cost_usd || calculate_post_hoc_cost(run, pricing_table)
-
-            if is_number(cost) do
-              provider = run.provider || "unknown"
-              model = provider_model_name(run.provider_metadata)
-              usage = run.token_usage || %{}
-
-              provider_entry = Map.get(providers, provider, %{cost_usd: 0.0, run_count: 0})
-
-              updated_provider = %{
-                provider_entry
-                | cost_usd: provider_entry.cost_usd + cost,
-                  run_count: provider_entry.run_count + 1
-              }
-
-              model_entry =
-                Map.get(models, model, %{cost_usd: 0.0, input_tokens: 0, output_tokens: 0})
-
-              updated_model = %{
-                model_entry
-                | cost_usd: model_entry.cost_usd + cost,
-                  input_tokens: model_entry.input_tokens + get_token_val(usage, "input_tokens"),
-                  output_tokens: model_entry.output_tokens + get_token_val(usage, "output_tokens")
-              }
-
-              {total + cost, Map.put(providers, provider, updated_provider),
-               Map.put(models, model, updated_model), unmapped}
-            else
-              {total, providers, models, unmapped + 1}
-            end
+          Enum.reduce(scoped_runs, {0.0, %{}, %{}, 0}, fn run, acc ->
+            accumulate_cost_summary(run, pricing_table, acc)
           end)
 
         {:ok,
@@ -189,6 +159,38 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
       end
     rescue
       e -> {:error, Error.new(:query_error, Exception.message(e))}
+    end
+
+    defp accumulate_cost_summary(run, pricing_table, {total, providers, models, unmapped}) do
+      cost = run.cost_usd || calculate_post_hoc_cost(run, pricing_table)
+
+      if is_number(cost) do
+        provider = run.provider || "unknown"
+        model = provider_model_name(run.provider_metadata)
+        usage = run.token_usage || %{}
+
+        provider_entry = Map.get(providers, provider, %{cost_usd: 0.0, run_count: 0})
+
+        updated_provider = %{
+          provider_entry
+          | cost_usd: provider_entry.cost_usd + cost,
+            run_count: provider_entry.run_count + 1
+        }
+
+        model_entry = Map.get(models, model, %{cost_usd: 0.0, input_tokens: 0, output_tokens: 0})
+
+        updated_model = %{
+          model_entry
+          | cost_usd: model_entry.cost_usd + cost,
+            input_tokens: model_entry.input_tokens + get_token_val(usage, "input_tokens"),
+            output_tokens: model_entry.output_tokens + get_token_val(usage, "output_tokens")
+        }
+
+        {total + cost, Map.put(providers, provider, updated_provider),
+         Map.put(models, model, updated_model), unmapped}
+      else
+        {total, providers, models, unmapped + 1}
+      end
     end
 
     @impl true

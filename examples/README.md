@@ -548,6 +548,19 @@ mix run examples/shell_exec.exs --provider codex
 mix run examples/shell_exec.exs --provider amp
 ```
 
+## Secrets Redaction Example
+
+### `secrets_redaction.exs` -- EventRedactor Demo
+
+- Demonstrates the `EventRedactor` module for secret pattern detection and redaction
+- Shows categorized replacement (`[REDACTED:aws_access_key]`) through the EventBuilder pipeline
+- Demonstrates the public `redact_map/2` API for wrapping user callbacks
+- Shows custom pattern support (append and replace modes)
+
+```bash
+mix run examples/secrets_redaction.exs
+```
+
 ## Run All Examples
 
 ```bash

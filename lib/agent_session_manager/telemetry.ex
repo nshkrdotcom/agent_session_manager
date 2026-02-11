@@ -20,6 +20,7 @@ defmodule AgentSessionManager.Telemetry do
   - `[:agent_session_manager, :persistence, :event_persisted]` - Event was validated and persisted
   - `[:agent_session_manager, :persistence, :event_validation_warning]` - Event had shape warnings
   - `[:agent_session_manager, :persistence, :event_rejected]` - Event failed structural validation
+  - `[:agent_session_manager, :persistence, :event_redacted]` - Secrets were redacted from an event
 
   ## Configuration
 

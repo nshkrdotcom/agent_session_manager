@@ -17,10 +17,10 @@ if Code.ensure_loaded?(Ecto.Query) do
 
     @behaviour AgentSessionManager.Ports.QueryAPI
 
-    alias AgentSessionManager.Cost.CostCalculator
     alias AgentSessionManager.Adapters.EctoSessionStore.Converters
     alias AgentSessionManager.Config
     alias AgentSessionManager.Core.{Error, Event, Serialization}
+    alias AgentSessionManager.Cost.CostCalculator
     alias AgentSessionManager.Ports.QueryAPI
 
     alias AgentSessionManager.Adapters.EctoSessionStore.Schemas.{

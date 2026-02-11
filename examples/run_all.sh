@@ -235,6 +235,10 @@ PLAN_NAMES+=("Persistence Maintenance")
 PLAN_FILES+=("examples/persistence_maintenance.exs")
 PLAN_ARGS+=("")
 
+PLAN_NAMES+=("Secrets Redaction")
+PLAN_FILES+=("examples/secrets_redaction.exs")
+PLAN_ARGS+=("")
+
 PLAN_NAMES+=("Persistence Multi-Run")
 PLAN_FILES+=("examples/persistence_multi_run.exs")
 PLAN_ARGS+=("")

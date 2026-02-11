@@ -9,6 +9,11 @@ defmodule AgentSessionManager.MixProjectDepsTest do
     assert optional_dep?(deps, :amp_sdk)
   end
 
+  test "phoenix_pubsub dependency is marked optional" do
+    deps = AgentSessionManager.MixProject.project()[:deps]
+    assert optional_dep?(deps, :phoenix_pubsub)
+  end
+
   defp optional_dep?(deps, dep_name) do
     deps
     |> Enum.find(fn

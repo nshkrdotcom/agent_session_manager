@@ -124,6 +124,9 @@ if Code.ensure_loaded?(Phoenix.PubSub) do
         is_function(topic_fn, 1) ->
           {:ok, {:dynamic, topic_fn}}
 
+        scope not in [:session, :run, :type] ->
+          {:error, ":scope must be :session, :run, or :type"}
+
         true ->
           {:ok, {:scoped, prefix, scope}}
       end

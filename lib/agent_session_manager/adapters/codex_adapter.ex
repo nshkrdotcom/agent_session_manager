@@ -434,17 +434,17 @@ if Code.ensure_loaded?(Codex) and Code.ensure_loaded?(Codex.Events) do
       end
     end
 
-    defp build_codex_options(state) do
-      attrs = %{}
-      attrs = if state.model, do: Map.put(attrs, :model, state.model), else: attrs
-      Codex.Options.new(attrs)
-    end
-
     @doc false
     @spec build_thread_options_for_state(map()) ::
             {:ok, Codex.Thread.Options.t()} | {:error, term()}
     def build_thread_options_for_state(state) do
       build_thread_options(state)
+    end
+
+    @doc false
+    @spec build_codex_options_for_state(map()) :: {:ok, Codex.Options.t()} | {:error, term()}
+    def build_codex_options_for_state(state) do
+      build_codex_options(state)
     end
 
     @doc false
@@ -457,10 +457,9 @@ if Code.ensure_loaded?(Codex) and Code.ensure_loaded?(Codex.Events) do
       attrs =
         %{working_directory: state.working_directory}
         |> maybe_put(:base_instructions, state.system_prompt)
+        |> Map.merge(sdk_opts_for_struct(state.sdk_opts, Codex.Thread.Options))
 
       with {:ok, thread_opts} <- Codex.Thread.Options.new(attrs) do
-        # Apply sdk_opts first (lowest precedence)
-        thread_opts = apply_sdk_opts(thread_opts, state.sdk_opts)
         # Then apply normalized options (highest precedence)
         {:ok, apply_permission_mode_struct(thread_opts, state.permission_mode)}
       end
@@ -471,16 +470,49 @@ if Code.ensure_loaded?(Codex) and Code.ensure_loaded?(Codex.Events) do
       |> maybe_put(:max_turns, state.max_turns)
     end
 
+    defp build_codex_options(state) do
+      attrs =
+        state.sdk_opts
+        |> sdk_opts_for_struct(Codex.Options)
+        |> maybe_put(:model, state.model)
+
+      Codex.Options.new(attrs)
+    end
+
     defp maybe_put(map, _key, nil), do: map
     defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
-    defp apply_sdk_opts(opts, []), do: opts
+    defp sdk_opts_for_struct(sdk_opts, struct_module) when is_list(sdk_opts) do
+      allowed_keys =
+        struct_module.__struct__()
+        |> Map.from_struct()
+        |> Map.keys()
+        |> MapSet.new()
 
-    defp apply_sdk_opts(opts, sdk_opts) do
-      Enum.reduce(sdk_opts, opts, fn {key, value}, acc ->
-        if Map.has_key?(acc, key), do: Map.put(acc, key, value), else: acc
+      allowed_key_lookup =
+        Enum.into(allowed_keys, %{}, fn key -> {Atom.to_string(key), key} end)
+
+      Enum.reduce(sdk_opts, %{}, fn {key, value}, acc ->
+        case resolve_option_key(key, allowed_keys, allowed_key_lookup) do
+          atom_key when is_atom(atom_key) ->
+            Map.put(acc, atom_key, value)
+
+          _ ->
+            acc
+        end
       end)
     end
+
+    defp sdk_opts_for_struct(_sdk_opts, _struct_module), do: %{}
+
+    defp resolve_option_key(key, allowed_keys, _allowed_key_lookup) when is_atom(key) do
+      if MapSet.member?(allowed_keys, key), do: key, else: nil
+    end
+
+    defp resolve_option_key(key, _allowed_keys, allowed_key_lookup) when is_binary(key),
+      do: Map.get(allowed_key_lookup, key)
+
+    defp resolve_option_key(_key, _allowed_keys, _allowed_key_lookup), do: nil
 
     defp apply_permission_mode_struct(opts, :full_auto) do
       %{opts | full_auto: true}

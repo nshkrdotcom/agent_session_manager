@@ -87,6 +87,11 @@ defmodule AgentSessionManager.Rendering.Sinks.PubSubSinkTest do
       assert state.topic_strategy == {:scoped, "asm", :run}
     end
 
+    test "rejects invalid scope" do
+      assert {:error, _} =
+               PubSubSink.init(pubsub: self(), scope: :invalid, dispatcher: MockDispatcher)
+    end
+
     test "defaults message_wrapper to :asm_event" do
       assert {:ok, state} =
                PubSubSink.init(pubsub: self(), topic: "t", dispatcher: MockDispatcher)

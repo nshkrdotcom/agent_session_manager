@@ -42,7 +42,7 @@ if Code.ensure_loaded?(Phoenix.PubSub) do
     ## Options
 
       * `:prefix` - Topic prefix. Default `"asm"`.
-      * `:scope` - `:session` or `:run`. Default `:session`.
+      * `:scope` - `:session`, `:run`, or `:type`. Default `:session`.
       * `:message_wrapper` - Broadcast tuple tag. Default `:asm_event`.
       * `:topic` - Override with a static topic string.
     """
@@ -54,6 +54,7 @@ if Code.ensure_loaded?(Phoenix.PubSub) do
         nil ->
           prefix = Keyword.get(opts, :prefix, @default_prefix)
           scope = Keyword.get(opts, :scope, @default_scope)
+          validate_scope!(scope)
 
           fn event_data ->
             topic = Topic.build(event_data, prefix: prefix, scope: scope)
@@ -106,6 +107,12 @@ if Code.ensure_loaded?(Phoenix.PubSub) do
         end
 
       Phoenix.PubSub.subscribe(pubsub, topic)
+    end
+
+    defp validate_scope!(scope) when scope in [:session, :run, :type], do: :ok
+
+    defp validate_scope!(scope) do
+      raise ArgumentError, "invalid :scope #{inspect(scope)} (expected :session, :run, or :type)"
     end
   end
 else

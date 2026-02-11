@@ -67,5 +67,13 @@ defmodule AgentSessionManager.PubSub.TopicTest do
       event = %{session_id: "ses_abc", run_id: "run_def"}
       assert Topic.build(event, prefix: "myapp", scope: :session) == "myapp:session:ses_abc"
     end
+
+    test "raises on invalid scope" do
+      event = %{session_id: "ses_abc", run_id: "run_def"}
+
+      assert_raise ArgumentError, ~r/invalid :scope/, fn ->
+        Topic.build(event, scope: :invalid)
+      end
+    end
   end
 end

@@ -115,6 +115,12 @@ defmodule AgentSessionManager.PubSubTest do
 
       assert_receive {:asm_event, ^session_id, ^event}
     end
+
+    test "raises on invalid scope", %{pubsub: pubsub} do
+      assert_raise ArgumentError, ~r/invalid :scope/, fn ->
+        ASMPubSub.event_callback(pubsub, scope: :invalid)
+      end
+    end
   end
 
   describe "subscribe/2" do

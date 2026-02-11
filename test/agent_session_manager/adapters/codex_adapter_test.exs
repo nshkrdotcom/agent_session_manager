@@ -198,7 +198,7 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
           thread_id: "thread-confirmed",
           metadata: %{
             "model" => "gpt-5.3-codex",
-            "config" => %{"model_reasoning_effort" => "xhigh"}
+            "config" => %{"model_reasoning_effort" => "medium"}
           }
         },
         %Events.TurnStarted{thread_id: "thread-confirmed", turn_id: "turn-1"},
@@ -255,7 +255,7 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
       assert run_started != nil
       assert run_started.data.configured_model == "gpt-5.3-codex"
       assert run_started.data.confirmed_model == "gpt-5.3-codex"
-      assert run_started.data.confirmed_reasoning_effort == "xhigh"
+      assert run_started.data.confirmed_reasoning_effort == "medium"
       assert run_started.data.confirmation_source == "codex_cli.thread_started"
       assert run_started.data.model == "gpt-5.3-codex"
     end
@@ -941,6 +941,28 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
       {:ok, thread_opts} = CodexAdapter.build_thread_options_for_state(state)
       assert thread_opts.web_search_mode == :live
       assert thread_opts.show_raw_agent_reasoning == true
+    end
+
+    test "codex option fields in sdk_opts are merged into codex options" do
+      {:ok, mock_sdk} = CodexMockSDK.start_link(scenario: :simple_response)
+      cleanup_on_exit(fn -> safe_stop(mock_sdk) end)
+
+      {:ok, adapter} =
+        CodexAdapter.start_link(
+          working_directory: "/tmp/test",
+          model: "gpt-5.3-codex",
+          sdk_opts: [reasoning_effort: :medium],
+          sdk_module: CodexMockSDK,
+          sdk_pid: mock_sdk
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      state = :sys.get_state(adapter)
+      {:ok, codex_opts} = CodexAdapter.build_codex_options_for_state(state)
+
+      assert codex_opts.model == "gpt-5.3-codex"
+      assert codex_opts.reasoning_effort == :medium
     end
 
     test "normalized options take precedence over sdk_opts" do

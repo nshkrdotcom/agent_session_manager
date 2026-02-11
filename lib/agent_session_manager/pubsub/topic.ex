@@ -46,6 +46,10 @@ defmodule AgentSessionManager.PubSub.Topic do
 
       :type ->
         build_type_topic(prefix, event[:session_id], event[:type])
+
+      other ->
+        raise ArgumentError,
+              "invalid :scope #{inspect(other)} (expected :session, :run, or :type)"
     end
   end
 

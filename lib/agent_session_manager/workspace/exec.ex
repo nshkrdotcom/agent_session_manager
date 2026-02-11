@@ -6,10 +6,8 @@ defmodule AgentSessionManager.Workspace.Exec do
   overhead. For managed execution with events and policies, use ShellAdapter.
   """
 
+  alias AgentSessionManager.Config
   alias AgentSessionManager.Core.Error
-
-  @default_timeout_ms 30_000
-  @default_max_output_bytes 1_048_576
 
   @type exec_result :: %{
           command: String.t(),
@@ -45,8 +43,8 @@ defmodule AgentSessionManager.Workspace.Exec do
 
     with {:ok, cwd} <- resolve_cwd(opts),
          {:ok, command_path} <- resolve_command_path(command) do
-      timeout_ms = Keyword.get(opts, :timeout_ms, @default_timeout_ms)
-      max_output_bytes = Keyword.get(opts, :max_output_bytes, @default_max_output_bytes)
+      timeout_ms = Keyword.get(opts, :timeout_ms, Config.get(:command_timeout_ms))
+      max_output_bytes = Keyword.get(opts, :max_output_bytes, Config.get(:max_output_bytes))
       env = opts |> Keyword.get(:env, []) |> normalize_env()
       on_output = Keyword.get(opts, :on_output)
 
@@ -152,7 +150,7 @@ defmodule AgentSessionManager.Workspace.Exec do
   defp prepare_stream_state(command, args, opts) do
     with {:ok, cwd} <- resolve_cwd(opts),
          {:ok, command_path} <- resolve_command_path(command) do
-      timeout_ms = Keyword.get(opts, :timeout_ms, @default_timeout_ms)
+      timeout_ms = Keyword.get(opts, :timeout_ms, Config.get(:command_timeout_ms))
       env = opts |> Keyword.get(:env, []) |> normalize_env()
       args_charlist = Enum.map(args, &String.to_charlist(to_string(&1)))
 

@@ -39,14 +39,12 @@ defmodule AgentSessionManager.StreamSession do
   - `:shutdown_timeout` — Optional. Task shutdown grace period in ms. Default: 5_000.
   """
 
+  alias AgentSessionManager.Config
   alias AgentSessionManager.StreamSession.{EventStream, Lifecycle}
 
   @type stream_event :: map()
   @type close_fun :: (-> :ok)
   @type meta :: map()
-
-  @default_idle_timeout 120_000
-  @default_shutdown_timeout 5_000
 
   @spec start(keyword()) :: {:ok, Enumerable.t(), close_fun(), meta()} | {:error, term()}
   def start(opts) when is_list(opts) do
@@ -77,8 +75,9 @@ defmodule AgentSessionManager.StreamSession do
            store: Keyword.get(opts, :store),
            agent_id: Keyword.get(opts, :agent_id),
            run_opts: Keyword.get(opts, :run_opts, []),
-           idle_timeout: Keyword.get(opts, :idle_timeout, @default_idle_timeout),
-           shutdown_timeout: Keyword.get(opts, :shutdown_timeout, @default_shutdown_timeout)
+           idle_timeout: Keyword.get(opts, :idle_timeout, Config.get(:stream_idle_timeout_ms)),
+           shutdown_timeout:
+             Keyword.get(opts, :shutdown_timeout, Config.get(:task_shutdown_timeout_ms))
          }}
     end
   end

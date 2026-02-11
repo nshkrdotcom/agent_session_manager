@@ -11,6 +11,7 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
 
     alias AgentSessionManager.Ash.Converters
     alias AgentSessionManager.Ash.Resources
+    alias AgentSessionManager.Config
     alias AgentSessionManager.Core.{Error, Event, Serialization}
 
     @valid_session_statuses ~w(pending active paused completed failed cancelled)
@@ -23,7 +24,12 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
            {:ok, sessions} <- read_sessions(domain, opts) do
         sorted = sort_sessions(sessions, Keyword.get(opts, :order_by, :updated_at_desc))
         filtered = maybe_filter_sessions_by_cursor(sorted, opts, :session)
-        limited = maybe_take_limit(filtered, Keyword.get(opts, :limit, 50))
+
+        limited =
+          maybe_take_limit(
+            filtered,
+            Keyword.get(opts, :limit, Config.get(:default_session_query_limit))
+          )
 
         {:ok,
          %{
@@ -75,7 +81,12 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
         order = Keyword.get(opts, :order_by, :started_at_desc)
         sorted = sort_runs(runs, order)
         filtered = maybe_filter_runs_by_cursor(sorted, opts, order)
-        limited = maybe_take_limit(filtered, Keyword.get(opts, :limit, 50))
+
+        limited =
+          maybe_take_limit(
+            filtered,
+            Keyword.get(opts, :limit, Config.get(:default_run_query_limit))
+          )
 
         {:ok, %{runs: limited, cursor: build_cursor(limited, :run, order)}}
       else
@@ -118,7 +129,12 @@ if Code.ensure_loaded?(Ash.Resource) and Code.ensure_loaded?(AshPostgres.DataLay
         order = Keyword.get(opts, :order_by, :sequence_asc)
         sorted = sort_events(events, order)
         filtered = maybe_filter_events_by_cursor(sorted, opts, order)
-        limited = maybe_take_limit(filtered, Keyword.get(opts, :limit, 100))
+
+        limited =
+          maybe_take_limit(
+            filtered,
+            Keyword.get(opts, :limit, Config.get(:default_event_query_limit))
+          )
 
         {:ok, %{events: limited, cursor: build_cursor(limited, :event, order)}}
       else

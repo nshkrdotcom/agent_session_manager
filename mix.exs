@@ -88,6 +88,7 @@ defmodule AgentSessionManager.MixProject do
         "guides/live_examples.md",
         "guides/architecture.md",
         "guides/configuration.md",
+        "guides/configuration_reference.md",
         "guides/model_configuration.md",
         "guides/sessions_and_runs.md",
         "guides/session_server_runtime.md",
@@ -129,6 +130,7 @@ defmodule AgentSessionManager.MixProject do
           "guides/live_examples.md",
           "guides/architecture.md",
           "guides/configuration.md",
+          "guides/configuration_reference.md",
           "guides/model_configuration.md"
         ],
         "Core Concepts": [
@@ -283,11 +285,11 @@ defmodule AgentSessionManager.MixProject do
           AgentSessionManager.PubSub.Topic
         ],
         Configuration: [
+          AgentSessionManager.Config,
           AgentSessionManager.Models,
           AgentSessionManager.Cost.CostCalculator
         ],
         Observability: [
-          AgentSessionManager.Config,
           AgentSessionManager.Telemetry,
           AgentSessionManager.AuditLogger
         ]

@@ -23,13 +23,10 @@ defmodule AgentSessionManager.Routing.ProviderRouter do
 
   use GenServer
 
+  alias AgentSessionManager.Config
   alias AgentSessionManager.Core.Error
   alias AgentSessionManager.Ports.ProviderAdapter
   alias AgentSessionManager.Routing.{CapabilityMatcher, CircuitBreaker, RoutingPolicy}
-
-  @default_name "router"
-  @default_cooldown_ms 30_000
-  @default_sticky_ttl_ms 300_000
 
   @type adapter_id :: String.t()
 
@@ -78,7 +75,7 @@ defmodule AgentSessionManager.Routing.ProviderRouter do
     if Process.whereis(adapter) do
       GenServer.call(adapter, :name)
     else
-      @default_name
+      Config.get(:default_router_name)
     end
   end
 
@@ -132,7 +129,12 @@ defmodule AgentSessionManager.Routing.ProviderRouter do
   @impl GenServer
   def init(opts) do
     policy = RoutingPolicy.new(Keyword.get(opts, :policy, []))
-    cooldown_ms = normalize_cooldown(Keyword.get(opts, :cooldown_ms, @default_cooldown_ms))
+
+    cooldown_ms =
+      normalize_cooldown(
+        Keyword.get(opts, :cooldown_ms, Config.get(:circuit_breaker_cooldown_ms))
+      )
+
     circuit_breaker_enabled = Keyword.get(opts, :circuit_breaker, false) == true
 
     circuit_breaker_opts =
@@ -151,7 +153,8 @@ defmodule AgentSessionManager.Routing.ProviderRouter do
        pending_tasks: %{},
        task_supervisor: task_supervisor,
        sticky_sessions: %{},
-       sticky_ttl_ms: normalize_ttl(Keyword.get(opts, :sticky_ttl_ms, @default_sticky_ttl_ms)),
+       sticky_ttl_ms:
+         normalize_ttl(Keyword.get(opts, :sticky_ttl_ms, Config.get(:sticky_session_ttl_ms))),
        circuit_breaker_enabled: circuit_breaker_enabled,
        circuit_breaker_opts: circuit_breaker_opts,
        circuit_breakers: %{}
@@ -160,7 +163,7 @@ defmodule AgentSessionManager.Routing.ProviderRouter do
 
   @impl GenServer
   def handle_call(:name, _from, state) do
-    {:reply, @default_name, state}
+    {:reply, Config.get(:default_router_name), state}
   end
 
   def handle_call(:capabilities, _from, state) do
@@ -600,7 +603,7 @@ defmodule AgentSessionManager.Routing.ProviderRouter do
   defp update_stickiness(sticky_sessions, sticky_session_id, adapter_id, {:ok, _result}) do
     # Use a hardcoded TTL that matches the router's configured TTL
     # The TTL is stored by the caller as part of the plan
-    ttl_ms = @default_sticky_ttl_ms
+    ttl_ms = Config.get(:sticky_session_ttl_ms)
 
     Map.put(sticky_sessions, sticky_session_id, %{
       adapter_id: adapter_id,
@@ -804,10 +807,10 @@ defmodule AgentSessionManager.Routing.ProviderRouter do
   defp normalize_adapter_id(_invalid), do: nil
 
   defp normalize_cooldown(value) when is_integer(value) and value >= 0, do: value
-  defp normalize_cooldown(_invalid), do: @default_cooldown_ms
+  defp normalize_cooldown(_invalid), do: Config.get(:circuit_breaker_cooldown_ms)
 
   defp normalize_ttl(value) when is_integer(value) and value >= 0, do: value
-  defp normalize_ttl(_invalid), do: @default_sticky_ttl_ms
+  defp normalize_ttl(_invalid), do: Config.get(:sticky_session_ttl_ms)
 
   defp normalize_cb_opts(opts, cooldown_ms) when is_list(opts) do
     Keyword.put_new(opts, :cooldown_ms, cooldown_ms)

@@ -47,9 +47,7 @@ if Code.ensure_loaded?(Ecto.Query) do
       {"asm_runs", "provider"},
       {"asm_events", "correlation_id"}
     ]
-    @sqlite_max_bind_params 32_766
-    @sqlite_busy_retry_attempts 25
-    @sqlite_busy_retry_sleep_ms 10
+    alias AgentSessionManager.Config
 
     # ============================================================================
     # Client API (SessionStore behaviour)
@@ -610,7 +608,7 @@ if Code.ensure_loaded?(Ecto.Query) do
       case repo.__adapter__() do
         Ecto.Adapters.SQLite3 ->
           fields_per_row = rows |> hd() |> map_size()
-          max(div(@sqlite_max_bind_params, max(fields_per_row, 1)), 1)
+          max(div(Config.get(:sqlite_max_bind_params), max(fields_per_row, 1)), 1)
 
         _other ->
           length(rows)
@@ -670,7 +668,7 @@ if Code.ensure_loaded?(Ecto.Query) do
       last_seq - count + 1
     end
 
-    defp with_sqlite_busy_retry(repo, fun, attempts \\ @sqlite_busy_retry_attempts)
+    defp with_sqlite_busy_retry(repo, fun, attempts \\ Config.get(:sqlite_busy_retry_attempts))
 
     defp with_sqlite_busy_retry(_repo, fun, attempts) when attempts <= 1, do: fun.()
 
@@ -679,7 +677,7 @@ if Code.ensure_loaded?(Ecto.Query) do
     rescue
       exception ->
         if sqlite_busy_retryable?(repo, exception) do
-          Process.sleep(@sqlite_busy_retry_sleep_ms)
+          Process.sleep(Config.get(:sqlite_busy_retry_sleep_ms))
           with_sqlite_busy_retry(repo, fun, attempts - 1)
         else
           reraise(exception, __STACKTRACE__)

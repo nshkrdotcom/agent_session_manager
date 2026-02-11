@@ -33,11 +33,10 @@ defmodule AgentSessionManager.Core.EventStream do
 
   """
 
+  alias AgentSessionManager.Config
   alias AgentSessionManager.Core.Error
   alias AgentSessionManager.Core.EventNormalizer
   alias AgentSessionManager.Core.NormalizedEvent
-
-  @default_buffer_size 1000
 
   @type status :: :open | :closed
 
@@ -56,7 +55,7 @@ defmodule AgentSessionManager.Core.EventStream do
     :run_id,
     events: [],
     cursor: 0,
-    buffer_size: @default_buffer_size,
+    buffer_size: Config.get(:event_buffer_size),
     status: :open,
     next_sequence: 0
   ]
@@ -81,7 +80,7 @@ defmodule AgentSessionManager.Core.EventStream do
       stream = %__MODULE__{
         session_id: session_id,
         run_id: run_id,
-        buffer_size: Map.get(context, :buffer_size, @default_buffer_size),
+        buffer_size: Map.get(context, :buffer_size, Config.get(:event_buffer_size)),
         events: [],
         cursor: 0,
         status: :open,

@@ -88,7 +88,8 @@ defmodule SessionConcurrencyExample do
                tags: ["example", "runtime", "concurrency"]
              },
              max_concurrent_runs: @slots,
-             max_queued_runs: 100
+             # Uses the Config default (100); override with max_queued_runs: N
+             max_queued_runs: AgentSessionManager.Config.get(:max_queued_runs)
            ) do
       IO.puts("Server started with max_concurrent_runs=#{@slots}")
       IO.puts("")

@@ -17,7 +17,7 @@ defmodule AgentSessionManager.Runtime.RunQueue do
 
   @spec new(keyword()) :: t()
   def new(opts \\ []) do
-    max = Keyword.get(opts, :max_queued_runs, 100)
+    max = Keyword.get(opts, :max_queued_runs, AgentSessionManager.Config.get(:max_queued_runs))
 
     %__MODULE__{
       max_queued_runs: max,

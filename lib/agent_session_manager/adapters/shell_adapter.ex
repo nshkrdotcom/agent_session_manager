@@ -10,14 +10,10 @@ defmodule AgentSessionManager.Adapters.ShellAdapter do
 
   use GenServer
 
+  alias AgentSessionManager.Config
   alias AgentSessionManager.Core.{Capability, Error}
   alias AgentSessionManager.Ports.ProviderAdapter
   alias AgentSessionManager.Workspace.Exec
-
-  @default_timeout_ms 30_000
-  @default_max_output_bytes 1_048_576
-  @default_shell "/bin/sh"
-  @default_success_exit_codes [0]
 
   @emitted_events_key {__MODULE__, :emitted_events}
 
@@ -106,13 +102,14 @@ defmodule AgentSessionManager.Adapters.ShellAdapter do
 
         state = %{
           cwd: cwd,
-          timeout_ms: Keyword.get(opts, :timeout_ms, @default_timeout_ms),
-          max_output_bytes: Keyword.get(opts, :max_output_bytes, @default_max_output_bytes),
+          timeout_ms: Keyword.get(opts, :timeout_ms, Config.get(:command_timeout_ms)),
+          max_output_bytes: Keyword.get(opts, :max_output_bytes, Config.get(:max_output_bytes)),
           env: opts |> Keyword.get(:env, []) |> normalize_env(),
-          shell: Keyword.get(opts, :shell, @default_shell),
+          shell: Keyword.get(opts, :shell, Config.get(:default_shell)),
           allowed_commands: normalize_command_list(Keyword.get(opts, :allowed_commands)),
           denied_commands: normalize_command_list(Keyword.get(opts, :denied_commands)),
-          success_exit_codes: Keyword.get(opts, :success_exit_codes, @default_success_exit_codes),
+          success_exit_codes:
+            Keyword.get(opts, :success_exit_codes, Config.get(:default_success_exit_codes)),
           task_supervisor: task_supervisor,
           active_runs: %{},
           task_refs: %{},

@@ -52,11 +52,9 @@ defmodule AgentSessionManager.Ports.ProviderAdapter do
 
   """
 
+  alias AgentSessionManager.Config
   alias AgentSessionManager.Core.{Capability, Error, Run, Session}
   alias AgentSessionManager.Runtime.ExitReasons
-
-  @default_execute_timeout 60_000
-  @execute_grace_timeout 5_000
 
   @type adapter :: GenServer.server() | pid() | atom() | module()
   @type run_result :: %{
@@ -285,7 +283,12 @@ defmodule AgentSessionManager.Ports.ProviderAdapter do
   end
 
   def validate_config(adapter, config) do
-    call_with_error(adapter, {:validate_config, config}, 5_000, :validate_config)
+    call_with_error(
+      adapter,
+      {:validate_config, config},
+      Config.get(:genserver_call_timeout_ms),
+      :validate_config
+    )
   end
 
   @doc """
@@ -294,7 +297,8 @@ defmodule AgentSessionManager.Ports.ProviderAdapter do
   """
   @spec resolve_execute_timeout(keyword()) :: pos_integer()
   def resolve_execute_timeout(opts) do
-    Keyword.get(opts, :timeout, @default_execute_timeout) + @execute_grace_timeout
+    Keyword.get(opts, :timeout, Config.get(:execute_timeout_ms)) +
+      Config.get(:execute_grace_timeout_ms)
   end
 
   defp call_registered_or_fallback(adapter, request, fallback, timeout, operation) do

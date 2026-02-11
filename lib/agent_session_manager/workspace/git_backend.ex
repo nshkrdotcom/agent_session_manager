@@ -3,10 +3,9 @@ defmodule AgentSessionManager.Workspace.GitBackend do
   Git-backed workspace snapshots, diffs, and rollback support.
   """
 
+  alias AgentSessionManager.Config
   alias AgentSessionManager.Core.Error
   alias AgentSessionManager.Workspace.{Diff, Snapshot}
-
-  @default_patch_bytes 1_048_576
 
   @spec take_snapshot(String.t(), keyword()) :: {:ok, Snapshot.t()} | {:error, Error.t()}
   def take_snapshot(path, opts \\ []) when is_binary(path) do
@@ -180,7 +179,7 @@ defmodule AgentSessionManager.Workspace.GitBackend do
   defp maybe_capture_patch(before_snapshot, after_snapshot, opts) do
     case Keyword.get(opts, :capture_patch, false) do
       true ->
-        max_patch_bytes = Keyword.get(opts, :max_patch_bytes, @default_patch_bytes)
+        max_patch_bytes = Keyword.get(opts, :max_patch_bytes, Config.get(:max_patch_bytes))
 
         with {:ok, patch_output} <-
                git(before_snapshot.path, [

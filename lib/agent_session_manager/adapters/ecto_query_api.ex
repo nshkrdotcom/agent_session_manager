@@ -18,6 +18,7 @@ if Code.ensure_loaded?(Ecto.Query) do
     @behaviour AgentSessionManager.Ports.QueryAPI
 
     alias AgentSessionManager.Adapters.EctoSessionStore.Converters
+    alias AgentSessionManager.Config
     alias AgentSessionManager.Core.{Error, Event, Serialization}
     alias AgentSessionManager.Ports.QueryAPI
 
@@ -28,7 +29,6 @@ if Code.ensure_loaded?(Ecto.Query) do
       SessionSchema
     }
 
-    @max_query_limit 1_000
     @valid_session_statuses ~w(pending active paused completed failed cancelled)
     @valid_run_statuses ~w(pending running completed failed cancelled timeout)
     @valid_event_types Enum.map(Event.all_types(), &Atom.to_string/1)
@@ -66,7 +66,7 @@ if Code.ensure_loaded?(Ecto.Query) do
     defp do_search_sessions(repo, opts) do
       with :ok <- validate_limit(opts),
            :ok <- validate_session_status_filter(opts) do
-        limit = Keyword.get(opts, :limit, 50)
+        limit = Keyword.get(opts, :limit, Config.get(:default_session_query_limit))
         tags = normalize_tags_filter(opts)
         order_by = normalize_session_order(Keyword.get(opts, :order_by, :updated_at_desc))
         opts = Keyword.put(opts, :order_by, order_by)
@@ -317,7 +317,7 @@ if Code.ensure_loaded?(Ecto.Query) do
     # ============================================================================
 
     defp do_search_runs(repo, opts) do
-      limit = Keyword.get(opts, :limit, 50)
+      limit = Keyword.get(opts, :limit, Config.get(:default_run_query_limit))
       order_by = normalize_run_order(Keyword.get(opts, :order_by, :started_at_desc))
       opts = Keyword.put(opts, :order_by, order_by)
 
@@ -467,19 +467,16 @@ if Code.ensure_loaded?(Ecto.Query) do
     end
 
     defp validate_limit(opts) do
+      max = Config.get(:max_query_limit)
+
       case Keyword.get(opts, :limit) do
         nil ->
           :ok
 
-        limit when is_integer(limit) and limit > 0 and limit <= @max_query_limit ->
-          :ok
-
-        limit when is_integer(limit) and limit > @max_query_limit ->
-          {:error,
-           Error.new(
-             :validation_error,
-             "limit must be <= #{@max_query_limit}"
-           )}
+        limit when is_integer(limit) and limit > 0 ->
+          if limit <= max,
+            do: :ok,
+            else: {:error, Error.new(:validation_error, "limit must be <= #{max}")}
 
         _limit ->
           {:error, Error.new(:validation_error, "limit must be a positive integer")}
@@ -637,7 +634,7 @@ if Code.ensure_loaded?(Ecto.Query) do
     defp do_search_events(repo, opts) do
       with :ok <- validate_limit(opts),
            :ok <- validate_event_types_filter(opts) do
-        limit = Keyword.get(opts, :limit, 100)
+        limit = Keyword.get(opts, :limit, Config.get(:default_event_query_limit))
         order_by = normalize_event_order(Keyword.get(opts, :order_by, :sequence_asc))
         opts = Keyword.put(opts, :order_by, order_by)
 

@@ -3,10 +3,9 @@ defmodule AgentSessionManager.Workspace.HashBackend do
   Hash-based workspace backend for non-git directories.
   """
 
+  alias AgentSessionManager.Config
   alias AgentSessionManager.Core.Error
   alias AgentSessionManager.Workspace.{Diff, Snapshot}
-
-  @default_excluded_roots [".git", "deps", "_build", "node_modules"]
 
   @spec take_snapshot(String.t(), keyword()) :: {:ok, Snapshot.t()} | {:error, Error.t()}
   def take_snapshot(path, opts \\ []) when is_binary(path) do
@@ -97,7 +96,7 @@ defmodule AgentSessionManager.Workspace.HashBackend do
   defp collect_file_hashes(path, ignore_config) do
     extra_paths = Keyword.get(ignore_config, :paths, [])
     globs = Keyword.get(ignore_config, :globs, [])
-    excluded_roots = @default_excluded_roots ++ extra_paths
+    excluded_roots = Config.get(:excluded_workspace_roots) ++ extra_paths
 
     path
     |> Path.join("**/*")

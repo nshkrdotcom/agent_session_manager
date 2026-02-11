@@ -36,6 +36,7 @@ defmodule AgentSessionManager.Ports.SessionStore do
 
   """
 
+  alias AgentSessionManager.Config
   alias AgentSessionManager.Core.{Error, Event, Run, Session}
 
   @type context :: term()
@@ -495,13 +496,15 @@ defmodule AgentSessionManager.Ports.SessionStore do
   # When wait_timeout_ms is provided, the GenServer.call timeout must
   # accommodate the wait plus a margin for processing.
   defp genserver_call_timeout(opts) do
+    gs_timeout = Config.get(:genserver_call_timeout_ms)
+
     case Keyword.get(opts, :wait_timeout_ms, 0) do
-      wait when is_integer(wait) and wait > 0 -> wait + 5_000
-      _ -> 5_000
+      wait when is_integer(wait) and wait > 0 -> wait + gs_timeout
+      _ -> gs_timeout
     end
   end
 
-  defp dispatch(store, function_name, args, genserver_call, timeout \\ 5_000)
+  defp dispatch(store, function_name, args, genserver_call, timeout \\ nil)
 
   defp dispatch({module, context}, function_name, args, _genserver_call, _timeout)
        when is_atom(module) do
@@ -509,6 +512,6 @@ defmodule AgentSessionManager.Ports.SessionStore do
   end
 
   defp dispatch(store, _function_name, _args, genserver_call, timeout) do
-    GenServer.call(store, genserver_call, timeout)
+    GenServer.call(store, genserver_call, timeout || Config.get(:genserver_call_timeout_ms))
   end
 end

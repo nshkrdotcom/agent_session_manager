@@ -43,11 +43,23 @@ defmodule AgentSessionManager.Persistence.RetentionPolicy do
   @doc """
   Builds a policy from keyword options.
 
-  Any options not provided use defaults.
+  Any options not provided use defaults from `AgentSessionManager.Config`.
   """
   @spec new(keyword()) :: t()
   def new(opts \\ []) do
-    struct(__MODULE__, opts)
+    alias AgentSessionManager.Config
+
+    defaults = [
+      max_completed_session_age_days: Config.get(:retention_max_completed_age_days),
+      hard_delete_after_days: Config.get(:retention_hard_delete_after_days),
+      batch_size: Config.get(:retention_batch_size),
+      exempt_statuses: Config.get(:retention_exempt_statuses),
+      exempt_tags: Config.get(:retention_exempt_tags),
+      prune_event_types_first: Config.get(:retention_prune_event_types_first)
+    ]
+
+    merged = Keyword.merge(defaults, opts)
+    struct(__MODULE__, merged)
   end
 
   @doc """

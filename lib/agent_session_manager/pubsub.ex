@@ -27,11 +27,8 @@ if Code.ensure_loaded?(Phoenix.PubSub) do
         end
     """
 
+    alias AgentSessionManager.Config
     alias AgentSessionManager.PubSub.Topic
-
-    @default_prefix "asm"
-    @default_scope :session
-    @default_wrapper :asm_event
 
     @doc """
     Returns a 1-arity event callback that broadcasts each event to PubSub.
@@ -48,12 +45,12 @@ if Code.ensure_loaded?(Phoenix.PubSub) do
     """
     @spec event_callback(module(), keyword()) :: (map() -> :ok | {:error, term()})
     def event_callback(pubsub, opts \\ []) do
-      wrapper = Keyword.get(opts, :message_wrapper, @default_wrapper)
+      wrapper = Keyword.get(opts, :message_wrapper, Config.get(:pubsub_wrapper))
 
       case Keyword.get(opts, :topic) do
         nil ->
-          prefix = Keyword.get(opts, :prefix, @default_prefix)
-          scope = Keyword.get(opts, :scope, @default_scope)
+          prefix = Keyword.get(opts, :prefix, Config.get(:pubsub_prefix))
+          scope = Keyword.get(opts, :scope, Config.get(:pubsub_scope))
           validate_scope!(scope)
 
           fn event_data ->
@@ -92,7 +89,7 @@ if Code.ensure_loaded?(Phoenix.PubSub) do
       topic =
         case Keyword.get(opts, :topic) do
           nil ->
-            prefix = Keyword.get(opts, :prefix, @default_prefix)
+            prefix = Keyword.get(opts, :prefix, Config.get(:pubsub_prefix))
             session_id = Keyword.fetch!(opts, :session_id)
             run_id = Keyword.get(opts, :run_id)
 

@@ -54,6 +54,8 @@ defmodule AgentSessionManager.SessionManager do
 
   """
 
+  alias AgentSessionManager.Config
+
   alias AgentSessionManager.Core.{
     CapabilityResolver,
     Error,
@@ -571,8 +573,11 @@ defmodule AgentSessionManager.SessionManager do
   @spec stream_session_events(store(), String.t(), keyword()) :: Enumerable.t()
   def stream_session_events(store, session_id, opts \\ []) do
     initial_cursor = Keyword.get(opts, :after, 0)
-    page_limit = Keyword.get(opts, :limit, 100)
-    poll_interval_ms = Keyword.get(opts, :poll_interval_ms, 250)
+    page_limit = Keyword.get(opts, :limit, Config.get(:default_event_query_limit))
+
+    poll_interval_ms =
+      Keyword.get(opts, :poll_interval_ms, Config.get(:event_stream_poll_interval_ms))
+
     wait_timeout_ms = Keyword.get(opts, :wait_timeout_ms, 0)
     query_filters = Keyword.take(opts, [:run_id, :type, :since, :before])
 

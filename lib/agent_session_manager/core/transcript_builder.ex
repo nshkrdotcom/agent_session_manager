@@ -3,6 +3,7 @@ defmodule AgentSessionManager.Core.TranscriptBuilder do
   Builds provider-agnostic transcripts from events and store-backed histories.
   """
 
+  alias AgentSessionManager.Config
   alias AgentSessionManager.Core.{Error, Event, Transcript}
   alias AgentSessionManager.Ports.SessionStore
 
@@ -378,8 +379,6 @@ defmodule AgentSessionManager.Core.TranscriptBuilder do
   defp to_string_or_nil(value) when is_binary(value), do: value
   defp to_string_or_nil(value), do: inspect(value)
 
-  @default_chars_per_token 4
-
   defp maybe_truncate(%Transcript{} = transcript, opts) do
     transcript
     |> truncate_by_max_messages(opts)
@@ -422,7 +421,7 @@ defmodule AgentSessionManager.Core.TranscriptBuilder do
         explicit
 
       is_integer(approx_tokens) and approx_tokens > 0 ->
-        approx_tokens * @default_chars_per_token
+        approx_tokens * Config.get(:chars_per_token)
 
       true ->
         nil

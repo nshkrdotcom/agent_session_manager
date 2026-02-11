@@ -35,9 +35,7 @@ defmodule AgentSessionManager.Routing.CircuitBreaker do
     requiring success or reopening (default: `1`)
   """
 
-  @default_failure_threshold 5
-  @default_cooldown_ms 30_000
-  @default_half_open_max_probes 1
+  alias AgentSessionManager.Config
 
   @type state :: :closed | :open | :half_open
 
@@ -54,9 +52,9 @@ defmodule AgentSessionManager.Routing.CircuitBreaker do
   @enforce_keys []
   defstruct state: :closed,
             failure_count: 0,
-            failure_threshold: @default_failure_threshold,
-            cooldown_ms: @default_cooldown_ms,
-            half_open_max_probes: @default_half_open_max_probes,
+            failure_threshold: 5,
+            cooldown_ms: 30_000,
+            half_open_max_probes: 1,
             half_open_probe_count: 0,
             opened_at_ms: nil
 
@@ -72,10 +70,18 @@ defmodule AgentSessionManager.Routing.CircuitBreaker do
   @spec new(keyword()) :: t()
   def new(opts \\ []) do
     %__MODULE__{
-      failure_threshold: normalize_pos_int(opts[:failure_threshold], @default_failure_threshold),
-      cooldown_ms: normalize_non_neg_int(opts[:cooldown_ms], @default_cooldown_ms),
+      failure_threshold:
+        normalize_pos_int(
+          opts[:failure_threshold],
+          Config.get(:circuit_breaker_failure_threshold)
+        ),
+      cooldown_ms:
+        normalize_non_neg_int(opts[:cooldown_ms], Config.get(:circuit_breaker_cooldown_ms)),
       half_open_max_probes:
-        normalize_pos_int(opts[:half_open_max_probes], @default_half_open_max_probes)
+        normalize_pos_int(
+          opts[:half_open_max_probes],
+          Config.get(:circuit_breaker_half_open_max_probes)
+        )
     }
   end
 

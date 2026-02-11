@@ -76,7 +76,7 @@ defmodule SessionLimiterExample do
          {:ok, adapter} <- start_adapter(provider),
          {:ok, limiter} <-
            ConcurrencyLimiter.start_link(
-             max_parallel_sessions: 100,
+             # max_parallel_sessions uses Config default (100)
              max_parallel_runs: 1
            ),
          {:ok, server} <-

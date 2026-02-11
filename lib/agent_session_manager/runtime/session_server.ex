@@ -41,8 +41,7 @@ defmodule AgentSessionManager.Runtime.SessionServer do
           | {:type, Event.event_type()}
         ]
 
-  @default_max_queued_runs 100
-  @default_await_timeout 60_000
+  alias AgentSessionManager.Config
 
   # ============================================================================
   # Public API
@@ -82,7 +81,7 @@ defmodule AgentSessionManager.Runtime.SessionServer do
 
   @spec execute_run(GenServer.server(), map(), keyword()) :: {:ok, map()} | {:error, Error.t()}
   def execute_run(server, input, opts \\ []) when is_map(input) and is_list(opts) do
-    await_timeout = Keyword.get(opts, :timeout, @default_await_timeout)
+    await_timeout = Keyword.get(opts, :timeout, Config.get(:await_run_timeout_ms))
 
     case submit_run(server, input, opts) do
       {:ok, run_id} -> await_run(server, run_id, await_timeout)
@@ -91,7 +90,8 @@ defmodule AgentSessionManager.Runtime.SessionServer do
   end
 
   @spec await_run(GenServer.server(), String.t(), timeout()) :: {:ok, map()} | {:error, Error.t()}
-  def await_run(server, run_id, timeout \\ @default_await_timeout) when is_binary(run_id) do
+  def await_run(server, run_id, timeout \\ Config.get(:await_run_timeout_ms))
+      when is_binary(run_id) do
     GenServer.call(server, {:await_run, run_id}, timeout)
   end
 
@@ -133,8 +133,8 @@ defmodule AgentSessionManager.Runtime.SessionServer do
   elapses before all work finishes.
   """
   @spec drain(GenServer.server(), timeout()) :: :ok | {:error, :timeout}
-  def drain(server, timeout \\ @default_await_timeout) do
-    GenServer.call(server, {:drain, timeout}, timeout + 1_000)
+  def drain(server, timeout \\ Config.get(:await_run_timeout_ms)) do
+    GenServer.call(server, {:drain, timeout}, timeout + Config.get(:drain_timeout_buffer_ms))
   end
 
   # ============================================================================
@@ -158,7 +158,7 @@ defmodule AgentSessionManager.Runtime.SessionServer do
       limiter = Keyword.get(opts, :limiter)
       control_ops = Keyword.get(opts, :control_ops)
       default_execute_opts = Keyword.get(opts, :default_execute_opts, [])
-      max_queued_runs = Keyword.get(opts, :max_queued_runs, @default_max_queued_runs)
+      max_queued_runs = Keyword.get(opts, :max_queued_runs, Config.get(:max_queued_runs))
 
       with {:ok, session} <- ensure_session(store, adapter, opts),
            {:ok, cursor} <- SessionStore.get_latest_sequence(store, session.id) do

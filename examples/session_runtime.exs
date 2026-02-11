@@ -89,7 +89,8 @@ defmodule SessionRuntimeExample do
                tags: ["example", "runtime"]
              },
              max_concurrent_runs: 1,
-             max_queued_runs: 100
+             # Uses the Config default (100); override with max_queued_runs: N
+             max_queued_runs: AgentSessionManager.Config.get(:max_queued_runs)
            ) do
       run_ids =
         @prompts

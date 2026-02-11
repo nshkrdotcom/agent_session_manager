@@ -45,10 +45,8 @@ defmodule AgentSessionManager.Concurrency.ConcurrencyLimiter do
 
   use GenServer
 
+  alias AgentSessionManager.Config
   alias AgentSessionManager.Core.Error
-
-  @default_max_sessions 100
-  @default_max_runs 50
 
   @type limits :: %{
           max_parallel_sessions: pos_integer() | :infinity,
@@ -73,8 +71,8 @@ defmodule AgentSessionManager.Concurrency.ConcurrencyLimiter do
 
   ## Options
 
-  - `:max_parallel_sessions` - Maximum concurrent sessions (default: #{@default_max_sessions})
-  - `:max_parallel_runs` - Maximum concurrent runs (default: #{@default_max_runs})
+  - `:max_parallel_sessions` - Maximum concurrent sessions (default: `100`)
+  - `:max_parallel_runs` - Maximum concurrent runs (default: `50`)
   - `:name` - Optional GenServer name
 
   """
@@ -201,8 +199,8 @@ defmodule AgentSessionManager.Concurrency.ConcurrencyLimiter do
 
   @impl GenServer
   def init(opts) do
-    max_sessions = Keyword.get(opts, :max_parallel_sessions, @default_max_sessions)
-    max_runs = Keyword.get(opts, :max_parallel_runs, @default_max_runs)
+    max_sessions = Keyword.get(opts, :max_parallel_sessions, Config.get(:max_parallel_sessions))
+    max_runs = Keyword.get(opts, :max_parallel_runs, Config.get(:max_parallel_runs))
 
     state = %{
       max_parallel_sessions: max_sessions,

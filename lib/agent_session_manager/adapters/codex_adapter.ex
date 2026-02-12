@@ -57,7 +57,7 @@ if Code.ensure_loaded?(Codex) and Code.ensure_loaded?(Codex.Events) do
 
     use GenServer
 
-    alias AgentSessionManager.Core.{Capability, Error}
+    alias AgentSessionManager.Core.{Capability, Error, ProviderError}
     alias AgentSessionManager.Ports.ProviderAdapter
     alias Codex.Events
     alias Codex.Items
@@ -426,14 +426,17 @@ if Code.ensure_loaded?(Codex) and Code.ensure_loaded?(Codex.Events) do
         process_real_event_stream(events_stream, ctx_with_stream, thread)
       else
         {:error, reason} ->
-          error_message = format_codex_error(reason)
+          {provider_error, details} = codex_provider_error_from_reason(reason)
 
-          emit_event(ctx, :error_occurred, %{
-            error_code: :sdk_error,
-            error_message: error_message
-          })
+          emit_event(ctx, :error_occurred, provider_error_event_data(provider_error, details))
 
-          {:error, Error.new(:provider_error, error_message)}
+          {:error,
+           Error.new(
+             :provider_error,
+             provider_error.message,
+             provider_error: provider_error,
+             details: details
+           )}
       end
     end
 
@@ -672,12 +675,17 @@ if Code.ensure_loaded?(Codex) and Code.ensure_loaded?(Codex.Events) do
           process_event_stream(sdk_module, result, ctx)
 
         {:error, error} ->
-          emit_event(ctx, :error_occurred, %{
-            error_code: :sdk_error,
-            error_message: inspect(error)
-          })
+          {provider_error, details} = codex_provider_error_from_reason(error)
 
-          {:error, Error.new(:provider_error, inspect(error))}
+          emit_event(ctx, :error_occurred, provider_error_event_data(provider_error, details))
+
+          {:error,
+           Error.new(
+             :provider_error,
+             provider_error.message,
+             provider_error: provider_error,
+             details: details
+           )}
       end
     end
 
@@ -722,19 +730,19 @@ if Code.ensure_loaded?(Codex) and Code.ensure_loaded?(Codex.Events) do
     defp classify_event(_), do: :continue
 
     defp handle_stream_result({:error, error_event, error_ctx}) do
-      error_message = extract_error_message(error_event)
+      {provider_error, details} = codex_provider_error_from_event(error_event)
+      event_data = provider_error_event_data(provider_error, details)
 
-      emit_event(error_ctx, :error_occurred, %{
-        error_code: :provider_error,
-        error_message: error_message
-      })
+      emit_event(error_ctx, :error_occurred, event_data)
+      emit_event(error_ctx, :run_failed, event_data)
 
-      emit_event(error_ctx, :run_failed, %{
-        error_code: :provider_error,
-        error_message: error_message
-      })
-
-      {:error, Error.new(:provider_error, error_message)}
+      {:error,
+       Error.new(
+         :provider_error,
+         provider_error.message,
+         provider_error: provider_error,
+         details: details
+       )}
     end
 
     defp handle_stream_result({:cancelled, cancelled_ctx}) do
@@ -751,6 +759,107 @@ if Code.ensure_loaded?(Codex) and Code.ensure_loaded?(Codex.Events) do
       do: msg || "Unknown error"
 
     defp extract_error_message(_), do: "Unknown error"
+
+    defp codex_provider_error_from_reason(reason) do
+      fallback_message = format_codex_error(reason)
+
+      normalized =
+        try do
+          Codex.Error.normalize(reason)
+        rescue
+          _ ->
+            %{message: fallback_message, kind: infer_codex_kind(fallback_message), details: %{}}
+        end
+
+      attrs = %{
+        kind: Map.get(normalized, :kind) || infer_codex_kind(fallback_message),
+        message: Map.get(normalized, :message) || fallback_message,
+        details: ensure_map(Map.get(normalized, :details))
+      }
+
+      ProviderError.normalize(:codex, attrs)
+    end
+
+    defp codex_provider_error_from_event(%Events.TurnFailed{error: error}) do
+      details = ensure_map(error)
+
+      attrs = %{
+        kind: extract_turn_failed_kind(error),
+        message: extract_error_message(%Events.TurnFailed{error: error}),
+        details: details
+      }
+
+      ProviderError.normalize(:codex, attrs)
+    end
+
+    defp codex_provider_error_from_event(%Events.Error{} = event) do
+      attrs = %{
+        kind: infer_codex_kind(event.message),
+        message: extract_error_message(event)
+      }
+
+      ProviderError.normalize(:codex, attrs)
+    end
+
+    defp codex_provider_error_from_event(event) do
+      ProviderError.normalize(:codex, %{message: extract_error_message(event)})
+    end
+
+    defp extract_turn_failed_kind(error) when is_map(error) do
+      code =
+        Map.get(error, "code") ||
+          Map.get(error, :code)
+
+      if is_binary(code) and code != "" do
+        code
+      else
+        infer_codex_kind(Map.get(error, "message") || Map.get(error, :message))
+      end
+    end
+
+    defp extract_turn_failed_kind(_), do: :unknown
+
+    defp infer_codex_kind(message) when is_binary(message) do
+      message
+      |> String.downcase()
+      |> infer_codex_kind_from_text()
+    end
+
+    defp infer_codex_kind(_), do: :unknown
+
+    defp infer_codex_kind_from_text(text) do
+      cond do
+        codex_cli_not_found?(text) -> :cli_not_found
+        contains_any?(text, ["exit status", "exited"]) -> :transport_exit
+        contains_any?(text, ["timeout", "timed out"]) -> :timeout
+        String.contains?(text, "parse") -> :parse_error
+        String.contains?(text, "protocol") -> :protocol_error
+        true -> :unknown
+      end
+    end
+
+    defp codex_cli_not_found?(text) do
+      String.contains?(text, "not found") and String.contains?(text, "codex")
+    end
+
+    defp contains_any?(text, patterns) do
+      Enum.any?(patterns, &String.contains?(text, &1))
+    end
+
+    defp provider_error_event_data(provider_error, details) do
+      %{
+        error_code: :provider_error,
+        error_message: provider_error.message,
+        provider_error: provider_error
+      }
+      |> maybe_put(:details, non_empty_map(details))
+    end
+
+    defp non_empty_map(value) when is_map(value) and map_size(value) > 0, do: value
+    defp non_empty_map(_), do: nil
+
+    defp ensure_map(value) when is_map(value), do: value
+    defp ensure_map(_), do: %{}
 
     defp handle_codex_event(%Events.ThreadStarted{} = event, ctx) do
       metadata = event.metadata || %{}

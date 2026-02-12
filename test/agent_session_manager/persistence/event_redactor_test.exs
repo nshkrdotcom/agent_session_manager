@@ -130,6 +130,34 @@ defmodule AgentSessionManager.Persistence.EventRedactorTest do
       assert result.redaction_count > 0
     end
 
+    test "redacts nested provider_error stderr and details fields" do
+      event =
+        build_event(
+          type: :run_failed,
+          data: %{
+            error_code: :provider_error,
+            error_message: "provider failed",
+            provider_error: %{
+              provider: :codex,
+              kind: :transport_exit,
+              message: "provider failed",
+              stderr:
+                "OPENAI_API_KEY=sk-proj-12345678901234567890\nAuthorization: Bearer abcdefghijklmnopqrstuvwxyz123456",
+              details: %{
+                context: "password=supersecret"
+              }
+            }
+          }
+        )
+
+      result = EventRedactor.redact(event, %{enabled: true})
+
+      refute inspect(result.event.data.provider_error) =~ "sk-proj-12345678901234567890"
+      refute inspect(result.event.data.provider_error) =~ "abcdefghijklmnopqrstuvwxyz123456"
+      refute inspect(result.event.data.provider_error) =~ "password=supersecret"
+      assert result.redaction_count > 0
+    end
+
     test "scans only string values in mixed structures" do
       event =
         build_event(

@@ -339,6 +339,11 @@ defmodule AgentSessionManager.Test.AmpMockSDK do
   def build_event_stream(:error, opts) do
     session_id = Keyword.get(opts, :session_id, "amp-test-session-id")
     error_message = Keyword.get(opts, :error_message, "Test error occurred")
+    kind = Keyword.get(opts, :kind)
+    details = Keyword.get(opts, :details)
+    exit_code = Keyword.get(opts, :exit_code)
+    stderr = Keyword.get(opts, :stderr)
+    stderr_truncated? = Keyword.get(opts, :stderr_truncated?, false)
 
     [
       %SystemMessage{
@@ -355,6 +360,11 @@ defmodule AgentSessionManager.Test.AmpMockSDK do
         session_id: session_id,
         is_error: true,
         error: error_message,
+        kind: kind,
+        details: details,
+        exit_code: exit_code,
+        stderr: stderr,
+        stderr_truncated?: stderr_truncated?,
         duration_ms: 500,
         num_turns: 0,
         usage: %Usage{input_tokens: 5, output_tokens: 0},

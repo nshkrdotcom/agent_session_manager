@@ -77,6 +77,8 @@ All timeout values are in milliseconds.
 | `:event_buffer_size` | `1_000` | Max events held in-memory in EventStream |
 | `:max_output_bytes` | `1_048_576` | Max captured shell command output (1 MB) |
 | `:max_patch_bytes` | `1_048_576` | Max git diff patch size (1 MB) |
+| `:error_text_max_bytes` | `16_384` | Max bytes retained in `provider_error.stderr` before emission/persistence |
+| `:error_text_max_lines` | `200` | Max lines retained in `provider_error.stderr` before emission/persistence |
 
 ### Concurrency
 

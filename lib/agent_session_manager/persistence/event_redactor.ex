@@ -77,9 +77,9 @@ defmodule AgentSessionManager.Persistence.EventRedactor do
     tool_call_started: [:tool_input],
     tool_call_completed: [:tool_input, :tool_output],
     tool_call_failed: [:tool_input, :tool_output],
-    error_occurred: [:error_message],
-    run_failed: [:error_message],
-    session_failed: [:error_message],
+    error_occurred: [:error_message, :provider_error],
+    run_failed: [:error_message, :provider_error],
+    session_failed: [:error_message, :provider_error],
     policy_violation: [:details]
   }
 

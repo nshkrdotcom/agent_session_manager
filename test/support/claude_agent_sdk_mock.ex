@@ -277,6 +277,8 @@ defmodule AgentSessionManager.Test.ClaudeAgentSDKMock do
   def build_message_stream(:error, opts) do
     session_id = Keyword.get(opts, :session_id, "test-session-id")
     error_message = Keyword.get(opts, :error_message, "An error occurred")
+    error_details = Keyword.get(opts, :error_details)
+    error_struct = Keyword.get(opts, :error_struct)
 
     [
       # System init
@@ -301,6 +303,8 @@ defmodule AgentSessionManager.Test.ClaudeAgentSDKMock do
         data: %{
           session_id: session_id,
           error: error_message,
+          error_details: error_details,
+          error_struct: error_struct,
           total_cost_usd: 0.0,
           duration_ms: 500,
           duration_api_ms: 0,

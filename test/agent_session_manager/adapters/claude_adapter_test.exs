@@ -613,7 +613,8 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
 
       assert error.code == :provider_rate_limited
       assert error.provider_error != nil
-      assert error.provider_error.status_code == 429
+      assert error.provider_error.kind == :rate_limit
+      assert error.details.status_code == 429
     end
 
     test "emits error_occurred event", %{adapter: adapter, session: session, run: run} do
@@ -1449,7 +1450,17 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
       {:ok, mock} =
         ClaudeAgentSDKMock.start_link(
           scenario: :error,
-          error_message: "Rate limit exceeded"
+          error_message: "CLI failed",
+          error_details: %{
+            kind: :process_error,
+            exit_code: 2,
+            stderr: "OPENAI_API_KEY=sk-proj-secret\npermission denied"
+          },
+          error_struct: %ClaudeAgentSDK.Errors.ProcessError{
+            message: "CLI failed",
+            exit_code: 2,
+            stderr: "OPENAI_API_KEY=sk-proj-secret\npermission denied"
+          }
         )
 
       {:ok, adapter} =
@@ -1472,7 +1483,11 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
     } do
       result = ClaudeAdapter.execute(adapter, run, session, timeout: 5_000)
 
-      assert {:error, %Error{code: :provider_error}} = result
+      assert {:error, %Error{code: :provider_error} = error} = result
+      assert error.provider_error.provider == :claude
+      assert error.provider_error.kind == :process_error
+      assert error.provider_error.exit_code == 2
+      assert error.provider_error.stderr =~ "permission denied"
     end
 
     test "emits error_occurred event", %{
@@ -1493,6 +1508,10 @@ defmodule AgentSessionManager.Adapters.ClaudeAdapterTest do
       error_event = Enum.find(events, &(&1.type == :error_occurred))
       assert error_event != nil
       assert error_event.data.error_code == :provider_error
+      assert error_event.data.provider_error.provider == :claude
+      assert error_event.data.provider_error.kind == :process_error
+      assert error_event.data.provider_error.exit_code == 2
+      assert error_event.data.provider_error.stderr =~ "permission denied"
     end
 
     test "emits run_failed event", %{

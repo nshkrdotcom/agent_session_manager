@@ -51,7 +51,7 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
 
     use GenServer
 
-    alias AgentSessionManager.Core.{Capability, Error}
+    alias AgentSessionManager.Core.{Capability, Error, ProviderError}
     alias AgentSessionManager.Models
     alias AgentSessionManager.Ports.ProviderAdapter
 
@@ -344,7 +344,8 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
         token_usage: %{input_tokens: 0, output_tokens: 0},
         stop_reason: nil,
         session_id: nil,
-        execute_timeout_ms: execute_timeout_ms
+        execute_timeout_ms: execute_timeout_ms,
+        last_provider_error: nil
       }
 
       # Determine which SDK interface to use
@@ -395,35 +396,58 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
             end
 
           {:error, reason} ->
-            error_message = "Failed to start streaming session: #{inspect(reason)}"
+            message = "Failed to start streaming session: #{inspect(reason)}"
+            {provider_error, details} = claude_provider_error(reason, message: message)
 
-            emit_event(ctx, :error_occurred, %{
-              error_code: :sdk_error,
-              error_message: error_message
-            })
+            emit_event(
+              ctx,
+              :error_occurred,
+              provider_error_event_data(:provider_error, provider_error, details)
+            )
 
-            {:error, Error.new(:provider_error, error_message)}
+            {:error,
+             Error.new(
+               :provider_error,
+               provider_error.message,
+               provider_error: provider_error,
+               details: details
+             )}
         end
       rescue
         e ->
-          error_message = Exception.message(e)
+          {provider_error, details} = claude_provider_error(e)
 
-          emit_event(ctx, :error_occurred, %{
-            error_code: :sdk_error,
-            error_message: error_message
-          })
+          emit_event(
+            ctx,
+            :error_occurred,
+            provider_error_event_data(:provider_error, provider_error, details)
+          )
 
-          {:error, Error.new(:provider_error, error_message)}
+          {:error,
+           Error.new(
+             :provider_error,
+             provider_error.message,
+             provider_error: provider_error,
+             details: details
+           )}
       catch
         :exit, reason ->
-          error_message = "SDK process exited: #{inspect(reason)}"
+          {provider_error, details} =
+            claude_provider_error(reason, message: "SDK process exited: #{inspect(reason)}")
 
-          emit_event(ctx, :error_occurred, %{
-            error_code: :sdk_error,
-            error_message: error_message
-          })
+          emit_event(
+            ctx,
+            :error_occurred,
+            provider_error_event_data(:provider_error, provider_error, details)
+          )
 
-          {:error, Error.new(:provider_error, error_message)}
+          {:error,
+           Error.new(
+             :provider_error,
+             provider_error.message,
+             provider_error: provider_error,
+             details: details
+           )}
       end
     end
 
@@ -451,8 +475,20 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
         {:cancelled, _ctx} ->
           {:error, Error.new(:cancelled, "Run was cancelled")}
 
-        {:error, error_msg} ->
-          {:error, Error.new(:provider_error, error_msg)}
+        {:error, provider_error, details} ->
+          {:error,
+           Error.new(
+             :provider_error,
+             provider_error.message,
+             provider_error: provider_error,
+             details: details
+           )}
+
+        {:error, error_msg} when is_binary(error_msg) ->
+          {provider_error, details} = claude_provider_error(%{message: error_msg})
+
+          {:error,
+           Error.new(:provider_error, error_msg, provider_error: provider_error, details: details)}
 
         final_ctx when is_map(final_ctx) ->
           build_claude_result(final_ctx)
@@ -547,14 +583,15 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
     end
 
     defp handle_streaming_event(%{type: :error, error: reason}, ctx) do
-      error_message = inspect(reason)
+      {provider_error, details} = claude_provider_error(reason)
 
-      emit_event(ctx, :error_occurred, %{
-        error_code: :provider_error,
-        error_message: error_message
-      })
+      emit_event(
+        ctx,
+        :error_occurred,
+        provider_error_event_data(:provider_error, provider_error, details)
+      )
 
-      {:halt, {:error, error_message}}
+      {:halt, {:error, provider_error, details}}
     end
 
     defp handle_streaming_event(_event, ctx) do
@@ -567,17 +604,19 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
 
       case sdk_module.query(sdk_pid, ctx.prepared_input, sdk_opts) do
         {:error, %Error{} = error} ->
-          emit_event(ctx, :error_occurred, %{
-            error_code: error.code,
-            error_message: error.message
-          })
+          {provider_error, details} = claude_provider_error(error)
+          event_data = provider_error_event_data(error.code, provider_error, details)
 
-          emit_event(ctx, :run_failed, %{
-            error_code: error.code,
-            error_message: error.message
-          })
+          emit_event(ctx, :error_occurred, event_data)
+          emit_event(ctx, :run_failed, event_data)
 
-          {:error, error}
+          {:error,
+           %{
+             error
+             | message: provider_error.message,
+               provider_error: provider_error,
+               details: Map.merge(ensure_map(error.details), details)
+           }}
 
         stream ->
           process_agent_sdk_stream(stream, ctx)
@@ -857,19 +896,13 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
 
     defp handle_sdk_message(%ClaudeAgentSDK.Message{type: :result} = msg, ctx) do
       # Error result types
-      error_message = msg.data[:error] || "Unknown error"
+      {provider_error, details} = claude_provider_error(msg)
+      event_data = provider_error_event_data(:provider_error, provider_error, details)
 
-      emit_event(ctx, :error_occurred, %{
-        error_code: :provider_error,
-        error_message: error_message
-      })
+      emit_event(ctx, :error_occurred, event_data)
+      emit_event(ctx, :run_failed, event_data)
 
-      emit_event(ctx, :run_failed, %{
-        error_code: :provider_error,
-        error_message: error_message
-      })
-
-      ctx
+      %{ctx | last_provider_error: {provider_error, details}}
     end
 
     defp handle_sdk_message(_message, ctx) do
@@ -877,9 +910,20 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
       ctx
     end
 
-    defp handle_sdk_stream_result({:error, _message, _ctx}) do
-      error_message = "Execution failed"
-      {:error, Error.new(:provider_error, error_message)}
+    defp handle_sdk_stream_result({:error, message, ctx}) do
+      {provider_error, details} =
+        case Map.get(ctx, :last_provider_error) do
+          {provider_error, details} -> {provider_error, details}
+          _ -> claude_provider_error(message)
+        end
+
+      {:error,
+       Error.new(
+         :provider_error,
+         provider_error.message,
+         provider_error: provider_error,
+         details: details
+       )}
     end
 
     defp handle_sdk_stream_result({:cancelled, ctx}) do
@@ -1049,6 +1093,131 @@ if Code.ensure_loaded?(ClaudeAgentSDK) do
          events: emitted_events()
        }}
     end
+
+    defp claude_provider_error(reason, opts \\ [])
+
+    defp claude_provider_error(%Error{} = error, opts) do
+      raw_provider_error = ensure_map(error.provider_error)
+
+      extra_details =
+        raw_provider_error
+        |> Map.drop([
+          :provider,
+          :kind,
+          :message,
+          :exit_code,
+          :stderr,
+          :truncated?,
+          :stderr_truncated?
+        ])
+        |> Map.drop([
+          "provider",
+          "kind",
+          "message",
+          "exit_code",
+          "stderr",
+          "truncated?",
+          "stderr_truncated?"
+        ])
+
+      attrs =
+        %{
+          kind: map_get(raw_provider_error, :kind) || infer_claude_kind(error),
+          message: Keyword.get(opts, :message, error.message),
+          exit_code: map_get(raw_provider_error, :exit_code),
+          stderr: map_get(raw_provider_error, :stderr),
+          truncated?:
+            map_get(raw_provider_error, :truncated?) ||
+              map_get(raw_provider_error, :stderr_truncated?),
+          details: Map.merge(ensure_map(error.details), ensure_map(extra_details))
+        }
+
+      ProviderError.normalize(:claude, attrs)
+    end
+
+    defp claude_provider_error(%ClaudeAgentSDK.Message{} = msg, opts) do
+      data = ensure_map(msg.data)
+      error_details = map_get(data, :error_details) |> ensure_map()
+      error_struct = map_get(data, :error_struct)
+      fallback_message = map_get(data, :error) || "Unknown error"
+
+      attrs =
+        %{
+          kind: map_get(error_details, :kind) || infer_claude_kind(error_struct),
+          message: Keyword.get(opts, :message, fallback_message),
+          exit_code: map_get(error_details, :exit_code) || map_get(error_struct, :exit_code),
+          stderr: map_get(error_details, :stderr) || map_get(error_struct, :stderr),
+          truncated?:
+            map_get(error_details, :stderr_truncated?) ||
+              map_get(error_struct, :stderr_truncated?),
+          details: error_details
+        }
+        |> maybe_put(:details, error_details)
+
+      ProviderError.normalize(:claude, attrs)
+    end
+
+    defp claude_provider_error(reason, opts) do
+      fallback_message = Keyword.get(opts, :message, default_reason_message(reason))
+      details = extract_reason_details(reason)
+
+      attrs =
+        %{
+          kind: map_get(details, :kind) || infer_claude_kind(reason),
+          message: fallback_message,
+          exit_code: map_get(details, :exit_code) || map_get(reason, :exit_code),
+          stderr: map_get(details, :stderr) || map_get(reason, :stderr),
+          truncated?:
+            map_get(details, :stderr_truncated?) ||
+              map_get(reason, :stderr_truncated?),
+          details: details
+        }
+        |> maybe_put(:details, details)
+
+      ProviderError.normalize(:claude, attrs)
+    end
+
+    defp default_reason_message(%{message: message}) when is_binary(message), do: message
+    defp default_reason_message(reason) when is_binary(reason), do: reason
+    defp default_reason_message(reason), do: inspect(reason)
+
+    defp extract_reason_details(%Error{} = error) do
+      Map.merge(ensure_map(error.details), ensure_map(error.provider_error))
+    end
+
+    defp extract_reason_details(%{details: details}) when is_map(details), do: details
+    defp extract_reason_details(_), do: %{}
+
+    defp infer_claude_kind(%Error{code: :provider_timeout}), do: :timeout
+    defp infer_claude_kind(%Error{code: :provider_rate_limited}), do: :rate_limit
+    defp infer_claude_kind(%ClaudeAgentSDK.Errors.ProcessError{}), do: :process_error
+    defp infer_claude_kind(%{kind: kind}) when is_atom(kind), do: kind
+    defp infer_claude_kind(%{kind: kind}) when is_binary(kind), do: kind
+    defp infer_claude_kind(_), do: :unknown
+
+    defp provider_error_event_data(error_code, provider_error, details) do
+      %{
+        error_code: error_code,
+        error_message: provider_error.message,
+        provider_error: provider_error
+      }
+      |> maybe_put(:details, non_empty_map(details))
+    end
+
+    defp non_empty_map(value) when is_map(value) and map_size(value) > 0, do: value
+    defp non_empty_map(_), do: nil
+
+    defp ensure_map(value) when is_map(value), do: value
+    defp ensure_map(_), do: %{}
+
+    defp map_get(map, key) when is_map(map) and is_atom(key) do
+      Map.get(map, key) || Map.get(map, Atom.to_string(key))
+    end
+
+    defp map_get(_map, _key), do: nil
+
+    defp maybe_put(map, _key, nil), do: map
+    defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
     defp emit_event(ctx, type, data) do
       event = %{

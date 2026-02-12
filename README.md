@@ -191,6 +191,24 @@ Each provider emits events in its own format. Adapters normalize them into a can
 | `run_cancelled` | Execution cancelled |
 | `policy_violation` | Policy limit exceeded |
 
+Failure events keep backward-compatible `error_message` and may also include
+`provider_error`:
+
+```elixir
+%{
+  provider: :codex | :amp | :claude | :gemini | :unknown,
+  kind: atom(),
+  message: String.t(),
+  exit_code: integer() | nil,
+  stderr: String.t() | nil,
+  truncated?: boolean() | nil
+}
+```
+
+`provider_error.stderr` is truncated before emission/persistence using
+`AgentSessionManager.Config` keys `:error_text_max_bytes` and `:error_text_max_lines`.
+When persistence redaction is enabled, nested `provider_error` fields are also scanned.
+
 See [Events and Streaming](guides/events_and_streaming.md) for the full event type reference.
 
 ## Features

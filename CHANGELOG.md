@@ -181,6 +181,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ash adapters use `expr` macro in query filters; large functions broken into focused helpers
 - `WorkflowBridge` keyword list normalization improved for adapter options and continuation parameters
 - Ash tests gated behind `RUN_ASH_TESTS` environment variable
+- Provider adapters (`CodexAdapter`, `AmpAdapter`, `ClaudeAdapter`) now normalize provider failures into a stable `provider_error` payload and preserve provider-specific extras in `Error.details`
+- Session/run failure paths now persist and emit structured provider diagnostics (`provider_error`, `details`) alongside legacy `error_message`
+- Added shared `AgentSessionManager.Core.ProviderError` normalization to enforce the contract:
+  - `provider`, `kind`, `message`, `exit_code`, `stderr`, `truncated?`
+  - Truncation limits are configurable via `:error_text_max_bytes` and `:error_text_max_lines`
 
 ### Fixed
 
@@ -192,6 +197,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Maintenance correctness (M-1, M-2, M-9)** -- health checks use `max(sequence_number)`, retention age checks use `updated_at`, and protected prune event types include `run_started`/`run_completed`
 - **Optional dependency error semantics (M-10)** -- missing optional dependencies now normalize to `:dependency_not_available` instead of generic storage failure codes
 - **Composite direct call timeout behavior (M-8 scoped)** -- `CompositeSessionStore.get_events/3` correctly adjusts call timeout for long-poll options
+- Event redaction now scans nested `provider_error` payloads (including `stderr`) on failure events (`:error_occurred`, `:run_failed`, `:session_failed`)
 
 ### Removed
 
@@ -218,6 +224,7 @@ See `guides/migrating_to_v0.8.md` for migration details.
 - Document cursor semantics/order requirements, SessionStore ref shapes (`pid` vs `{Module, context}`), and optional SDK dependency behavior
 - Update `examples/README.md` with all persistence adapter and query/maintenance examples
 - Rewrite `guides/event_schema_versioning.md` for strict-only contract (no backward-compatible defaults)
+- Document structured `provider_error` propagation, stderr truncation limits, and failure-event payload semantics across `README.md`, `guides/error_handling.md`, `guides/events_and_streaming.md`, and related rendering/streaming guides
 - Remove "backward compatible" / "legacy" language from all guides
 - Update `guides/session_continuity.md`: remove boolean `true` documentation, simplify mode table
 - Update `guides/provider_adapters.md`: remove alias emission notes, canonical keys only

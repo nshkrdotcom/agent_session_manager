@@ -54,6 +54,30 @@ Events are grouped into categories:
 | `:workspace_snapshot_taken` | A workspace snapshot was captured |
 | `:workspace_diff_computed` | A workspace diff summary was computed |
 
+## Error Payloads
+
+Error events (`:error_occurred`, `:run_failed`, `:session_failed`) keep
+`error_message` for backward compatibility and may include a structured
+`provider_error` payload:
+
+```elixir
+%{
+  provider: :codex | :amp | :claude | :gemini | :unknown,
+  kind: atom(),
+  message: String.t(),
+  exit_code: integer() | nil,
+  stderr: String.t() | nil,
+  truncated?: boolean() | nil
+}
+```
+
+Notes:
+- `provider_error.message` is a short provider summary.
+- `provider_error.stderr` carries diagnostic text when available.
+- `provider_error.stderr` is truncated before emission/persistence using
+  `:error_text_max_bytes` and `:error_text_max_lines`.
+- Provider-specific extra fields are carried in `event.data.details`.
+
 ## Creating Events
 
 ```elixir
@@ -260,6 +284,10 @@ callback = fn event ->
 
     :error_occurred ->
       Logger.error("Error: #{event.data.error_message}")
+
+      if is_map(event.data[:provider_error]) do
+        Logger.error("Provider stderr: #{event.data.provider_error.stderr || "n/a"}")
+      end
 
     _ ->
       :ok

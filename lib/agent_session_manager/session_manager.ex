@@ -60,6 +60,7 @@ defmodule AgentSessionManager.SessionManager do
     CapabilityResolver,
     Error,
     Event,
+    ProviderError,
     Run,
     Session,
     TranscriptBuilder
@@ -205,13 +206,21 @@ defmodule AgentSessionManager.SessionManager do
   def fail_session(store, session_id, %Error{} = error) do
     with {:ok, session} <- safe_get_session(store, session_id, :fail_session),
          {:ok, failed} <- Session.update_status(session, :failed),
-         :ok <- safe_save_session(store, failed, :fail_session),
-         :ok <-
-           emit_event(store, :session_failed, failed, %{
-             error_code: error.code,
-             error_message: error.message
-           }) do
-      {:ok, failed}
+         :ok <- safe_save_session(store, failed, :fail_session) do
+      {provider_error, details} = normalize_provider_error_payload(error, failed)
+
+      event_data =
+        %{
+          error_code: error.code,
+          error_message: error.message
+        }
+        |> maybe_put(:provider_error, provider_error)
+        |> maybe_put(:details, non_empty_map(details))
+
+      case emit_event(store, :session_failed, failed, event_data) do
+        :ok -> {:ok, failed}
+        {:error, _} = error_result -> error_result
+      end
     end
   end
 
@@ -1421,15 +1430,110 @@ defmodule AgentSessionManager.SessionManager do
   defp finalize_failed_run(store, run, error, extra_run_metadata) do
     error_code = Map.get(error, :code, :internal_error)
     error_message = Map.get(error, :message, inspect(error))
-    error_map = %{code: error_code, message: error_message}
+    {provider_error, details} = normalize_provider_error_payload(error, run)
+
+    error_map =
+      %{
+        code: error_code,
+        message: error_message
+      }
+      |> maybe_put(:provider_error, provider_error)
+      |> maybe_put(:details, non_empty_map(details))
+
+    run_failed_event_data =
+      %{
+        error_code: error_code,
+        error_message: error_message
+      }
+      |> maybe_put(:provider_error, provider_error)
+      |> maybe_put(:details, non_empty_map(details))
 
     with {:ok, failed_run} <- Run.set_error(run, error_map),
          run_with_metadata = update_run_metadata(failed_run, extra_run_metadata),
          :ok <- safe_save_run(store, run_with_metadata, :finalize_failed_run),
-         :ok <- emit_run_event(store, :run_failed, run_with_metadata, %{error_code: error_code}) do
+         :ok <- emit_run_event(store, :run_failed, run_with_metadata, run_failed_event_data) do
       {:error, error}
     end
   end
+
+  defp normalize_provider_error_payload(%Error{} = error, run_or_session) do
+    provider_hint = provider_hint_from_state(run_or_session)
+
+    if has_provider_error_payload?(error) do
+      raw_provider_error = ensure_map(error.provider_error)
+      normalized_provider = resolve_provider(raw_provider_error, provider_hint)
+      attrs = provider_error_attrs(error, raw_provider_error)
+      {provider_error, provider_details} = ProviderError.normalize(normalized_provider, attrs)
+      {provider_error, merge_provider_details(error, provider_details)}
+    else
+      {nil, ensure_map(error.details)}
+    end
+  end
+
+  defp normalize_provider_error_payload(error, _run_or_session) do
+    {nil, ensure_map(Map.get(error, :details))}
+  end
+
+  defp provider_hint_from_state(%Run{} = run) do
+    run.provider || map_get(ensure_map(run.metadata), :provider)
+  end
+
+  defp provider_hint_from_state(%Session{} = session) do
+    map_get(ensure_map(session.metadata), :provider)
+  end
+
+  defp has_provider_error_payload?(%Error{} = error) do
+    is_map(error.provider_error) or Error.category(error.code) == :provider
+  end
+
+  defp resolve_provider(raw_provider_error, provider_hint) do
+    raw_provider_error
+    |> provider_from_map()
+    |> normalize_provider_hint()
+    |> case do
+      :unknown -> normalize_provider_hint(provider_hint)
+      provider -> provider
+    end
+  end
+
+  defp provider_from_map(map) when is_map(map) do
+    provider = Map.get(map, :provider)
+
+    if is_atom(provider) or is_binary(provider) do
+      provider
+    else
+      provider = Map.get(map, "provider")
+      if is_atom(provider) or is_binary(provider), do: provider, else: nil
+    end
+  end
+
+  defp provider_error_attrs(%Error{} = error, raw_provider_error) do
+    raw_provider_error
+    |> Map.put_new(:message, error.message)
+    |> Map.put_new(:details, ensure_map(error.details))
+  end
+
+  defp merge_provider_details(%Error{} = error, provider_details) do
+    ensure_map(error.details)
+    |> Map.merge(provider_details)
+  end
+
+  defp normalize_provider_hint(provider) when is_atom(provider), do: provider
+
+  defp normalize_provider_hint(provider) when is_binary(provider) do
+    case String.downcase(provider) do
+      "codex" -> :codex
+      "amp" -> :amp
+      "claude" -> :claude
+      "gemini" -> :gemini
+      _ -> :unknown
+    end
+  end
+
+  defp normalize_provider_hint(_provider), do: :unknown
+
+  defp non_empty_map(value) when is_map(value) and map_size(value) > 0, do: value
+  defp non_empty_map(_), do: nil
 
   @dialyzer {:nowarn_function, ensure_map: 1}
   defp ensure_map(value) when is_map(value), do: value

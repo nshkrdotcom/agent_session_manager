@@ -98,7 +98,13 @@ events = Enum.to_list(stream)
 close_fun.()
 
 errors = Enum.filter(events, &(&1.type == :error_occurred))
-# [%{type: :error_occurred, data: %{error_message: "..."}}]
+# [%{
+#   type: :error_occurred,
+#   data: %{
+#     error_message: "...",
+#     provider_error: %{provider: :codex, kind: :transport_exit, stderr: "..."}
+#   }
+# }]
 ```
 
 Error events are emitted for:

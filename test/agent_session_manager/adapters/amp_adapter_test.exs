@@ -520,7 +520,12 @@ defmodule AgentSessionManager.Adapters.AmpAdapterTest do
       {:ok, adapter} =
         start_test_adapter(
           scenario: :error,
-          error_message: "Connection failed"
+          error_message: "Connection failed",
+          kind: :transport_exit,
+          details: %{"phase" => "stream"},
+          exit_code: 2,
+          stderr: "AUTH_TOKEN=super-secret\npermission denied",
+          stderr_truncated?: true
         )
 
       session = build_test_session()
@@ -538,6 +543,17 @@ defmodule AgentSessionManager.Adapters.AmpAdapterTest do
 
       assert :error_occurred in event_types
       assert :run_failed in event_types
+
+      error_event = Enum.find(events, &(&1.type == :error_occurred))
+      provider_error = error_event.data.provider_error
+
+      assert provider_error.provider == :amp
+      assert provider_error.kind == :transport_exit
+      assert provider_error.message == "Connection failed"
+      assert provider_error.exit_code == 2
+      assert provider_error.stderr =~ "permission denied"
+      assert provider_error.truncated? == true
+      refute Map.has_key?(provider_error, :retryable)
     end
 
     test "error includes permission denials when present" do
@@ -1079,6 +1095,11 @@ defmodule AgentSessionManager.Adapters.AmpAdapterTest do
     tool_is_error = Keyword.get(opts, :tool_is_error)
     error_message = Keyword.get(opts, :error_message)
     permission_denials = Keyword.get(opts, :permission_denials)
+    kind = Keyword.get(opts, :kind)
+    details = Keyword.get(opts, :details)
+    exit_code = Keyword.get(opts, :exit_code)
+    stderr = Keyword.get(opts, :stderr)
+    stderr_truncated? = Keyword.get(opts, :stderr_truncated?)
 
     mock_opts =
       [scenario: scenario, delay_ms: delay_ms]
@@ -1091,6 +1112,11 @@ defmodule AgentSessionManager.Adapters.AmpAdapterTest do
       |> maybe_add(:tool_is_error, tool_is_error)
       |> maybe_add(:error_message, error_message)
       |> maybe_add(:permission_denials, permission_denials)
+      |> maybe_add(:kind, kind)
+      |> maybe_add(:details, details)
+      |> maybe_add(:exit_code, exit_code)
+      |> maybe_add(:stderr, stderr)
+      |> maybe_add(:stderr_truncated?, stderr_truncated?)
 
     {:ok, mock_sdk} = AmpMockSDK.start_link(mock_opts)
     cleanup_on_exit(fn -> safe_stop(mock_sdk) end)

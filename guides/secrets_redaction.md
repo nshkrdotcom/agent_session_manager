@@ -8,6 +8,7 @@ before persistence.
 Adapter events can contain API keys, passwords, tokens, connection strings, and
 private key material. Persisting those values creates long-term leakage risk in
 stores, transcripts, and downstream consumers that read persisted events.
+This includes nested provider diagnostics like `provider_error.stderr`.
 
 When enabled, redaction scans event payloads and replaces matches with
 `[REDACTED]` (or a configured replacement).
@@ -37,6 +38,8 @@ Behavior:
 - Scans `event.data` by default
 - Optionally scans `event.metadata` (`redaction_scan_metadata`)
 - Supports recursive traversal of nested maps/lists (`redaction_deep_scan`)
+- Deep-scans nested error payloads (`provider_error`, `details`) on
+  `:error_occurred`, `:run_failed`, and `:session_failed` events
 - Skips low-risk event types via an internal skip list
 - Emits telemetry when redaction occurs:
   `[:agent_session_manager, :persistence, :event_redacted]`

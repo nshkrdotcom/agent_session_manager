@@ -59,7 +59,7 @@ if Code.ensure_loaded?(AmpSdk) do
 
     use GenServer
 
-    alias AgentSessionManager.Core.{Capability, Error}
+    alias AgentSessionManager.Core.{Capability, Error, ProviderError}
     alias AgentSessionManager.Ports.ProviderAdapter
 
     alias AmpSdk.Transport
@@ -437,21 +437,32 @@ if Code.ensure_loaded?(AmpSdk) do
     defp classify_message(_), do: :continue
 
     defp handle_stream_result({:error, error_msg, error_ctx}) do
-      error_message = extract_error_message(error_msg)
+      {provider_error, details} = amp_provider_error(error_msg)
       permission_denials = extract_permission_denials(error_msg)
+      details = maybe_put(details, :permission_denials, permission_denials)
 
       emit_event(error_ctx, :error_occurred, %{
         error_code: :provider_error,
-        error_message: error_message,
+        error_message: provider_error.message,
+        provider_error: provider_error,
+        details: non_empty_map(details),
         permission_denials: permission_denials
       })
 
       emit_event(error_ctx, :run_failed, %{
         error_code: :provider_error,
-        error_message: error_message
+        error_message: provider_error.message,
+        provider_error: provider_error,
+        details: non_empty_map(details)
       })
 
-      {:error, Error.new(:provider_error, error_message)}
+      {:error,
+       Error.new(
+         :provider_error,
+         provider_error.message,
+         provider_error: provider_error,
+         details: details
+       )}
     end
 
     defp handle_stream_result({:cancelled, cancelled_ctx}) do
@@ -466,6 +477,31 @@ if Code.ensure_loaded?(AmpSdk) do
 
     defp extract_permission_denials(%ErrorResultMessage{permission_denials: denials}), do: denials
     defp extract_permission_denials(_), do: nil
+
+    defp amp_provider_error(%ErrorResultMessage{} = message) do
+      attrs =
+        %{
+          kind: message.kind || :unknown,
+          message: extract_error_message(message),
+          exit_code: message.exit_code,
+          stderr: message.stderr,
+          truncated?: message.stderr_truncated?,
+          details: ensure_map(message.details)
+        }
+        |> maybe_put(:stderr, message.stderr)
+
+      ProviderError.normalize(:amp, attrs)
+    end
+
+    defp amp_provider_error(message) do
+      ProviderError.normalize(:amp, %{message: extract_error_message(message)})
+    end
+
+    defp non_empty_map(value) when is_map(value) and map_size(value) > 0, do: value
+    defp non_empty_map(_), do: nil
+
+    defp ensure_map(value) when is_map(value), do: value
+    defp ensure_map(_), do: %{}
 
     # ============================================================================
     # Message Handlers

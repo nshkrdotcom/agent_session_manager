@@ -168,6 +168,8 @@ defmodule AgentSessionManager.Config do
           | :event_buffer_size
           | :max_output_bytes
           | :max_patch_bytes
+          | :error_text_max_bytes
+          | :error_text_max_lines
           # Concurrency
           | :max_parallel_sessions
           | :max_parallel_runs
@@ -226,6 +228,8 @@ defmodule AgentSessionManager.Config do
     :event_buffer_size,
     :max_output_bytes,
     :max_patch_bytes,
+    :error_text_max_bytes,
+    :error_text_max_lines,
     # Concurrency
     :max_parallel_sessions,
     :max_parallel_runs,
@@ -337,6 +341,8 @@ defmodule AgentSessionManager.Config do
   def default(:event_buffer_size), do: 1_000
   def default(:max_output_bytes), do: 1_048_576
   def default(:max_patch_bytes), do: 1_048_576
+  def default(:error_text_max_bytes), do: 16_384
+  def default(:error_text_max_lines), do: 200
   # Concurrency
   def default(:max_parallel_sessions), do: 100
   def default(:max_parallel_runs), do: 50

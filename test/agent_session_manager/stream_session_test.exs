@@ -1,6 +1,7 @@
 defmodule AgentSessionManager.StreamSessionTest do
   use AgentSessionManager.SupertesterCase, async: true
 
+  alias AgentSessionManager.Core.Error
   alias AgentSessionManager.StreamSession
   alias AgentSessionManager.Test.MockProviderAdapter
 
@@ -104,6 +105,46 @@ defmodule AgentSessionManager.StreamSessionTest do
 
       error_events = Enum.filter(events, &(&1.type == :error_occurred))
       assert error_events != []
+    end
+
+    test "stream terminal error event includes provider_error when available" do
+      provider_error = %{
+        provider: :codex,
+        kind: :transport_exit,
+        message: "codex executable exited with status 2",
+        exit_code: 2,
+        stderr: "OPENAI_API_KEY=sk-proj-secret\npermission denied",
+        truncated?: true
+      }
+
+      {:ok, adapter} =
+        MockProviderAdapter.start_link(
+          execution_mode: :failing,
+          fail_with:
+            Error.new(
+              :provider_error,
+              "codex executable exited with status 2",
+              provider_error: provider_error
+            )
+        )
+
+      cleanup_on_exit(fn -> safe_stop(adapter) end)
+
+      {:ok, stream, close_fun, _meta} =
+        StreamSession.start(
+          adapter: adapter,
+          input: %{messages: [%{role: "user", content: "hello"}]}
+        )
+
+      events = Enum.to_list(stream)
+      close_fun.()
+
+      error_event = Enum.find(events, &(&1.type == :error_occurred))
+      assert error_event != nil
+      assert error_event.data.error_message == "codex executable exited with status 2"
+      assert error_event.data.provider_error.provider == :codex
+      assert error_event.data.provider_error.kind == :transport_exit
+      assert error_event.data.provider_error.exit_code == 2
     end
 
     test "stream halts after idle timeout" do

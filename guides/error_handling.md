@@ -24,8 +24,15 @@ error = Error.new(:session_not_found, "Session not found: ses_abc")
 
 # With details and context
 error = Error.new(:provider_rate_limited, "Rate limit exceeded",
-  details: %{retry_after: 30},
-  provider_error: %{status_code: 429, body: "Too many requests"},
+  details: %{status_code: 429, retry_after: 30, body: "Too many requests"},
+  provider_error: %{
+    provider: :claude,
+    kind: :rate_limit,
+    message: "Rate limit exceeded",
+    exit_code: nil,
+    stderr: nil,
+    truncated?: nil
+  },
   context: %{operation: "execute_run"}
 )
 
@@ -33,6 +40,26 @@ error = Error.new(:provider_rate_limited, "Rate limit exceeded",
 error = Error.new(:timeout)
 error.message  # => "Operation timed out"
 ```
+
+### `provider_error` Contract
+
+Use `Error.provider_error` for cross-provider transport/CLI diagnostics and keep
+provider-specific extras in `Error.details`.
+
+```elixir
+%{
+  provider: :codex | :amp | :claude | :gemini | :unknown,
+  kind: atom(),
+  message: String.t(),
+  exit_code: integer() | nil,
+  stderr: String.t() | nil,
+  truncated?: boolean() | nil
+}
+```
+
+`stderr` is normalized, truncated, and then emitted/persisted. Truncation
+limits come from `AgentSessionManager.Config` (`:error_text_max_bytes`,
+`:error_text_max_lines`).
 
 ### Wrapping Exceptions
 

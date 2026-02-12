@@ -599,7 +599,18 @@ defmodule AgentSessionManager.Adapters.CodexAdapterTest do
       events = collect_events()
       event_types = Enum.map(events, & &1.type)
 
-      assert :error_occurred in event_types or :run_failed in event_types
+      assert :error_occurred in event_types
+      assert :run_failed in event_types
+
+      error_event = Enum.find(events, &(&1.type == :error_occurred))
+      provider_error = error_event.data.provider_error
+
+      assert provider_error.provider == :codex
+      assert provider_error.message == "Connection failed"
+      assert provider_error.stderr == nil
+      assert provider_error.exit_code == nil
+      assert provider_error.kind in [:unknown, :protocol_error, :parse_error]
+      refute Map.has_key?(provider_error, :retryable)
     end
   end
 

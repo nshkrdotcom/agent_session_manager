@@ -73,9 +73,9 @@ Common fields include `:timestamp`, `:session_id`, `:run_id`, and `:provider`. S
 | `:token_usage_updated` | Token counts updated | `input_tokens`, `output_tokens` |
 | `:message_received` | Complete message | `content`, `role` |
 | `:run_completed` | Run finished | `stop_reason` |
-| `:run_failed` | Run failed | `error_code`, `error_message` |
+| `:run_failed` | Run failed | `error_code`, `error_message`, `provider_error` |
 | `:run_cancelled` | Run cancelled | — |
-| `:error_occurred` | Error during run | `error_code`, `error_message` |
+| `:error_occurred` | Error during run | `error_code`, `error_message`, `provider_error` |
 
 Unknown event types are rendered as catch-all entries rather than dropped.
 

@@ -37,9 +37,10 @@ defmodule AgentSessionManager.MixProject do
       {:jason, "~> 1.4"},
 
       # Agent SDKs
-      {:codex_sdk, path: "../codex_sdk", optional: true},
-      {:claude_agent_sdk, path: "../claude_agent_sdk", optional: true},
-      {:amp_sdk, path: "../amp_sdk", optional: true},
+      {:codex_sdk, "~> 0.10.1", optional: true},
+      {:claude_agent_sdk, "~> 0.14.0", optional: true},
+      {:gemini_cli_sdk, "~> 0.1.0", optional: true},
+      {:amp_sdk, "~> 0.4.0", optional: true},
 
       # Persistence adapters (optional — consumers pick what they need)
       {:ecto_sql, "~> 3.12", optional: true},

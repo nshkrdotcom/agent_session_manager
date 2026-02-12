@@ -707,6 +707,51 @@ defmodule AgentSessionManager.SessionManagerTest do
       assert Enum.any?(events, &(&1.type == :run_failed))
     end
 
+    test "persists provider_error on failed run and run_failed event", %{
+      store: store,
+      adapter: adapter
+    } do
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+      {:ok, run} = SessionManager.start_run(store, adapter, session.id, %{prompt: "Hello"})
+
+      provider_error = %{
+        provider: :codex,
+        kind: :transport_exit,
+        message: "codex executable exited with status 2",
+        exit_code: 2,
+        stderr: "OPENAI_API_KEY=sk-proj-secret\npermission denied",
+        truncated?: true
+      }
+
+      error =
+        Error.new(
+          :provider_error,
+          "codex executable exited with status 2",
+          provider_error: provider_error,
+          details: %{transport: :exec_failed}
+        )
+
+      MockAdapter.set_fail_with(adapter, error)
+
+      {:error, _} = SessionManager.execute_run(store, adapter, run.id)
+
+      {:ok, failed_run} = SessionStore.get_run(store, run.id)
+      assert failed_run.error.code == :provider_error
+      assert failed_run.error.message == "codex executable exited with status 2"
+      assert failed_run.error.provider_error.provider == :codex
+      assert failed_run.error.provider_error.kind == :transport_exit
+      assert failed_run.error.provider_error.exit_code == 2
+      assert failed_run.error.details.transport == :exec_failed
+
+      {:ok, events} = SessionStore.get_events(store, session.id, run_id: run.id)
+      failed_event = Enum.find(events, &(&1.type == :run_failed))
+      assert failed_event.data.error_message == "codex executable exited with status 2"
+      assert failed_event.data.provider_error.provider == :codex
+      assert failed_event.data.provider_error.kind == :transport_exit
+      assert failed_event.data.provider_error.exit_code == 2
+    end
+
     test "returns storage_connection_failed when store goes down during failed-run finalization" do
       {:ok, store} = setup_test_store(%{})
       {:ok, adapter} = StoreKillingAdapter.start_link(store: store)
@@ -1022,6 +1067,39 @@ defmodule AgentSessionManager.SessionManagerTest do
       failed_event = Enum.find(events, &(&1.type == :session_failed))
       assert failed_event != nil
       assert failed_event.data.error_code == :internal_error
+    end
+
+    test "emits session_failed provider_error payload when present", %{
+      store: store,
+      adapter: adapter
+    } do
+      {:ok, session} = SessionManager.start_session(store, adapter, %{agent_id: "test-agent"})
+      {:ok, _} = SessionManager.activate_session(store, session.id)
+
+      error =
+        Error.new(
+          :provider_error,
+          "provider failed",
+          provider_error: %{
+            provider: :amp,
+            kind: :transport_exit,
+            message: "provider failed",
+            exit_code: 17,
+            stderr: "AUTH_TOKEN=super-secret",
+            truncated?: true
+          }
+        )
+
+      {:ok, _} = SessionManager.fail_session(store, session.id, error)
+
+      {:ok, events} = SessionStore.get_events(store, session.id)
+      failed_event = Enum.find(events, &(&1.type == :session_failed))
+
+      assert failed_event.data.error_code == :provider_error
+      assert failed_event.data.error_message == "provider failed"
+      assert failed_event.data.provider_error.provider == :amp
+      assert failed_event.data.provider_error.kind == :transport_exit
+      assert failed_event.data.provider_error.exit_code == 17
     end
   end
 

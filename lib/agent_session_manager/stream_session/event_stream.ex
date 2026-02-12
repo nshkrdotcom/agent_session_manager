@@ -2,6 +2,7 @@ defmodule AgentSessionManager.StreamSession.EventStream do
   @moduledoc false
 
   alias AgentSessionManager.Core.Error, as: ASMError
+  alias AgentSessionManager.Core.ProviderError
   alias AgentSessionManager.StreamSession.Lifecycle
 
   @doc "Build a lazy event stream and close function from acquired resources."
@@ -65,7 +66,17 @@ defmodule AgentSessionManager.StreamSession.EventStream do
   end
 
   defp error_events(%ASMError{} = error) do
-    [%{type: :error_occurred, data: %{error_code: error.code, error_message: error.message}}]
+    {provider_error, details} = normalize_provider_error_payload(error)
+
+    data =
+      %{
+        error_code: error.code,
+        error_message: error.message
+      }
+      |> maybe_put(:provider_error, provider_error)
+      |> maybe_put(:details, non_empty_map(details))
+
+    [%{type: :error_occurred, data: data}]
   end
 
   defp error_events({:task_down, :shutdown}) do
@@ -101,4 +112,55 @@ defmodule AgentSessionManager.StreamSession.EventStream do
   defp error_events(reason) do
     [%{type: :error_occurred, data: %{error_message: inspect(reason)}}]
   end
+
+  defp normalize_provider_error_payload(%ASMError{} = error) do
+    has_provider_error? = is_map(error.provider_error)
+    provider_code? = ASMError.category(error.code) == :provider
+
+    if has_provider_error? or provider_code? do
+      attrs =
+        ensure_map(error.provider_error)
+        |> Map.put_new(:message, error.message)
+        |> Map.put_new(:details, ensure_map(error.details))
+
+      {provider_error, provider_details} =
+        ProviderError.normalize(
+          normalize_provider_hint(map_get(error.provider_error, :provider)),
+          attrs
+        )
+
+      {provider_error, Map.merge(ensure_map(error.details), provider_details)}
+    else
+      {nil, ensure_map(error.details)}
+    end
+  end
+
+  defp normalize_provider_hint(provider) when is_atom(provider), do: provider
+
+  defp normalize_provider_hint(provider) when is_binary(provider) do
+    case String.downcase(provider) do
+      "codex" -> :codex
+      "amp" -> :amp
+      "claude" -> :claude
+      "gemini" -> :gemini
+      _ -> :unknown
+    end
+  end
+
+  defp normalize_provider_hint(_provider), do: :unknown
+
+  defp map_get(map, key) when is_map(map) and is_atom(key) do
+    Map.get(map, key) || Map.get(map, Atom.to_string(key))
+  end
+
+  defp map_get(_map, _key), do: nil
+
+  defp ensure_map(value) when is_map(value), do: value
+  defp ensure_map(_), do: %{}
+
+  defp non_empty_map(value) when is_map(value) and map_size(value) > 0, do: value
+  defp non_empty_map(_), do: nil
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
 end

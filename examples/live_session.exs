@@ -226,7 +226,22 @@ defmodule LiveSession do
     {:ok, config}
   end
 
-  defp get_default_model(provider), do: Models.default_model(String.to_existing_atom(provider))
+  @doc false
+  def default_model_for_provider(provider) do
+    provider
+    |> provider_atom()
+    |> case do
+      nil -> nil
+      provider_atom -> Models.default_model(provider_atom)
+    end
+  end
+
+  defp get_default_model(provider), do: default_model_for_provider(provider)
+
+  defp provider_atom("claude"), do: :claude
+  defp provider_atom("codex"), do: :codex
+  defp provider_atom("amp"), do: :amp
+  defp provider_atom(_), do: nil
 
   # ============================================================================
   # Capability Checking

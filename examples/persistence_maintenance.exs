@@ -12,7 +12,6 @@ defmodule PersistenceMaintenance do
 
   alias AgentSessionManager.Adapters.{EctoMaintenance, EctoSessionStore}
   alias AgentSessionManager.Adapters.EctoSessionStore.Migration
-  alias AgentSessionManager.Adapters.EctoSessionStore.MigrationV2
   alias AgentSessionManager.Core.{Event, Session}
   alias AgentSessionManager.Persistence.RetentionPolicy
   alias AgentSessionManager.Ports.{Maintenance, SessionStore}
@@ -44,10 +43,9 @@ defmodule PersistenceMaintenance do
     Application.put_env(:agent_session_manager, @repo, database: @db_path, pool_size: 1)
     {:ok, _} = @repo.start_link()
     Ecto.Migrator.up(@repo, 1, Migration, log: false)
-    Ecto.Migrator.up(@repo, 2, MigrationV2, log: false)
 
     {:ok, store} = EctoSessionStore.start_link(repo: @repo)
-    {:ok, maint} = EctoMaintenance.start_link(repo: @repo)
+    maint = {EctoMaintenance, @repo}
     IO.puts("   Store and maintenance engine started")
 
     # 2. Create sessions with varied ages and statuses
@@ -171,7 +169,6 @@ defmodule PersistenceMaintenance do
 
     # 8. Clean up
     IO.puts("\n8. Cleaning up")
-    GenServer.stop(maint)
     GenServer.stop(store)
     :ok
   end

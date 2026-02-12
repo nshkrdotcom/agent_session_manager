@@ -7,7 +7,6 @@ defmodule CompositeStoreLive do
     CompositeSessionStore,
     EctoSessionStore,
     EctoSessionStore.Migration,
-    EctoSessionStore.MigrationV2,
     FileArtifactStore
   }
 
@@ -129,7 +128,6 @@ defmodule CompositeStoreLive do
 
   defp ensure_migrations do
     :ok = run_migration(1, Migration)
-    :ok = run_migration(2, MigrationV2)
   end
 
   defp run_migration(version, migration) do

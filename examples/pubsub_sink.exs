@@ -36,7 +36,7 @@ defmodule PubSubSinkExample do
     IO.puts("")
 
     # Start a PubSub server
-    {:ok, _} = Phoenix.PubSub.start_link(name: __MODULE__.PubSub)
+    {:ok, _} = start_pubsub(__MODULE__.PubSub)
 
     case run_sink_path(provider) do
       :ok ->
@@ -180,6 +180,11 @@ defmodule PubSubSinkExample do
   # ============================================================================
   # Helpers
   # ============================================================================
+
+  @doc false
+  def start_pubsub(name) do
+    Supervisor.start_link([{Phoenix.PubSub, name: name}], strategy: :one_for_one)
+  end
 
   defp drain_pubsub_messages(acc \\ []) do
     receive do

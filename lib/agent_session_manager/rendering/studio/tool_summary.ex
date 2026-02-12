@@ -9,7 +9,7 @@ defmodule AgentSessionManager.Rendering.Studio.ToolSummary do
   @type tool_info :: %{
           optional(:name) => String.t(),
           optional(:input) => map() | nil,
-          optional(:output) => String.t() | nil,
+          optional(:output) => String.t() | map() | nil,
           optional(:exit_code) => integer() | nil,
           optional(:duration_ms) => integer() | nil,
           optional(:status) => :completed | :failed | :running
@@ -186,7 +186,10 @@ defmodule AgentSessionManager.Rendering.Studio.ToolSummary do
   defp normalize_input(_), do: %{}
 
   defp normalize_output(output) when is_binary(output), do: output
+  defp normalize_output(%{output: output}), do: normalize_output(output)
+  defp normalize_output(%{"output" => output}), do: normalize_output(output)
   defp normalize_output(nil), do: ""
+  defp normalize_output(output) when is_map(output), do: inspect(output)
   defp normalize_output(other), do: to_string(other)
 
   defp normalize_status(%{status: :failed}), do: :failed

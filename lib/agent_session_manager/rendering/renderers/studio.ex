@@ -249,9 +249,9 @@ defmodule AgentSessionManager.Rendering.Renderers.StudioRenderer do
     name = map_get(data, :tool_name) || map_get(current_tool, :name) || "tool"
     input = map_get(data, :tool_input) || map_get(current_tool, :input) || %{}
     output = map_get(data, :tool_output)
-    exit_code = map_get(data, :exit_code)
-    duration_ms = map_get(data, :duration_ms)
-    status = normalize_status(map_get(data, :status), exit_code)
+    exit_code = map_get(data, :exit_code) || map_get(output, :exit_code)
+    duration_ms = map_get(data, :duration_ms) || map_get(output, :duration_ms)
+    status = normalize_status(map_get(data, :status) || map_get(output, :status), exit_code)
 
     %{
       name: name,
@@ -298,6 +298,9 @@ defmodule AgentSessionManager.Rendering.Renderers.StudioRenderer do
 
   defp normalize_output(nil), do: ""
   defp normalize_output(output) when is_binary(output), do: output
+  defp normalize_output(%{output: output}), do: normalize_output(output)
+  defp normalize_output(%{"output" => output}), do: normalize_output(output)
+  defp normalize_output(output) when is_map(output), do: inspect(output)
   defp normalize_output(output), do: to_string(output)
 
   defp maybe_newline(parts, true), do: [parts, "\n"]

@@ -21,7 +21,6 @@ defmodule PersistenceLive do
 
   alias AgentSessionManager.Adapters.{ClaudeAdapter, CodexAdapter, AmpAdapter, EctoSessionStore}
   alias AgentSessionManager.Adapters.EctoSessionStore.Migration
-  alias AgentSessionManager.Adapters.EctoSessionStore.MigrationV2
   alias AgentSessionManager.Core.Error
   alias AgentSessionManager.Models
   alias AgentSessionManager.Ports.SessionStore
@@ -57,7 +56,6 @@ defmodule PersistenceLive do
     Application.put_env(:agent_session_manager, @repo, database: @db_path, pool_size: 1)
     {:ok, _} = @repo.start_link()
     Ecto.Migrator.up(@repo, 1, Migration, log: false)
-    Ecto.Migrator.up(@repo, 2, MigrationV2, log: false)
     {:ok, store} = EctoSessionStore.start_link(repo: @repo)
     IO.puts("   Store started (SQLite: #{@db_path})")
 
@@ -80,7 +78,6 @@ defmodule PersistenceLive do
     IO.puts("\n3. Running SessionManager.run_once (events persist via EventPipeline)")
     IO.puts("   Prompt: \"Say hello in one sentence.\"")
 
-    streamed_chunks = []
     chunk_ref = make_ref()
     parent = self()
 
@@ -112,7 +109,7 @@ defmodule PersistenceLive do
     # Collect streamed output
     IO.puts("\n   Response:")
     IO.write("   ")
-    streamed_chunks = collect_stream(chunk_ref, streamed_chunks)
+    collect_stream(chunk_ref, [])
     IO.puts("\n")
 
     case Task.await(task, 120_000) do

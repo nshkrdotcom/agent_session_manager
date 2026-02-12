@@ -2,15 +2,27 @@
 
 # Requires PostgreSQL running locally with database "asm_ash_example".
 # Create it with: createdb asm_ash_example
+#
+# This example is optional and disabled by default in run-all flows.
+# Enable explicitly with:
+#   ASM_RUN_ASH_EXAMPLE=1 mix run examples/ash_session_store.exs
 
-if not Code.ensure_loaded?(Ash.Resource) do
-  IO.puts("Skipping: ash and ash_postgres dependencies not installed")
+if System.get_env("ASM_RUN_ASH_EXAMPLE") not in ["1", "true", "TRUE"] do
+  IO.puts("Skipping: set ASM_RUN_ASH_EXAMPLE=1 to run Ash SessionStore example")
+  System.halt(0)
+end
+
+if not Code.ensure_loaded?(Ash.Resource) or not Code.ensure_loaded?(Postgrex) do
+  IO.puts("Skipping: ash/ash_postgres/postgrex dependencies not installed")
   System.halt(0)
 end
 
 defmodule AshExample.Repo do
   use AshPostgres.Repo,
-    otp_app: :agent_session_manager
+    otp_app: :agent_session_manager,
+    warn_on_missing_ash_functions?: false
+
+  def min_pg_version, do: %Version{major: 14, minor: 0, patch: 0}
 end
 
 defmodule AshExample.AgentSessions do
@@ -26,7 +38,7 @@ defmodule AshExample.AgentSessions do
 end
 
 defmodule AshExample do
-  alias AgentSessionManager.Adapters.EctoSessionStore.{Migration, MigrationV2, MigrationV3}
+  alias AgentSessionManager.Adapters.EctoSessionStore.Migration
   alias AgentSessionManager.Ash.Adapters.{AshMaintenance, AshQueryAPI, AshSessionStore}
   alias AgentSessionManager.Core.{Event, Run, Session}
   alias AgentSessionManager.Persistence.RetentionPolicy
@@ -37,21 +49,30 @@ defmodule AshExample do
   def main(_args) do
     IO.puts("\n=== Ash SessionStore Example ===\n")
 
-    Application.put_env(:agent_session_manager, @repo,
+    repo_config = [
       database: "asm_ash_example",
       username: "postgres",
       password: "postgres",
       hostname: "localhost",
       pool_size: 5
-    )
+    ]
+
+    case ensure_database_ready(repo_config) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        IO.puts("Skipping: PostgreSQL is not ready (#{format_reason(reason)})")
+        System.halt(0)
+    end
+
+    Application.put_env(:agent_session_manager, @repo, repo_config)
 
     Application.put_env(:agent_session_manager, :ash_repo, @repo)
 
     {:ok, _} = @repo.start_link()
 
     Ecto.Migrator.up(@repo, 1, Migration, log: false)
-    Ecto.Migrator.up(@repo, 2, MigrationV2, log: false)
-    Ecto.Migrator.up(@repo, 3, MigrationV3, log: false)
 
     store = {AshSessionStore, AshExample.AgentSessions}
     query = {AshQueryAPI, AshExample.AgentSessions}
@@ -108,6 +129,26 @@ defmodule AshExample do
 
     IO.puts("\nAll checks passed!")
   end
+
+  defp ensure_database_ready(config) do
+    connect_opts =
+      config
+      |> Keyword.take([:hostname, :username, :password, :database])
+      |> Keyword.merge(timeout: 5000, backoff_type: :stop)
+
+    case Postgrex.start_link(connect_opts) do
+      {:ok, pid} ->
+        GenServer.stop(pid, :normal)
+        :ok
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp format_reason(%{postgres: %{message: message}}), do: message
+  defp format_reason(%{message: message}) when is_binary(message), do: message
+  defp format_reason(reason), do: inspect(reason)
 end
 
 AshExample.main(System.argv())

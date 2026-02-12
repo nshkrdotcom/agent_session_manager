@@ -4,7 +4,7 @@ defmodule SQLiteSessionStoreLive do
   @moduledoc false
 
   alias AgentSessionManager.Adapters.EctoSessionStore
-  alias AgentSessionManager.Adapters.EctoSessionStore.{Migration, MigrationV2}
+  alias AgentSessionManager.Adapters.EctoSessionStore.Migration
   alias AgentSessionManager.Core.{Event, Session}
   alias AgentSessionManager.Ports.SessionStore
 
@@ -150,7 +150,6 @@ defmodule SQLiteSessionStoreLive do
 
   defp ensure_migrations do
     :ok = run_migration(1, Migration)
-    :ok = run_migration(2, MigrationV2)
   end
 
   defp run_migration(version, migration) do

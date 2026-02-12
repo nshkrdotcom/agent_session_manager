@@ -12,7 +12,6 @@ defmodule PersistenceQuery do
 
   alias AgentSessionManager.Adapters.{EctoQueryAPI, EctoSessionStore}
   alias AgentSessionManager.Adapters.EctoSessionStore.Migration
-  alias AgentSessionManager.Adapters.EctoSessionStore.MigrationV2
   alias AgentSessionManager.Core.{Event, Run, Session}
   alias AgentSessionManager.Ports.{QueryAPI, SessionStore}
 
@@ -43,10 +42,9 @@ defmodule PersistenceQuery do
     Application.put_env(:agent_session_manager, @repo, database: @db_path, pool_size: 1)
     {:ok, _} = @repo.start_link()
     Ecto.Migrator.up(@repo, 1, Migration, log: false)
-    Ecto.Migrator.up(@repo, 2, MigrationV2, log: false)
 
     {:ok, store} = EctoSessionStore.start_link(repo: @repo)
-    {:ok, query} = EctoQueryAPI.start_link(repo: @repo)
+    query = {EctoQueryAPI, @repo}
     IO.puts("   All stores started")
 
     # 2. Seed data
@@ -134,7 +132,6 @@ defmodule PersistenceQuery do
 
     # 12. Clean up
     IO.puts("\n12. Cleaning up")
-    GenServer.stop(query)
     GenServer.stop(store)
     :ok
   end

@@ -229,6 +229,26 @@ defmodule AgentSessionManager.Rendering.Studio.ToolSummaryTest do
                status: :completed
              }) == "custom_tool complete"
     end
+
+    test "handles structured tool output map without raising" do
+      line =
+        ToolSummary.summary_line(%{
+          name: "bash",
+          input: %{"command" => "rg -n \"version:\" mix.exs"},
+          output: %{
+            output: "10:      version: @version,\n",
+            status: :completed,
+            exit_code: 0
+          },
+          exit_code: nil,
+          duration_ms: nil,
+          status: :completed
+        })
+
+      assert line =~ "Ran: rg -n \"version:\" mix.exs"
+      assert line =~ "exit 0"
+      assert line =~ "chars"
+    end
   end
 
   describe "preview_lines/2" do
@@ -249,6 +269,16 @@ defmodule AgentSessionManager.Rendering.Studio.ToolSummaryTest do
 
     test "returns all lines when output has fewer than max lines" do
       assert ToolSummary.preview_lines(%{name: "bash", output: "a\nb\n"}, 3) == ["a", "b"]
+    end
+
+    test "extracts preview lines from structured tool output map" do
+      output = %{
+        output: "line1\nline2\nline3\nline4\n",
+        status: :completed,
+        exit_code: 0
+      }
+
+      assert ToolSummary.preview_lines(%{name: "bash", output: output}, 2) == ["line3", "line4"]
     end
   end
 

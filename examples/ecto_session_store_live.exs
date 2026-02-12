@@ -12,7 +12,6 @@ defmodule EctoSessionStoreLive do
 
   alias AgentSessionManager.Adapters.EctoSessionStore
   alias AgentSessionManager.Adapters.EctoSessionStore.Migration
-  alias AgentSessionManager.Adapters.EctoSessionStore.MigrationV2
   alias AgentSessionManager.Core.{Event, Session}
   alias AgentSessionManager.Ports.SessionStore
 
@@ -123,7 +122,6 @@ defmodule EctoSessionStoreLive do
 
   defp create_tables do
     Ecto.Migrator.up(@repo, 1, Migration, log: false)
-    Ecto.Migrator.up(@repo, 2, MigrationV2, log: false)
   end
 
   defp cleanup do

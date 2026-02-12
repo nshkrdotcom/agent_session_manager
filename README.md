@@ -41,7 +41,7 @@ Add the dependency and at least one provider SDK:
 def deps do
   [
     {:agent_session_manager, "~> 0.8.0"},
-    {:claude_agent_sdk, "~> 0.13.0"}  # or {:codex_sdk, "~> 0.9.0"} / {:amp_sdk, "~> 0.3"}
+    {:claude_agent_sdk, "~> 0.14.0"}  # or {:codex_sdk, "~> 0.10.0"} / {:amp_sdk, "~> 0.4.0"}
   ]
 end
 ```
@@ -315,11 +315,16 @@ Guides: [Concurrency](guides/concurrency.md) | [PubSub](guides/pubsub_integratio
 
 ## Production Checklist
 
+A `SessionStore` is always required, but `InMemorySessionStore` works fine if you don't need data to survive restarts. Durable storage (Ecto, Ash, S3) is opt-in.
+
 **Required:**
 
-- [ ] Replace `InMemorySessionStore` with [`EctoSessionStore`](guides/ecto_session_store.md) or [`AshSessionStore`](guides/ash_session_store.md)
-- [ ] Run schema migrations (`EctoSessionStore.Migration.up/0`)
 - [ ] Configure provider API keys (see [Provider Adapters](guides/provider_adapters.md))
+
+**If you need durable storage:**
+
+- [ ] Add [`EctoSessionStore`](guides/ecto_session_store.md) or [`AshSessionStore`](guides/ash_session_store.md)
+- [ ] Run schema migrations (`EctoSessionStore.Migration.up/0`)
 
 **Recommended:**
 

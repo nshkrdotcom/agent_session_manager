@@ -16,7 +16,6 @@ defmodule PubSubSinkExample do
   }
 
   alias AgentSessionManager.PubSub, as: ASMPubSub
-  alias AgentSessionManager.PubSub.Topic
   alias AgentSessionManager.Rendering
   alias AgentSessionManager.Rendering.Renderers.PassthroughRenderer
   alias AgentSessionManager.Rendering.Sinks.PubSubSink
@@ -64,20 +63,14 @@ defmodule PubSubSinkExample do
     IO.puts("Prompt: #{@prompt}")
     IO.puts("")
 
-    # We subscribe and collect events after the stream completes
-    # (since we are running synchronously on a single process).
-    # In a real app, a separate process (LiveView, GenServer) would subscribe.
+    topic = path1_topic()
+    :ok = Phoenix.PubSub.subscribe(__MODULE__.PubSub, topic)
 
     case StreamSession.start(
            adapter: adapter_spec(provider),
            input: %{messages: [%{role: "user", content: @prompt}]}
          ) do
-      {:ok, stream, close_fun, meta} ->
-        # Get session_id from meta to subscribe
-        session_id = meta[:session_id] || "unknown"
-        topic = Topic.build_session_topic("asm", session_id)
-        Phoenix.PubSub.subscribe(__MODULE__.PubSub, topic)
-
+      {:ok, stream, close_fun, _meta} ->
         IO.puts("Subscribed to topic: #{topic}")
         IO.puts("Rendering stream with PubSubSink...")
         IO.puts("")
@@ -88,7 +81,7 @@ defmodule PubSubSinkExample do
             {PubSubSink,
              [
                pubsub: __MODULE__.PubSub,
-               scope: :session
+               topic: path1_topic()
              ]}
           ]
         )
@@ -119,34 +112,18 @@ defmodule PubSubSinkExample do
     IO.puts("Prompt: #{@prompt}")
     IO.puts("")
 
-    session_id_holder = :ets.new(:session_holder, [:set, :public])
+    topic = path2_topic()
+    :ok = Phoenix.PubSub.subscribe(__MODULE__.PubSub, topic)
+    IO.puts("Subscribed to topic: #{topic}")
 
     # Create a PubSub event callback
-    pubsub_callback = ASMPubSub.event_callback(__MODULE__.PubSub, scope: :session)
-
-    # Wrap it to also capture session_id on first event
-    wrapped_callback = fn event_data ->
-      # Subscribe on first event
-      case :ets.lookup(session_id_holder, :subscribed) do
-        [] ->
-          sid = event_data[:session_id]
-          topic = Topic.build_session_topic("asm", sid)
-          Phoenix.PubSub.subscribe(__MODULE__.PubSub, topic)
-          :ets.insert(session_id_holder, {:subscribed, true})
-          IO.puts("Subscribed to topic: #{topic}")
-
-        _ ->
-          :ok
-      end
-
-      pubsub_callback.(event_data)
-    end
+    pubsub_callback = ASMPubSub.event_callback(__MODULE__.PubSub, topic: path2_topic())
 
     # Use StreamSession with the event_callback option
     case StreamSession.start(
            adapter: adapter_spec(provider),
            input: %{messages: [%{role: "user", content: @prompt}]},
-           event_callback: wrapped_callback
+           run_opts: [event_callback: pubsub_callback]
          ) do
       {:ok, stream, close_fun, _meta} ->
         # Consume the stream (just drain it)
@@ -173,8 +150,6 @@ defmodule PubSubSinkExample do
       {:error, reason} ->
         IO.puts(:stderr, "Error: #{inspect(reason)}")
     end
-
-    :ets.delete(session_id_holder)
   end
 
   # ============================================================================
@@ -186,12 +161,27 @@ defmodule PubSubSinkExample do
     Supervisor.start_link([{Phoenix.PubSub, name: name}], strategy: :one_for_one)
   end
 
-  defp drain_pubsub_messages(acc \\ []) do
+  @doc false
+  def path1_topic, do: "asm:examples:pubsub_sink:path1"
+
+  @doc false
+  def path2_topic, do: "asm:examples:pubsub_sink:path2"
+
+  defp drain_pubsub_messages do
     receive do
       {:asm_event, _session_id, _event} = msg ->
-        drain_pubsub_messages(acc ++ [msg])
+        drain_pubsub_messages([msg], 100)
     after
-      100 -> acc
+      1500 -> []
+    end
+  end
+
+  defp drain_pubsub_messages(acc, timeout_ms) do
+    receive do
+      {:asm_event, _session_id, _event} = msg ->
+        drain_pubsub_messages([msg | acc], 100)
+    after
+      timeout_ms -> Enum.reverse(acc)
     end
   end
 

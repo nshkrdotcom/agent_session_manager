@@ -107,10 +107,16 @@ defmodule AgentSessionManager.StreamSession.Lifecycle do
   end
 
   defp run_session(store_pid, adapter_pid, config, parent, stream_ref) do
-    event_callback = fn event -> send(parent, {stream_ref, :event, event}) end
+    user_callback = Keyword.get(config.run_opts, :event_callback)
+
+    event_callback = fn event ->
+      send(parent, {stream_ref, :event, event})
+      maybe_call_user_callback(user_callback, event)
+    end
 
     run_opts =
       config.run_opts
+      |> Keyword.delete(:event_callback)
       |> Keyword.put(:event_callback, event_callback)
       |> maybe_put(:agent_id, config.agent_id)
 
@@ -173,4 +179,14 @@ defmodule AgentSessionManager.StreamSession.Lifecycle do
 
   defp maybe_put(opts, _key, nil), do: opts
   defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
+
+  defp maybe_call_user_callback(callback, event) when is_function(callback, 1) do
+    callback.(event)
+  rescue
+    _ -> :ok
+  catch
+    _, _ -> :ok
+  end
+
+  defp maybe_call_user_callback(_, _), do: :ok
 end

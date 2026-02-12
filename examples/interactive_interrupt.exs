@@ -23,6 +23,7 @@ defmodule InteractiveInterruptExample do
   """
 
   @cancel_after_ms 4_000
+  @run1_timeout_ms 90_000
 
   def main(args) do
     {opts, _rest, _invalid} =
@@ -84,6 +85,7 @@ defmodule InteractiveInterruptExample do
 
     parent = self()
     token_count = :counters.new(1, [:atomics])
+    chunk_ref = make_ref()
 
     exec_pid =
       spawn(fn ->
@@ -94,6 +96,9 @@ defmodule InteractiveInterruptExample do
 
               if event.type == :message_streamed do
                 :counters.add(token_count, 1, 1)
+
+                if :counters.get(token_count, 1) == 1,
+                  do: send(parent, {chunk_ref, :streamed_chunk})
               end
             end
           )
@@ -101,8 +106,17 @@ defmodule InteractiveInterruptExample do
         send(parent, {:run_finished, run1.id, result})
       end)
 
-    # Let it stream for a while, then cancel.
-    Process.sleep(cancel_delay_ms)
+    # Wait for first streamed chunk before applying the cancellation delay.
+    saw_first_chunk =
+      wait_for_first_streamed_chunk(chunk_ref, first_chunk_wait_timeout_ms(cancel_delay_ms))
+
+    unless saw_first_chunk do
+      IO.puts(
+        "\n\n  >>> No streamed chunks observed yet; issuing best-effort cancel anyway <<<\n"
+      )
+    end
+
+    if saw_first_chunk, do: Process.sleep(cancel_delay_ms)
 
     tokens_before = :counters.get(token_count, 1)
     IO.puts("\n\n  >>> Cancelling run after #{tokens_before} streamed chunks <<<\n")
@@ -116,7 +130,7 @@ defmodule InteractiveInterruptExample do
       receive do
         {:run_finished, ^run1_id, result} -> result
       after
-        15_000 -> {:error, :timeout}
+        @run1_timeout_ms -> {:error, :timeout}
       end
 
     stop_process(exec_pid)
@@ -221,10 +235,21 @@ defmodule InteractiveInterruptExample do
   # Helpers
   # ---------------------------------------------------------------------------
 
+  @doc false
+  def wait_for_first_streamed_chunk(ref, timeout_ms) do
+    receive do
+      {^ref, :streamed_chunk} -> true
+    after
+      timeout_ms -> false
+    end
+  end
+
   defp stop_process(pid) when is_pid(pid) do
     if Process.alive?(pid), do: Process.exit(pid, :kill)
     :ok
   end
+
+  defp first_chunk_wait_timeout_ms(cancel_delay_ms), do: max(cancel_delay_ms * 2, 12_000)
 
   defp start_adapter("claude"), do: ClaudeAdapter.start_link([])
   defp start_adapter("codex"), do: CodexAdapter.start_link(working_directory: File.cwd!())

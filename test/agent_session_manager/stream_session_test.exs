@@ -165,6 +165,28 @@ defmodule AgentSessionManager.StreamSessionTest do
       close_fun.()
     end
 
+    test "invokes user-provided run_opts event_callback while still streaming events" do
+      parent = self()
+
+      user_callback = fn event ->
+        send(parent, {:user_callback_event, event.type})
+      end
+
+      {:ok, stream, close_fun, _meta} =
+        StreamSession.start(
+          adapter: {MockProviderAdapter, execution_mode: :instant},
+          input: %{messages: [%{role: "user", content: "hello"}]},
+          run_opts: [event_callback: user_callback]
+        )
+
+      events = Enum.to_list(stream)
+      close_fun.()
+
+      assert events != []
+      assert_receive {:user_callback_event, :run_started}
+      assert_receive {:user_callback_event, :run_completed}
+    end
+
     test "returns error for missing adapter option" do
       assert {:error, _reason} =
                StreamSession.start(input: %{messages: [%{role: "user", content: "hello"}]})

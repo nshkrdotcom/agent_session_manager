@@ -31,4 +31,11 @@ defmodule AgentSessionManager.Examples.PubSubSinkExampleTest do
 
     GenServer.stop(pubsub_sup, :normal)
   end
+
+  test "uses explicit static topics for sink and callback paths" do
+    content = File.read!("examples/pubsub_sink.exs")
+
+    assert content =~ "topic: path1_topic()"
+    assert content =~ "event_callback(__MODULE__.PubSub, topic: path2_topic())"
+  end
 end

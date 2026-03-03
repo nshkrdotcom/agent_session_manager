@@ -59,8 +59,8 @@ defmodule ASM.Transport.PortTest do
     assert :ok = Port.inject(port, %{"n" => 2})
 
     assert_receive {:transport_error, :buffer_overflow}
-    assert_receive {:EXIT, ^port, :buffer_overflow}
-    assert_receive {:DOWN, ^ref, :process, ^port, :buffer_overflow}
+    assert_receive {:EXIT, ^port, {:shutdown, :buffer_overflow}}
+    assert_receive {:DOWN, ^ref, :process, ^port, {:shutdown, :buffer_overflow}}
   end
 
   test "overflow policy drop_oldest keeps newest queued item" do

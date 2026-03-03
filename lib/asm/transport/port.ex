@@ -208,7 +208,7 @@ defmodule ASM.Transport.Port do
 
   defp handle_overflow(%__MODULE__{overflow_policy: :fail_run} = state, _raw_map) do
     if is_pid(state.leasee), do: Transport.notify_error(state.leasee, :buffer_overflow)
-    {:stop, :buffer_overflow, %{state | status: :closed}}
+    {:stop, {:shutdown, :buffer_overflow}, %{state | status: :closed}}
   end
 
   defp queue_drop_oldest(queue) do

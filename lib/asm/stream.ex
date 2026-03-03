@@ -94,6 +94,7 @@ defmodule ASM.Stream do
         {[event], maybe_start_driver_on_bootstrap(state, event)}
 
       {:asm_run_done, run_id} when run_id == state.run_id ->
+        await_session_cleanup(state.session, state.run_id, state.timeout_ms)
         {:halt, %{state | done?: true}}
 
       _other ->
@@ -213,5 +214,30 @@ defmodule ASM.Stream do
 
   defp runtime_error(message) do
     Error.new(:runtime, :runtime, message)
+  end
+
+  defp await_session_cleanup(session, run_id, timeout_ms) do
+    attempts =
+      timeout_ms
+      |> min(2_000)
+      |> div(10)
+      |> max(1)
+
+    do_await_session_cleanup(session, run_id, attempts)
+  end
+
+  defp do_await_session_cleanup(_session, _run_id, 0), do: :ok
+
+  defp do_await_session_cleanup(session, run_id, attempts) do
+    %{active_runs: active_runs} = Session.Server.get_state(session)
+
+    if Map.has_key?(active_runs, run_id) do
+      Process.sleep(10)
+      do_await_session_cleanup(session, run_id, attempts - 1)
+    else
+      :ok
+    end
+  catch
+    :exit, _ -> :ok
   end
 end

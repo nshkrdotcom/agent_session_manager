@@ -14,10 +14,14 @@ defmodule ASM.Run.State do
     :status,
     :sequence,
     :events,
+    :events_rev,
     :text_acc,
+    :text_chunks_rev,
     :messages_acc,
+    :messages_rev,
     :result,
     :error,
+    :cost,
     :tools,
     :tool_executor,
     :pipeline,
@@ -32,6 +36,12 @@ defmodule ASM.Run.State do
 
   @type status :: :initializing | :running | :completed | :failed | :interrupted
 
+  @type cost_totals :: %{
+          required(:input_tokens) => non_neg_integer(),
+          required(:output_tokens) => non_neg_integer(),
+          required(:cost_usd) => number()
+        }
+
   @type t :: %__MODULE__{
           run_id: String.t(),
           session_id: String.t(),
@@ -42,10 +52,14 @@ defmodule ASM.Run.State do
           status: status(),
           sequence: non_neg_integer(),
           events: [ASM.Event.t()],
+          events_rev: [ASM.Event.t()],
           text_acc: String.t(),
+          text_chunks_rev: [String.t()],
           messages_acc: [term()],
+          messages_rev: [term()],
           result: ASM.Result.t() | nil,
           error: ASM.Error.t() | nil,
+          cost: cost_totals(),
           tools: %{optional(String.t()) => term()},
           tool_executor: module(),
           pipeline: [term()],
@@ -70,10 +84,14 @@ defmodule ASM.Run.State do
       status: :initializing,
       sequence: 0,
       events: [],
+      events_rev: [],
       text_acc: "",
+      text_chunks_rev: [],
       messages_acc: [],
+      messages_rev: [],
       result: nil,
       error: nil,
+      cost: %{input_tokens: 0, output_tokens: 0, cost_usd: 0.0},
       tools: Keyword.get(opts, :tools, %{}),
       tool_executor: Keyword.get(opts, :tool_executor, ASM.Tool.Executor),
       pipeline: Keyword.get(opts, :pipeline, []),
@@ -83,6 +101,16 @@ defmodule ASM.Run.State do
         Keyword.get(opts, :approval_timeout_ms, app_default(:approval_timeout_ms, 120_000)),
       started_at: DateTime.utc_now(),
       finished_at: nil
+    }
+  end
+
+  @spec materialize(t()) :: t()
+  def materialize(%__MODULE__{} = state) do
+    %{
+      state
+      | events: Enum.reverse(state.events_rev),
+        messages_acc: Enum.reverse(state.messages_rev),
+        text_acc: state.text_chunks_rev |> Enum.reverse() |> IO.iodata_to_binary()
     }
   end
 

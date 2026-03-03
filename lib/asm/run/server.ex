@@ -57,7 +57,7 @@ defmodule ASM.Run.Server do
 
   @impl true
   def handle_call(:get_state, _from, state) do
-    {:reply, state, state}
+    {:reply, Run.State.materialize(state), state}
   end
 
   @impl true
@@ -277,11 +277,22 @@ defmodule ASM.Run.Server do
         acc
         |> Run.EventReducer.apply_event!(event)
         |> maybe_handle_approval_request(event)
+        |> maybe_forward_cost_update(event)
 
       fanout(acc, event)
       maybe_execute_tool(acc, event)
     end)
   end
+
+  defp maybe_forward_cost_update(
+         %Run.State{} = state,
+         %Event{kind: :cost_update, payload: %Control.CostUpdate{} = payload}
+       ) do
+    notify_session(state, {:cost_update, payload})
+    state
+  end
+
+  defp maybe_forward_cost_update(state, _event), do: state
 
   defp envelope(state, kind, payload) do
     %Event{

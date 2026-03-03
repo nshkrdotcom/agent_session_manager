@@ -3,7 +3,7 @@ defmodule ASM.Run.EventReducer do
   Deterministic reducer from event envelopes to run state projection.
   """
 
-  alias ASM.{Content, Control, Event, Message, Result, Run}
+  alias ASM.{Content, Control, Error, Event, Message, Result, Run}
 
   @conversation_kinds [
     :assistant_message,
@@ -13,7 +13,6 @@ defmodule ASM.Run.EventReducer do
     :tool_result,
     :thinking,
     :result,
-    :error,
     :system,
     :raw
   ]
@@ -35,6 +34,8 @@ defmodule ASM.Run.EventReducer do
 
   @spec to_result(Run.State.t()) :: Result.t()
   def to_result(%Run.State{} = state) do
+    state = Run.State.materialize(state)
+
     duration_ms =
       case state.finished_at do
         %DateTime{} = finished_at -> DateTime.diff(finished_at, state.started_at, :millisecond)
@@ -52,6 +53,8 @@ defmodule ASM.Run.EventReducer do
       session_id: state.session_id,
       text: state.text_acc,
       messages: state.messages_acc,
+      cost: state.cost,
+      error: state.error,
       duration_ms: duration_ms,
       stop_reason: stop_reason,
       metadata: state.metadata
@@ -59,7 +62,18 @@ defmodule ASM.Run.EventReducer do
   end
 
   defp append_event(state, event) do
-    %{state | sequence: event.sequence, events: state.events ++ [event]}
+    %{state | sequence: event.sequence, events_rev: [event | state.events_rev]}
+  end
+
+  defp append_message(state, payload) do
+    %{state | messages_rev: [payload | state.messages_rev]}
+  end
+
+  defp append_text(state, ""), do: state
+  defp append_text(state, nil), do: state
+
+  defp append_text(state, text) when is_binary(text) do
+    %{state | text_chunks_rev: [text | state.text_chunks_rev]}
   end
 
   defp apply_semantics(state, %Event{kind: :run_started}) do
@@ -70,13 +84,13 @@ defmodule ASM.Run.EventReducer do
          kind: :assistant_message,
          payload: %Message.Assistant{} = msg
        }) do
-    text = extract_text_blocks(msg.content)
-
-    %{
+    msg.content
+    |> extract_text_blocks()
+    |> then(fn text ->
       state
-      | text_acc: state.text_acc <> text,
-        messages_acc: state.messages_acc ++ [msg]
-    }
+      |> append_message(msg)
+      |> append_text(text)
+    end)
   end
 
   defp apply_semantics(
@@ -86,40 +100,48 @@ defmodule ASM.Run.EventReducer do
            payload: %Message.Partial{content_type: :text, delta: delta} = msg
          }
        ) do
-    %{state | text_acc: state.text_acc <> delta, messages_acc: state.messages_acc ++ [msg]}
+    state
+    |> append_message(msg)
+    |> append_text(delta)
   end
 
   defp apply_semantics(
          state,
          %Event{kind: :result, payload: %Message.Result{} = payload, timestamp: finished_at}
        ) do
-    %{
+    next_state =
       state
-      | status: :completed,
-        finished_at: finished_at,
-        messages_acc: state.messages_acc ++ [payload],
-        result: %Result{
-          run_id: state.run_id,
-          session_id: state.session_id,
-          text: state.text_acc,
-          messages: state.messages_acc ++ [payload],
-          duration_ms: payload.duration_ms,
-          stop_reason: payload.stop_reason,
-          metadata: payload.metadata
-        }
-    }
+      |> append_message(payload)
+      |> Map.put(:status, :completed)
+      |> Map.put(:finished_at, finished_at)
+
+    materialized = Run.State.materialize(next_state)
+
+    result =
+      %Result{
+        run_id: materialized.run_id,
+        session_id: materialized.session_id,
+        text: materialized.text_acc,
+        messages: materialized.messages_acc,
+        cost: materialized.cost,
+        error: materialized.error,
+        duration_ms: payload.duration_ms,
+        stop_reason: payload.stop_reason,
+        metadata: payload.metadata
+      }
+
+    %{next_state | result: result}
   end
 
   defp apply_semantics(
          state,
          %Event{kind: :error, payload: %Message.Error{} = payload, timestamp: finished_at}
        ) do
-    %{
-      state
-      | status: :failed,
-        finished_at: finished_at,
-        messages_acc: state.messages_acc ++ [payload]
-    }
+    state
+    |> append_message(payload)
+    |> Map.put(:status, :failed)
+    |> Map.put(:finished_at, finished_at)
+    |> Map.put(:error, error_from_message(payload))
   end
 
   defp apply_semantics(state, %Event{kind: :run_completed, timestamp: finished_at}) do
@@ -144,12 +166,13 @@ defmodule ASM.Run.EventReducer do
          state,
          %Event{kind: :cost_update, payload: %Control.CostUpdate{} = payload}
        ) do
-    %{state | metadata: Map.put(state.metadata, :cost, payload)}
+    totals = add_cost(state.cost, payload)
+    %{state | cost: totals, metadata: Map.put(state.metadata, :cost, totals)}
   end
 
   defp apply_semantics(state, %Event{kind: kind, payload: payload})
        when kind in @conversation_kinds do
-    %{state | messages_acc: state.messages_acc ++ [payload]}
+    append_message(state, payload)
   end
 
   defp apply_semantics(state, _event), do: state
@@ -161,5 +184,20 @@ defmodule ASM.Run.EventReducer do
       _other -> []
     end)
     |> Enum.join()
+  end
+
+  defp add_cost(current, %Control.CostUpdate{} = payload) do
+    %{
+      input_tokens: default_zero(current[:input_tokens]) + payload.input_tokens,
+      output_tokens: default_zero(current[:output_tokens]) + payload.output_tokens,
+      cost_usd: default_zero(current[:cost_usd]) + payload.cost_usd
+    }
+  end
+
+  defp default_zero(nil), do: 0
+  defp default_zero(value), do: value
+
+  defp error_from_message(%Message.Error{} = payload) do
+    Error.new(payload.kind, :runtime, payload.message)
   end
 end

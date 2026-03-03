@@ -4,7 +4,9 @@ defmodule ASM.Content do
   """
 
   defmodule Text do
-    @moduledoc false
+    @moduledoc """
+    Plain text content emitted by a model response.
+    """
     @enforce_keys [:text]
     defstruct [:text]
 
@@ -12,7 +14,9 @@ defmodule ASM.Content do
   end
 
   defmodule Thinking do
-    @moduledoc false
+    @moduledoc """
+    Provider thinking content, optionally signed when supported.
+    """
     @enforce_keys [:thinking]
     defstruct [:thinking, :signature]
 
@@ -20,7 +24,9 @@ defmodule ASM.Content do
   end
 
   defmodule ToolUse do
-    @moduledoc false
+    @moduledoc """
+    Structured request to invoke a named tool with JSON input.
+    """
     @enforce_keys [:tool_name, :tool_id, :input]
     defstruct [:tool_name, :tool_id, :input]
 
@@ -28,7 +34,9 @@ defmodule ASM.Content do
   end
 
   defmodule ToolResult do
-    @moduledoc false
+    @moduledoc """
+    Tool response payload linked to a prior tool call.
+    """
     @enforce_keys [:tool_id, :content]
     defstruct [:tool_id, :content, is_error: false]
 

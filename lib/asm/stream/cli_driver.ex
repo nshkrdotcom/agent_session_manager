@@ -11,7 +11,7 @@ defmodule ASM.Stream.CLIDriver do
 
   @spec start(map()) :: {:ok, pid()} | {:error, Error.t() | term()}
   def start(%{} = context) do
-    {:ok, spawn(fn -> run(context) end)}
+    Task.start(fn -> run(context) end)
   end
 
   defp run(context) do

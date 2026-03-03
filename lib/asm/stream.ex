@@ -3,9 +3,9 @@ defmodule ASM.Stream do
   Stream helpers for run event consumption and final result projection.
   """
 
-  alias ASM.{Error, Event, Run, Session}
+  alias ASM.{Content, Error, Event, Run, Session}
 
-  @stream_keys [:driver, :driver_opts, :stream_timeout_ms]
+  @stream_keys [:driver, :driver_opts, :stream_timeout_ms, :queue_timeout_ms]
   @run_keys [
     :run_id,
     :run_module,
@@ -28,13 +28,17 @@ defmodule ASM.Stream do
           driver: module(),
           driver_opts: keyword(),
           driver_pid: pid() | nil,
+          driver_ref: reference() | nil,
           timeout_ms: pos_integer(),
+          queue_timeout_ms: pos_integer() | :infinity,
+          queue_started_at_ms: integer() | nil,
+          started?: boolean(),
           done?: boolean()
         }
 
   @spec create(GenServer.server(), String.t(), keyword()) :: Enumerable.t()
   def create(session, prompt, opts \\ []) when is_binary(prompt) and is_list(opts) do
-    Stream.resource(
+    Elixir.Stream.resource(
       fn -> init_stream(session, prompt, opts) end,
       &next_event/1,
       &close_stream/1
@@ -52,9 +56,63 @@ defmodule ASM.Stream do
     end
   end
 
+  @spec text_deltas(Enumerable.t()) :: Enumerable.t()
+  def text_deltas(events) do
+    Elixir.Stream.flat_map(events, fn
+      %Event{
+        kind: :assistant_delta,
+        payload: %ASM.Message.Partial{content_type: :text, delta: delta}
+      }
+      when is_binary(delta) ->
+        [delta]
+
+      _other ->
+        []
+    end)
+  end
+
+  @spec text_content(Enumerable.t()) :: Enumerable.t()
+  def text_content(events) do
+    Elixir.Stream.flat_map(events, fn
+      %Event{
+        kind: :assistant_delta,
+        payload: %ASM.Message.Partial{content_type: :text, delta: delta}
+      }
+      when is_binary(delta) ->
+        [delta]
+
+      %Event{kind: :assistant_message, payload: %ASM.Message.Assistant{content: blocks}} ->
+        extract_text_blocks(blocks)
+
+      %ASM.Message.Partial{content_type: :text, delta: delta} when is_binary(delta) ->
+        [delta]
+
+      %ASM.Message.Assistant{content: blocks} ->
+        extract_text_blocks(blocks)
+
+      _other ->
+        []
+    end)
+  end
+
+  @spec final_text(Enumerable.t()) :: String.t()
+  def final_text(events) do
+    events
+    |> text_content()
+    |> Enum.join()
+  end
+
   defp init_stream(session, prompt, opts) do
     session_state = Session.Server.get_state(session)
-    {stream_opts, run_opts, provider_opts} = partition_opts(opts)
+
+    {session_stream_opts, session_run_opts, session_provider_opts} =
+      partition_opts(session_state.options)
+
+    {call_stream_opts, call_run_opts, call_provider_opts} = partition_opts(opts)
+
+    stream_opts = merge_opts(session_stream_opts, call_stream_opts)
+    run_opts = merge_opts(session_run_opts, call_run_opts)
+    provider_opts = merge_opts(session_provider_opts, call_provider_opts)
 
     run_opts =
       run_opts
@@ -64,6 +122,8 @@ defmodule ASM.Stream do
 
     case Session.Server.submit_run(session, prompt, run_opts) do
       {:ok, run_id, run_pid_or_queued} ->
+        run_pid = if(is_pid(run_pid_or_queued), do: run_pid_or_queued, else: nil)
+
         state = %{
           session: session,
           session_id: session_state.session_id,
@@ -71,11 +131,16 @@ defmodule ASM.Stream do
           prompt: prompt,
           provider_opts: provider_opts,
           run_id: run_id,
-          run_pid: if(is_pid(run_pid_or_queued), do: run_pid_or_queued, else: nil),
+          run_pid: run_pid,
           driver: Keyword.get(stream_opts, :driver, ASM.Stream.CLIDriver),
           driver_opts: Keyword.get(stream_opts, :driver_opts, []),
           driver_pid: nil,
+          driver_ref: nil,
           timeout_ms: max(Keyword.get(stream_opts, :stream_timeout_ms, 60_000), 1),
+          queue_timeout_ms:
+            normalize_queue_timeout(Keyword.get(stream_opts, :queue_timeout_ms, :infinity)),
+          queue_started_at_ms: if(is_pid(run_pid), do: nil, else: monotonic_ms()),
+          started?: is_pid(run_pid),
           done?: false
         }
 
@@ -89,27 +154,46 @@ defmodule ASM.Stream do
   defp next_event(%{done?: true} = state), do: {:halt, state}
 
   defp next_event(state) do
+    timeout = receive_timeout(state)
+
     receive do
       {:asm_run_event, run_id, %Event{} = event} when run_id == state.run_id ->
-        {[event], maybe_start_driver_on_bootstrap(state, event)}
+        next_state =
+          state
+          |> maybe_mark_started(event)
+          |> maybe_start_driver_on_bootstrap(event)
+
+        {[event], next_state}
 
       {:asm_run_done, run_id} when run_id == state.run_id ->
         await_session_cleanup(state.session, state.run_id, state.timeout_ms)
         {:halt, %{state | done?: true}}
 
+      {:DOWN, ref, :process, pid, reason}
+      when ref == state.driver_ref and pid == state.driver_pid ->
+        state = %{state | driver_pid: nil, driver_ref: nil}
+
+        if reason not in [:normal, :shutdown] and is_pid(state.run_pid) do
+          emit_driver_error(
+            state.run_pid,
+            state,
+            runtime_error("driver crashed: #{inspect(reason)}")
+          )
+        end
+
+        next_event(state)
+
       _other ->
         next_event(state)
     after
-      state.timeout_ms ->
-        raise Error.new(
-                :timeout,
-                :runtime,
-                "stream timeout waiting for run #{state.run_id} events"
-              )
+      timeout ->
+        raise timeout_error(state)
     end
   end
 
   defp close_stream(state) do
+    if state.driver_ref, do: Process.demonitor(state.driver_ref, [:flush])
+
     if is_pid(state.driver_pid) and Process.alive?(state.driver_pid) do
       Process.exit(state.driver_pid, :kill)
     end
@@ -134,7 +218,7 @@ defmodule ASM.Stream do
 
     case state.driver.start(driver_ctx) do
       {:ok, pid} when is_pid(pid) ->
-        %{state | driver_pid: pid}
+        %{state | driver_pid: pid, driver_ref: Process.monitor(pid)}
 
       {:error, %Error{} = error} ->
         emit_driver_error(run_pid, state, error)
@@ -150,12 +234,18 @@ defmodule ASM.Stream do
 
   defp maybe_start_driver_on_bootstrap(%{run_pid: nil} = state, %Event{kind: :run_started}) do
     case lookup_run_pid(state.session, state.run_id) do
-      {:ok, run_pid} -> maybe_start_driver(%{state | run_pid: run_pid})
+      {:ok, run_pid} -> maybe_start_driver(%{state | run_pid: run_pid, started?: true})
       :error -> state
     end
   end
 
   defp maybe_start_driver_on_bootstrap(state, _event), do: state
+
+  defp maybe_mark_started(state, %Event{kind: :run_started}) do
+    %{state | started?: true, queue_started_at_ms: nil}
+  end
+
+  defp maybe_mark_started(state, _event), do: state
 
   defp lookup_run_pid(session, run_id, attempts \\ 40)
 
@@ -199,6 +289,21 @@ defmodule ASM.Stream do
     {stream_opts, run_opts, provider_opts}
   end
 
+  defp merge_opts(base, override) do
+    Keyword.merge(base, override, fn
+      :driver_opts, left, right -> merge_keyword_list(left, right)
+      :run_module_opts, left, right -> merge_keyword_list(left, right)
+      _key, _left, right -> right
+    end)
+  end
+
+  defp merge_keyword_list(left, right) when is_list(left) and is_list(right),
+    do: Keyword.merge(left, right)
+
+  defp merge_keyword_list(_left, right) when is_list(right), do: right
+  defp merge_keyword_list(left, _right) when is_list(left), do: left
+  defp merge_keyword_list(_left, _right), do: []
+
   defp reduce_event(%Event{} = event, nil) do
     Run.State.new(run_id: event.run_id, session_id: event.session_id, provider: provider(event))
     |> Map.put(:started_at, event.timestamp)
@@ -240,4 +345,51 @@ defmodule ASM.Stream do
   catch
     :exit, _ -> :ok
   end
+
+  defp receive_timeout(%{run_pid: nil, started?: false} = state) do
+    case state.queue_timeout_ms do
+      :infinity -> :infinity
+      timeout_ms -> max(timeout_ms - elapsed_queue_ms(state), 0)
+    end
+  end
+
+  defp receive_timeout(state), do: state.timeout_ms
+
+  defp elapsed_queue_ms(%{queue_started_at_ms: nil}), do: 0
+
+  defp elapsed_queue_ms(%{queue_started_at_ms: started_at_ms}) do
+    max(monotonic_ms() - started_at_ms, 0)
+  end
+
+  defp timeout_error(%{run_pid: nil, started?: false} = state) do
+    Error.new(
+      :timeout,
+      :runtime,
+      "stream timeout waiting for queued run #{state.run_id} to start"
+    )
+  end
+
+  defp timeout_error(state) do
+    Error.new(
+      :timeout,
+      :runtime,
+      "stream timeout waiting for run #{state.run_id} events"
+    )
+  end
+
+  defp normalize_queue_timeout(:infinity), do: :infinity
+  defp normalize_queue_timeout(value) when is_integer(value) and value > 0, do: value
+  defp normalize_queue_timeout(_), do: :infinity
+
+  defp monotonic_ms, do: System.monotonic_time(:millisecond)
+
+  defp extract_text_blocks(blocks) when is_list(blocks) do
+    blocks
+    |> Enum.flat_map(fn
+      %Content.Text{text: text} when is_binary(text) -> [text]
+      _other -> []
+    end)
+  end
+
+  defp extract_text_blocks(_), do: []
 end

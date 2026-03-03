@@ -57,11 +57,64 @@ defmodule AgentSessionManager.MixProject do
   end
 
   defp docs do
+    guides =
+      ["guides/*.md", "guides/*.livemd"]
+      |> Enum.flat_map(&Path.wildcard/1)
+      |> Enum.sort()
+
     [
       main: "readme",
       source_ref: "v#{@version}",
       source_url: @source_url,
-      extras: ["README.md", "CHANGELOG.md", "LICENSE"]
+      extras: ["README.md"] ++ guides ++ ["CHANGELOG.md", "LICENSE"],
+      groups_for_extras: groups_for_extras(guides),
+      groups_for_modules: groups_for_modules(),
+      nest_modules_by_prefix: [
+        ASM,
+        ASM.Command,
+        ASM.Content,
+        ASM.Control,
+        ASM.Message,
+        ASM.Options,
+        ASM.Parser,
+        ASM.Pipeline,
+        ASM.Provider,
+        ASM.Protocol,
+        ASM.Run,
+        ASM.Session,
+        ASM.Store,
+        ASM.Stream,
+        ASM.Tool,
+        ASM.Transport
+      ]
+    ]
+  end
+
+  defp groups_for_extras(guides) do
+    [
+      "Getting Started": ["README.md"],
+      Guides: guides,
+      Reference: ["CHANGELOG.md", "LICENSE"]
+    ]
+    |> Enum.reject(fn {_group, entries} -> entries == [] end)
+  end
+
+  defp groups_for_modules do
+    [
+      "Public API": [
+        ASM,
+        ASM.Error,
+        ASM.Event,
+        ASM.History,
+        ASM.Permission,
+        ASM.Result,
+        ASM.Stream
+      ],
+      "Providers & Commands": ~r/^ASM\.(Provider|Command|Options)/,
+      Runtime: ~r/^ASM\.(Session|Run)/,
+      "Streaming & Transport": ~r/^ASM\.(Transport|Protocol|Parser|Store|Tool)/,
+      Pipeline: ~r/^ASM\.Pipeline/,
+      "Payload Types": ~r/^ASM\.(Content|Message|Control)/
     ]
   end
 end

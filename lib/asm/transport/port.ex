@@ -8,6 +8,7 @@ defmodule ASM.Transport.Port do
 
   use GenServer
 
+  alias ASM.Error
   alias ASM.Transport
 
   @behaviour Transport
@@ -93,11 +94,11 @@ defmodule ASM.Transport.Port do
   end
 
   def handle_call({:send_input, _input, _opts}, _from, state) do
-    {:reply, :ok, state}
+    {:reply, {:error, not_implemented_error("send_input/3")}, state}
   end
 
   def handle_call(:interrupt, _from, state) do
-    {:reply, :ok, state}
+    {:reply, {:error, not_implemented_error("interrupt/1")}, state}
   end
 
   def handle_call({:attach, run_pid}, _from, %__MODULE__{leasee: nil} = state)
@@ -228,5 +229,9 @@ defmodule ASM.Transport.Port do
 
   defp app_default(key, default) do
     Application.get_env(:agent_session_manager, key, default)
+  end
+
+  defp not_implemented_error(op) do
+    Error.new(:transport_error, :transport, "transport operation #{op} not implemented")
   end
 end

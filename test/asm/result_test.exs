@@ -11,5 +11,7 @@ defmodule ASM.ResultTest do
     assert result.run_id == "run-1"
     assert result.session_id == "session-1"
     assert result.text == nil
+    assert result.cost == nil
+    assert result.error == nil
   end
 end

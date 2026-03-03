@@ -15,7 +15,9 @@ defmodule ASM.Provider.Resolver do
   alias ASM.Provider
 
   defmodule CommandSpec do
-    @moduledoc false
+    @moduledoc """
+    Resolved executable program and optional argv prefix for a provider CLI.
+    """
     @enforce_keys [:program]
     defstruct program: "", argv_prefix: []
 

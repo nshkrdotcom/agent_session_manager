@@ -6,7 +6,9 @@ defmodule ASM.Message do
   alias ASM.Content
 
   defmodule Assistant do
-    @moduledoc false
+    @moduledoc """
+    Assistant-authored message composed of one or more content blocks.
+    """
     @enforce_keys [:content]
     defstruct [:content, :model, metadata: %{}]
 
@@ -14,7 +16,9 @@ defmodule ASM.Message do
   end
 
   defmodule User do
-    @moduledoc false
+    @moduledoc """
+    User-authored message composed of one or more content blocks.
+    """
     @enforce_keys [:content]
     defstruct [:content]
 
@@ -22,7 +26,9 @@ defmodule ASM.Message do
   end
 
   defmodule ToolUse do
-    @moduledoc false
+    @moduledoc """
+    Request from the model to execute a tool.
+    """
     @enforce_keys [:tool_name, :tool_id, :input]
     defstruct [:tool_name, :tool_id, :input]
 
@@ -30,7 +36,9 @@ defmodule ASM.Message do
   end
 
   defmodule ToolResult do
-    @moduledoc false
+    @moduledoc """
+    Result returned to the model for a previously requested tool call.
+    """
     @enforce_keys [:tool_id, :content]
     defstruct [:tool_id, :content, is_error: false]
 
@@ -38,7 +46,9 @@ defmodule ASM.Message do
   end
 
   defmodule Result do
-    @moduledoc false
+    @moduledoc """
+    Terminal metadata describing why a run completed.
+    """
     @enforce_keys [:stop_reason]
     defstruct [:stop_reason, usage: %{}, duration_ms: nil, metadata: %{}]
 
@@ -51,7 +61,9 @@ defmodule ASM.Message do
   end
 
   defmodule Partial do
-    @moduledoc false
+    @moduledoc """
+    Incremental text or thinking delta emitted during streaming.
+    """
     @enforce_keys [:content_type, :delta]
     defstruct [:content_type, :delta]
 
@@ -60,7 +72,9 @@ defmodule ASM.Message do
   end
 
   defmodule Error do
-    @moduledoc false
+    @moduledoc """
+    Structured error message emitted by the provider/runtime.
+    """
     @enforce_keys [:severity, :message, :kind]
     defstruct [:severity, :message, :kind]
 
@@ -69,7 +83,9 @@ defmodule ASM.Message do
   end
 
   defmodule System do
-    @moduledoc false
+    @moduledoc """
+    System-level initialization payloads.
+    """
     @enforce_keys [:init_data]
     defstruct [:init_data]
 
@@ -77,7 +93,9 @@ defmodule ASM.Message do
   end
 
   defmodule Thinking do
-    @moduledoc false
+    @moduledoc """
+    Provider thinking payload emitted as a top-level message.
+    """
     @enforce_keys [:thinking]
     defstruct [:thinking, :signature]
 
@@ -85,7 +103,9 @@ defmodule ASM.Message do
   end
 
   defmodule Raw do
-    @moduledoc false
+    @moduledoc """
+    Provider-native message event preserved in normalized form.
+    """
     @enforce_keys [:provider, :type, :data]
     defstruct [:provider, :type, :data]
 

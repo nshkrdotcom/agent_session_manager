@@ -1,23 +1,19 @@
 # ASM (Agent Session Manager)
 
-Lean, OTP-correct Elixir runtime for managing AI agent sessions across live CLI providers:
+`ASM` is an OTP-native Elixir runtime for running multi-turn AI sessions across multiple CLI providers with one API.
+
+Supported providers:
 
 - Claude CLI
 - Gemini CLI
-- Codex CLI (exec mode)
+- Codex CLI (`exec` mode)
 
-This branch is a ground-up foundation rebuild focused on explicit ownership boundaries, deterministic replay semantics, and modular extension seams.
+## Why ASM
 
-## Foundation Scope (v1)
-
-- Session aggregate runtime (`ASM.Session.Server`)
-- Per-run runtime (`ASM.Run.Server` + `ASM.Run.EventReducer`)
-- Bounded lease-aware transport contract (`ASM.Transport.Port`)
-- Provider contracts (resolver, command builders, parsers)
-- Optional synchronous pipeline plugs
-- Event-first in-memory store + replay (`ASM.Store.Memory`, `ASM.History`)
-- Public facade (`ASM`) + stream helpers (`ASM.Stream`)
-- Live examples for Claude/Gemini/Codex CLIs
+- One session/runtime model across providers.
+- Native Elixir streaming (`Enumerable`) with backpressure-friendly composition.
+- Deterministic event envelopes for replay, auditing, and reducer-based projections.
+- Provider-specific flags/options normalized behind a consistent API.
 
 ## Install
 
@@ -29,47 +25,122 @@ def deps do
 end
 ```
 
-## Public API
+## CLI Setup
 
-### Start/Stop a session
+Install provider CLIs you plan to use:
+
+```bash
+npm install -g @anthropic-ai/claude-code
+npm install -g @google/gemini-cli
+npm install -g @openai/codex
+```
+
+Authenticate each CLI with its native flow before using ASM.
+
+Optional explicit CLI paths:
+
+- `CLAUDE_CLI_PATH`
+- `GEMINI_CLI_PATH`
+- `CODEX_PATH`
+
+## Quick Start
 
 ```elixir
-{:ok, session} = ASM.start_session(provider: :claude)
+# OTP-friendly session startup
+{:ok, session} = ASM.start_link(provider: :claude)
+
+# Stream text chunks
+session
+|> ASM.stream("Reply with exactly: OK")
+|> ASM.Stream.text_content()
+|> Enum.each(&IO.write/1)
+
+# Query convenience API
+case ASM.query(session, "Say hello") do
+  {:ok, result} -> IO.puts(result.text)
+  {:error, error} -> IO.puts("failed: #{Exception.message(error)}")
+end
+
 :ok = ASM.stop_session(session)
 ```
 
-### Stream a run
+Provider atom form for one-off queries:
 
 ```elixir
-stream = ASM.stream(session, "Reply with exactly: OK")
-
-for event <- stream do
-  IO.inspect(event.kind)
-end
+{:ok, result} = ASM.query(:gemini, "Say hello")
 ```
 
-### Query and return final result
+## Session Model
 
-```elixir
-{:ok, result} = ASM.query(session, "Say hello")
-IO.inspect(result.text)
+`ASM` has three option layers:
 
-# Provider atom form (ephemeral session lifecycle)
-{:ok, result2} = ASM.query(:gemini, "Say hello")
-```
+- Session defaults: passed to `ASM.start_link/1` or `ASM.start_session/1`.
+- Per-run overrides: passed to `ASM.stream/3` or `ASM.query/3`.
+- Provider options: validated against provider schemas and passed to CLI command builders.
 
-### Runtime control helpers
+Per-run options override session defaults. Session defaults are inherited automatically.
 
-```elixir
-ASM.health(session)
-ASM.cost(session)
-ASM.interrupt(session, run_id)
-ASM.approve(session, approval_id, :allow)
-```
+## Public API
+
+Core lifecycle:
+
+- `ASM.start_link/1`
+- `ASM.start_session/1`
+- `ASM.stop_session/1`
+- `ASM.session_id/1`
+
+Run execution:
+
+- `ASM.stream/3`
+- `ASM.query/3`
+
+Runtime control:
+
+- `ASM.health/1`
+- `ASM.cost/1`
+- `ASM.interrupt/2`
+- `ASM.approve/3`
+
+Streaming helpers:
+
+- `ASM.Stream.final_result/1`
+- `ASM.Stream.text_deltas/1`
+- `ASM.Stream.text_content/1`
+- `ASM.Stream.final_text/1`
+
+## Error Semantics
+
+`ASM.query/3` returns:
+
+- `{:ok, %ASM.Result{...}}` when the run completes successfully.
+- `{:error, %ASM.Error{...}}` for terminal run failures, transport failures, parse failures, and runtime failures.
+
+Result projections also include structured cost and terminal error:
+
+- `%ASM.Result{cost: %{input_tokens: ..., output_tokens: ..., cost_usd: ...}}`
+- `%ASM.Result{error: %ASM.Error{} | nil}`
+
+## Provider Options
+
+Common options:
+
+- `provider`
+- `permission_mode` (`:default | :auto | :bypass | :plan`)
+- `cli_path`
+- `cwd`
+- `env`
+- `approval_timeout_ms`
+- `transport_timeout_ms`
+
+Provider-specific examples:
+
+- Claude: `model`, `include_thinking`, `max_turns`
+- Gemini: `model`, `sandbox`, `extensions`
+- Codex: `model`, `reasoning_effort`, `output_schema`
 
 ## Live Examples
 
-Run with real CLIs (no mocks):
+Run real CLI smoke tests:
 
 ```bash
 mix run examples/live_claude_stream.exs -- "Reply with exactly: CLAUDE_OK"
@@ -78,25 +149,23 @@ mix run examples/live_codex_stream.exs -- "Reply with exactly: CODEX_OK"
 mix run examples/live_multi_provider_smoke.exs
 ```
 
-Environment knobs:
+Environment knobs used by examples:
 
-- `CLAUDE_CLI_PATH`, `GEMINI_CLI_PATH`, `CODEX_PATH` (optional explicit binaries)
+- `CLAUDE_CLI_PATH`, `GEMINI_CLI_PATH`, `CODEX_PATH`
 - `ASM_PERMISSION_MODE` (`default`, `auto`, `bypass`, `plan`)
-- `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL` (optional)
+- `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL`
 
 ## Architecture Notes
 
-- Per-session subtree strategy: `:rest_for_one`
-  - `ASM.Session.TransportSupervisor`
-  - `ASM.Run.Supervisor`
-  - `ASM.Session.Server`
-- Run workers are `restart: :temporary` to prevent restart loops on normal completion.
-- Session server owns run queueing and approval index.
-- Run server owns event fanout and lifecycle transitions via reducer.
+Per-session subtree strategy uses `:rest_for_one`:
+
+- `ASM.Session.TransportSupervisor`
+- `ASM.Run.Supervisor`
+- `ASM.Session.Server`
+
+Run workers are `restart: :temporary` to avoid restart loops after normal completion.
 
 ## Quality Gates
-
-Foundation baseline is expected to pass locally:
 
 ```bash
 mix format
@@ -104,5 +173,3 @@ mix test
 mix credo --strict
 mix dialyzer
 ```
-
-Current foundation baseline: green (`108 tests + 2 properties`, strict credo, dialyzer).

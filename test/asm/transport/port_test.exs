@@ -87,6 +87,24 @@ defmodule ASM.Transport.PortTest do
     refute_receive {:transport_message, %{"n" => 2}}, 20
   end
 
+  test "send_input/3 fails fast with explicit not_implemented error" do
+    assert {:ok, port} = Port.start_link([])
+
+    assert {:error, error} = Transport.send_input(port, "ping")
+    assert error.kind == :transport_error
+    assert error.domain == :transport
+    assert error.message =~ "not implemented"
+  end
+
+  test "interrupt/1 fails fast with explicit not_implemented error" do
+    assert {:ok, port} = Port.start_link([])
+
+    assert {:error, error} = Transport.interrupt(port)
+    assert error.kind == :transport_error
+    assert error.domain == :transport
+    assert error.message =~ "not implemented"
+  end
+
   defp assert_eventually(fun, attempts \\ 20)
 
   defp assert_eventually(fun, attempts) when attempts > 0 do

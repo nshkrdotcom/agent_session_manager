@@ -7,6 +7,9 @@ defmodule ASM do
 
   @type session_ref :: GenServer.server()
 
+  @spec start_link(keyword()) :: {:ok, session_ref()} | {:error, Error.t() | term()}
+  def start_link(opts \\ []), do: start_session(opts)
+
   @spec start_session(keyword()) :: {:ok, session_ref()} | {:error, Error.t() | term()}
   def start_session(opts \\ []) do
     session_id = Keyword.get_lazy(opts, :session_id, &ASM.Event.generate_id/0)
@@ -47,7 +50,13 @@ defmodule ASM do
       |> stream(prompt, opts)
       |> Stream.final_result()
 
-    {:ok, result}
+    case result.error do
+      nil ->
+        {:ok, result}
+
+      %Error{} = error ->
+        {:error, error}
+    end
   rescue
     error ->
       {:error, Error.new(:runtime, :runtime, Exception.message(error), cause: error)}

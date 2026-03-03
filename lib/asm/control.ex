@@ -4,7 +4,9 @@ defmodule ASM.Control do
   """
 
   defmodule TransportStatus do
-    @moduledoc false
+    @moduledoc """
+    Transport lifecycle transition emitted by the runtime.
+    """
     @enforce_keys [:status, :transport_pid]
     defstruct [:status, :transport_pid]
 
@@ -13,7 +15,9 @@ defmodule ASM.Control do
   end
 
   defmodule ApprovalRequest do
-    @moduledoc false
+    @moduledoc """
+    Tool approval prompt emitted when the provider requires operator input.
+    """
     @enforce_keys [:approval_id, :tool_name, :tool_input]
     defstruct [:approval_id, :tool_name, :tool_input]
 
@@ -21,7 +25,9 @@ defmodule ASM.Control do
   end
 
   defmodule ApprovalResolution do
-    @moduledoc false
+    @moduledoc """
+    Approval decision sent back to resume or block a tool call.
+    """
     @enforce_keys [:approval_id, :decision]
     defstruct [:approval_id, :decision, :reason]
 
@@ -34,7 +40,9 @@ defmodule ASM.Control do
   end
 
   defmodule GuardrailTrigger do
-    @moduledoc false
+    @moduledoc """
+    Signal that a policy/guardrail rule was triggered.
+    """
     @enforce_keys [:rule, :direction, :action]
     defstruct [:rule, :direction, :action]
 
@@ -44,7 +52,9 @@ defmodule ASM.Control do
   end
 
   defmodule CostUpdate do
-    @moduledoc false
+    @moduledoc """
+    Incremental token and cost accounting update.
+    """
     @enforce_keys [:input_tokens, :output_tokens, :cost_usd]
     defstruct [:input_tokens, :output_tokens, :cost_usd]
 
@@ -56,7 +66,9 @@ defmodule ASM.Control do
   end
 
   defmodule RunLifecycle do
-    @moduledoc false
+    @moduledoc """
+    Run lifecycle checkpoint emitted by the runtime.
+    """
     @enforce_keys [:status, :summary]
     defstruct [:status, :summary]
 
@@ -65,7 +77,9 @@ defmodule ASM.Control do
   end
 
   defmodule Backpressure do
-    @moduledoc false
+    @moduledoc """
+    Backpressure status payload for queue growth and policy behavior.
+    """
     @enforce_keys [:queue_size, :policy, :run_id]
     defstruct [:queue_size, :policy, :run_id]
 
@@ -74,7 +88,9 @@ defmodule ASM.Control do
   end
 
   defmodule Raw do
-    @moduledoc false
+    @moduledoc """
+    Provider-native control event preserved in normalized form.
+    """
     @enforce_keys [:provider, :type, :data]
     defstruct [:provider, :type, :data]
 

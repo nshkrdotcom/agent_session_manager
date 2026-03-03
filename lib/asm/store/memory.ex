@@ -10,10 +10,15 @@ defmodule ASM.Store.Memory do
   @behaviour Store
 
   @enforce_keys []
-  defstruct by_session: %{}, seen_event_ids: MapSet.new()
+  defstruct by_session: %{},
+            by_session_event_ids: %{},
+            seen_event_ids: MapSet.new()
+
+  @type event_queue :: :queue.queue(Event.t())
 
   @type t :: %__MODULE__{
-          by_session: %{optional(String.t()) => [Event.t()]},
+          by_session: %{optional(String.t()) => event_queue()},
+          by_session_event_ids: %{optional(String.t()) => MapSet.t(String.t())},
           seen_event_ids: MapSet.t(String.t())
         }
 
@@ -42,14 +47,14 @@ defmodule ASM.Store.Memory do
     if MapSet.member?(state.seen_event_ids, event.id) do
       {:reply, :ok, state}
     else
-      updated_events =
-        state.by_session
-        |> Map.get(event.session_id, [])
-        |> Kernel.++([event])
+      queue = Map.get(state.by_session, event.session_id, :queue.new())
+      ids = Map.get(state.by_session_event_ids, event.session_id, MapSet.new())
 
       next_state = %{
         state
-        | by_session: Map.put(state.by_session, event.session_id, updated_events),
+        | by_session: Map.put(state.by_session, event.session_id, :queue.in(event, queue)),
+          by_session_event_ids:
+            Map.put(state.by_session_event_ids, event.session_id, MapSet.put(ids, event.id)),
           seen_event_ids: MapSet.put(state.seen_event_ids, event.id)
       }
 
@@ -58,20 +63,26 @@ defmodule ASM.Store.Memory do
   end
 
   def handle_call({:list_events, session_id}, _from, state) do
-    {:reply, {:ok, Map.get(state.by_session, session_id, [])}, state}
+    events =
+      state.by_session
+      |> Map.get(session_id, :queue.new())
+      |> :queue.to_list()
+
+    {:reply, {:ok, events}, state}
   end
 
   def handle_call({:reset_session, session_id}, _from, state) do
-    session_events = Map.get(state.by_session, session_id, [])
-
     seen_event_ids =
-      Enum.reduce(session_events, state.seen_event_ids, fn event, acc ->
-        MapSet.delete(acc, event.id)
+      state.by_session_event_ids
+      |> Map.get(session_id, MapSet.new())
+      |> Enum.reduce(state.seen_event_ids, fn event_id, acc ->
+        MapSet.delete(acc, event_id)
       end)
 
     next_state = %{
       state
       | by_session: Map.delete(state.by_session, session_id),
+        by_session_event_ids: Map.delete(state.by_session_event_ids, session_id),
         seen_event_ids: seen_event_ids
     }
 

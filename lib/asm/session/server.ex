@@ -8,7 +8,7 @@ defmodule ASM.Session.Server do
 
   use GenServer
 
-  alias ASM.Error
+  alias ASM.{Control, Error}
   alias ASM.Provider
   alias ASM.Session.State
 
@@ -108,6 +108,10 @@ defmodule ASM.Session.Server do
   def handle_info({:clear_approval, approval_id}, state) when is_binary(approval_id) do
     {:noreply,
      %{state | pending_approval_index: Map.delete(state.pending_approval_index, approval_id)}}
+  end
+
+  def handle_info({:cost_update, %Control.CostUpdate{} = payload}, state) do
+    {:noreply, %{state | cost: add_cost(state.cost, payload)}}
   end
 
   def handle_info({:DOWN, ref, :process, run_pid, _reason}, state) do
@@ -257,4 +261,15 @@ defmodule ASM.Session.Server do
   defp runtime_error(kind, message) do
     Error.new(kind, :runtime, message)
   end
+
+  defp add_cost(current, %Control.CostUpdate{} = payload) do
+    %{
+      input_tokens: default_zero(current[:input_tokens]) + payload.input_tokens,
+      output_tokens: default_zero(current[:output_tokens]) + payload.output_tokens,
+      cost_usd: default_zero(current[:cost_usd]) + payload.cost_usd
+    }
+  end
+
+  defp default_zero(nil), do: 0
+  defp default_zero(value), do: value
 end

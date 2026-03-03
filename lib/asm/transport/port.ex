@@ -5,12 +5,26 @@ defmodule ASM.Transport.Port do
   Supports two operation modes:
 
   - injected mode (tests): callers push decoded maps via `inject/2`
-  - subprocess mode (live): this process owns an Erlang Port and decodes JSONL output
+  - subprocess mode (live): this process owns an erlexec subprocess and decodes JSONL output
   """
+
+  # Phase 0 Review Notes
+  # - Run.Server expects exactly these transport notifications:
+  #   `{:transport_message, map}`, `{:transport_error, reason}`,
+  #   and `{:transport_exit, status, diagnostics}`.
+  # - Demand protocol must stay unchanged: attach leasee -> demand(n) -> deliver FIFO
+  #   messages -> demand again (Run.Server uses 1-at-a-time demand).
+  # - `inject/2` is a subprocess-independent test seam to push decoded maps directly,
+  #   so unit tests can exercise queue/lease behavior without spawning a CLI process.
+  # - Only subprocess management changes here (Port APIs -> erlexec). Lease ownership,
+  #   queue semantics, overflow policies, and transport message contract remain identical.
 
   use GenServer
 
+  require Logger
+
   alias ASM.Error
+  alias ASM.Exec
   alias ASM.Protocol
   alias ASM.Transport
 
@@ -19,6 +33,8 @@ defmodule ASM.Transport.Port do
   @default_timeout_ms 60_000
   @default_max_diagnostic_lines 5
   @default_max_diagnostic_line_length 240
+  @max_stderr_tail_bytes 65_536
+  @finalize_delay_ms 25
 
   @enforce_keys []
   defstruct leasee: nil,
@@ -28,8 +44,10 @@ defmodule ASM.Transport.Port do
             queue_limit: 1_000,
             overflow_policy: :fail_run,
             status: :open,
-            port: nil,
-            buffer: "",
+            subprocess: nil,
+            stdout_buffer: "",
+            stderr_buffer: "",
+            finalize_timer_ref: nil,
             timeout_ms: @default_timeout_ms,
             timeout_ref: nil,
             diagnostics: [],
@@ -44,8 +62,10 @@ defmodule ASM.Transport.Port do
           queue_limit: pos_integer(),
           overflow_policy: :fail_run | :drop_oldest | :block,
           status: :open | :closed,
-          port: port() | nil,
-          buffer: binary(),
+          subprocess: {pid(), non_neg_integer()} | nil,
+          stdout_buffer: binary(),
+          stderr_buffer: binary(),
+          finalize_timer_ref: reference() | nil,
           timeout_ms: pos_integer(),
           timeout_ref: reference() | nil,
           diagnostics: [String.t()],
@@ -118,7 +138,16 @@ defmodule ASM.Transport.Port do
   end
 
   @impl true
-  def handle_call(:health, _from, %__MODULE__{status: :open} = state) do
+  def handle_call(:health, _from, %__MODULE__{subprocess: {pid, _}, status: :open} = state)
+      when is_pid(pid) do
+    if Process.alive?(pid) do
+      {:reply, :healthy, state}
+    else
+      {:reply, {:unhealthy, :subprocess_not_alive}, state}
+    end
+  end
+
+  def handle_call(:health, _from, %__MODULE__{subprocess: nil, status: :open} = state) do
     {:reply, :healthy, state}
   end
 
@@ -126,45 +155,40 @@ defmodule ASM.Transport.Port do
     {:reply, :degraded, state}
   end
 
-  def handle_call({:send_input, _input, _opts}, _from, %__MODULE__{port: nil} = state) do
+  def handle_call({:send_input, _input, _opts}, _from, %__MODULE__{subprocess: nil} = state) do
     {:reply, {:error, transport_error("transport input unavailable: no subprocess")}, state}
   end
 
-  def handle_call({:send_input, input, opts}, _from, %__MODULE__{port: port} = state) do
+  def handle_call({:send_input, input, opts}, _from, %__MODULE__{subprocess: {pid, _}} = state) do
     append_newline? = Keyword.get(opts, :append_newline, true)
     payload = normalize_input(input, append_newline?)
-    true = Port.command(port, payload)
+    :ok = :exec.send(pid, payload)
     {:reply, :ok, reset_timeout(state)}
-  rescue
-    error ->
-      {:reply,
-       {:error, Error.new(:transport_error, :transport, Exception.message(error), cause: error)},
-       state}
+  catch
+    kind, reason ->
+      {:reply, {:error, transport_error("send failed: #{inspect({kind, reason})}")}, state}
   end
 
-  def handle_call(:interrupt, _from, %__MODULE__{port: nil} = state) do
+  def handle_call(:interrupt, _from, %__MODULE__{subprocess: nil} = state) do
     {:reply, :ok, state}
   end
 
-  def handle_call(:interrupt, _from, %__MODULE__{port: port} = state) do
-    maybe_notify_exit(state, 130)
-    Port.close(port)
-    {:reply, :ok, %{state | status: :closed}}
-  rescue
-    _ ->
-      maybe_notify_exit(state, 130)
-      {:reply, :ok, %{state | status: :closed}}
+  def handle_call(:interrupt, _from, %__MODULE__{subprocess: {pid, _}} = state) do
+    _ = :exec.kill(pid, 2)
+    {:reply, :ok, state}
+  catch
+    _, _ -> {:reply, :ok, state}
   end
 
-  def handle_call(:close, _from, %__MODULE__{port: nil} = state) do
+  def handle_call(:close, _from, %__MODULE__{subprocess: nil} = state) do
     {:stop, :normal, :ok, %{state | status: :closed}}
   end
 
-  def handle_call(:close, _from, %__MODULE__{port: port} = state) do
-    Port.close(port)
+  def handle_call(:close, _from, %__MODULE__{subprocess: {pid, _}} = state) do
+    stop_subprocess(pid)
     {:stop, :normal, :ok, %{state | status: :closed}}
-  rescue
-    _ ->
+  catch
+    _, _ ->
       {:stop, :normal, :ok, %{state | status: :closed}}
   end
 
@@ -219,12 +243,12 @@ defmodule ASM.Transport.Port do
   end
 
   @impl true
-  def handle_info({port, {:data, chunk}}, %__MODULE__{port: port} = state)
-      when is_binary(chunk) do
+  def handle_info({:stdout, os_pid, data}, %__MODULE__{subprocess: {_pid, os_pid}} = state) do
+    data = IO.iodata_to_binary(data)
     state = reset_timeout(state)
-    {lines, remainder} = Protocol.JSONL.extract_lines(state.buffer <> chunk)
+    {lines, remainder} = Protocol.JSONL.extract_lines(state.stdout_buffer <> data)
 
-    case process_lines(lines, %{state | buffer: remainder}) do
+    case process_lines(lines, %{state | stdout_buffer: remainder}) do
       {:ok, next_state} ->
         {:noreply, next_state}
 
@@ -233,38 +257,58 @@ defmodule ASM.Transport.Port do
     end
   end
 
-  def handle_info({port, {:exit_status, status}}, %__MODULE__{port: port} = state)
-      when is_integer(status) do
+  def handle_info({:stderr, os_pid, data}, %__MODULE__{subprocess: {_pid, os_pid}} = state) do
+    data = IO.iodata_to_binary(data)
+    stderr_buffer = append_stderr_data(state.stderr_buffer, data)
+    {:noreply, %{state | stderr_buffer: stderr_buffer}}
+  end
+
+  def handle_info(
+        {:DOWN, os_pid, :process, pid, reason},
+        %__MODULE__{subprocess: {pid, os_pid}} = state
+      ) do
     state =
       state
       |> clear_timeout()
-      |> flush_queue_to_leasee()
+      |> cancel_finalize_timer()
 
-    maybe_notify_exit(state, status)
-    {:stop, :normal, %{state | status: :closed, port: nil}}
+    timer_ref =
+      Process.send_after(self(), {:finalize_exit, os_pid, pid, reason}, @finalize_delay_ms)
+
+    {:noreply, %{state | finalize_timer_ref: timer_ref}}
   end
 
-  def handle_info({port, :closed}, %__MODULE__{port: port} = state) do
+  def handle_info(
+        {:finalize_exit, os_pid, pid, reason},
+        %__MODULE__{subprocess: {pid, os_pid}} = state
+      ) do
     state =
       state
-      |> clear_timeout()
+      |> Map.put(:finalize_timer_ref, nil)
+      |> flush_stdout_buffer()
       |> flush_queue_to_leasee()
+      |> append_stderr_diagnostics()
 
-    maybe_notify_exit(state, 0)
-    {:stop, :normal, %{state | status: :closed, port: nil}}
+    exit_status = extract_exit_status(reason)
+    maybe_notify_exit(state, exit_status, state.diagnostics)
+
+    {:stop, :normal, %{state | status: :closed, subprocess: nil}}
   end
 
-  def handle_info(:transport_timeout, %__MODULE__{port: nil} = state) do
+  def handle_info(:transport_timeout, %__MODULE__{subprocess: nil} = state) do
     {:noreply, %{state | timeout_ref: nil}}
   end
 
-  def handle_info(:transport_timeout, %__MODULE__{port: port, timeout_ms: timeout_ms} = state) do
+  def handle_info(
+        :transport_timeout,
+        %__MODULE__{subprocess: {pid, _}, timeout_ms: timeout_ms} = state
+      ) do
     if is_pid(state.leasee), do: Transport.notify_error(state.leasee, {:timeout, timeout_ms})
 
-    Port.close(port)
+    stop_subprocess(pid)
     {:noreply, %{state | timeout_ref: nil, status: :closed}}
-  rescue
-    _ ->
+  catch
+    _, _ ->
       {:noreply, %{state | timeout_ref: nil, status: :closed}}
   end
 
@@ -274,6 +318,20 @@ defmodule ASM.Transport.Port do
 
   def handle_info(_message, state) do
     {:noreply, state}
+  end
+
+  @impl true
+  def terminate(_reason, state) do
+    state =
+      state
+      |> cancel_finalize_timer()
+      |> clear_timeout()
+      |> force_stop_subprocess()
+
+    _ = state
+    :ok
+  catch
+    _, _ -> :ok
   end
 
   defp deliver(%__MODULE__{leasee: nil} = state), do: state
@@ -370,12 +428,11 @@ defmodule ASM.Transport.Port do
 
   defp notify_parse_error(_state, _line, _reason), do: :ok
 
-  defp maybe_notify_exit(%__MODULE__{leasee: leasee, diagnostics: diagnostics}, status)
-       when is_pid(leasee) do
+  defp maybe_notify_exit(%__MODULE__{leasee: leasee}, status, diagnostics) when is_pid(leasee) do
     Transport.notify_exit(leasee, status, diagnostics)
   end
 
-  defp maybe_notify_exit(_state, _status), do: :ok
+  defp maybe_notify_exit(_state, _status, _diagnostics), do: :ok
 
   defp flush_queue_to_leasee(%__MODULE__{leasee: leasee} = state) when is_pid(leasee) do
     {messages, emptied_queue} = drain_queue(state.queue, [])
@@ -406,6 +463,14 @@ defmodule ASM.Transport.Port do
     %{state | diagnostics: diagnostics}
   end
 
+  defp append_stderr_diagnostics(%__MODULE__{stderr_buffer: ""} = state), do: state
+
+  defp append_stderr_diagnostics(state) do
+    state.stderr_buffer
+    |> String.split(~r/\r?\n/, trim: true)
+    |> Enum.reduce(state, fn line, acc -> append_diagnostic(acc, line) end)
+  end
+
   defp json_object_candidate?(line) do
     trimmed = String.trim(line)
     String.starts_with?(trimmed, "{") and String.ends_with?(trimmed, "}")
@@ -414,38 +479,41 @@ defmodule ASM.Transport.Port do
   defp maybe_start_subprocess(opts, state) do
     case Keyword.get(opts, :program) do
       program when is_binary(program) and program != "" ->
-        args = Enum.map(Keyword.get(opts, :args, []), &to_charlist/1)
+        args = Keyword.get(opts, :args, []) |> Enum.map(&to_string/1)
+        cwd = Keyword.get(opts, :cwd)
+        env = Keyword.get(opts, :env, %{})
 
-        port_opts =
-          [
-            :binary,
-            :exit_status,
-            :use_stdio,
-            :stderr_to_stdout,
-            :hide,
-            args: args
-          ]
-          |> maybe_put_env(Keyword.get(opts, :env, %{}))
-          |> maybe_put_cwd(Keyword.get(opts, :cwd))
+        exec_opts =
+          [:stdin, :stdout, :stderr, :monitor]
+          |> Exec.add_cwd(cwd)
+          |> Exec.add_env(env)
 
-        port = Port.open({:spawn_executable, to_charlist(program)}, port_opts)
+        cmd = Exec.build_command(program, args)
 
-        %{state | port: port}
-        |> schedule_timeout()
+        case :exec.run(cmd, exec_opts) do
+          {:ok, pid, os_pid} ->
+            %{state | subprocess: {pid, os_pid}, status: :open}
+            |> schedule_timeout()
+
+          {:error, reason} ->
+            Logger.error("ASM transport failed to start subprocess: #{inspect(reason)}")
+            state
+        end
 
       _ ->
         state
     end
+  catch
+    kind, reason ->
+      Logger.error("ASM transport failed to start subprocess: #{inspect({kind, reason})}")
+      state
   end
-
-  defp schedule_timeout(%__MODULE__{port: nil} = state), do: state
 
   defp schedule_timeout(%__MODULE__{timeout_ms: timeout_ms} = state) do
     clear_timeout(state)
     |> Map.put(:timeout_ref, Process.send_after(self(), :transport_timeout, timeout_ms))
   end
 
-  defp reset_timeout(%__MODULE__{port: nil} = state), do: state
   defp reset_timeout(state), do: schedule_timeout(state)
 
   defp clear_timeout(%__MODULE__{timeout_ref: nil} = state), do: state
@@ -454,6 +522,24 @@ defmodule ASM.Transport.Port do
     Process.cancel_timer(ref, async: true, info: false)
     %{state | timeout_ref: nil}
   end
+
+  defp cancel_finalize_timer(%__MODULE__{finalize_timer_ref: nil} = state), do: state
+
+  defp cancel_finalize_timer(state) do
+    _ = Process.cancel_timer(state.finalize_timer_ref, async: false, info: false)
+    flush_finalize_message(state.subprocess)
+    %{state | finalize_timer_ref: nil}
+  end
+
+  defp flush_finalize_message({pid, os_pid}) do
+    receive do
+      {:finalize_exit, ^os_pid, ^pid, _reason} -> :ok
+    after
+      0 -> :ok
+    end
+  end
+
+  defp flush_finalize_message(_), do: :ok
 
   defp normalize_input(input, append_newline?) when is_binary(input) do
     if append_newline? and not String.ends_with?(input, "\n"), do: input <> "\n", else: input
@@ -465,6 +551,33 @@ defmodule ASM.Transport.Port do
     |> normalize_input(append_newline?)
   end
 
+  defp flush_stdout_buffer(state) do
+    {lines, remainder} = Protocol.JSONL.extract_lines(state.stdout_buffer)
+
+    lines =
+      if String.trim(remainder) == "" do
+        lines
+      else
+        lines ++ [remainder]
+      end
+
+    case process_lines(lines, %{state | stdout_buffer: ""}) do
+      {:ok, next_state} -> next_state
+      {:stop, _reason, next_state} -> next_state
+    end
+  end
+
+  defp append_stderr_data(buffer, data) do
+    combined = buffer <> data
+    combined_size = byte_size(combined)
+
+    if combined_size <= @max_stderr_tail_bytes do
+      combined
+    else
+      :binary.part(combined, combined_size - @max_stderr_tail_bytes, @max_stderr_tail_bytes)
+    end
+  end
+
   defp queue_drop_oldest(queue) do
     case :queue.out(queue) do
       {{:value, item}, remaining} -> {item, remaining}
@@ -472,22 +585,35 @@ defmodule ASM.Transport.Port do
     end
   end
 
-  defp maybe_put_env(opts, env) when is_map(env) and map_size(env) > 0 do
-    env_pairs =
-      Enum.map(env, fn {key, value} ->
-        {to_charlist(to_string(key)), to_charlist(to_string(value))}
-      end)
-
-    [{:env, env_pairs} | opts]
+  defp force_stop_subprocess(%__MODULE__{subprocess: {pid, _}} = state) do
+    stop_subprocess(pid)
+    %{state | subprocess: nil, status: :closed}
   end
 
-  defp maybe_put_env(opts, _env), do: opts
+  defp force_stop_subprocess(state), do: state
 
-  defp maybe_put_cwd(opts, cwd) when is_binary(cwd) and cwd != "" do
-    [{:cd, to_charlist(cwd)} | opts]
+  defp stop_subprocess(pid) when is_pid(pid) do
+    :exec.stop(pid)
+    _ = :exec.kill(pid, 9)
+    :ok
+  catch
+    _, _ -> :ok
   end
 
-  defp maybe_put_cwd(opts, _cwd), do: opts
+  defp extract_exit_status(:normal), do: 0
+  defp extract_exit_status(0), do: 0
+
+  defp extract_exit_status({:exit_status, code}) when is_integer(code),
+    do: normalize_exit_status(code)
+
+  defp extract_exit_status({:status, code}) when is_integer(code), do: normalize_exit_status(code)
+  defp extract_exit_status({:signal, signal}) when is_integer(signal), do: 128 + signal
+  defp extract_exit_status(:killed), do: 137
+  defp extract_exit_status(code) when is_integer(code), do: normalize_exit_status(code)
+  defp extract_exit_status(_reason), do: 1
+
+  defp normalize_exit_status(code) when code > 255 and rem(code, 256) == 0, do: div(code, 256)
+  defp normalize_exit_status(code), do: code
 
   defp normalize_queue_limit(limit) when is_integer(limit) and limit > 0, do: limit
   defp normalize_queue_limit(_), do: 1_000

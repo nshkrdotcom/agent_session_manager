@@ -27,13 +27,14 @@ defmodule AgentSessionManager.MixProject do
   def application do
     [
       mod: {ASM.Application, []},
-      extra_applications: [:logger]
+      extra_applications: [:logger, :erlexec]
     ]
   end
 
   defp deps do
     [
       {:jason, "~> 1.4"},
+      {:erlexec, "~> 2.0"},
       {:nimble_options, "~> 1.1"},
       {:telemetry, "~> 1.3"},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},

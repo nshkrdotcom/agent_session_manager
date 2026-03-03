@@ -166,7 +166,7 @@ Environment knobs used by examples:
 
 ## Guides
 
-- [Live Adapter Feature Matrix](docs/live-adapters.md)
+- [Live Adapter Feature Matrix](guides/live-adapters.md)
 
 ## Architecture Notes
 

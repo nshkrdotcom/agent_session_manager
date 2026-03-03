@@ -38,8 +38,13 @@ defmodule ASM.Run.EventReducer do
 
     duration_ms =
       case state.finished_at do
-        %DateTime{} = finished_at -> DateTime.diff(finished_at, state.started_at, :millisecond)
-        nil -> nil
+        %DateTime{} = finished_at ->
+          finished_at
+          |> DateTime.diff(state.started_at, :millisecond)
+          |> max(0)
+
+        nil ->
+          nil
       end
 
     stop_reason =

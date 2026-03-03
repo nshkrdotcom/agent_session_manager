@@ -54,6 +54,20 @@ Enum.each(providers, fn {provider, env_var, default_prompt} ->
   IO.puts("\n== Running #{provider} smoke ==")
   LiveSupport.ensure_cli!(provider, cli_path: cli_path)
   _ = LiveSupport.stream_and_collect!(provider, prompt, provider_opts)
+
+  query_prompt =
+    "Reply with exactly: #{provider |> Atom.to_string() |> String.upcase()}_QUERY_SMOKE_OK"
+
+  case ASM.query(provider, query_prompt, provider_opts) do
+    {:ok, result} ->
+      IO.puts(
+        "query smoke stop_reason=#{inspect(result.stop_reason)} text=#{inspect(result.text)}"
+      )
+
+    {:error, error} ->
+      IO.puts("query smoke failed for #{provider}: #{Exception.message(error)}")
+      System.halt(1)
+  end
 end)
 
 IO.puts("\nall provider smoke checks completed")

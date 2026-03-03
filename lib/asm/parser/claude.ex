@@ -58,9 +58,11 @@ defmodule ASM.Parser.Claude do
   end
 
   defp assistant_message(raw) do
+    message = nested_message(raw)
+
     %Message.Assistant{
-      content: extract_content_blocks(raw),
-      model: fetch_any(raw, [:model, "model"]),
+      content: extract_content_blocks(message),
+      model: fetch_any(message, [:model, "model"]),
       metadata: normalize_map(raw)
     }
   end
@@ -99,7 +101,7 @@ defmodule ASM.Parser.Claude do
     usage_map = fetch_any(raw, [:usage, "usage"]) || %{}
 
     %Message.Result{
-      stop_reason: fetch_any(raw, [:stop_reason, "stop_reason", :reason, "reason"]) || :unknown,
+      stop_reason: result_stop_reason(raw),
       usage: %{
         input_tokens: fetch_any(usage_map, [:input_tokens, "input_tokens"]) || 0,
         output_tokens: fetch_any(usage_map, [:output_tokens, "output_tokens"]) || 0
@@ -159,6 +161,23 @@ defmodule ASM.Parser.Claude do
       _ ->
         text = fetch_any(raw, [:text, "text"]) || ""
         [%Content.Text{text: text}]
+    end
+  end
+
+  defp nested_message(raw) do
+    case fetch_any(raw, [:message, "message"]) do
+      message when is_map(message) -> message
+      _ -> raw
+    end
+  end
+
+  defp result_stop_reason(raw) do
+    case fetch_any(raw, [:stop_reason, "stop_reason", :reason, "reason"]) do
+      nil ->
+        fetch_any(raw, [:subtype, "subtype", :status, "status"]) || :unknown
+
+      value ->
+        value
     end
   end
 

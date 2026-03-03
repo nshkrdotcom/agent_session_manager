@@ -109,6 +109,43 @@ defmodule ASM.Stream.CLIDriverIntegrationTest do
     end
   end
 
+  test "claude stream runs through PTY wrapper when provider requires tty-like execution" do
+    script =
+      write_script!("""
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      if [ ! -t 0 ]; then
+        sleep 120
+        exit 1
+      fi
+
+      echo '{"type":"assistant_delta","delta":"CLAUDE_OK"}'
+      echo '{"type":"result","stop_reason":"end_turn"}'
+      """)
+
+    session_id = unique_session_id("claude-pty")
+
+    assert {:ok, session} =
+             ASM.start_session(session_id: session_id, provider: :claude, cli_path: script)
+
+    try do
+      events =
+        session
+        |> ASM.stream("Reply with exactly: CLAUDE_OK",
+          cli_path: script,
+          stream_timeout_ms: 20_000,
+          transport_timeout_ms: 20_000
+        )
+        |> Enum.to_list()
+
+      refute Enum.any?(events, &(&1.kind == :error))
+      assert ASM.Stream.final_result(events).text == "CLAUDE_OK"
+    after
+      :ok = ASM.stop_session(session)
+    end
+  end
+
   defp write_script!(contents) do
     path = Path.join(System.tmp_dir!(), "asm-cli-driver-#{System.unique_integer([:positive])}.sh")
     File.write!(path, contents)

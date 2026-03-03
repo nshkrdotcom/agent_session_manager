@@ -87,22 +87,54 @@ defmodule ASM.Transport.PortTest do
     refute_receive {:transport_message, %{"n" => 2}}, 20
   end
 
-  test "send_input/3 fails fast with explicit not_implemented error" do
-    assert {:ok, port} = Port.start_link([])
+  test "send_input/3 writes to subprocess stdin and emits decoded messages" do
+    script =
+      write_script!("""
+      #!/usr/bin/env bash
+      set -euo pipefail
 
-    assert {:error, error} = Transport.send_input(port, "ping")
-    assert error.kind == :transport_error
-    assert error.domain == :transport
-    assert error.message =~ "not implemented"
+      if read -r line; then
+        echo "{\\"type\\":\\"assistant_delta\\",\\"delta\\":\\"${line}\\"}"
+        echo "{\\"type\\":\\"result\\",\\"stop_reason\\":\\"end_turn\\"}"
+      fi
+      """)
+
+    assert {:ok, port} =
+             Port.start_link(
+               program: script,
+               args: [],
+               queue_limit: 8,
+               overflow_policy: :fail_run
+             )
+
+    assert {:ok, :attached} = Transport.attach(port, self())
+    assert :ok = Transport.send_input(port, "PING")
+    assert :ok = Transport.demand(port, self(), 2)
+
+    assert_receive {:transport_message, %{"type" => "assistant_delta", "delta" => "PING"}}
+    assert_receive {:transport_message, %{"type" => "result", "stop_reason" => "end_turn"}}
+    assert_receive {:transport_exit, 0, _diagnostics}
   end
 
-  test "interrupt/1 fails fast with explicit not_implemented error" do
-    assert {:ok, port} = Port.start_link([])
+  test "interrupt/1 terminates active subprocess and emits transport exit" do
+    script =
+      write_script!("""
+      #!/usr/bin/env bash
+      set -euo pipefail
+      sleep 5
+      """)
 
-    assert {:error, error} = Transport.interrupt(port)
-    assert error.kind == :transport_error
-    assert error.domain == :transport
-    assert error.message =~ "not implemented"
+    assert {:ok, port} =
+             Port.start_link(
+               program: script,
+               args: [],
+               queue_limit: 8,
+               overflow_policy: :fail_run
+             )
+
+    assert {:ok, :attached} = Transport.attach(port, self())
+    assert :ok = Transport.interrupt(port)
+    assert_receive {:transport_exit, _status, _diagnostics}
   end
 
   defp assert_eventually(fun, attempts \\ 20)
@@ -118,5 +150,14 @@ defmodule ASM.Transport.PortTest do
 
   defp assert_eventually(fun, 0) do
     assert fun.()
+  end
+
+  defp write_script!(contents) do
+    path =
+      Path.join(System.tmp_dir!(), "asm-transport-port-#{System.unique_integer([:positive])}.sh")
+
+    File.write!(path, contents)
+    File.chmod!(path, 0o755)
+    path
   end
 end

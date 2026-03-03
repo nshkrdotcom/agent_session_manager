@@ -73,6 +73,68 @@ defmodule ASM.Examples.LiveSupport do
       System.halt(1)
   end
 
+  @spec run_session_feature_matrix!(
+          Provider.provider_name(),
+          String.t(),
+          String.t(),
+          keyword()
+        ) :: %{stream: ASM.Result.t(), query: ASM.Result.t(), final_cost: map()}
+  def run_session_feature_matrix!(provider, stream_prompt, query_prompt, opts \\ [])
+      when is_binary(stream_prompt) and is_binary(query_prompt) and is_list(opts) do
+    session_id = "feature-#{provider}-#{System.system_time(:millisecond)}"
+
+    start_opts =
+      opts
+      |> Keyword.drop([:session_id])
+      |> Keyword.put(:provider, provider)
+      |> Keyword.put(:session_id, session_id)
+
+    with {:ok, session} <- ASM.start_session(start_opts) do
+      try do
+        IO.puts("session_id=#{ASM.session_id(session)} provider=#{provider}")
+        IO.puts("health(before)=#{inspect(ASM.health(session))}")
+
+        events = session |> ASM.stream(stream_prompt, opts) |> Enum.to_list()
+        Enum.each(events, &print_event/1)
+        fail_if_error_events!(events)
+        stream_result = ASM.Stream.final_result(events)
+        print_result(stream_result)
+
+        query_result =
+          case ASM.query(session, query_prompt, opts) do
+            {:ok, result} ->
+              IO.puts("\n[query result]")
+              print_result(result)
+              result
+
+            {:error, %Error{} = error} ->
+              IO.puts("query failed: #{Exception.message(error)}")
+              System.halt(1)
+          end
+
+        final_cost = ASM.cost(session)
+        IO.puts("health(after)=#{inspect(ASM.health(session))}")
+        IO.puts("session_cost=#{inspect(final_cost)}")
+
+        %{stream: stream_result, query: query_result, final_cost: final_cost}
+      after
+        _ = ASM.stop_session(session)
+      end
+    else
+      {:error, %Error{} = error} ->
+        IO.puts("failed to start session: #{Exception.message(error)}")
+        System.halt(1)
+
+      {:error, other} ->
+        IO.puts("failed to start session: #{inspect(other)}")
+        System.halt(1)
+    end
+  rescue
+    error ->
+      IO.puts("feature matrix execution failed: #{Exception.message(error)}")
+      System.halt(1)
+  end
+
   @spec print_event(Event.t()) :: :ok
   def print_event(%Event{kind: :assistant_delta, payload: %ASM.Message.Partial{delta: delta}}) do
     IO.write(delta)
@@ -115,6 +177,9 @@ defmodule ASM.Examples.LiveSupport do
     run_id: #{result.run_id}
     session_id: #{result.session_id}
     stop_reason: #{inspect(result.stop_reason)}
+    duration_ms: #{inspect(result.duration_ms)}
+    cost: #{inspect(result.cost)}
+    error: #{inspect(result.error)}
     text: #{inspect(result.text)}
     ----
     """)

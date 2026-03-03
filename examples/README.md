@@ -9,6 +9,7 @@ mix run examples/live_claude_stream.exs -- "Reply with exactly: CLAUDE_OK"
 mix run examples/live_gemini_stream.exs -- "Reply with exactly: GEMINI_OK"
 mix run examples/live_codex_stream.exs -- "Reply with exactly: CODEX_OK"
 mix run examples/live_multi_provider_smoke.exs
+mix run examples/live_feature_matrix.exs
 ```
 
 ## Environment
@@ -21,3 +22,9 @@ mix run examples/live_multi_provider_smoke.exs
 - `ASM_CODEX_REASONING` (`low`, `medium`, `high`; optional and auto-skipped when unsupported)
 
 Each script checks CLI availability first and exits with actionable setup errors if missing.
+
+## Coverage
+
+- `live_claude_stream.exs`, `live_gemini_stream.exs`, `live_codex_stream.exs`: provider-specific stream flow.
+- `live_multi_provider_smoke.exs`: stream + one-shot `ASM.query/3` across all providers.
+- `live_feature_matrix.exs`: session lifecycle surface on live adapters (`start_session`, `stream`, `query`, `health`, `cost`, `stop_session`).

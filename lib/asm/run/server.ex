@@ -1,13 +1,11 @@
 defmodule ASM.Run.Server do
   @moduledoc """
-  Minimal per-run worker for foundation queue/lifecycle integration.
-
-  Full streaming and reducer behavior is implemented in later phases.
+  Per-run worker that owns run lifecycle, parser dispatch, and stream fanout.
   """
 
   use GenServer, restart: :temporary
 
-  alias ASM.{Control, Error, Event, Message, Run}
+  alias ASM.{Control, Error, Event, Message, Provider, Run, Transport}
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
@@ -35,14 +33,25 @@ defmodule ASM.Run.Server do
     :ok
   end
 
+  @spec attach_transport(GenServer.server(), pid()) :: :ok | {:error, Error.t()}
+  def attach_transport(server, transport_pid) when is_pid(transport_pid) do
+    GenServer.call(server, {:attach_transport, transport_pid})
+  end
+
   @impl true
   def init(opts) do
     state = Run.State.new(opts)
-    {:ok, state, {:continue, :bootstrap}}
+
+    provider_parser =
+      Keyword.get(opts, :provider_parser) || resolve_provider_parser(state.provider)
+
+    {:ok, %{state | provider_parser: provider_parser}, {:continue, :bootstrap}}
   end
 
   @impl true
   def handle_continue(:bootstrap, state) do
+    _ = ASM.Telemetry.run_started(state.session_id, state.run_id, state.provider)
+
     event =
       envelope(state, :run_started, %Control.RunLifecycle{
         status: :started,
@@ -60,37 +69,21 @@ defmodule ASM.Run.Server do
     {:reply, Run.State.materialize(state), state}
   end
 
-  @impl true
-  def handle_cast({:ingest_event, %Event{} = event}, state) do
-    case apply_pipeline(state, event) do
-      {:ok, events, state} ->
-        state = process_events(state, events)
-
-        if Run.EventReducer.final?(state) do
-          finish_run(state)
-        else
-          {:noreply, state}
-        end
-
-      {:error, %Error{} = error, state} ->
-        error_event =
-          envelope(state, :error, %Message.Error{
-            severity: :error,
-            message: error.message,
-            kind: error.kind
-          })
-
-        state = process_events(state, [error_event])
-
-        if Run.EventReducer.final?(state) do
-          finish_run(state)
-        else
-          {:noreply, state}
-        end
+  def handle_call({:attach_transport, transport_pid}, _from, state) do
+    case do_attach_transport(state, transport_pid) do
+      {:ok, next_state} -> {:reply, :ok, next_state}
+      {:error, %Error{} = error} -> {:reply, {:error, error}, state}
     end
   end
 
+  @impl true
+  def handle_cast({:ingest_event, %Event{} = event}, state) do
+    consume_event(state, event)
+  end
+
   def handle_cast(:interrupt, state) do
+    maybe_interrupt_transport(state)
+
     event =
       envelope(state, :error, %Message.Error{
         severity: :warning,
@@ -130,6 +123,43 @@ defmodule ASM.Run.Server do
   end
 
   @impl true
+  def handle_info({:transport_message, raw_map}, state) when is_map(raw_map) do
+    case parse_transport_map(state, raw_map) do
+      {:ok, kind, payload} ->
+        consume_event(state, envelope(state, kind, payload))
+
+      {:error, %Error{} = error} ->
+        consume_event(state, parser_error_event(state, error))
+    end
+  end
+
+  def handle_info({:transport_error, reason}, state) do
+    consume_event(state, transport_error_event(state, reason))
+  end
+
+  def handle_info({:transport_exit, status, diagnostics}, state) when is_integer(status) do
+    terminal_event =
+      if status == 0 do
+        envelope(state, :run_completed, %Control.RunLifecycle{
+          status: :completed,
+          summary: %{source: :transport_exit}
+        })
+      else
+        envelope(
+          state,
+          :error,
+          %Message.Error{
+            severity: :error,
+            message:
+              "provider process exited with status #{status}#{diagnostic_suffix(diagnostics)}",
+            kind: :transport_error
+          }
+        )
+      end
+
+    consume_event(state, terminal_event)
+  end
+
   def handle_info({:approval_timeout, approval_id}, state) do
     if Map.has_key?(state.pending_approvals, approval_id) do
       state = clear_approval_timer(state, approval_id)
@@ -151,19 +181,198 @@ defmodule ASM.Run.Server do
     end
   end
 
+  def handle_info({:DOWN, ref, :process, _pid, reason}, %Run.State{transport_ref: ref} = state) do
+    next_state = %{state | transport_pid: nil, transport_ref: nil}
+
+    cond do
+      Run.EventReducer.final?(next_state) ->
+        {:noreply, next_state}
+
+      reason in [:normal, :shutdown] ->
+        consume_event(
+          next_state,
+          envelope(next_state, :run_completed, %Control.RunLifecycle{
+            status: :completed,
+            summary: %{source: :transport_down}
+          })
+        )
+
+      true ->
+        consume_event(
+          next_state,
+          envelope(
+            next_state,
+            :error,
+            %Message.Error{
+              severity: :error,
+              message: "transport crashed: #{inspect(reason)}",
+              kind: :transport_error
+            }
+          )
+        )
+    end
+  end
+
   @impl true
   def terminate(_reason, state) do
     cleanup_approval_timers(state)
     :ok
   end
 
+  defp do_attach_transport(%Run.State{transport_pid: nil} = state, transport_pid) do
+    case Transport.attach(transport_pid, self()) do
+      {:ok, :attached} ->
+        ref = Process.monitor(transport_pid)
+        next_state = %{state | transport_pid: transport_pid, transport_ref: ref}
+        demand_next(next_state)
+        {:ok, next_state}
+
+      {:error, :busy} ->
+        {:error, Error.new(:transport_busy, :transport, "Transport is already leased")}
+    end
+  end
+
+  defp do_attach_transport(%Run.State{transport_pid: transport_pid} = state, transport_pid) do
+    {:ok, state}
+  end
+
+  defp do_attach_transport(%Run.State{}, _transport_pid) do
+    {:error,
+     Error.new(:transport_busy, :transport, "Run already attached to a different transport")}
+  end
+
+  defp consume_event(state, %Event{} = event) do
+    case apply_pipeline(state, event) do
+      {:ok, events, state} ->
+        next_state = process_events(state, events)
+
+        if Run.EventReducer.final?(next_state) do
+          finish_run(next_state)
+        else
+          demand_next(next_state)
+          {:noreply, next_state}
+        end
+
+      {:error, %Error{} = error, state} ->
+        error_event =
+          envelope(state, :error, %Message.Error{
+            severity: :error,
+            message: error.message,
+            kind: error.kind
+          })
+
+        next_state = process_events(state, [error_event])
+
+        if Run.EventReducer.final?(next_state) do
+          finish_run(next_state)
+        else
+          demand_next(next_state)
+          {:noreply, next_state}
+        end
+    end
+  end
+
+  defp parse_transport_map(%Run.State{provider_parser: parser}, raw_map) when is_atom(parser) do
+    case parser.parse(raw_map) do
+      {:ok, {kind, payload}} ->
+        {:ok, kind, payload}
+
+      {:error, %Error{} = error} ->
+        {:error, error}
+
+      {:error, reason} ->
+        {:error,
+         Error.new(:parse_error, :parser, "parser failed: #{inspect(reason)}", cause: reason)}
+    end
+  end
+
+  defp parse_transport_map(_state, _raw_map) do
+    {:error, Error.new(:parse_error, :parser, "run has no parser module configured")}
+  end
+
+  defp parser_error_event(state, %Error{} = error) do
+    envelope(
+      state,
+      :error,
+      %Message.Error{
+        severity: :error,
+        message: error.message,
+        kind: :parse_error
+      }
+    )
+  end
+
+  defp transport_error_event(state, {:timeout, timeout_ms}) do
+    envelope(
+      state,
+      :error,
+      %Message.Error{
+        severity: :error,
+        message: "provider command timed out after #{timeout_ms}ms",
+        kind: :timeout
+      }
+    )
+  end
+
+  defp transport_error_event(state, {:parse_error, reason, _line}) do
+    envelope(
+      state,
+      :error,
+      %Message.Error{
+        severity: :error,
+        message: "failed to parse provider output: #{inspect(reason)}",
+        kind: :parse_error
+      }
+    )
+  end
+
+  defp transport_error_event(state, :buffer_overflow) do
+    envelope(
+      state,
+      :error,
+      %Message.Error{
+        severity: :error,
+        message: "transport buffer overflow",
+        kind: :transport_error
+      }
+    )
+  end
+
+  defp transport_error_event(state, reason) do
+    envelope(
+      state,
+      :error,
+      %Message.Error{
+        severity: :error,
+        message: "transport error: #{inspect(reason)}",
+        kind: :transport_error
+      }
+    )
+  end
+
   defp finish_run(state) do
+    _ = ASM.Telemetry.run_completed(state.session_id, state.run_id, state.provider, state.status)
+
     state
     |> cleanup_approvals_in_session()
     |> cleanup_approval_timers()
+    |> cleanup_transport()
 
     notify_done(state)
     {:stop, :normal, state}
+  end
+
+  defp cleanup_transport(%Run.State{transport_pid: nil} = state), do: state
+
+  defp cleanup_transport(
+         %Run.State{transport_pid: transport_pid, transport_ref: transport_ref} = state
+       ) do
+    if is_reference(transport_ref), do: Process.demonitor(transport_ref, [:flush])
+    _ = Transport.detach(transport_pid, self())
+    _ = Transport.close(transport_pid)
+    %{state | transport_pid: nil, transport_ref: nil}
+  catch
+    :exit, _ -> %{state | transport_pid: nil, transport_ref: nil}
   end
 
   defp fanout(%Run.State{subscriber: nil}, _event), do: :ok
@@ -294,6 +503,19 @@ defmodule ASM.Run.Server do
 
   defp maybe_forward_cost_update(state, _event), do: state
 
+  defp maybe_interrupt_transport(%Run.State{transport_pid: nil}), do: :ok
+
+  defp maybe_interrupt_transport(%Run.State{transport_pid: transport_pid}) do
+    _ = Transport.interrupt(transport_pid)
+    :ok
+  end
+
+  defp demand_next(%Run.State{transport_pid: nil}), do: :ok
+
+  defp demand_next(%Run.State{transport_pid: transport_pid}) when is_pid(transport_pid) do
+    Transport.demand(transport_pid, self(), 1)
+  end
+
   defp envelope(state, kind, payload) do
     %Event{
       id: Event.generate_id(),
@@ -305,4 +527,13 @@ defmodule ASM.Run.Server do
       timestamp: DateTime.utc_now()
     }
   end
+
+  defp resolve_provider_parser(provider_name) do
+    provider_name
+    |> Provider.resolve!()
+    |> Map.fetch!(:parser)
+  end
+
+  defp diagnostic_suffix([]), do: ""
+  defp diagnostic_suffix(lines), do: ": " <> Enum.join(lines, " | ")
 end

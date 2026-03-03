@@ -54,6 +54,30 @@ defmodule ASM.HistoryTest do
     assert error.domain == :runtime
   end
 
+  test "rebuild_run/3 projects non-negative duration for historical terminal events" do
+    assert {:ok, store} = Memory.start_link([])
+
+    old = DateTime.add(DateTime.utc_now(), -120, :second)
+
+    assert :ok =
+             Store.append_event(
+               store,
+               %Event{
+                 id: Event.generate_id(),
+                 kind: :error,
+                 run_id: "run-old",
+                 session_id: "session-old",
+                 provider: :claude,
+                 payload: %Message.Error{severity: :error, message: "boom", kind: :timeout},
+                 timestamp: old
+               }
+             )
+
+    assert {:ok, %{result: result}} = History.rebuild_run(store, "session-old", "run-old")
+    assert is_integer(result.duration_ms)
+    assert result.duration_ms >= 0
+  end
+
   defp event(session_id, run_id, kind, payload) do
     %Event{
       id: Event.generate_id(),

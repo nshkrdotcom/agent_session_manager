@@ -173,7 +173,8 @@ defmodule ASM.Stream do
       when ref == state.driver_ref and pid == state.driver_pid ->
         state = %{state | driver_pid: nil, driver_ref: nil}
 
-        if reason not in [:normal, :shutdown] and is_pid(state.run_pid) do
+        if reason not in [:normal, :shutdown] and is_pid(state.run_pid) and
+             state.driver != ASM.Stream.CLIDriver do
           emit_driver_error(
             state.run_pid,
             state,

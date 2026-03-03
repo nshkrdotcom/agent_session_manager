@@ -14,6 +14,7 @@ Supported providers:
 - Native Elixir streaming (`Enumerable`) with backpressure-friendly composition.
 - Deterministic event envelopes for replay, auditing, and reducer-based projections.
 - Provider-specific flags/options normalized behind a consistent API.
+- Lease-aware transport boundary with bounded queue and explicit overflow policy.
 
 ## Install
 
@@ -79,6 +80,12 @@ Provider atom form for one-off queries:
 - Provider options: validated against provider schemas and passed to CLI command builders.
 
 Per-run options override session defaults. Session defaults are inherited automatically.
+
+Runtime execution path:
+
+- `ASM.Stream.CLIDriver` resolves provider command + starts a supervised `ASM.Transport.Port`.
+- `ASM.Run.Server` owns parser dispatch and emits typed `%ASM.Event{}` envelopes.
+- `ASM.Session.Server` remains aggregate root for run admission and approval routing.
 
 ## Public API
 
@@ -147,6 +154,7 @@ mix run examples/live_claude_stream.exs -- "Reply with exactly: CLAUDE_OK"
 mix run examples/live_gemini_stream.exs -- "Reply with exactly: GEMINI_OK"
 mix run examples/live_codex_stream.exs -- "Reply with exactly: CODEX_OK"
 mix run examples/live_multi_provider_smoke.exs
+mix run examples/live_feature_matrix.exs
 ```
 
 Environment knobs used by examples:
@@ -154,6 +162,11 @@ Environment knobs used by examples:
 - `CLAUDE_CLI_PATH`, `GEMINI_CLI_PATH`, `CODEX_PATH`
 - `ASM_PERMISSION_MODE` (`default`, `auto`, `bypass`, `plan`)
 - `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL`
+- `ASM_GEMINI_EXTENSIONS`, `ASM_CODEX_REASONING`
+
+## Guides
+
+- [Live Adapter Feature Matrix](docs/live-adapters.md)
 
 ## Architecture Notes
 

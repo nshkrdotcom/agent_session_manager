@@ -2,6 +2,7 @@ defmodule ASM.Run.ServerTest do
   use ExUnit.Case, async: true
 
   alias ASM.{Event, Message, Run}
+  alias ASM.Transport.Port
 
   test "emits run_started event on bootstrap" do
     assert {:ok, run_pid} =
@@ -76,5 +77,69 @@ defmodule ASM.Run.ServerTest do
     assert_receive {:asm_run_event, "run-int", %Event{kind: :error}}
     assert_receive {:asm_run_done, "run-int"}
     assert_receive {:DOWN, ^ref, :process, ^run_pid, :normal}
+  end
+
+  test "transport messages are parsed by run server and terminal result stops run" do
+    assert {:ok, run_pid} =
+             Run.Server.start_link(
+               run_id: "run-transport-parse",
+               session_id: "session-transport-parse",
+               provider: :claude,
+               subscriber: self()
+             )
+
+    assert_receive {:asm_run_event, "run-transport-parse", %Event{kind: :run_started}}
+
+    assert {:ok, transport_pid} = Port.start_link([])
+    assert :ok = Run.Server.attach_transport(run_pid, transport_pid)
+
+    assert :ok = Port.inject(transport_pid, %{"type" => "assistant_delta", "delta" => "abc"})
+    assert :ok = Port.inject(transport_pid, %{"type" => "result", "stop_reason" => "end_turn"})
+
+    assert_receive {:asm_run_event, "run-transport-parse", %Event{kind: :assistant_delta}}
+    assert_receive {:asm_run_event, "run-transport-parse", %Event{kind: :result}}
+    assert_receive {:asm_run_done, "run-transport-parse"}
+  end
+
+  test "successful transport exit without terminal payload emits run_completed" do
+    assert {:ok, run_pid} =
+             Run.Server.start_link(
+               run_id: "run-transport-exit-ok",
+               session_id: "session-transport-exit-ok",
+               provider: :claude,
+               subscriber: self()
+             )
+
+    assert_receive {:asm_run_event, "run-transport-exit-ok", %Event{kind: :run_started}}
+
+    assert {:ok, transport_pid} = Port.start_link([])
+    assert :ok = Run.Server.attach_transport(run_pid, transport_pid)
+
+    send(run_pid, {:transport_exit, 0, []})
+
+    assert_receive {:asm_run_event, "run-transport-exit-ok", %Event{kind: :run_completed}}
+    assert_receive {:asm_run_done, "run-transport-exit-ok"}
+  end
+
+  test "non-zero transport exit emits typed transport error and stops run" do
+    assert {:ok, run_pid} =
+             Run.Server.start_link(
+               run_id: "run-transport-exit-err",
+               session_id: "session-transport-exit-err",
+               provider: :claude,
+               subscriber: self()
+             )
+
+    assert_receive {:asm_run_event, "run-transport-exit-err", %Event{kind: :run_started}}
+
+    assert {:ok, transport_pid} = Port.start_link([])
+    assert :ok = Run.Server.attach_transport(run_pid, transport_pid)
+
+    send(run_pid, {:transport_exit, 2, ["error: failed"]})
+
+    assert_receive {:asm_run_event, "run-transport-exit-err", %Event{kind: :error} = event}
+    assert event.payload.kind == :transport_error
+    assert event.payload.message =~ "status 2"
+    assert_receive {:asm_run_done, "run-transport-exit-err"}
   end
 end

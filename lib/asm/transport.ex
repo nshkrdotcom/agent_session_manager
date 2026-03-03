@@ -51,4 +51,10 @@ defmodule ASM.Transport do
     send(run_pid, {:transport_error, reason})
     :ok
   end
+
+  @spec notify_exit(pid(), integer(), [String.t()]) :: :ok
+  def notify_exit(run_pid, status, diagnostics \\ []) do
+    send(run_pid, {:transport_exit, status, diagnostics})
+    :ok
+  end
 end

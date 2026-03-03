@@ -5,7 +5,11 @@ defmodule ASM.Examples.LiveSupport do
 
   @spec prompt_from_argv_or_default(String.t()) :: String.t()
   def prompt_from_argv_or_default(default) when is_binary(default) do
-    case Enum.join(System.argv(), " ") do
+    argv =
+      System.argv()
+      |> Enum.reject(&(&1 == "--"))
+
+    case Enum.join(argv, " ") do
       "" -> default
       prompt -> prompt
     end
@@ -45,6 +49,8 @@ defmodule ASM.Examples.LiveSupport do
       try do
         events = session |> ASM.stream(prompt, opts) |> Enum.to_list()
         Enum.each(events, &print_event/1)
+
+        fail_if_error_events!(events)
 
         result = ASM.Stream.final_result(events)
         print_result(result)
@@ -123,6 +129,24 @@ defmodule ASM.Examples.LiveSupport do
 
       _ ->
         "Install hint: ensure the provider CLI is installed and on PATH."
+    end
+  end
+
+  defp fail_if_error_events!(events) do
+    errors =
+      events
+      |> Enum.filter(fn
+        %Event{kind: :error, payload: %ASM.Message.Error{}} -> true
+        _ -> false
+      end)
+      |> Enum.map(fn %Event{payload: %ASM.Message.Error{} = payload} ->
+        "[#{payload.kind}] #{payload.message}"
+      end)
+
+    if errors != [] do
+      IO.puts("\nrun failed with error events:")
+      Enum.each(errors, &IO.puts("  - " <> &1))
+      System.halt(1)
     end
   end
 end

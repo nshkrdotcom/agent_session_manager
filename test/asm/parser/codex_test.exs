@@ -18,6 +18,32 @@ defmodule ASM.Parser.CodexTest do
     assert payload.usage.input_tokens == 12
   end
 
+  test "parses current codex item.completed agent message payloads" do
+    raw = %{
+      "type" => "item.completed",
+      "item" => %{
+        "id" => "item_1",
+        "type" => "agent_message",
+        "text" => "CODEX_OK"
+      }
+    }
+
+    assert {:ok, {:assistant_message, %Message.Assistant{} = payload}} = Codex.parse(raw)
+    assert [%ASM.Content.Text{text: "CODEX_OK"}] = payload.content
+  end
+
+  test "parses current codex turn.completed payloads with normalized stop reason" do
+    raw = %{
+      "type" => "turn.completed",
+      "usage" => %{"input_tokens" => 8, "output_tokens" => 3}
+    }
+
+    assert {:ok, {:result, %Message.Result{} = payload}} = Codex.parse(raw)
+    assert payload.stop_reason == :end_turn
+    assert payload.usage.input_tokens == 8
+    assert payload.usage.output_tokens == 3
+  end
+
   test "parses tool use fixture" do
     raw = fixture("tool_use.json")
     assert {:ok, {:tool_use, %Message.ToolUse{} = payload}} = Codex.parse(raw)

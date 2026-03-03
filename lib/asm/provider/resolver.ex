@@ -27,7 +27,9 @@ defmodule ASM.Provider.Resolver do
 
   @type resolve_opt ::
           {:cli_path, String.t()}
+          | {:env_getter, (String.t() -> String.t() | nil)}
           | {:env, (String.t() -> String.t() | nil)}
+          | {:env, map()}
           | {:find_executable, (String.t() -> String.t() | nil)}
           | {:file_exists?, (String.t() -> boolean())}
           | {:executable?, (String.t() -> boolean())}
@@ -218,7 +220,27 @@ defmodule ASM.Provider.Resolver do
 
   defp normalize_env_flag(_), do: false
 
-  defp env_getter(opts), do: Keyword.get(opts, :env, &System.get_env/1)
+  defp env_getter(opts) do
+    case Keyword.get(opts, :env_getter) do
+      fun when is_function(fun, 1) ->
+        fun
+
+      _ ->
+        env_opt = Keyword.get(opts, :env)
+
+        cond do
+          is_function(env_opt, 1) ->
+            env_opt
+
+          is_map(env_opt) ->
+            map_env_getter(env_opt)
+
+          true ->
+            &System.get_env/1
+        end
+    end
+  end
+
   defp find_executable(opts), do: Keyword.get(opts, :find_executable, &System.find_executable/1)
   defp file_exists?(opts), do: Keyword.get(opts, :file_exists?, &File.exists?/1)
   defp executable?(opts), do: Keyword.get(opts, :executable?, &default_executable?/1)
@@ -235,4 +257,29 @@ defmodule ASM.Provider.Resolver do
       _ -> false
     end
   end
+
+  defp map_env_getter(env_map) when is_map(env_map) do
+    fn key ->
+      case Map.fetch(env_map, key) do
+        {:ok, value} ->
+          value
+
+        :error ->
+          find_atom_key_value(env_map, key)
+      end
+    end
+  end
+
+  defp find_atom_key_value(env_map, key) do
+    Enum.find_value(env_map, &atom_key_match(&1, key))
+  end
+
+  defp atom_key_match({k, value}, key) when is_atom(k) do
+    case Atom.to_string(k) do
+      ^key -> value
+      _ -> nil
+    end
+  end
+
+  defp atom_key_match(_entry, _key), do: nil
 end

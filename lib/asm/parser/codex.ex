@@ -35,10 +35,11 @@ defmodule ASM.Parser.Codex do
     do: {:assistant_message, assistant_message(raw)}
 
   defp parse_typed("assistant_message", raw), do: {:assistant_message, assistant_message(raw)}
+  defp parse_typed("item.completed", raw), do: parse_item_completed(raw)
   defp parse_typed("tool_call", raw), do: {:tool_use, tool_use_message(raw)}
   defp parse_typed("tool_use", raw), do: {:tool_use, tool_use_message(raw)}
   defp parse_typed("tool_result", raw), do: {:tool_result, tool_result_message(raw)}
-  defp parse_typed("turn.completed", raw), do: {:result, result_message(raw)}
+  defp parse_typed("turn.completed", raw), do: {:result, result_message(raw, :end_turn)}
   defp parse_typed("result", raw), do: {:result, result_message(raw)}
   defp parse_typed("error", raw), do: {:error, error_message(raw)}
   defp parse_typed("run_started", raw), do: {:run_started, run_lifecycle(raw, :started)}
@@ -76,6 +77,44 @@ defmodule ASM.Parser.Codex do
     }
   end
 
+  defp parse_item_completed(raw) do
+    case fetch_any(raw, [:item, "item"]) do
+      item when is_map(item) ->
+        parse_completed_item(item, raw)
+
+      _ ->
+        {:raw,
+         %Message.Raw{provider: :codex_exec, type: "item.completed", data: normalize_map(raw)}}
+    end
+  end
+
+  defp parse_completed_item(item, raw) do
+    case fetch_any(item, [:type, "type"]) do
+      "agent_message" ->
+        {:assistant_message, assistant_message(item)}
+
+      "reasoning" ->
+        {:thinking, thinking_message(item)}
+
+      "tool_call" ->
+        {:tool_use, tool_use_message(item)}
+
+      "tool_result" ->
+        {:tool_result, tool_result_message(item)}
+
+      _ ->
+        {:raw,
+         %Message.Raw{provider: :codex_exec, type: "item.completed", data: normalize_map(raw)}}
+    end
+  end
+
+  defp thinking_message(raw) do
+    %Message.Thinking{
+      thinking: fetch_any(raw, [:thinking, "thinking", :text, "text"]) || "",
+      signature: fetch_any(raw, [:signature, "signature"])
+    }
+  end
+
   defp tool_use_message(raw) do
     %Message.ToolUse{
       tool_name: fetch_any(raw, [:tool_name, "tool_name", :name, "name"]) || "unknown_tool",
@@ -92,11 +131,12 @@ defmodule ASM.Parser.Codex do
     }
   end
 
-  defp result_message(raw) do
+  defp result_message(raw, default_stop_reason \\ :unknown) do
     usage_map = fetch_any(raw, [:usage, "usage"]) || %{}
 
     %Message.Result{
-      stop_reason: fetch_any(raw, [:stop_reason, "stop_reason", :reason, "reason"]) || :unknown,
+      stop_reason:
+        fetch_any(raw, [:stop_reason, "stop_reason", :reason, "reason"]) || default_stop_reason,
       usage: %{
         input_tokens: fetch_any(usage_map, [:input_tokens, "input_tokens"]) || 0,
         output_tokens: fetch_any(usage_map, [:output_tokens, "output_tokens"]) || 0

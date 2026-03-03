@@ -6,6 +6,9 @@ defmodule ASM.Stream.CLIDriver do
   alias ASM.{Control, Error, Event, Message, Options, Protocol, Provider, Run}
   alias ASM.Provider.Resolver
 
+  @max_diagnostic_lines 5
+  @max_diagnostic_line_length 240
+
   @spec start(map()) :: {:ok, pid()} | {:error, Error.t() | term()}
   def start(%{} = context) do
     {:ok, spawn(fn -> run(context) end)}
@@ -66,26 +69,30 @@ defmodule ASM.Stream.CLIDriver do
       |> Keyword.get(:transport_timeout_ms, 60_000)
       |> normalize_timeout()
 
-    loop(port, context, provider, "", timeout_ms, false)
+    loop(port, context, provider, "", timeout_ms, false, [])
   end
 
-  defp loop(port, context, provider, buffer, timeout_ms, saw_terminal?) do
+  defp loop(port, context, provider, buffer, timeout_ms, saw_terminal?, diagnostic_lines) do
     receive do
       {^port, {:data, chunk}} ->
         {lines, remainder} = Protocol.JSONL.extract_lines(buffer <> chunk)
 
-        next_terminal =
-          Enum.reduce(lines, saw_terminal?, fn line, terminal? ->
-            terminal? or handle_line(line, context, provider)
+        {next_terminal, next_diagnostics} =
+          Enum.reduce(lines, {saw_terminal?, diagnostic_lines}, fn line,
+                                                                   {terminal?, diagnostics} ->
+            {terminal_for_line, next_diagnostics} =
+              handle_line(line, context, provider, diagnostics)
+
+            {terminal? or terminal_for_line, next_diagnostics}
           end)
 
-        loop(port, context, provider, remainder, timeout_ms, next_terminal)
+        loop(port, context, provider, remainder, timeout_ms, next_terminal, next_diagnostics)
 
       {^port, {:exit_status, status}} ->
-        emit_exit(context, status, saw_terminal?)
+        emit_exit(context, status, saw_terminal?, diagnostic_lines)
 
       {^port, :closed} ->
-        emit_exit(context, 0, saw_terminal?)
+        emit_exit(context, 0, saw_terminal?, diagnostic_lines)
     after
       timeout_ms ->
         Port.close(port)
@@ -97,33 +104,32 @@ defmodule ASM.Stream.CLIDriver do
     end
   end
 
-  defp handle_line("", _context, _provider), do: false
+  defp handle_line("", _context, _provider, diagnostic_lines), do: {false, diagnostic_lines}
 
-  defp handle_line(line, context, provider) do
-    with {:ok, decoded} <- Protocol.JSONL.decode_line(line),
-         {:ok, {kind, payload}} <- provider.parser.parse(decoded) do
-      safe_ingest(context.run_pid, event(context, kind, payload))
-      terminal_event?(kind)
+  defp handle_line(line, context, provider, diagnostic_lines) do
+    line = String.trim(line)
+
+    if line == "" do
+      {false, diagnostic_lines}
     else
-      {:error, %Error{} = error} ->
-        emit_error(context, error)
-        false
+      with {:ok, decoded} <- Protocol.JSONL.decode_line(line),
+           {:ok, {kind, payload}} <- provider.parser.parse(decoded) do
+        safe_ingest(context.run_pid, event(context, kind, payload))
+        {terminal_event?(kind), diagnostic_lines}
+      else
+        {:error, %Error{} = error} ->
+          emit_error(context, error)
+          {false, diagnostic_lines}
 
-      {:error, reason} ->
-        emit_error(
-          context,
-          Error.new(:parse_error, :parser, "failed to parse provider line: #{inspect(reason)}",
-            cause: reason
-          )
-        )
-
-        false
+        {:error, reason} ->
+          maybe_emit_parse_error(context, line, reason, diagnostic_lines)
+      end
     end
   end
 
-  defp emit_exit(_context, 0, true), do: :ok
+  defp emit_exit(_context, 0, true, _diagnostics), do: :ok
 
-  defp emit_exit(context, 0, false) do
+  defp emit_exit(context, 0, false, _diagnostics) do
     safe_ingest(
       context.run_pid,
       event(
@@ -137,17 +143,59 @@ defmodule ASM.Stream.CLIDriver do
     )
   end
 
-  defp emit_exit(context, status, _terminal?) do
+  defp emit_exit(context, status, _terminal?, diagnostics) do
+    diagnostic_suffix = format_diagnostics(diagnostics)
+
     emit_error(
       context,
       Error.new(
         :transport_error,
         :transport,
-        "provider process exited with status #{status}",
+        "provider process exited with status #{status}#{diagnostic_suffix}",
         exit_code: status
       )
     )
   end
+
+  defp maybe_emit_parse_error(context, line, reason, diagnostic_lines) do
+    if diagnostic_line?(line, reason) do
+      {false, append_diagnostic(diagnostic_lines, line)}
+    else
+      emit_error(
+        context,
+        Error.new(:parse_error, :parser, "failed to parse provider line: #{inspect(reason)}",
+          cause: reason
+        )
+      )
+
+      {false, diagnostic_lines}
+    end
+  end
+
+  defp diagnostic_line?(_line, :not_json_object), do: true
+
+  defp diagnostic_line?(line, _reason) do
+    not json_object_candidate?(line)
+  end
+
+  defp json_object_candidate?(line) do
+    trimmed = String.trim(line)
+    String.starts_with?(trimmed, "{") and String.ends_with?(trimmed, "}")
+  end
+
+  defp append_diagnostic(diagnostics, line) do
+    line =
+      line
+      |> String.trim()
+      |> String.slice(0, @max_diagnostic_line_length)
+
+    diagnostics
+    |> Kernel.++([line])
+    |> Enum.take(-@max_diagnostic_lines)
+  end
+
+  defp format_diagnostics([]), do: ""
+  defp format_diagnostics(lines), do: ": " <> Enum.join(lines, " | ")
 
   defp emit_error(context, %Error{} = error) do
     safe_ingest(

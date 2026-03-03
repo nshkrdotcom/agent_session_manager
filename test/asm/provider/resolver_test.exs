@@ -86,4 +86,29 @@ defmodule ASM.Provider.ResolverTest do
 
     assert spec.program == "/bin/claude"
   end
+
+  test "env map option does not crash and still allows PATH fallback" do
+    assert {:ok, spec} =
+             Resolver.resolve(:claude,
+               env: %{},
+               find_executable: fn
+                 "claude" -> "/bin/claude"
+                 _ -> nil
+               end
+             )
+
+    assert spec.program == "/bin/claude"
+  end
+
+  test "env map can satisfy provider env var path lookup" do
+    assert {:ok, spec} =
+             Resolver.resolve(:codex_exec,
+               env: %{"CODEX_PATH" => "/usr/local/bin/codex"},
+               file_exists?: fn _ -> true end,
+               executable?: fn _ -> true end,
+               find_executable: fn _ -> nil end
+             )
+
+    assert spec.program == "/usr/local/bin/codex"
+  end
 end

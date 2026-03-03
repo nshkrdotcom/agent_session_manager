@@ -13,12 +13,12 @@ prompt =
 
 reasoning_effort =
   case System.get_env("ASM_CODEX_REASONING") do
-    nil -> :medium
-    "" -> :medium
+    nil -> nil
+    "" -> nil
     "low" -> :low
     "medium" -> :medium
     "high" -> :high
-    _ -> :medium
+    _ -> nil
   end
 
 opts =

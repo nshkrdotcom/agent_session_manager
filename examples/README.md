@@ -18,5 +18,6 @@ mix run examples/live_multi_provider_smoke.exs
 - `CODEX_PATH` (optional explicit path)
 - `ASM_PERMISSION_MODE` (`default`, `auto`, `bypass`, `plan`; defaults to `auto`)
 - `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL` (optional)
+- `ASM_CODEX_REASONING` (`low`, `medium`, `high`; optional and auto-skipped when unsupported)
 
 Each script checks CLI availability first and exits with actionable setup errors if missing.

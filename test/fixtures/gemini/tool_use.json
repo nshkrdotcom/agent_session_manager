@@ -1,0 +1,8 @@
+{
+  "type": "tool_use",
+  "name": "search",
+  "id": "tool-g-1",
+  "input": {
+    "q": "elixir otp"
+  }
+}

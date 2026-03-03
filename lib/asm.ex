@@ -1,0 +1,122 @@
+defmodule ASM do
+  @moduledoc """
+  Public facade for the ASM session runtime.
+  """
+
+  alias ASM.{Error, Result, Session, Stream}
+
+  @type session_ref :: GenServer.server()
+
+  @spec start_session(keyword()) :: {:ok, session_ref()} | {:error, Error.t() | term()}
+  def start_session(opts \\ []) do
+    session_id = Keyword.get_lazy(opts, :session_id, &ASM.Event.generate_id/0)
+    opts = Keyword.put(opts, :session_id, session_id)
+
+    case Session.Supervisor.start_session(opts) do
+      {:ok, _subtree_pid} -> lookup_session_server(session_id)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @spec stop_session(String.t() | pid()) :: :ok | {:error, :not_found}
+  def stop_session(session_ref)
+
+  def stop_session(session_ref) when is_binary(session_ref) do
+    Session.Supervisor.stop_session(session_ref)
+  end
+
+  def stop_session(session_ref) when is_pid(session_ref) do
+    case session_id(session_ref) do
+      nil -> Session.Supervisor.stop_session(session_ref)
+      session_id -> Session.Supervisor.stop_session(session_id)
+    end
+  end
+
+  @spec stream(session_ref(), String.t(), keyword()) :: Enumerable.t()
+  def stream(session, prompt, opts \\ []) when is_binary(prompt) do
+    Stream.create(session, prompt, opts)
+  end
+
+  @spec query(session_ref() | atom(), String.t(), keyword()) ::
+          {:ok, Result.t()} | {:error, Error.t()}
+  def query(session_or_provider, prompt, opts \\ [])
+
+  def query(session, prompt, opts) when is_pid(session) and is_binary(prompt) do
+    result =
+      session
+      |> stream(prompt, opts)
+      |> Stream.final_result()
+
+    {:ok, result}
+  rescue
+    error ->
+      {:error, Error.new(:runtime, :runtime, Exception.message(error), cause: error)}
+  end
+
+  def query(provider, prompt, opts) when is_atom(provider) and is_binary(prompt) do
+    case start_session(Keyword.put(opts, :provider, provider)) do
+      {:ok, session} ->
+        result =
+          try do
+            query(session, prompt, opts)
+          after
+            _ = stop_session(session)
+          end
+
+        case result do
+          {:ok, %Result{} = value} ->
+            {:ok, value}
+
+          {:error, %Error{} = error} ->
+            {:error, error}
+        end
+
+      {:error, %Error{} = error} ->
+        {:error, error}
+
+      {:error, other} ->
+        {:error, Error.new(:runtime, :runtime, inspect(other), cause: other)}
+    end
+  end
+
+  @spec session_id(session_ref()) :: String.t() | nil
+  def session_id(session) do
+    Session.Server.get_state(session).session_id
+  rescue
+    _ -> nil
+  end
+
+  @spec health(session_ref()) :: :healthy | :degraded | {:unhealthy, term()}
+  def health(session) when is_pid(session) do
+    if Process.alive?(session), do: :healthy, else: {:unhealthy, :not_alive}
+  end
+
+  def health(session_id) when is_binary(session_id) do
+    case Registry.lookup(:asm_sessions, {session_id, :server}) do
+      [{pid, _}] when is_pid(pid) -> health(pid)
+      [] -> {:unhealthy, :not_found}
+    end
+  end
+
+  @spec cost(session_ref()) :: map()
+  def cost(session) do
+    Session.Server.get_state(session).cost
+  end
+
+  @spec interrupt(session_ref(), String.t()) :: :ok | {:error, Error.t()}
+  def interrupt(session, run_id), do: Session.Server.cancel_run(session, run_id)
+
+  @spec approve(session_ref(), String.t(), :allow | :deny) :: :ok | {:error, Error.t()}
+  def approve(session, approval_id, decision),
+    do: Session.Server.resolve_approval(session, approval_id, decision)
+
+  defp lookup_session_server(session_id) do
+    case Registry.lookup(:asm_sessions, {session_id, :server}) do
+      [{pid, _}] ->
+        {:ok, pid}
+
+      [] ->
+        {:error, Error.new(:runtime, :runtime, "Session server not found")}
+    end
+  end
+end

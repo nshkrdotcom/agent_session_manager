@@ -1,0 +1,159 @@
+defmodule ASM.Parser.Codex do
+  @moduledoc """
+  Codex exec parser that normalizes raw maps to ASM payload structs.
+  """
+
+  alias ASM.{Content, Control, Error, Message, Parser}
+
+  @behaviour Parser
+
+  @impl true
+  @spec parse(map()) ::
+          {:ok, {ASM.Event.kind(), ASM.Message.t() | ASM.Control.t()}} | {:error, Error.t()}
+  def parse(raw) when is_map(raw) do
+    type = event_type(raw)
+    {:ok, parse_typed(type, raw)}
+  rescue
+    error ->
+      {:error,
+       Error.new(:parse_error, :parser, "Codex parser failure: #{Exception.message(error)}",
+         cause: error
+       )}
+  end
+
+  def parse(other) do
+    {:error,
+     Error.new(:parse_error, :parser, "Codex parser expected map, got: #{inspect(other)}")}
+  end
+
+  defp parse_typed("response.output_text.delta", raw),
+    do: {:assistant_delta, assistant_delta(raw)}
+
+  defp parse_typed("assistant_delta", raw), do: {:assistant_delta, assistant_delta(raw)}
+
+  defp parse_typed("response.output_text.done", raw),
+    do: {:assistant_message, assistant_message(raw)}
+
+  defp parse_typed("assistant_message", raw), do: {:assistant_message, assistant_message(raw)}
+  defp parse_typed("tool_call", raw), do: {:tool_use, tool_use_message(raw)}
+  defp parse_typed("tool_use", raw), do: {:tool_use, tool_use_message(raw)}
+  defp parse_typed("tool_result", raw), do: {:tool_result, tool_result_message(raw)}
+  defp parse_typed("turn.completed", raw), do: {:result, result_message(raw)}
+  defp parse_typed("result", raw), do: {:result, result_message(raw)}
+  defp parse_typed("error", raw), do: {:error, error_message(raw)}
+  defp parse_typed("run_started", raw), do: {:run_started, run_lifecycle(raw, :started)}
+  defp parse_typed("run_completed", raw), do: {:run_completed, run_lifecycle(raw, :completed)}
+
+  defp parse_typed(type, raw) do
+    {:raw, %Message.Raw{provider: :codex_exec, type: type, data: normalize_map(raw)}}
+  end
+
+  defp event_type(raw) do
+    raw
+    |> fetch_any([:type, "type", :event, "event"])
+    |> case do
+      nil -> "unknown"
+      value when is_binary(value) -> value
+      value when is_atom(value) -> Atom.to_string(value)
+      value -> to_string(value)
+    end
+  end
+
+  defp assistant_delta(raw) do
+    %Message.Partial{
+      content_type: :text,
+      delta: fetch_any(raw, [:delta, "delta", :text, "text"]) || ""
+    }
+  end
+
+  defp assistant_message(raw) do
+    text = fetch_any(raw, [:text, "text", :content, "content"]) || ""
+
+    %Message.Assistant{
+      content: [%Content.Text{text: to_string(text)}],
+      model: fetch_any(raw, [:model, "model"]),
+      metadata: normalize_map(raw)
+    }
+  end
+
+  defp tool_use_message(raw) do
+    %Message.ToolUse{
+      tool_name: fetch_any(raw, [:tool_name, "tool_name", :name, "name"]) || "unknown_tool",
+      tool_id: fetch_any(raw, [:tool_id, "tool_id", :id, "id"]) || "unknown_id",
+      input: fetch_any(raw, [:input, "input"]) || %{}
+    }
+  end
+
+  defp tool_result_message(raw) do
+    %Message.ToolResult{
+      tool_id: fetch_any(raw, [:tool_id, "tool_id", :id, "id"]) || "unknown_id",
+      content: fetch_any(raw, [:content, "content"]),
+      is_error: truthy?(fetch_any(raw, [:is_error, "is_error", :error, "error"]))
+    }
+  end
+
+  defp result_message(raw) do
+    usage_map = fetch_any(raw, [:usage, "usage"]) || %{}
+
+    %Message.Result{
+      stop_reason: fetch_any(raw, [:stop_reason, "stop_reason", :reason, "reason"]) || :unknown,
+      usage: %{
+        input_tokens: fetch_any(usage_map, [:input_tokens, "input_tokens"]) || 0,
+        output_tokens: fetch_any(usage_map, [:output_tokens, "output_tokens"]) || 0
+      },
+      duration_ms: fetch_any(raw, [:duration_ms, "duration_ms"]),
+      metadata: normalize_map(raw)
+    }
+  end
+
+  defp error_message(raw) do
+    %Message.Error{
+      severity: normalize_severity(fetch_any(raw, [:severity, "severity"])),
+      message: fetch_any(raw, [:message, "message"]) || "Codex parser error",
+      kind: normalize_kind(fetch_any(raw, [:kind, "kind"]))
+    }
+  end
+
+  defp run_lifecycle(raw, status) do
+    %Control.RunLifecycle{
+      status: status,
+      summary: normalize_map(raw)
+    }
+  end
+
+  defp fetch_any(raw, keys) do
+    Enum.find_value(keys, fn key -> Map.get(raw, key) end)
+  end
+
+  defp normalize_map(raw) do
+    Map.new(raw, fn {k, v} -> {normalize_key(k), v} end)
+  end
+
+  defp normalize_key(key) when is_atom(key), do: key
+  defp normalize_key(key) when is_binary(key), do: key
+  defp normalize_key(other), do: other
+
+  defp truthy?(value) when value in [true, "true", 1, "1"], do: true
+  defp truthy?(_), do: false
+
+  defp normalize_severity(value) when value in [:fatal, "fatal"], do: :fatal
+  defp normalize_severity(value) when value in [:warning, "warning", "warn"], do: :warning
+  defp normalize_severity(_), do: :error
+
+  defp normalize_kind(nil), do: :unknown
+  defp normalize_kind(kind) when is_atom(kind), do: kind
+
+  defp normalize_kind(kind) when is_binary(kind) do
+    case String.downcase(kind) do
+      "user_cancelled" -> :user_cancelled
+      "parse_error" -> :parse_error
+      "timeout" -> :timeout
+      "tool_failed" -> :tool_failed
+      "approval_denied" -> :approval_denied
+      "rate_limit" -> :rate_limit
+      _ -> :unknown
+    end
+  end
+
+  defp normalize_kind(_), do: :unknown
+end

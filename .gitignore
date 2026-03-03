@@ -24,3 +24,5 @@ agent_session_manager-*.tar
 
 # Rendering example output files
 /examples/tmp/
+
+/_legacy/

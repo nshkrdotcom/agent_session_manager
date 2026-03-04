@@ -1,5 +1,5 @@
 defmodule ASM.Stream.NodeDriverTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
 
   alias ASM.Error
   alias ASM.Execution.Config

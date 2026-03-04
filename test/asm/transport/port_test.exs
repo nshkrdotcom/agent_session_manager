@@ -1,5 +1,5 @@
 defmodule ASM.Transport.PortTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
 
   alias ASM.Transport
   alias ASM.Transport.Port
@@ -121,7 +121,9 @@ defmodule ASM.Transport.PortTest do
       write_script!("""
       #!/usr/bin/env bash
       set -euo pipefail
-      sleep 5
+      trap 'exit 0' INT
+      echo '{"type":"assistant_delta","delta":"READY"}'
+      while true; do :; done
       """)
 
     assert {:ok, port} =
@@ -133,8 +135,13 @@ defmodule ASM.Transport.PortTest do
              )
 
     assert {:ok, :attached} = Transport.attach(port, self())
+    assert :ok = Transport.demand(port, self(), 1)
+    assert_receive {:transport_message, %{"type" => "assistant_delta", "delta" => "READY"}}, 2_000
+    ref = Process.monitor(port)
+
     assert :ok = Transport.interrupt(port)
-    assert_receive {:transport_exit, _status, _diagnostics}
+    assert_receive {:transport_exit, _status, _diagnostics}, 5_000
+    assert_receive {:DOWN, ^ref, :process, ^port, :normal}, 1_000
   end
 
   test "stderr is captured separately and included in diagnostics on exit" do
@@ -168,7 +175,7 @@ defmodule ASM.Transport.PortTest do
 
   test "interrupt sends SIGINT and subprocess can handle it gracefully" do
     int_handler =
-      "trap 'echo \"{\\\"type\\\":\\\"assistant_delta\\\",\\\"delta\\\":\\\"INTERRUPTED\\\"}\"; exit 0' INT; echo '{\"type\":\"assistant_delta\",\"delta\":\"READY\"}'; while true; do sleep 0.1; done"
+      "trap 'echo \"{\\\"type\\\":\\\"assistant_delta\\\",\\\"delta\\\":\\\"INTERRUPTED\\\"}\"; exit 0' INT; echo '{\"type\":\"assistant_delta\",\"delta\":\"READY\"}'; while true; do :; done"
 
     assert {:ok, port} =
              Port.start_link(
@@ -185,22 +192,17 @@ defmodule ASM.Transport.PortTest do
     assert :ok = Transport.interrupt(port)
 
     assert_receive {:transport_message, %{"type" => "assistant_delta", "delta" => "INTERRUPTED"}},
-                   2_000
+                   5_000
 
-    assert_receive {:transport_exit, status, _diagnostics}, 2_000
+    assert_receive {:transport_exit, status, _diagnostics}, 5_000
     assert status in [0, 2, 130]
   end
 
   test "force close sends SIGKILL after SIGTERM" do
-    pid_file = tmp_path!("asm-transport-force-close-pid")
-
     script =
       write_script!("""
       #!/usr/bin/env bash
       set -euo pipefail
-
-      pid_file="$1"
-      echo "$$" > "$pid_file"
       trap '' TERM
 
       while true; do sleep 0.1; done
@@ -209,13 +211,13 @@ defmodule ASM.Transport.PortTest do
     assert {:ok, port} =
              Port.start_link(
                program: script,
-               args: [pid_file],
+               args: [],
                queue_limit: 8,
                overflow_policy: :fail_run
              )
 
-    os_pid = wait_for_os_pid!(pid_file)
-    assert os_pid_alive?(os_pid)
+    os_pid = os_pid!(port)
+    assert_eventually(fn -> os_pid_alive?(os_pid) end)
 
     ref = Process.monitor(port)
     assert :ok = Transport.close(port)
@@ -256,15 +258,10 @@ defmodule ASM.Transport.PortTest do
   end
 
   test "health/1 returns :healthy when subprocess is alive" do
-    pid_file = tmp_path!("asm-transport-health-pid")
-
     script =
       write_script!("""
       #!/usr/bin/env bash
       set -euo pipefail
-
-      pid_file="$1"
-      echo "$$" > "$pid_file"
 
       while true; do sleep 0.1; done
       """)
@@ -272,14 +269,14 @@ defmodule ASM.Transport.PortTest do
     assert {:ok, port} =
              Port.start_link(
                program: script,
-               args: [pid_file],
+               args: [],
                queue_limit: 8,
                overflow_policy: :fail_run
              )
 
     assert :healthy = Transport.health(port)
-    os_pid = wait_for_os_pid!(pid_file)
-    {_output, 0} = System.cmd("kill", ["-9", Integer.to_string(os_pid)])
+    exec_pid = exec_pid!(port)
+    Process.exit(exec_pid, :kill)
 
     assert_eventually(fn ->
       case health_or_degraded(port) do
@@ -294,15 +291,10 @@ defmodule ASM.Transport.PortTest do
     old_flag = Process.flag(:trap_exit, true)
     on_exit(fn -> Process.flag(:trap_exit, old_flag) end)
 
-    pid_file = tmp_path!("asm-transport-startup-lease-pid")
-
     script =
       write_script!("""
       #!/usr/bin/env bash
       set -euo pipefail
-
-      pid_file="$1"
-      echo "$$" > "$pid_file"
 
       while true; do sleep 0.1; done
       """)
@@ -310,13 +302,13 @@ defmodule ASM.Transport.PortTest do
     assert {:ok, port} =
              Port.start_link(
                program: script,
-               args: [pid_file],
+               args: [],
                queue_limit: 8,
                overflow_policy: :fail_run,
                startup_lease_timeout_ms: 50
              )
 
-    os_pid = wait_for_os_pid!(pid_file)
+    os_pid = os_pid!(port)
     ref = Process.monitor(port)
 
     assert_receive {:EXIT, ^port, {:shutdown, :startup_lease_timeout}}, 2_000
@@ -373,25 +365,6 @@ defmodule ASM.Transport.PortTest do
     path
   end
 
-  defp tmp_path!(prefix) do
-    Path.join(System.tmp_dir!(), "#{prefix}-#{System.unique_integer([:positive])}.tmp")
-  end
-
-  defp wait_for_os_pid!(path) do
-    assert_eventually(fn ->
-      with {:ok, contents} <- File.read(path),
-           {pid, ""} <- Integer.parse(String.trim(contents)) do
-        is_integer(pid)
-      else
-        _ -> false
-      end
-    end)
-
-    {:ok, contents} = File.read(path)
-    {pid, ""} = Integer.parse(String.trim(contents))
-    pid
-  end
-
   defp os_pid_alive?(os_pid) when is_integer(os_pid) do
     {_output, status} =
       System.cmd("kill", ["-0", Integer.to_string(os_pid)], stderr_to_stdout: true)
@@ -416,5 +389,23 @@ defmodule ASM.Transport.PortTest do
     Transport.health(pid)
   catch
     :exit, _ -> :degraded
+  end
+
+  defp exec_pid!(port) do
+    state = :sys.get_state(port)
+
+    case state.subprocess do
+      {pid, _os_pid} when is_pid(pid) -> pid
+      _ -> flunk("transport subprocess missing")
+    end
+  end
+
+  defp os_pid!(port) do
+    state = :sys.get_state(port)
+
+    case state.subprocess do
+      {_pid, os_pid} when is_integer(os_pid) -> os_pid
+      _ -> flunk("transport os pid missing")
+    end
   end
 end

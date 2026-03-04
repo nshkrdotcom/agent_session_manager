@@ -1,5 +1,5 @@
 defmodule ASM.Command.CodexTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
 
   alias ASM.Command.Codex
   alias ASM.Options

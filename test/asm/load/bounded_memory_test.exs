@@ -1,5 +1,5 @@
 defmodule ASM.Load.BoundedMemoryTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
 
   alias ASM.Transport
   alias ASM.Transport.Port

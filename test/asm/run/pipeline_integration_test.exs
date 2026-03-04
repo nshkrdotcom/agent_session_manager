@@ -1,5 +1,5 @@
 defmodule ASM.Run.PipelineIntegrationTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
 
   alias ASM.{Event, Message, Run}
 

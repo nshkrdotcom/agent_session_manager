@@ -1,5 +1,5 @@
 defmodule ASM.HistoryTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
 
   alias ASM.{Event, History, Message, Store}
   alias ASM.Store.Memory

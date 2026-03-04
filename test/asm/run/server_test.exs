@@ -1,5 +1,5 @@
 defmodule ASM.Run.ServerTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
 
   alias ASM.{Event, Message, Run}
   alias ASM.Transport.Port

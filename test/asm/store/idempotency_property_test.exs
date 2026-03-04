@@ -1,5 +1,5 @@
 defmodule ASM.Store.IdempotencyPropertyTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
   use ExUnitProperties
 
   alias ASM.{Control, Event, Store}

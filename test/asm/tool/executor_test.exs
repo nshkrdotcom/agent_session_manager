@@ -1,5 +1,5 @@
 defmodule ASM.Tool.ExecutorTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
 
   alias ASM.{Message, Run, Tool}
   alias ASM.Tool.Executor

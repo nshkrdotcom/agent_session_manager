@@ -1,5 +1,5 @@
 defmodule ASM.Execution.ConfigTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
 
   alias ASM.Execution.Config
 

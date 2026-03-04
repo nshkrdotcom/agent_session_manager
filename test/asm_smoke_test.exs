@@ -1,5 +1,5 @@
 defmodule ASMSmokeTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
 
   test "app starts core supervision components" do
     assert Process.whereis(:asm_sessions)

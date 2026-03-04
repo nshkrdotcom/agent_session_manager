@@ -1,5 +1,5 @@
 defmodule ASM.Session.TopologyTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
 
   alias ASM.Session.Server
   alias ASM.Session.Supervisor, as: SessionSupervisor
@@ -28,10 +28,13 @@ defmodule ASM.Session.TopologyTest do
   test "stop_session/1 terminates subtree and unregisters keys" do
     session_id = "session-" <> Integer.to_string(System.unique_integer([:positive]))
 
-    assert {:ok, _pid} =
+    assert {:ok, subtree_pid} =
              SessionSupervisor.start_session(session_id: session_id, provider: :claude)
 
+    assert Process.alive?(subtree_pid)
+
     assert :ok = SessionSupervisor.stop_session(session_id)
+    assert {:ok, _reason} = wait_for_process_death(subtree_pid, 2_000)
 
     assert_lookup_absent(session_id, :server)
     assert_lookup_absent(session_id, :transport_sup)

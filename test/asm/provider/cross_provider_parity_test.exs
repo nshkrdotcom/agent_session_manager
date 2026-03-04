@@ -1,5 +1,5 @@
 defmodule ASM.Provider.CrossProviderParityTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
 
   alias ASM.Message
   alias ASM.Parser

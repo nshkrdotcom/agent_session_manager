@@ -1,5 +1,5 @@
 defmodule ASM.Run.ApprovalFlowTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
 
   alias ASM.{Control, Event, Run}
 

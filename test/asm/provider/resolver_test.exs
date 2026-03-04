@@ -1,5 +1,5 @@
 defmodule ASM.Provider.ResolverTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
 
   alias ASM.Provider
   alias ASM.Provider.Resolver

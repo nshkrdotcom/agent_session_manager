@@ -1,5 +1,5 @@
 defmodule ASM.Parser.CodexTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
 
   alias ASM.Message
   alias ASM.Parser.Codex

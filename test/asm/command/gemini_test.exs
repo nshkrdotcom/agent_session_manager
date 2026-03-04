@@ -1,5 +1,5 @@
 defmodule ASM.Command.GeminiTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
 
   alias ASM.Command.Gemini
 

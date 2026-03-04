@@ -1,5 +1,5 @@
 defmodule ASM.Run.EventReducerPropertyTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
   use ExUnitProperties
 
   alias ASM.{Event, Message, Run}

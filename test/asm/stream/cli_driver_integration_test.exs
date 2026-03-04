@@ -1,5 +1,5 @@
 defmodule ASM.Stream.CLIDriverIntegrationTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
 
   test "codex stream does not rely on deprecated reasoning flag defaults" do
     script =

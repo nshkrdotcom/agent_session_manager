@@ -1,5 +1,5 @@
 defmodule ASM.Remote.TransportStarterTest do
-  use ExUnit.Case, async: false
+  use ASM.SerialTestCase
 
   alias ASM.Remote.TransportStarter
 
@@ -33,12 +33,8 @@ defmodule ASM.Remote.TransportStarterTest do
     ref = Process.monitor(transport_pid)
     Process.exit(transport_pid, :kill)
     assert_receive {:DOWN, ^ref, :process, ^transport_pid, :killed}
-
-    assert_eventually(fn ->
-      child_pids()
-      |> Enum.reject(&is_nil/1)
-      |> Enum.all?(fn pid -> pid != transport_pid end)
-    end)
+    assert :ok = wait_for_supervisor_stabilization(ASM.Remote.TransportSupervisor, 2_000)
+    refute transport_pid in child_pids()
   end
 
   test "start_transport/1 returns workspace failure when remote cwd cannot be created" do
@@ -100,21 +96,6 @@ defmodule ASM.Remote.TransportStarterTest do
   defp child_pids do
     DynamicSupervisor.which_children(ASM.Remote.TransportSupervisor)
     |> Enum.map(fn {_id, pid, _type, _modules} -> pid end)
-  end
-
-  defp assert_eventually(fun, attempts \\ 30)
-
-  defp assert_eventually(fun, attempts) when attempts > 0 do
-    if fun.() do
-      assert true
-    else
-      Process.sleep(10)
-      assert_eventually(fun, attempts - 1)
-    end
-  end
-
-  defp assert_eventually(fun, 0) do
-    assert fun.()
   end
 
   defp write_script!(contents) do

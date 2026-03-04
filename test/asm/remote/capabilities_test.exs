@@ -1,5 +1,5 @@
 defmodule ASM.Remote.CapabilitiesTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
 
   alias ASM.Remote.Capabilities
 

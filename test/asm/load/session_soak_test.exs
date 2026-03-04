@@ -1,5 +1,5 @@
 defmodule ASM.Load.SessionSoakTest do
-  use ExUnit.Case, async: false
+  use ASM.SerialTestCase
 
   alias ASM.Session.Server
 

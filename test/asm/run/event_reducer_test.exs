@@ -1,5 +1,5 @@
 defmodule ASM.Run.EventReducerTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
 
   alias ASM.{Control, Event, Message, Run}
 

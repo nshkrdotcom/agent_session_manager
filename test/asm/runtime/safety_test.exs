@@ -1,5 +1,5 @@
 defmodule ASM.Runtime.SafetyTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
 
   test "core runtime does not use unlinked Task.start/1" do
     root = Path.expand("../../..", __DIR__)

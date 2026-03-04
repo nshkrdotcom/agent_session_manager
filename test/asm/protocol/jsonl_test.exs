@@ -1,5 +1,5 @@
 defmodule ASM.Protocol.JSONLTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
 
   alias ASM.Protocol.JSONL
 

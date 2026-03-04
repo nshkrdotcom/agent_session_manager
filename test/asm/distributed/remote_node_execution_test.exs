@@ -1,5 +1,5 @@
 defmodule ASM.Distributed.RemoteNodeExecutionTest do
-  use ExUnit.Case, async: false
+  use ASM.SerialTestCase
 
   alias ASM.{Control, Error, Event, Message}
   alias ASM.Remote.NodeConnector
@@ -108,6 +108,7 @@ defmodule ASM.Distributed.RemoteNodeExecutionTest do
   } do
     script = write_script!(codex_hanging_script())
     session = start_session!(:codex)
+    parent = self()
 
     task =
       Task.async(fn ->
@@ -117,12 +118,17 @@ defmodule ASM.Distributed.RemoteNodeExecutionTest do
           cli_path: script,
           driver_opts: [remote_node: node, remote_cwd: workspace]
         )
-        |> Enum.to_list()
+        |> Enum.reduce([], fn %Event{} = event, acc ->
+          send(parent, {:stream_event, event})
+          [event | acc]
+        end)
+        |> Enum.reverse()
       end)
 
-    assert_eventually(fn ->
-      remote_child_count(node) > 0
-    end)
+    # Root cause of prior flake: stopping the peer before local attach completed
+    # races with NodeDriver attach and can surface runtime attach errors instead
+    # of transport nodedown errors. Wait for the first transport-derived event.
+    assert_receive {:stream_event, %Event{kind: :assistant_message}}, 5_000
 
     :peer.stop(peer)
 

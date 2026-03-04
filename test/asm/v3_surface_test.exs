@@ -1,5 +1,5 @@
 defmodule ASM.V3SurfaceTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
 
   alias ASM.{Content, Control, Cost, Event, Message, Telemetry, Transport}
   alias ASM.Provider.Claude

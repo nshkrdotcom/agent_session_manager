@@ -42,7 +42,8 @@ defmodule AgentSessionManager.MixProject do
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
       {:nimble_ownership, "~> 1.0", only: :test},
       {:stream_data, "~> 1.1", only: :test},
-      {:mox, "~> 1.1", only: :test}
+      {:mox, "~> 1.1", only: :test},
+      {:supertester, "~> 0.6.0", only: :test}
     ]
   end
 

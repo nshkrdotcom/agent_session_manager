@@ -1,5 +1,5 @@
 defmodule ASM.Store.MemoryTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
 
   alias ASM.{Control, Event, Store}
   alias ASM.Store.Memory

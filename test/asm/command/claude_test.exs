@@ -1,5 +1,5 @@
 defmodule ASM.Command.ClaudeTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
 
   alias ASM.Command.Claude
 

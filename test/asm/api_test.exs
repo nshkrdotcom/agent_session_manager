@@ -1,5 +1,5 @@
 defmodule ASM.APITest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
 
   alias ASM.Message
 
@@ -161,10 +161,7 @@ defmodule ASM.APITest do
     assert {:ok, session} = ASM.start_session(session_id: session_id, provider: :claude)
 
     assert :ok = ASM.stop_session(session)
-
-    assert_eventually(fn ->
-      not Process.alive?(session)
-    end)
+    assert {:ok, _reason} = wait_for_process_death(session, 2_000)
   end
 
   test "health/1 and cost/1 reflect session process status" do
@@ -179,6 +176,7 @@ defmodule ASM.APITest do
     assert is_float(cost.cost_usd)
 
     assert :ok = ASM.stop_session(session)
+    assert {:ok, _reason} = wait_for_process_death(session, 2_000)
     assert_eventually(fn -> ASM.health(session_id) == {:unhealthy, :not_found} end)
   end
 

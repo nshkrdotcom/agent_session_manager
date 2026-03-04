@@ -1,5 +1,5 @@
 defmodule ASM.Session.ServerTest do
-  use ExUnit.Case, async: true
+  use ASM.TestCase
 
   alias ASM.Session.Server
   alias ASM.Session.Supervisor, as: SessionSupervisor
@@ -186,10 +186,12 @@ defmodule ASM.Session.ServerTest do
                }
              )
 
-    assert_eventually(fn ->
-      state = Server.get_state(server)
-      Map.has_key?(state.pending_approval_index, approval_id)
-    end)
+    assert_receive {:asm_run_event, ^run_id, %ASM.Event{kind: :approval_resolved} = event}
+
+    assert %ASM.Control.ApprovalResolution{approval_id: ^approval_id, decision: :deny} =
+             event.payload
+
+    assert event.payload.reason == "timeout"
 
     assert_eventually(fn ->
       state = Server.get_state(server)

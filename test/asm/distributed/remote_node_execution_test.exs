@@ -134,15 +134,29 @@ defmodule ASM.Distributed.RemoteNodeExecutionTest do
 
     events = Task.await(task, 10_000)
 
-    assert Enum.any?(events, fn
+    # Explicit NodeDriver :DOWN dedupe assertion:
+    # we should see only the terminal transport error from Run.Server, not an
+    # additional stream-side "driver crashed" runtime error.
+    error_events =
+      Enum.filter(events, fn
+        %Event{kind: :error} -> true
+        _ -> false
+      end)
+
+    assert length(error_events) == 1
+
+    assert [
              %Event{
                kind: :error,
                payload: %Message.Error{kind: :transport_error, message: message}
-             } ->
-               String.contains?(message, "noconnection")
+             }
+           ] = error_events
 
-             _ ->
-               false
+    assert String.contains?(message, "noconnection")
+
+    refute Enum.any?(events, fn
+             %Event{kind: :error, payload: %Message.Error{kind: :runtime}} -> true
+             _ -> false
            end)
 
     assert :ok = ASM.stop_session(session)

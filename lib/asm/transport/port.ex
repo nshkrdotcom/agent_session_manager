@@ -8,17 +8,6 @@ defmodule ASM.Transport.Port do
   - subprocess mode (live): this process owns an erlexec subprocess and decodes JSONL output
   """
 
-  # Phase 0 Review Notes
-  # - Run.Server expects exactly these transport notifications:
-  #   `{:transport_message, map}`, `{:transport_error, reason}`,
-  #   and `{:transport_exit, status, diagnostics}`.
-  # - Demand protocol must stay unchanged: attach leasee -> demand(n) -> deliver FIFO
-  #   messages -> demand again (Run.Server uses 1-at-a-time demand).
-  # - `inject/2` is a subprocess-independent test seam to push decoded maps directly,
-  #   so unit tests can exercise queue/lease behavior without spawning a CLI process.
-  # - Only subprocess management changes here (Port APIs -> erlexec). Lease ownership,
-  #   queue semantics, overflow policies, and transport message contract remain identical.
-
   use GenServer
 
   require Logger
@@ -31,8 +20,11 @@ defmodule ASM.Transport.Port do
   @behaviour Transport
 
   @default_timeout_ms 60_000
+  @default_headless_timeout_ms 5_000
   @default_max_diagnostic_lines 5
   @default_max_diagnostic_line_length 240
+  @default_max_stdout_buffer_bytes 1_048_576
+  @default_max_lines_per_batch 200
   @max_stderr_tail_bytes 65_536
   @finalize_delay_ms 25
 
@@ -46,12 +38,20 @@ defmodule ASM.Transport.Port do
             status: :open,
             subprocess: nil,
             stdout_buffer: "",
+            pending_lines: :queue.new(),
+            drain_scheduled?: false,
+            overflowed?: false,
+            max_stdout_buffer_bytes: @default_max_stdout_buffer_bytes,
             stderr_buffer: "",
             finalize_timer_ref: nil,
             timeout_ms: @default_timeout_ms,
             timeout_ref: nil,
             startup_lease_timeout_ms: nil,
             startup_lease_timeout_ref: nil,
+            headless_timeout_ms: @default_headless_timeout_ms,
+            headless_timeout_ref: nil,
+            pending_calls: %{},
+            task_supervisor: ASM.TaskSupervisor,
             diagnostics: [],
             max_diagnostic_lines: @default_max_diagnostic_lines,
             max_diagnostic_line_length: @default_max_diagnostic_line_length
@@ -66,12 +66,20 @@ defmodule ASM.Transport.Port do
           status: :open | :closed,
           subprocess: {pid(), non_neg_integer()} | nil,
           stdout_buffer: binary(),
+          pending_lines: :queue.queue(binary()),
+          drain_scheduled?: boolean(),
+          overflowed?: boolean(),
+          max_stdout_buffer_bytes: pos_integer(),
           stderr_buffer: binary(),
           finalize_timer_ref: reference() | nil,
           timeout_ms: pos_integer(),
           timeout_ref: reference() | nil,
           startup_lease_timeout_ms: pos_integer() | nil,
           startup_lease_timeout_ref: reference() | nil,
+          headless_timeout_ms: pos_integer() | :infinity,
+          headless_timeout_ref: reference() | nil,
+          pending_calls: %{optional(reference()) => {GenServer.from(), :send_input | :interrupt}},
+          task_supervisor: pid() | atom(),
           diagnostics: [String.t()],
           max_diagnostic_lines: pos_integer(),
           max_diagnostic_line_length: pos_integer()
@@ -133,16 +141,38 @@ defmodule ASM.Transport.Port do
     startup_lease_timeout_ms =
       normalize_startup_lease_timeout(Keyword.get(opts, :startup_lease_timeout_ms))
 
+    headless_timeout_ms =
+      Keyword.get(
+        opts,
+        :headless_timeout_ms,
+        app_default(:transport_headless_timeout_ms, @default_headless_timeout_ms)
+      )
+
+    max_stdout_buffer_bytes =
+      Keyword.get(
+        opts,
+        :max_stdout_buffer_bytes,
+        app_default(:max_stdout_buffer_bytes, @default_max_stdout_buffer_bytes)
+      )
+
+    task_supervisor = Keyword.get(opts, :task_supervisor, ASM.TaskSupervisor)
+
     state = %__MODULE__{
       queue_limit: normalize_queue_limit(queue_limit),
       overflow_policy: normalize_overflow_policy(overflow_policy),
       timeout_ms: normalize_timeout(timeout_ms),
       startup_lease_timeout_ms: startup_lease_timeout_ms,
+      headless_timeout_ms: normalize_headless_timeout(headless_timeout_ms),
+      max_stdout_buffer_bytes: normalize_max_stdout_buffer_bytes(max_stdout_buffer_bytes),
+      task_supervisor: task_supervisor,
       max_diagnostic_lines: max(max_diagnostic_lines, 1),
       max_diagnostic_line_length: max(max_diagnostic_line_length, 16)
     }
 
-    {:ok, maybe_start_subprocess(opts, state)}
+    case maybe_start_subprocess(opts, state) do
+      {:ok, next_state} -> {:ok, next_state}
+      {:error, reason} -> {:stop, {:transport_start_failed, reason}}
+    end
   end
 
   @impl true
@@ -167,25 +197,32 @@ defmodule ASM.Transport.Port do
     {:reply, {:error, transport_error("transport input unavailable: no subprocess")}, state}
   end
 
-  def handle_call({:send_input, input, opts}, _from, %__MODULE__{subprocess: {pid, _}} = state) do
+  def handle_call({:send_input, input, opts}, from, %__MODULE__{subprocess: {pid, _}} = state) do
     append_newline? = Keyword.get(opts, :append_newline, true)
-    payload = normalize_input(input, append_newline?)
-    :ok = :exec.send(pid, payload)
-    {:reply, :ok, reset_timeout(state)}
-  catch
-    kind, reason ->
-      {:reply, {:error, transport_error("send failed: #{inspect({kind, reason})}")}, state}
+
+    case start_io_task(state, fn -> send_payload(pid, input, append_newline?) end) do
+      {:ok, task} ->
+        pending_calls = Map.put(state.pending_calls, task.ref, {from, :send_input})
+        {:noreply, %{state | pending_calls: pending_calls}}
+
+      {:error, reason} ->
+        {:reply, {:error, transport_error("send task failed: #{inspect(reason)}")}, state}
+    end
   end
 
   def handle_call(:interrupt, _from, %__MODULE__{subprocess: nil} = state) do
     {:reply, :ok, state}
   end
 
-  def handle_call(:interrupt, _from, %__MODULE__{subprocess: {pid, _}} = state) do
-    _ = :exec.kill(pid, 2)
-    {:reply, :ok, state}
-  catch
-    _, _ -> {:reply, :ok, state}
+  def handle_call(:interrupt, from, %__MODULE__{subprocess: {pid, _}} = state) do
+    case start_io_task(state, fn -> interrupt_subprocess(pid) end) do
+      {:ok, task} ->
+        pending_calls = Map.put(state.pending_calls, task.ref, {from, :interrupt})
+        {:noreply, %{state | pending_calls: pending_calls}}
+
+      {:error, _reason} ->
+        {:reply, :ok, state}
+    end
   end
 
   def handle_call(:close, _from, %__MODULE__{subprocess: nil} = state) do
@@ -203,7 +240,11 @@ defmodule ASM.Transport.Port do
   def handle_call({:attach, run_pid}, _from, %__MODULE__{leasee: nil} = state)
       when is_pid(run_pid) do
     ref = Process.monitor(run_pid)
-    state = cancel_startup_lease_timeout(state)
+
+    state =
+      state
+      |> cancel_startup_lease_timeout()
+      |> cancel_headless_timeout()
 
     {:reply, {:ok, :attached}, %{state | leasee: run_pid, leasee_ref: ref, pending_demand: 0}}
   end
@@ -221,7 +262,14 @@ defmodule ASM.Transport.Port do
       when is_pid(run_pid) do
     if state.leasee_ref, do: Process.demonitor(state.leasee_ref, [:flush])
 
-    {:reply, :ok, %{state | leasee: nil, leasee_ref: nil, pending_demand: 0}}
+    next_state =
+      state
+      |> Map.put(:leasee, nil)
+      |> Map.put(:leasee_ref, nil)
+      |> Map.put(:pending_demand, 0)
+      |> schedule_headless_timeout()
+
+    {:reply, :ok, next_state}
   end
 
   def handle_call({:detach, _run_pid}, _from, state) do
@@ -254,12 +302,15 @@ defmodule ASM.Transport.Port do
   @impl true
   def handle_info({:stdout, os_pid, data}, %__MODULE__{subprocess: {_pid, os_pid}} = state) do
     data = IO.iodata_to_binary(data)
-    state = reset_timeout(state)
-    {lines, remainder} = Protocol.JSONL.extract_lines(state.stdout_buffer <> data)
 
-    case process_lines(lines, %{state | stdout_buffer: remainder}) do
+    state =
+      state
+      |> reset_timeout()
+      |> append_stdout_data(data)
+
+    case drain_stdout_lines(state, @default_max_lines_per_batch) do
       {:ok, next_state} ->
-        {:noreply, next_state}
+        {:noreply, maybe_schedule_drain(next_state)}
 
       {:stop, reason, next_state} ->
         {:stop, reason, next_state}
@@ -269,7 +320,44 @@ defmodule ASM.Transport.Port do
   def handle_info({:stderr, os_pid, data}, %__MODULE__{subprocess: {_pid, os_pid}} = state) do
     data = IO.iodata_to_binary(data)
     stderr_buffer = append_stderr_data(state.stderr_buffer, data)
-    {:noreply, %{state | stderr_buffer: stderr_buffer}}
+
+    {:noreply, %{state | stderr_buffer: stderr_buffer} |> reset_timeout()}
+  end
+
+  def handle_info(:drain_stdout, state) do
+    state = %{state | drain_scheduled?: false}
+
+    case drain_stdout_lines(state, @default_max_lines_per_batch) do
+      {:ok, next_state} ->
+        {:noreply, maybe_schedule_drain(next_state)}
+
+      {:stop, reason, next_state} ->
+        {:stop, reason, next_state}
+    end
+  end
+
+  def handle_info({ref, result}, %{pending_calls: pending_calls} = state)
+      when is_reference(ref) do
+    case Map.pop(pending_calls, ref) do
+      {nil, _} ->
+        {:noreply, state}
+
+      {{from, operation}, rest} ->
+        Process.demonitor(ref, [:flush])
+
+        state = %{state | pending_calls: rest}
+        reply = normalize_pending_call_result(operation, result)
+
+        GenServer.reply(from, reply)
+
+        next_state =
+          case {operation, reply} do
+            {:send_input, :ok} -> reset_timeout(state)
+            _ -> state
+          end
+
+        {:noreply, next_state}
+    end
   end
 
   def handle_info(
@@ -280,6 +368,7 @@ defmodule ASM.Transport.Port do
       state
       |> clear_timeout()
       |> cancel_startup_lease_timeout()
+      |> cancel_headless_timeout()
       |> cancel_finalize_timer()
 
     timer_ref =
@@ -295,14 +384,15 @@ defmodule ASM.Transport.Port do
     state =
       state
       |> Map.put(:finalize_timer_ref, nil)
-      |> flush_stdout_buffer()
-      |> flush_queue_to_leasee()
-      |> append_stderr_diagnostics()
+      |> Map.put(:drain_scheduled?, false)
 
-    exit_status = extract_exit_status(reason)
-    maybe_notify_exit(state, exit_status, state.diagnostics)
+    case drain_stdout_lines(state, @default_max_lines_per_batch) do
+      {:stop, stop_reason, next_state} ->
+        {:stop, stop_reason, next_state}
 
-    {:stop, :normal, %{state | status: :closed, subprocess: nil}}
+      {:ok, next_state} ->
+        finalize_exit_after_drain(next_state, os_pid, pid, reason)
+    end
   end
 
   def handle_info(:transport_timeout, %__MODULE__{subprocess: nil} = state) do
@@ -354,8 +444,58 @@ defmodule ASM.Transport.Port do
     {:noreply, %{state | startup_lease_timeout_ref: nil}}
   end
 
+  def handle_info(:headless_timeout, %__MODULE__{headless_timeout_ref: nil} = state) do
+    {:noreply, state}
+  end
+
+  def handle_info(:headless_timeout, %__MODULE__{leasee: nil, subprocess: {pid, _}} = state) do
+    stop_subprocess(pid)
+
+    {:stop, :normal,
+     %{
+       state
+       | headless_timeout_ref: nil,
+         subprocess: nil,
+         status: :closed
+     }}
+  catch
+    _, _ ->
+      {:stop, :normal,
+       %{
+         state
+         | headless_timeout_ref: nil,
+           subprocess: nil,
+           status: :closed
+       }}
+  end
+
+  def handle_info(:headless_timeout, state) do
+    {:noreply, %{state | headless_timeout_ref: nil}}
+  end
+
   def handle_info({:DOWN, ref, :process, _pid, _reason}, %__MODULE__{leasee_ref: ref} = state) do
-    {:noreply, %{state | leasee: nil, leasee_ref: nil, pending_demand: 0}}
+    next_state =
+      state
+      |> Map.put(:leasee, nil)
+      |> Map.put(:leasee_ref, nil)
+      |> Map.put(:pending_demand, 0)
+      |> schedule_headless_timeout()
+
+    {:noreply, next_state}
+  end
+
+  def handle_info({:DOWN, ref, :process, _pid, reason}, %{pending_calls: pending_calls} = state)
+      when is_reference(ref) do
+    case Map.pop(pending_calls, ref) do
+      {nil, _} ->
+        {:noreply, state}
+
+      {{from, operation}, rest} ->
+        state = %{state | pending_calls: rest}
+        reply = normalize_pending_down_result(operation, reason)
+        GenServer.reply(from, reply)
+        {:noreply, state}
+    end
   end
 
   def handle_info(_message, state) do
@@ -369,6 +509,8 @@ defmodule ASM.Transport.Port do
       |> cancel_finalize_timer()
       |> clear_timeout()
       |> cancel_startup_lease_timeout()
+      |> cancel_headless_timeout()
+      |> cleanup_pending_calls()
       |> force_stop_subprocess()
 
     _ = state
@@ -429,13 +571,71 @@ defmodule ASM.Transport.Port do
     {:stop, {:shutdown, :buffer_overflow}, %{state | status: :closed}}
   end
 
-  defp process_lines(lines, state) do
-    Enum.reduce_while(lines, {:ok, state}, fn line, {:ok, acc} ->
-      case process_line(line, acc) do
-        {:ok, next_state} -> {:cont, {:ok, next_state}}
-        {:stop, reason, next_state} -> {:halt, {:stop, reason, next_state}}
-      end
-    end)
+  defp append_stdout_data(%__MODULE__{overflowed?: true} = state, data) do
+    case drop_until_next_newline(data) do
+      :none ->
+        state
+
+      {:rest, rest} ->
+        state
+        |> Map.put(:overflowed?, false)
+        |> Map.put(:stdout_buffer, "")
+        |> append_stdout_data(rest)
+    end
+  end
+
+  defp append_stdout_data(state, data) do
+    full = state.stdout_buffer <> data
+    {complete_lines, remaining} = split_complete_lines(full)
+
+    pending_lines =
+      Enum.reduce(complete_lines, state.pending_lines, fn line, queue ->
+        :queue.in(line, queue)
+      end)
+
+    state = %{state | pending_lines: pending_lines, stdout_buffer: "", overflowed?: false}
+
+    if byte_size(remaining) > state.max_stdout_buffer_bytes do
+      notify_stdout_overflow(state, byte_size(remaining))
+      %{state | stdout_buffer: "", overflowed?: true}
+    else
+      %{state | stdout_buffer: remaining}
+    end
+  end
+
+  defp notify_stdout_overflow(%__MODULE__{leasee: leasee}, size)
+       when is_pid(leasee) and is_integer(size) and size > 0 do
+    Transport.notify_error(leasee, {:stdout_buffer_overflow, size})
+  end
+
+  defp notify_stdout_overflow(_state, _size), do: :ok
+
+  defp drain_stdout_lines(state, 0), do: {:ok, state}
+
+  defp drain_stdout_lines(state, remaining) when is_integer(remaining) and remaining > 0 do
+    case :queue.out(state.pending_lines) do
+      {:empty, _queue} ->
+        {:ok, state}
+
+      {{:value, line}, queue} ->
+        state = %{state | pending_lines: queue}
+
+        case process_line(line, state) do
+          {:ok, next_state} -> drain_stdout_lines(next_state, remaining - 1)
+          {:stop, reason, next_state} -> {:stop, reason, next_state}
+        end
+    end
+  end
+
+  defp maybe_schedule_drain(%__MODULE__{drain_scheduled?: true} = state), do: state
+
+  defp maybe_schedule_drain(state) do
+    if :queue.is_empty(state.pending_lines) do
+      state
+    else
+      Process.send_after(self(), :drain_stdout, 0)
+      %{state | drain_scheduled?: true}
+    end
   end
 
   defp process_line(line, state) when is_binary(line) do
@@ -485,6 +685,21 @@ defmodule ASM.Transport.Port do
 
   defp flush_queue_to_leasee(state), do: state
 
+  defp flush_stdout_fragment(%__MODULE__{overflowed?: true} = state) do
+    {:ok, %{state | stdout_buffer: "", overflowed?: false}}
+  end
+
+  defp flush_stdout_fragment(state) do
+    line = trim_ascii(state.stdout_buffer)
+    state = %{state | stdout_buffer: "", overflowed?: false}
+
+    if line == "" do
+      {:ok, state}
+    else
+      process_line(line, state)
+    end
+  end
+
   defp drain_queue(queue, acc) do
     case :queue.out(queue) do
       {{:value, message}, remaining} -> drain_queue(remaining, [message | acc])
@@ -519,6 +734,33 @@ defmodule ASM.Transport.Port do
     String.starts_with?(trimmed, "{") and String.ends_with?(trimmed, "}")
   end
 
+  defp finalize_exit_after_drain(next_state, os_pid, pid, reason) do
+    if :queue.is_empty(next_state.pending_lines) do
+      finalize_and_stop(next_state, reason)
+    else
+      Process.send_after(self(), {:finalize_exit, os_pid, pid, reason}, 0)
+      {:noreply, next_state}
+    end
+  end
+
+  defp finalize_and_stop(next_state, reason) do
+    case flush_stdout_fragment(next_state) do
+      {:stop, stop_reason, terminal_state} ->
+        {:stop, stop_reason, terminal_state}
+
+      {:ok, flushed_state} ->
+        terminal_state =
+          flushed_state
+          |> flush_queue_to_leasee()
+          |> append_stderr_diagnostics()
+
+        exit_status = extract_exit_status(reason)
+        maybe_notify_exit(terminal_state, exit_status, terminal_state.diagnostics)
+
+        {:stop, :normal, %{terminal_state | status: :closed, subprocess: nil}}
+    end
+  end
+
   defp maybe_start_subprocess(opts, state) do
     case Keyword.get(opts, :program) do
       program when is_binary(program) and program != "" ->
@@ -526,31 +768,46 @@ defmodule ASM.Transport.Port do
         cwd = Keyword.get(opts, :cwd)
         env = Keyword.get(opts, :env, %{})
 
-        exec_opts =
-          [:stdin, :stdout, :stderr, :monitor]
-          |> Exec.add_cwd(cwd)
-          |> Exec.add_env(env)
-
-        cmd = Exec.build_command(program, args)
-
-        case :exec.run(cmd, exec_opts) do
-          {:ok, pid, os_pid} ->
-            %{state | subprocess: {pid, os_pid}, status: :open}
-            |> schedule_timeout()
-            |> schedule_startup_lease_timeout()
-
-          {:error, reason} ->
-            Logger.error("ASM transport failed to start subprocess: #{inspect(reason)}")
-            state
-        end
+        start_configured_subprocess(program, args, cwd, env, state)
 
       _ ->
-        state
+        {:ok, state}
     end
   catch
     kind, reason ->
-      Logger.error("ASM transport failed to start subprocess: #{inspect({kind, reason})}")
-      state
+      logger_reason = {kind, reason}
+      Logger.error("ASM transport failed to start subprocess: #{inspect(logger_reason)}")
+      {:error, logger_reason}
+  end
+
+  defp start_configured_subprocess(program, args, cwd, env, state) do
+    exec_opts =
+      [:stdin, :stdout, :stderr, :monitor]
+      |> Exec.add_cwd(cwd)
+      |> Exec.add_env(env)
+
+    with :ok <- ensure_program_available(program) do
+      run_subprocess(program, args, exec_opts, state)
+    end
+  end
+
+  defp run_subprocess(program, args, exec_opts, state) do
+    argv = Exec.build_argv(program, args)
+
+    case :exec.run(argv, exec_opts) do
+      {:ok, pid, os_pid} ->
+        next_state =
+          %{state | subprocess: {pid, os_pid}, status: :open}
+          |> schedule_timeout()
+          |> schedule_startup_lease_timeout()
+          |> schedule_headless_timeout()
+
+        {:ok, next_state}
+
+      {:error, reason} ->
+        Logger.error("ASM transport failed to start subprocess: #{inspect(reason)}")
+        {:error, reason}
+    end
   end
 
   defp schedule_timeout(%__MODULE__{timeout_ms: timeout_ms} = state) do
@@ -592,6 +849,41 @@ defmodule ASM.Transport.Port do
     %{state | startup_lease_timeout_ref: nil}
   end
 
+  defp schedule_headless_timeout(%__MODULE__{headless_timeout_ref: ref} = state)
+       when not is_nil(ref),
+       do: state
+
+  defp schedule_headless_timeout(%__MODULE__{headless_timeout_ms: :infinity} = state), do: state
+
+  defp schedule_headless_timeout(%__MODULE__{leasee: leasee} = state) when is_pid(leasee),
+    do: state
+
+  defp schedule_headless_timeout(%__MODULE__{subprocess: nil} = state), do: state
+
+  defp schedule_headless_timeout(%__MODULE__{headless_timeout_ms: timeout_ms} = state)
+       when is_integer(timeout_ms) and timeout_ms > 0 do
+    timer_ref = Process.send_after(self(), :headless_timeout, timeout_ms)
+    %{state | headless_timeout_ref: timer_ref}
+  end
+
+  defp schedule_headless_timeout(state), do: state
+
+  defp cancel_headless_timeout(%__MODULE__{headless_timeout_ref: nil} = state), do: state
+
+  defp cancel_headless_timeout(state) do
+    _ = Process.cancel_timer(state.headless_timeout_ref, async: false, info: false)
+    flush_headless_timeout_message()
+    %{state | headless_timeout_ref: nil}
+  end
+
+  defp flush_headless_timeout_message do
+    receive do
+      :headless_timeout -> :ok
+    after
+      0 -> :ok
+    end
+  end
+
   defp cancel_finalize_timer(%__MODULE__{finalize_timer_ref: nil} = state), do: state
 
   defp cancel_finalize_timer(state) do
@@ -610,6 +902,129 @@ defmodule ASM.Transport.Port do
 
   defp flush_finalize_message(_), do: :ok
 
+  defp start_io_task(state, fun) when is_function(fun, 0) do
+    {:ok, Task.Supervisor.async_nolink(state.task_supervisor, fun)}
+  catch
+    :exit, {:noproc, _} -> {:error, :noproc}
+    :exit, :noproc -> {:error, :noproc}
+    :exit, reason -> {:error, reason}
+  end
+
+  defp send_payload(pid, input, append_newline?) do
+    payload = normalize_input(input, append_newline?)
+    :exec.send(pid, payload)
+    :ok
+  catch
+    kind, reason -> {:error, {:send_failed, {kind, reason}}}
+  end
+
+  defp interrupt_subprocess(pid) when is_pid(pid) do
+    _ = :exec.kill(pid, 2)
+    :ok
+  catch
+    _, _ -> {:error, :not_connected}
+  end
+
+  defp normalize_pending_call_result(:send_input, :ok), do: :ok
+
+  defp normalize_pending_call_result(:send_input, {:error, reason}) do
+    {:error, transport_error("send failed: #{inspect(reason)}")}
+  end
+
+  defp normalize_pending_call_result(:send_input, other) do
+    {:error, transport_error("send failed: #{inspect(other)}")}
+  end
+
+  defp normalize_pending_call_result(:interrupt, _result), do: :ok
+
+  defp normalize_pending_down_result(:send_input, reason) do
+    {:error, transport_error("send failed: #{inspect(reason)}")}
+  end
+
+  defp normalize_pending_down_result(:interrupt, _reason), do: :ok
+
+  defp cleanup_pending_calls(%__MODULE__{pending_calls: pending_calls} = state)
+       when map_size(pending_calls) == 0,
+       do: state
+
+  defp cleanup_pending_calls(%__MODULE__{pending_calls: pending_calls} = state) do
+    Enum.each(pending_calls, fn {ref, {from, operation}} ->
+      Process.demonitor(ref, [:flush])
+
+      reply =
+        case operation do
+          :send_input -> {:error, transport_error("transport stopped")}
+          :interrupt -> :ok
+        end
+
+      GenServer.reply(from, reply)
+    end)
+
+    %{state | pending_calls: %{}}
+  end
+
+  defp split_complete_lines(""), do: {[], ""}
+
+  defp split_complete_lines(data) do
+    case :binary.split(data, "\n", [:global]) do
+      [single] ->
+        {[], single}
+
+      parts ->
+        {complete, [rest]} = Enum.split(parts, length(parts) - 1)
+        {Enum.map(complete, &strip_trailing_cr/1), rest}
+    end
+  end
+
+  defp drop_until_next_newline(data) when is_binary(data) do
+    case :binary.match(data, "\n") do
+      :nomatch ->
+        :none
+
+      {idx, 1} ->
+        rest_offset = idx + 1
+        rest_size = byte_size(data) - rest_offset
+        {:rest, :binary.part(data, rest_offset, rest_size)}
+    end
+  end
+
+  defp strip_trailing_cr(line) when is_binary(line) do
+    size = byte_size(line)
+
+    if size > 0 and :binary.at(line, size - 1) == ?\r do
+      :binary.part(line, 0, size - 1)
+    else
+      line
+    end
+  end
+
+  defp trim_ascii(data) when is_binary(data) do
+    data
+    |> trim_ascii_leading()
+    |> trim_ascii_trailing()
+  end
+
+  defp trim_ascii_leading(<<char, rest::binary>>) when char in [9, 10, 11, 12, 13, 32],
+    do: trim_ascii_leading(rest)
+
+  defp trim_ascii_leading(data), do: data
+
+  defp trim_ascii_trailing(data) when is_binary(data) do
+    do_trim_ascii_trailing(data, byte_size(data) - 1)
+  end
+
+  defp do_trim_ascii_trailing(_data, -1), do: ""
+
+  defp do_trim_ascii_trailing(data, idx) do
+    case :binary.at(data, idx) do
+      char when char in [9, 10, 11, 12, 13, 32] ->
+        do_trim_ascii_trailing(data, idx - 1)
+
+      _ ->
+        :binary.part(data, 0, idx + 1)
+    end
+  end
+
   defp normalize_input(input, append_newline?) when is_binary(input) do
     if append_newline? and not String.ends_with?(input, "\n"), do: input <> "\n", else: input
   end
@@ -618,22 +1033,6 @@ defmodule ASM.Transport.Port do
     input
     |> to_string()
     |> normalize_input(append_newline?)
-  end
-
-  defp flush_stdout_buffer(state) do
-    {lines, remainder} = Protocol.JSONL.extract_lines(state.stdout_buffer)
-
-    lines =
-      if String.trim(remainder) == "" do
-        lines
-      else
-        lines ++ [remainder]
-      end
-
-    case process_lines(lines, %{state | stdout_buffer: ""}) do
-      {:ok, next_state} -> next_state
-      {:stop, _reason, next_state} -> next_state
-    end
   end
 
   defp append_stderr_data(buffer, data) do
@@ -697,6 +1096,31 @@ defmodule ASM.Transport.Port do
 
   defp normalize_startup_lease_timeout(value) when is_integer(value) and value > 0, do: value
   defp normalize_startup_lease_timeout(_value), do: nil
+
+  defp normalize_headless_timeout(:infinity), do: :infinity
+  defp normalize_headless_timeout(nil), do: :infinity
+  defp normalize_headless_timeout(value) when is_integer(value) and value > 0, do: value
+  defp normalize_headless_timeout(_), do: @default_headless_timeout_ms
+
+  defp normalize_max_stdout_buffer_bytes(value) when is_integer(value) and value > 0, do: value
+  defp normalize_max_stdout_buffer_bytes(_), do: @default_max_stdout_buffer_bytes
+
+  defp ensure_program_available(program) when is_binary(program) do
+    cond do
+      String.contains?(program, "/") ->
+        if File.regular?(program) do
+          :ok
+        else
+          {:error, {:program_not_found, program}}
+        end
+
+      is_binary(System.find_executable(program)) ->
+        :ok
+
+      true ->
+        {:error, {:program_not_found, program}}
+    end
+  end
 
   defp app_default(key, default) do
     Application.get_env(:agent_session_manager, key, default)

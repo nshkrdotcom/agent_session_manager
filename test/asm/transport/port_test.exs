@@ -174,12 +174,19 @@ defmodule ASM.Transport.PortTest do
   end
 
   test "interrupt sends SIGINT and subprocess can handle it gracefully" do
-    int_handler =
-      "trap 'echo \"{\\\"type\\\":\\\"assistant_delta\\\",\\\"delta\\\":\\\"INTERRUPTED\\\"}\"; exit 0' INT; echo '{\"type\":\"assistant_delta\",\"delta\":\"READY\"}'; while true; do :; done"
+    script =
+      write_script!("""
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      trap 'echo "{\\"type\\":\\"assistant_delta\\",\\"delta\\":\\"INTERRUPTED\\"}"; exit 0' INT
+      echo '{"type":"assistant_delta","delta":"READY"}'
+      while true; do :; done
+      """)
 
     assert {:ok, port} =
              Port.start_link(
-               program: int_handler,
+               program: script,
                args: [],
                queue_limit: 8,
                overflow_policy: :fail_run
@@ -339,6 +346,87 @@ defmodule ASM.Transport.PortTest do
     assert Process.alive?(port)
 
     assert :ok = Transport.close(port)
+  end
+
+  test "start_link fails fast when subprocess cannot be started" do
+    old_flag = Process.flag(:trap_exit, true)
+    on_exit(fn -> Process.flag(:trap_exit, old_flag) end)
+
+    missing_program = "/definitely/missing/program-#{System.unique_integer([:positive])}"
+
+    result =
+      Port.start_link(
+        program: missing_program,
+        args: [],
+        queue_limit: 8,
+        overflow_policy: :fail_run
+      )
+
+    assert match?({:error, {:transport_start_failed, _reason}}, result) or
+             match?({:error, {{:transport_start_failed, _reason}, _child}}, result)
+  end
+
+  test "stdout buffer overflow emits transport error and recovers at next newline" do
+    script =
+      write_script!("""
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      awk 'BEGIN{for(i=0;i<5000;i++)printf "x"; printf "\\n"}'
+      echo '{"type":"assistant_delta","delta":"AFTER"}'
+      """)
+
+    assert {:ok, port} =
+             Port.start_link(
+               program: script,
+               args: [],
+               queue_limit: 8,
+               overflow_policy: :fail_run,
+               max_stdout_buffer_bytes: 128
+             )
+
+    assert {:ok, :attached} = Transport.attach(port, self())
+    assert :ok = Transport.demand(port, self(), 1)
+
+    assert_receive {:transport_error, {:stdout_buffer_overflow, overflow_size}}, 2_000
+    assert overflow_size > 128
+
+    assert_receive {:transport_message, %{"type" => "assistant_delta", "delta" => "AFTER"}}, 2_000
+    assert_receive {:transport_exit, 0, _diagnostics}, 2_000
+  end
+
+  test "headless timeout stops subprocess after leasee exits" do
+    script =
+      write_script!("""
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      while true; do sleep 0.1; done
+      """)
+
+    assert {:ok, port} =
+             Port.start_link(
+               program: script,
+               args: [],
+               queue_limit: 8,
+               overflow_policy: :fail_run,
+               startup_lease_timeout_ms: 2_000,
+               headless_timeout_ms: 60
+             )
+
+    leasee =
+      spawn(fn ->
+        receive do
+          :stop -> :ok
+        end
+      end)
+
+    assert {:ok, :attached} = Transport.attach(port, leasee)
+    os_pid = os_pid!(port)
+
+    send(leasee, :stop)
+    assert {:ok, :normal} = wait_for_process_death(port, 2_000)
+    assert_eventually(fn -> not os_pid_alive?(os_pid) end)
   end
 
   defp assert_eventually(fun, attempts \\ 20)

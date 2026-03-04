@@ -19,6 +19,8 @@ defmodule ASM.Options do
     :subscriber_queue_limit,
     :approval_timeout_ms,
     :transport_timeout_ms,
+    :transport_headless_timeout_ms,
+    :max_stdout_buffer_bytes,
     :max_concurrent_runs,
     :max_queued_runs,
     :debug
@@ -54,6 +56,14 @@ defmodule ASM.Options do
         default: app_default(:approval_timeout_ms, 120_000)
       ],
       transport_timeout_ms: [type: :pos_integer, default: 60_000],
+      transport_headless_timeout_ms: [
+        type: {:or, [:pos_integer, {:in, [:infinity]}]},
+        default: app_default(:transport_headless_timeout_ms, 5_000)
+      ],
+      max_stdout_buffer_bytes: [
+        type: :pos_integer,
+        default: app_default(:max_stdout_buffer_bytes, 1_048_576)
+      ],
       max_concurrent_runs: [type: :pos_integer, default: 1],
       max_queued_runs: [type: :non_neg_integer, default: 10],
       debug: [type: :boolean, default: false]

@@ -1,10 +1,11 @@
 defmodule ASM.Exec do
   @moduledoc "Command building utilities for erlexec subprocess management."
 
-  @spec build_command(String.t(), [String.t()]) :: String.t()
-  def build_command(program, args) when is_binary(program) and is_list(args) do
-    quoted_args = Enum.map(args, &shell_escape/1)
-    Enum.join([program | quoted_args], " ")
+  @spec build_argv(String.t(), [String.t()]) :: [charlist()]
+  def build_argv(program, args) when is_binary(program) and is_list(args) do
+    [program | args]
+    |> Enum.map(&to_string/1)
+    |> Enum.map(&to_charlist/1)
   end
 
   @spec add_cwd([term()], String.t() | nil) :: [term()]
@@ -23,13 +24,5 @@ defmodule ASM.Exec do
       end)
 
     [{:env, env_vars} | opts]
-  end
-
-  defp shell_escape(arg) when is_binary(arg) do
-    if arg =~ ~r/[^a-zA-Z0-9_\-\.\/=]/ do
-      "'" <> String.replace(arg, "'", "'\\''") <> "'"
-    else
-      arg
-    end
   end
 end

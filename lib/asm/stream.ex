@@ -3,8 +3,9 @@ defmodule ASM.Stream do
   Stream helpers for run event consumption and final result projection.
   """
 
-  alias ASM.{Content, Error, Event, Run, Session, Transport}
+  alias ASM.{Content, Error, Event, Run, Session}
   alias ASM.Execution.Config
+  alias ASM.Transport.Cleanup, as: TransportCleanup
 
   @stream_keys [
     :driver,
@@ -353,7 +354,7 @@ defmodule ASM.Stream do
   defp close_driver(_state), do: :ok
 
   defp safe_close_transport(pid) do
-    Transport.close(pid)
+    TransportCleanup.close(pid)
   catch
     :exit, _ -> :ok
   end

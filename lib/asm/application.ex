@@ -7,6 +7,7 @@ defmodule ASM.Application do
   def start(_type, _args) do
     children = [
       {Registry, keys: :unique, name: :asm_sessions},
+      {Task.Supervisor, name: ASM.TaskSupervisor},
       {ASM.Remote.TransportSupervisor, []},
       {ASM.Session.Supervisor, []}
     ]

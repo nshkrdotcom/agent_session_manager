@@ -5,6 +5,7 @@ defmodule ASM.Remote.TransportStarter do
 
   alias ASM.{Error, Options, Provider}
   alias ASM.Provider.Resolver
+  alias ASM.Transport.PTY
 
   @spec start_transport(map()) ::
           {:ok, pid()}
@@ -78,12 +79,7 @@ defmodule ASM.Remote.TransportStarter do
        ) do
     args = Resolver.command_args(command_spec, command_args)
 
-    {program, args} =
-      maybe_wrap_with_pty(
-        provider,
-        command_spec.program,
-        args
-      )
+    {program, args} = PTY.maybe_wrap(provider, command_spec.program, args)
 
     transport_opts = [
       program: program,
@@ -93,6 +89,8 @@ defmodule ASM.Remote.TransportStarter do
       queue_limit: Keyword.get(validated_opts, :queue_limit, 1_000),
       overflow_policy: Keyword.get(validated_opts, :overflow_policy, :fail_run),
       transport_timeout_ms: Keyword.get(validated_opts, :transport_timeout_ms, 60_000),
+      headless_timeout_ms: Keyword.get(validated_opts, :transport_headless_timeout_ms, 5_000),
+      max_stdout_buffer_bytes: Keyword.get(validated_opts, :max_stdout_buffer_bytes, 1_048_576),
       startup_lease_timeout_ms: startup_lease_timeout_ms
     ]
 
@@ -108,31 +106,5 @@ defmodule ASM.Remote.TransportStarter do
       {:ok, transport_pid} -> {:ok, transport_pid}
       {:error, reason} -> {:error, {:transport_start_failed, reason}}
     end
-  end
-
-  # Claude CLI expects a TTY when executed from BEAM ports for some environments.
-  # We run it through `script` to provide a PTY while preserving streamed stdout.
-  defp maybe_wrap_with_pty(%Provider{name: :claude}, program, args) do
-    case System.find_executable("script") do
-      nil ->
-        {program, args}
-
-      script_program ->
-        command = shell_join([program | args])
-        {script_program, ["-q", "-c", command, "/dev/null"]}
-    end
-  end
-
-  defp maybe_wrap_with_pty(_provider, program, args), do: {program, args}
-
-  defp shell_join(argv) when is_list(argv) do
-    Enum.map_join(argv, " ", &shell_escape/1)
-  end
-
-  defp shell_escape(value) do
-    value
-    |> to_string()
-    |> String.replace("'", "'\"'\"'")
-    |> then(&"'#{&1}'")
   end
 end

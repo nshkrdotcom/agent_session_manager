@@ -6,6 +6,7 @@ defmodule ASM.Run.Server do
   use GenServer, restart: :temporary
 
   alias ASM.{Control, Error, Event, Message, Provider, Run, Transport}
+  alias ASM.Transport.Cleanup, as: TransportCleanup
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
@@ -380,10 +381,19 @@ defmodule ASM.Run.Server do
        ) do
     timeout_ms = transport_call_timeout_ms(state)
 
-    if is_reference(transport_ref), do: Process.demonitor(transport_ref, [:flush])
+    monitor_ref = transport_ref || Process.monitor(transport_pid)
+
     maybe_interrupt_before_close(state, transport_pid, timeout_ms)
     _ = Transport.detach(transport_pid, self(), timeout_ms)
-    _ = Transport.close(transport_pid, timeout_ms)
+
+    _ =
+      TransportCleanup.close(
+        transport_pid,
+        monitor_ref: monitor_ref,
+        close_fun: fn pid -> Transport.close(pid, timeout_ms) end,
+        close_grace_ms: timeout_ms
+      )
+
     %{state | transport_pid: nil, transport_ref: nil}
   catch
     :exit, _ -> %{state | transport_pid: nil, transport_ref: nil}

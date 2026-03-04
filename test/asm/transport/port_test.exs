@@ -1,6 +1,9 @@
 defmodule ASM.Transport.PortTest do
   use ASM.TestCase
 
+  import Supertester.GenServerHelpers, only: [call_with_timeout: 3]
+
+  alias ASM.Error
   alias ASM.Transport
   alias ASM.Transport.Port
 
@@ -427,6 +430,160 @@ defmodule ASM.Transport.PortTest do
     send(leasee, :stop)
     assert {:ok, :normal} = wait_for_process_death(port, 2_000)
     assert_eventually(fn -> not os_pid_alive?(os_pid) end)
+  end
+
+  test "send_input/4 returns typed timeout error when transport is suspended" do
+    cat = System.find_executable("cat") || "/bin/cat"
+    assert {:ok, port} = Port.start_link(program: cat, args: [])
+
+    :ok = :sys.suspend(port)
+
+    try do
+      assert {:error, %Error{kind: :timeout, domain: :transport}} =
+               Transport.send_input(port, "PING", [], 20)
+    after
+      if Process.alive?(port) do
+        :ok = :sys.resume(port)
+        _ = Transport.close(port)
+      end
+    end
+  end
+
+  test "close/2 does not crash caller when transport is suspended" do
+    cat = System.find_executable("cat") || "/bin/cat"
+    assert {:ok, port} = Port.start_link(program: cat, args: [])
+
+    :ok = :sys.suspend(port)
+
+    try do
+      assert :ok = Transport.close(port, 20)
+    after
+      if Process.alive?(port) do
+        :ok = :sys.resume(port)
+        _ = Transport.close(port)
+      end
+    end
+  end
+
+  test "end_input/1 sends EOF to subprocess stdin" do
+    cat = System.find_executable("cat") || "/bin/cat"
+    assert {:ok, port} = Port.start_link(program: cat, args: [])
+    assert {:ok, :attached} = Transport.attach(port, self())
+
+    assert :ok = Transport.send_input(port, ~s({"type":"assistant_delta","delta":"echo me"}))
+    assert :ok = Transport.end_input(port)
+    assert :ok = Transport.demand(port, self(), 1)
+
+    assert_receive {:transport_message, %{"delta" => "echo me", "type" => "assistant_delta"}},
+                   2_000
+
+    assert_receive {:transport_exit, 0, _diagnostics}, 2_000
+  end
+
+  test "stderr/1 returns capped stderr tail configured at startup" do
+    script =
+      write_script!("""
+      #!/usr/bin/env bash
+      set -euo pipefail
+      printf '1234567890ABCDEFGHIJ' >&2
+      sleep 0.1
+      """)
+
+    assert {:ok, port} =
+             Port.start_link(
+               program: script,
+               args: [],
+               max_stderr_buffer_bytes: 8
+             )
+
+    assert {:ok, :attached} = Transport.attach(port, self())
+    Process.sleep(50)
+    assert Transport.stderr(port) == "CDEFGHIJ"
+    assert_receive {:transport_exit, 0, _diagnostics}, 2_000
+  end
+
+  test "send_input/end_input return typed not_connected errors after transport exits" do
+    script =
+      write_script!("""
+      #!/usr/bin/env bash
+      set -euo pipefail
+      echo '{"type":"assistant_delta","delta":"done"}'
+      """)
+
+    assert {:ok, port} = Port.start_link(program: script, args: [])
+    assert {:ok, :attached} = Transport.attach(port, self())
+    assert :ok = Transport.demand(port, self(), 1)
+    assert_receive {:transport_message, %{"delta" => "done", "type" => "assistant_delta"}}, 2_000
+    assert_receive {:transport_exit, 0, _diagnostics}, 2_000
+    assert {:ok, _reason} = wait_for_process_death(port, 2_000)
+
+    assert {:error, %Error{kind: :transport_error, domain: :transport}} =
+             Transport.send_input(port, "after-exit")
+
+    assert {:error, %Error{kind: :transport_error, domain: :transport}} =
+             Transport.end_input(port)
+  end
+
+  test "finalize exit draining remains responsive under large pending queue load" do
+    cat = System.find_executable("cat") || "/bin/cat"
+    assert {:ok, port} = Port.start_link(program: cat, args: [], queue_limit: 200_000)
+    assert {:ok, :attached} = Transport.attach(port, self())
+
+    try do
+      state = :sys.get_state(port)
+      {pid, os_pid} = state.subprocess
+
+      pending_lines =
+        Enum.reduce(1..100_000, :queue.new(), fn idx, queue ->
+          line = ~s({"type":"assistant_delta","delta":"#{idx}"})
+          :queue.in(line, queue)
+        end)
+
+      :sys.replace_state(port, fn current ->
+        %{current | pending_lines: pending_lines, stdout_buffer: "", drain_scheduled?: false}
+      end)
+
+      send(port, {:finalize_exit, os_pid, pid, :normal})
+
+      assert {:ok, :healthy} = call_with_timeout(port, :health, 200)
+    after
+      if Process.alive?(port) do
+        _ = Transport.close(port)
+      end
+    end
+  end
+
+  test "handles UTF-8 codepoint split across stdout chunks" do
+    script =
+      write_script!("""
+      #!/usr/bin/env bash
+      set -euo pipefail
+      sleep 5
+      """)
+
+    assert {:ok, port} = Port.start_link(program: script, args: [])
+    assert {:ok, :attached} = Transport.attach(port, self())
+
+    try do
+      state = :sys.get_state(port)
+      {_exec_pid, os_pid} = state.subprocess
+
+      line = ~s({"type":"assistant_delta","delta":"hello — world"}) <> "\n"
+      {idx, _len} = :binary.match(line, <<226, 128, 148>>)
+      chunk1 = :binary.part(line, 0, idx + 1)
+      chunk2 = :binary.part(line, idx + 1, byte_size(line) - idx - 1)
+
+      send(port, {:stdout, os_pid, chunk1})
+      send(port, {:stdout, os_pid, chunk2})
+
+      assert :ok = Transport.demand(port, self(), 1)
+
+      assert_receive {:transport_message,
+                      %{"delta" => "hello — world", "type" => "assistant_delta"}},
+                     2_000
+    after
+      _ = Transport.close(port)
+    end
   end
 
   defp assert_eventually(fun, attempts \\ 20)

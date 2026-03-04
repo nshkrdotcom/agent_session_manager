@@ -232,6 +232,15 @@ defmodule ASM.Run.Server do
 
       {:error, :busy} ->
         {:error, Error.new(:transport_busy, :transport, "Transport is already leased")}
+
+      {:error, reason} ->
+        {:error,
+         Error.new(
+           :transport_error,
+           :transport,
+           "Transport attach failed: #{inspect(reason)}",
+           cause: reason
+         )}
     end
   catch
     :exit, reason ->

@@ -18,6 +18,9 @@ defmodule ASM.Transport.Test do
   def send_input(pid, input, opts), do: Port.send_input(pid, input, opts)
 
   @impl true
+  def end_input(pid), do: Port.end_input(pid)
+
+  @impl true
   def interrupt(pid), do: Port.interrupt(pid)
 
   @impl true
@@ -25,6 +28,9 @@ defmodule ASM.Transport.Test do
 
   @impl true
   def health(pid), do: Port.health(pid)
+
+  @impl true
+  def stderr(pid), do: Port.stderr(pid)
 
   @impl true
   def attach(pid, run_pid), do: Port.attach(pid, run_pid)

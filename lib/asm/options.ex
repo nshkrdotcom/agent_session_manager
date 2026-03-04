@@ -21,6 +21,7 @@ defmodule ASM.Options do
     :transport_timeout_ms,
     :transport_headless_timeout_ms,
     :max_stdout_buffer_bytes,
+    :max_stderr_buffer_bytes,
     :max_concurrent_runs,
     :max_queued_runs,
     :debug
@@ -63,6 +64,10 @@ defmodule ASM.Options do
       max_stdout_buffer_bytes: [
         type: :pos_integer,
         default: app_default(:max_stdout_buffer_bytes, 1_048_576)
+      ],
+      max_stderr_buffer_bytes: [
+        type: :pos_integer,
+        default: app_default(:max_stderr_buffer_bytes, 65_536)
       ],
       max_concurrent_runs: [type: :pos_integer, default: 1],
       max_queued_runs: [type: :non_neg_integer, default: 10],

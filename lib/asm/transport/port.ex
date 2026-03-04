@@ -15,6 +15,7 @@ defmodule ASM.Transport.Port do
   alias ASM.Error
   alias ASM.Exec
   alias ASM.Protocol
+  alias ASM.TaskSupport
   alias ASM.Transport
 
   @behaviour Transport
@@ -24,8 +25,8 @@ defmodule ASM.Transport.Port do
   @default_max_diagnostic_lines 5
   @default_max_diagnostic_line_length 240
   @default_max_stdout_buffer_bytes 1_048_576
+  @default_max_stderr_buffer_bytes 65_536
   @default_max_lines_per_batch 200
-  @max_stderr_tail_bytes 65_536
   @finalize_delay_ms 25
 
   @enforce_keys []
@@ -43,6 +44,7 @@ defmodule ASM.Transport.Port do
             overflowed?: false,
             max_stdout_buffer_bytes: @default_max_stdout_buffer_bytes,
             stderr_buffer: "",
+            max_stderr_buffer_bytes: @default_max_stderr_buffer_bytes,
             finalize_timer_ref: nil,
             timeout_ms: @default_timeout_ms,
             timeout_ref: nil,
@@ -71,6 +73,7 @@ defmodule ASM.Transport.Port do
           overflowed?: boolean(),
           max_stdout_buffer_bytes: pos_integer(),
           stderr_buffer: binary(),
+          max_stderr_buffer_bytes: pos_integer(),
           finalize_timer_ref: reference() | nil,
           timeout_ms: pos_integer(),
           timeout_ref: reference() | nil,
@@ -78,7 +81,9 @@ defmodule ASM.Transport.Port do
           startup_lease_timeout_ref: reference() | nil,
           headless_timeout_ms: pos_integer() | :infinity,
           headless_timeout_ref: reference() | nil,
-          pending_calls: %{optional(reference()) => {GenServer.from(), :send_input | :interrupt}},
+          pending_calls: %{
+            optional(reference()) => {GenServer.from(), :send_input | :end_input | :interrupt}
+          },
           task_supervisor: pid() | atom(),
           diagnostics: [String.t()],
           max_diagnostic_lines: pos_integer(),
@@ -102,6 +107,10 @@ defmodule ASM.Transport.Port do
   def send_input(pid, input, opts), do: GenServer.call(pid, {:send_input, input, opts})
 
   @impl true
+  @spec end_input(pid()) :: :ok | {:error, Error.t()}
+  def end_input(pid), do: GenServer.call(pid, :end_input)
+
+  @impl true
   def interrupt(pid), do: GenServer.call(pid, :interrupt)
 
   @impl true
@@ -109,6 +118,10 @@ defmodule ASM.Transport.Port do
 
   @impl true
   def health(pid), do: GenServer.call(pid, :health)
+
+  @impl true
+  @spec stderr(pid()) :: String.t()
+  def stderr(pid), do: GenServer.call(pid, :stderr)
 
   @impl true
   def attach(pid, run_pid), do: GenServer.call(pid, {:attach, run_pid})
@@ -155,6 +168,13 @@ defmodule ASM.Transport.Port do
         app_default(:max_stdout_buffer_bytes, @default_max_stdout_buffer_bytes)
       )
 
+    max_stderr_buffer_bytes =
+      Keyword.get(
+        opts,
+        :max_stderr_buffer_bytes,
+        app_default(:max_stderr_buffer_bytes, @default_max_stderr_buffer_bytes)
+      )
+
     task_supervisor = Keyword.get(opts, :task_supervisor, ASM.TaskSupervisor)
 
     state = %__MODULE__{
@@ -164,6 +184,7 @@ defmodule ASM.Transport.Port do
       startup_lease_timeout_ms: startup_lease_timeout_ms,
       headless_timeout_ms: normalize_headless_timeout(headless_timeout_ms),
       max_stdout_buffer_bytes: normalize_max_stdout_buffer_bytes(max_stdout_buffer_bytes),
+      max_stderr_buffer_bytes: normalize_max_stderr_buffer_bytes(max_stderr_buffer_bytes),
       task_supervisor: task_supervisor,
       max_diagnostic_lines: max(max_diagnostic_lines, 1),
       max_diagnostic_line_length: max(max_diagnostic_line_length, 16)
@@ -210,6 +231,21 @@ defmodule ASM.Transport.Port do
     end
   end
 
+  def handle_call(:end_input, _from, %__MODULE__{subprocess: nil} = state) do
+    {:reply, {:error, transport_error("transport input unavailable: no subprocess")}, state}
+  end
+
+  def handle_call(:end_input, from, %__MODULE__{subprocess: {pid, _}} = state) do
+    case start_io_task(state, fn -> send_eof(pid) end) do
+      {:ok, task} ->
+        pending_calls = Map.put(state.pending_calls, task.ref, {from, :end_input})
+        {:noreply, %{state | pending_calls: pending_calls}}
+
+      {:error, reason} ->
+        {:reply, {:error, transport_error("end_input task failed: #{inspect(reason)}")}, state}
+    end
+  end
+
   def handle_call(:interrupt, _from, %__MODULE__{subprocess: nil} = state) do
     {:reply, :ok, state}
   end
@@ -235,6 +271,10 @@ defmodule ASM.Transport.Port do
   catch
     _, _ ->
       {:stop, :normal, :ok, %{state | status: :closed}}
+  end
+
+  def handle_call(:stderr, _from, state) do
+    {:reply, state.stderr_buffer, state}
   end
 
   def handle_call({:attach, run_pid}, _from, %__MODULE__{leasee: nil} = state)
@@ -319,7 +359,7 @@ defmodule ASM.Transport.Port do
 
   def handle_info({:stderr, os_pid, data}, %__MODULE__{subprocess: {_pid, os_pid}} = state) do
     data = IO.iodata_to_binary(data)
-    stderr_buffer = append_stderr_data(state.stderr_buffer, data)
+    stderr_buffer = append_stderr_data(state.stderr_buffer, data, state.max_stderr_buffer_bytes)
 
     {:noreply, %{state | stderr_buffer: stderr_buffer} |> reset_timeout()}
   end
@@ -352,7 +392,7 @@ defmodule ASM.Transport.Port do
 
         next_state =
           case {operation, reply} do
-            {:send_input, :ok} -> reset_timeout(state)
+            {operation, :ok} when operation in [:send_input, :end_input] -> reset_timeout(state)
             _ -> state
           end
 
@@ -903,16 +943,19 @@ defmodule ASM.Transport.Port do
   defp flush_finalize_message(_), do: :ok
 
   defp start_io_task(state, fun) when is_function(fun, 0) do
-    {:ok, Task.Supervisor.async_nolink(state.task_supervisor, fun)}
-  catch
-    :exit, {:noproc, _} -> {:error, :noproc}
-    :exit, :noproc -> {:error, :noproc}
-    :exit, reason -> {:error, reason}
+    TaskSupport.async_nolink(state.task_supervisor, fun)
   end
 
   defp send_payload(pid, input, append_newline?) do
     payload = normalize_input(input, append_newline?)
     :exec.send(pid, payload)
+    :ok
+  catch
+    kind, reason -> {:error, {:send_failed, {kind, reason}}}
+  end
+
+  defp send_eof(pid) when is_pid(pid) do
+    :exec.send(pid, :eof)
     :ok
   catch
     kind, reason -> {:error, {:send_failed, {kind, reason}}}
@@ -926,19 +969,32 @@ defmodule ASM.Transport.Port do
   end
 
   defp normalize_pending_call_result(:send_input, :ok), do: :ok
+  defp normalize_pending_call_result(:end_input, :ok), do: :ok
 
   defp normalize_pending_call_result(:send_input, {:error, reason}) do
     {:error, transport_error("send failed: #{inspect(reason)}")}
+  end
+
+  defp normalize_pending_call_result(:end_input, {:error, reason}) do
+    {:error, transport_error("end_input failed: #{inspect(reason)}")}
   end
 
   defp normalize_pending_call_result(:send_input, other) do
     {:error, transport_error("send failed: #{inspect(other)}")}
   end
 
+  defp normalize_pending_call_result(:end_input, other) do
+    {:error, transport_error("end_input failed: #{inspect(other)}")}
+  end
+
   defp normalize_pending_call_result(:interrupt, _result), do: :ok
 
   defp normalize_pending_down_result(:send_input, reason) do
     {:error, transport_error("send failed: #{inspect(reason)}")}
+  end
+
+  defp normalize_pending_down_result(:end_input, reason) do
+    {:error, transport_error("end_input failed: #{inspect(reason)}")}
   end
 
   defp normalize_pending_down_result(:interrupt, _reason), do: :ok
@@ -953,8 +1009,11 @@ defmodule ASM.Transport.Port do
 
       reply =
         case operation do
-          :send_input -> {:error, transport_error("transport stopped")}
-          :interrupt -> :ok
+          operation when operation in [:send_input, :end_input] ->
+            {:error, transport_error("transport stopped")}
+
+          :interrupt ->
+            :ok
         end
 
       GenServer.reply(from, reply)
@@ -1035,14 +1094,18 @@ defmodule ASM.Transport.Port do
     |> normalize_input(append_newline?)
   end
 
-  defp append_stderr_data(buffer, data) do
+  defp append_stderr_data(_buffer, _data, max_bytes)
+       when not is_integer(max_bytes) or max_bytes <= 0,
+       do: ""
+
+  defp append_stderr_data(buffer, data, max_bytes) do
     combined = buffer <> data
     combined_size = byte_size(combined)
 
-    if combined_size <= @max_stderr_tail_bytes do
+    if combined_size <= max_bytes do
       combined
     else
-      :binary.part(combined, combined_size - @max_stderr_tail_bytes, @max_stderr_tail_bytes)
+      :binary.part(combined, combined_size - max_bytes, max_bytes)
     end
   end
 
@@ -1104,6 +1167,9 @@ defmodule ASM.Transport.Port do
 
   defp normalize_max_stdout_buffer_bytes(value) when is_integer(value) and value > 0, do: value
   defp normalize_max_stdout_buffer_bytes(_), do: @default_max_stdout_buffer_bytes
+
+  defp normalize_max_stderr_buffer_bytes(value) when is_integer(value) and value > 0, do: value
+  defp normalize_max_stderr_buffer_bytes(_), do: @default_max_stderr_buffer_bytes
 
   defp ensure_program_available(program) when is_binary(program) do
     cond do

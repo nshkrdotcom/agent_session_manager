@@ -91,6 +91,7 @@ defmodule ASM.Remote.TransportStarter do
       transport_timeout_ms: Keyword.get(validated_opts, :transport_timeout_ms, 60_000),
       headless_timeout_ms: Keyword.get(validated_opts, :transport_headless_timeout_ms, 5_000),
       max_stdout_buffer_bytes: Keyword.get(validated_opts, :max_stdout_buffer_bytes, 1_048_576),
+      max_stderr_buffer_bytes: Keyword.get(validated_opts, :max_stderr_buffer_bytes, 65_536),
       startup_lease_timeout_ms: startup_lease_timeout_ms
     ]
 

@@ -222,6 +222,7 @@ Environment knobs used by examples:
 
 - [Live Adapter Feature Matrix](guides/live-adapters.md)
 - [Remote Node Execution](guides/remote-node-execution.md)
+- [Transport Guarantees](guides/transport-guarantees.md)
 
 ## Architecture Notes
 

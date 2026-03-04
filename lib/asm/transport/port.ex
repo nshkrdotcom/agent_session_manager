@@ -50,6 +50,8 @@ defmodule ASM.Transport.Port do
             finalize_timer_ref: nil,
             timeout_ms: @default_timeout_ms,
             timeout_ref: nil,
+            startup_lease_timeout_ms: nil,
+            startup_lease_timeout_ref: nil,
             diagnostics: [],
             max_diagnostic_lines: @default_max_diagnostic_lines,
             max_diagnostic_line_length: @default_max_diagnostic_line_length
@@ -68,6 +70,8 @@ defmodule ASM.Transport.Port do
           finalize_timer_ref: reference() | nil,
           timeout_ms: pos_integer(),
           timeout_ref: reference() | nil,
+          startup_lease_timeout_ms: pos_integer() | nil,
+          startup_lease_timeout_ref: reference() | nil,
           diagnostics: [String.t()],
           max_diagnostic_lines: pos_integer(),
           max_diagnostic_line_length: pos_integer()
@@ -126,10 +130,14 @@ defmodule ASM.Transport.Port do
     max_diagnostic_line_length =
       Keyword.get(opts, :max_diagnostic_line_length, @default_max_diagnostic_line_length)
 
+    startup_lease_timeout_ms =
+      normalize_startup_lease_timeout(Keyword.get(opts, :startup_lease_timeout_ms))
+
     state = %__MODULE__{
       queue_limit: normalize_queue_limit(queue_limit),
       overflow_policy: normalize_overflow_policy(overflow_policy),
       timeout_ms: normalize_timeout(timeout_ms),
+      startup_lease_timeout_ms: startup_lease_timeout_ms,
       max_diagnostic_lines: max(max_diagnostic_lines, 1),
       max_diagnostic_line_length: max(max_diagnostic_line_length, 16)
     }
@@ -195,6 +203,7 @@ defmodule ASM.Transport.Port do
   def handle_call({:attach, run_pid}, _from, %__MODULE__{leasee: nil} = state)
       when is_pid(run_pid) do
     ref = Process.monitor(run_pid)
+    state = cancel_startup_lease_timeout(state)
 
     {:reply, {:ok, :attached}, %{state | leasee: run_pid, leasee_ref: ref, pending_demand: 0}}
   end
@@ -270,6 +279,7 @@ defmodule ASM.Transport.Port do
     state =
       state
       |> clear_timeout()
+      |> cancel_startup_lease_timeout()
       |> cancel_finalize_timer()
 
     timer_ref =
@@ -312,6 +322,38 @@ defmodule ASM.Transport.Port do
       {:noreply, %{state | timeout_ref: nil, status: :closed}}
   end
 
+  def handle_info(:startup_lease_timeout, %__MODULE__{startup_lease_timeout_ref: nil} = state) do
+    {:noreply, state}
+  end
+
+  def handle_info(
+        :startup_lease_timeout,
+        %__MODULE__{leasee: nil, subprocess: {pid, _}} = state
+      ) do
+    stop_subprocess(pid)
+
+    {:stop, {:shutdown, :startup_lease_timeout},
+     %{
+       state
+       | startup_lease_timeout_ref: nil,
+         subprocess: nil,
+         status: :closed
+     }}
+  catch
+    _, _ ->
+      {:stop, {:shutdown, :startup_lease_timeout},
+       %{
+         state
+         | startup_lease_timeout_ref: nil,
+           subprocess: nil,
+           status: :closed
+       }}
+  end
+
+  def handle_info(:startup_lease_timeout, state) do
+    {:noreply, %{state | startup_lease_timeout_ref: nil}}
+  end
+
   def handle_info({:DOWN, ref, :process, _pid, _reason}, %__MODULE__{leasee_ref: ref} = state) do
     {:noreply, %{state | leasee: nil, leasee_ref: nil, pending_demand: 0}}
   end
@@ -326,6 +368,7 @@ defmodule ASM.Transport.Port do
       state
       |> cancel_finalize_timer()
       |> clear_timeout()
+      |> cancel_startup_lease_timeout()
       |> force_stop_subprocess()
 
     _ = state
@@ -494,6 +537,7 @@ defmodule ASM.Transport.Port do
           {:ok, pid, os_pid} ->
             %{state | subprocess: {pid, os_pid}, status: :open}
             |> schedule_timeout()
+            |> schedule_startup_lease_timeout()
 
           {:error, reason} ->
             Logger.error("ASM transport failed to start subprocess: #{inspect(reason)}")
@@ -521,6 +565,31 @@ defmodule ASM.Transport.Port do
   defp clear_timeout(%__MODULE__{timeout_ref: ref} = state) do
     Process.cancel_timer(ref, async: true, info: false)
     %{state | timeout_ref: nil}
+  end
+
+  defp schedule_startup_lease_timeout(
+         %__MODULE__{
+           startup_lease_timeout_ms: timeout_ms,
+           startup_lease_timeout_ref: nil,
+           leasee: nil,
+           subprocess: {_pid, _os_pid}
+         } = state
+       )
+       when is_integer(timeout_ms) and timeout_ms > 0 do
+    %{
+      state
+      | startup_lease_timeout_ref: Process.send_after(self(), :startup_lease_timeout, timeout_ms)
+    }
+  end
+
+  defp schedule_startup_lease_timeout(state), do: state
+
+  defp cancel_startup_lease_timeout(%__MODULE__{startup_lease_timeout_ref: nil} = state),
+    do: state
+
+  defp cancel_startup_lease_timeout(%__MODULE__{startup_lease_timeout_ref: ref} = state) do
+    Process.cancel_timer(ref, async: true, info: false)
+    %{state | startup_lease_timeout_ref: nil}
   end
 
   defp cancel_finalize_timer(%__MODULE__{finalize_timer_ref: nil} = state), do: state
@@ -625,6 +694,9 @@ defmodule ASM.Transport.Port do
 
   defp normalize_timeout(value) when is_integer(value) and value > 0, do: value
   defp normalize_timeout(_), do: @default_timeout_ms
+
+  defp normalize_startup_lease_timeout(value) when is_integer(value) and value > 0, do: value
+  defp normalize_startup_lease_timeout(_value), do: nil
 
   defp app_default(key, default) do
     Application.get_env(:agent_session_manager, key, default)

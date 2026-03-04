@@ -290,6 +290,65 @@ defmodule ASM.Transport.PortTest do
     end)
   end
 
+  test "startup lease timeout stops unleased subprocess transport" do
+    old_flag = Process.flag(:trap_exit, true)
+    on_exit(fn -> Process.flag(:trap_exit, old_flag) end)
+
+    pid_file = tmp_path!("asm-transport-startup-lease-pid")
+
+    script =
+      write_script!("""
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      pid_file="$1"
+      echo "$$" > "$pid_file"
+
+      while true; do sleep 0.1; done
+      """)
+
+    assert {:ok, port} =
+             Port.start_link(
+               program: script,
+               args: [pid_file],
+               queue_limit: 8,
+               overflow_policy: :fail_run,
+               startup_lease_timeout_ms: 50
+             )
+
+    os_pid = wait_for_os_pid!(pid_file)
+    ref = Process.monitor(port)
+
+    assert_receive {:EXIT, ^port, {:shutdown, :startup_lease_timeout}}, 2_000
+    assert_receive {:DOWN, ^ref, :process, ^port, {:shutdown, :startup_lease_timeout}}, 2_000
+    assert_eventually(fn -> not os_pid_alive?(os_pid) end)
+  end
+
+  test "attach cancels startup lease timeout" do
+    script =
+      write_script!("""
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      while true; do sleep 0.1; done
+      """)
+
+    assert {:ok, port} =
+             Port.start_link(
+               program: script,
+               args: [],
+               queue_limit: 8,
+               overflow_policy: :fail_run,
+               startup_lease_timeout_ms: 40
+             )
+
+    assert {:ok, :attached} = Transport.attach(port, self())
+    Process.sleep(90)
+    assert Process.alive?(port)
+
+    assert :ok = Transport.close(port)
+  end
+
   defp assert_eventually(fun, attempts \\ 20)
 
   defp assert_eventually(fun, attempts) when attempts > 0 do

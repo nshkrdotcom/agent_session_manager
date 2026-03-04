@@ -58,6 +58,9 @@ defmodule ASM do
         {:error, error}
     end
   rescue
+    error in [Error] ->
+      {:error, error}
+
     error ->
       {:error, Error.new(:runtime, :runtime, Exception.message(error), cause: error)}
   end

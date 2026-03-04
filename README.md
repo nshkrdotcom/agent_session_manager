@@ -87,6 +87,60 @@ Runtime execution path:
 - `ASM.Run.Server` owns parser dispatch and emits typed `%ASM.Event{}` envelopes.
 - `ASM.Session.Server` remains aggregate root for run admission and approval routing.
 
+## Remote Node Execution
+
+Remote execution is opt-in per session or per run. Local mode remains the default.
+
+Session-level remote default:
+
+```elixir
+{:ok, session} =
+  ASM.start_session(
+    provider: :codex,
+    execution_mode: :remote_node,
+    driver_opts: [
+      remote_node: :"asm@sandbox-a",
+      remote_cookie: :cluster_cookie,
+      remote_cwd: "/workspaces/t-123"
+    ]
+  )
+```
+
+Per-run remote override:
+
+```elixir
+ASM.query(session, "analyze this",
+  execution_mode: :remote_node,
+  driver_opts: [remote_node: :"asm@sandbox-b"]
+)
+```
+
+Per-run local override (when session default is remote):
+
+```elixir
+ASM.query(session, "quick local check", execution_mode: :local)
+```
+
+Remote driver options:
+
+- `remote_node` (required for `:remote_node`)
+- `remote_cookie` (optional)
+- `remote_connect_timeout_ms` (default `5000`)
+- `remote_rpc_timeout_ms` (default `15000`)
+- `remote_boot_lease_timeout_ms` (default `10000`)
+- `remote_bootstrap_mode` (`:require_prestarted` | `:ensure_started`, default `:require_prestarted`)
+- `remote_cwd` (optional remote workspace override)
+- `remote_transport_call_timeout_ms` (transport control call timeout override)
+
+Operational requirements for remote worker nodes:
+
+- Erlang distribution enabled with trusted cookie
+- `:agent_session_manager` available on the remote node
+- provider CLI binaries installed remotely
+- provider credentials available on remote host
+- compatible OTP major version
+- ASM major/minor compatibility
+
 ## Public API
 
 Core lifecycle:
@@ -167,6 +221,7 @@ Environment knobs used by examples:
 ## Guides
 
 - [Live Adapter Feature Matrix](guides/live-adapters.md)
+- [Remote Node Execution](guides/remote-node-execution.md)
 
 ## Architecture Notes
 

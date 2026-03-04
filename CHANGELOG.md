@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Remote-node execution mode for stream/query runs via `execution_mode: :remote_node`
+  - New execution config normalization: `ASM.Execution.Config`
+  - New remote runtime modules: `ASM.Stream.NodeDriver`, `ASM.Remote.NodeConnector`,
+    `ASM.Remote.TransportStarter`, `ASM.Remote.TransportSupervisor`, `ASM.Remote.Capabilities`
+  - Remote telemetry events under `[:asm, :remote, ...]`
+  - Distributed integration coverage with real `:peer` nodes (`@tag :distributed`)
+- Startup lease timeout support in `ASM.Transport.Port` (`startup_lease_timeout_ms`) to prevent orphaned transports when startup/attach paths fail
+- Timeout-aware transport control call variants in `ASM.Transport` and run-level timeout wiring via `transport_call_timeout_ms`
+
+### Fixed
+
+- `ASM.Run.Server` interrupt path now catches transport call exits (`maybe_interrupt_transport/1`)
+- Stream driver-down dedupe now includes remote transport-backed node driver
+
 ## [0.8.0] - 2026-02-10
 
 ### Added

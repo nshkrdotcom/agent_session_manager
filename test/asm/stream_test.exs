@@ -131,6 +131,46 @@ defmodule ASM.StreamTest do
     assert :ok = ASM.stop_session(session)
   end
 
+  test "execution_mode :remote_node requires remote driver configuration" do
+    session_id = "stream-remote-config-" <> Integer.to_string(System.unique_integer([:positive]))
+    assert {:ok, session} = ASM.start_session(session_id: session_id, provider: :claude)
+
+    assert {:error, error} = ASM.query(session, "hello", execution_mode: :remote_node)
+    assert error.kind == :config_invalid
+    assert error.message =~ "remote_node"
+
+    assert :ok = ASM.stop_session(session)
+  end
+
+  test "explicit driver takes precedence over execution_mode" do
+    session_id =
+      "stream-driver-override-" <> Integer.to_string(System.unique_integer([:positive]))
+
+    assert {:ok, session} = ASM.start_session(session_id: session_id, provider: :claude)
+
+    events =
+      ASM.stream(session, "hello",
+        execution_mode: :remote_node,
+        driver: DelayedDriver,
+        driver_opts: [text: "override-ok"]
+      )
+      |> Enum.to_list()
+
+    assert Stream.final_result(events).text == "override-ok"
+    assert :ok = ASM.stop_session(session)
+  end
+
+  test "invalid execution_mode fails with config error" do
+    session_id = "stream-invalid-mode-" <> Integer.to_string(System.unique_integer([:positive]))
+    assert {:ok, session} = ASM.start_session(session_id: session_id, provider: :claude)
+
+    assert {:error, error} = ASM.query(session, "hello", execution_mode: :invalid)
+    assert error.kind == :config_invalid
+    assert error.message =~ "execution_mode"
+
+    assert :ok = ASM.stop_session(session)
+  end
+
   test "text helpers expose deltas and composed content" do
     events = [
       %Event{

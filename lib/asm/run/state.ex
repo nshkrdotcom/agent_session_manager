@@ -27,6 +27,7 @@ defmodule ASM.Run.State do
     :provider_parser,
     :transport_pid,
     :transport_ref,
+    :transport_call_timeout_ms,
     :pipeline,
     :pipeline_ctx,
     :started_at,
@@ -68,6 +69,7 @@ defmodule ASM.Run.State do
           provider_parser: module() | nil,
           transport_pid: pid() | nil,
           transport_ref: reference() | nil,
+          transport_call_timeout_ms: pos_integer(),
           pipeline: [term()],
           pipeline_ctx: map(),
           pending_approvals: %{optional(String.t()) => term()},
@@ -103,6 +105,12 @@ defmodule ASM.Run.State do
       provider_parser: Keyword.get(opts, :provider_parser),
       transport_pid: nil,
       transport_ref: nil,
+      transport_call_timeout_ms:
+        Keyword.get(
+          opts,
+          :transport_call_timeout_ms,
+          app_default(:transport_call_timeout_ms, 5_000)
+        ),
       pipeline: Keyword.get(opts, :pipeline, []),
       pipeline_ctx: Keyword.get(opts, :pipeline_ctx, %{}),
       approval_timers: %{},

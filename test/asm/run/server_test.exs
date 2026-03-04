@@ -4,6 +4,79 @@ defmodule ASM.Run.ServerTest do
   alias ASM.{Event, Message, Run}
   alias ASM.Transport.Port
 
+  defmodule CrashOnInterruptTransport do
+    @moduledoc false
+
+    use GenServer
+
+    def start(opts \\ []) do
+      GenServer.start(__MODULE__, opts)
+    end
+
+    @impl true
+    def init(_opts), do: {:ok, %{}}
+
+    @impl true
+    def handle_call({:attach, _run_pid}, _from, state) do
+      {:reply, {:ok, :attached}, state}
+    end
+
+    def handle_call(:interrupt, _from, state) do
+      Process.exit(self(), :kill)
+      {:noreply, state}
+    end
+
+    def handle_call({:detach, _run_pid}, _from, state) do
+      {:reply, :ok, state}
+    end
+
+    def handle_call(:close, _from, state) do
+      {:stop, :normal, :ok, state}
+    end
+
+    @impl true
+    def handle_cast({:demand, _run_pid, _n}, state) do
+      {:noreply, state}
+    end
+  end
+
+  defmodule SlowControlTransport do
+    @moduledoc false
+
+    use GenServer
+
+    def start(opts \\ []) do
+      GenServer.start(__MODULE__, opts)
+    end
+
+    @impl true
+    def init(opts), do: {:ok, opts}
+
+    @impl true
+    def handle_call({:attach, _run_pid}, _from, state) do
+      Process.sleep(Keyword.get(state, :attach_delay_ms, 0))
+      {:reply, {:ok, :attached}, state}
+    end
+
+    def handle_call(:interrupt, _from, state) do
+      Process.sleep(Keyword.get(state, :interrupt_delay_ms, 0))
+      {:reply, :ok, state}
+    end
+
+    def handle_call({:detach, _run_pid}, _from, state) do
+      {:reply, :ok, state}
+    end
+
+    def handle_call(:close, _from, state) do
+      {:stop, :normal, :ok, state}
+    end
+
+    @impl true
+    def handle_cast({:demand, _run_pid, _n}, state) do
+      {:noreply, state}
+    end
+  end
+
   test "emits run_started event on bootstrap" do
     assert {:ok, run_pid} =
              Run.Server.start_link(
@@ -141,5 +214,67 @@ defmodule ASM.Run.ServerTest do
     assert event.payload.kind == :transport_error
     assert event.payload.message =~ "status 2"
     assert_receive {:asm_run_done, "run-transport-exit-err"}
+  end
+
+  test "interrupt survives dead transport call exits" do
+    assert {:ok, run_pid} =
+             Run.Server.start_link(
+               run_id: "run-interrupt-dead-transport",
+               session_id: "session-interrupt-dead-transport",
+               provider: :claude,
+               subscriber: self()
+             )
+
+    assert_receive {:asm_run_event, "run-interrupt-dead-transport", %Event{kind: :run_started}}
+
+    assert {:ok, transport_pid} = CrashOnInterruptTransport.start()
+    assert :ok = Run.Server.attach_transport(run_pid, transport_pid)
+
+    ref = Process.monitor(run_pid)
+    assert :ok = Run.Server.interrupt(run_pid)
+
+    assert_receive {:asm_run_event, "run-interrupt-dead-transport", %Event{kind: :error}}
+    assert_receive {:asm_run_done, "run-interrupt-dead-transport"}
+    assert_receive {:DOWN, ^ref, :process, ^run_pid, :normal}
+  end
+
+  test "attach_transport respects configured transport call timeout" do
+    assert {:ok, run_pid} =
+             Run.Server.start_link(
+               run_id: "run-attach-timeout",
+               session_id: "session-attach-timeout",
+               provider: :claude,
+               subscriber: self(),
+               transport_call_timeout_ms: 10
+             )
+
+    assert_receive {:asm_run_event, "run-attach-timeout", %Event{kind: :run_started}}
+    assert {:ok, transport_pid} = SlowControlTransport.start(attach_delay_ms: 100)
+
+    assert {:error, %ASM.Error{} = error} = Run.Server.attach_transport(run_pid, transport_pid)
+    assert error.kind == :transport_error
+    assert error.message =~ "attach"
+  end
+
+  test "interrupt completes even when transport interrupt call times out" do
+    assert {:ok, run_pid} =
+             Run.Server.start_link(
+               run_id: "run-interrupt-timeout",
+               session_id: "session-interrupt-timeout",
+               provider: :claude,
+               subscriber: self(),
+               transport_call_timeout_ms: 10
+             )
+
+    assert_receive {:asm_run_event, "run-interrupt-timeout", %Event{kind: :run_started}}
+    assert {:ok, transport_pid} = SlowControlTransport.start(interrupt_delay_ms: 100)
+    assert :ok = Run.Server.attach_transport(run_pid, transport_pid)
+
+    ref = Process.monitor(run_pid)
+    assert :ok = Run.Server.interrupt(run_pid)
+
+    assert_receive {:asm_run_event, "run-interrupt-timeout", %Event{kind: :error}}
+    assert_receive {:asm_run_done, "run-interrupt-timeout"}
+    assert_receive {:DOWN, ^ref, :process, ^run_pid, :normal}
   end
 end

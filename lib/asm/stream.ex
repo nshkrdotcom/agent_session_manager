@@ -3,9 +3,17 @@ defmodule ASM.Stream do
   Stream helpers for run event consumption and final result projection.
   """
 
-  alias ASM.{Content, Error, Event, Run, Session}
+  alias ASM.{Content, Error, Event, Run, Session, Transport}
+  alias ASM.Execution.Config
 
-  @stream_keys [:driver, :driver_opts, :stream_timeout_ms, :queue_timeout_ms]
+  @stream_keys [
+    :driver,
+    :driver_opts,
+    :execution_mode,
+    :stream_timeout_ms,
+    :queue_timeout_ms,
+    :transport_call_timeout_ms
+  ]
   @run_keys [
     :run_id,
     :run_module,
@@ -14,8 +22,10 @@ defmodule ASM.Stream do
     :tool_executor,
     :pipeline,
     :pipeline_ctx,
-    :approval_timeout_ms
+    :approval_timeout_ms,
+    :transport_call_timeout_ms
   ]
+  @transport_backed_drivers [ASM.Stream.CLIDriver, ASM.Stream.NodeDriver]
 
   @type stream_state :: %{
           session: GenServer.server(),
@@ -27,6 +37,7 @@ defmodule ASM.Stream do
           run_pid: pid() | nil,
           driver: module(),
           driver_opts: keyword(),
+          execution_config: ASM.Execution.Config.t(),
           driver_pid: pid() | nil,
           driver_ref: reference() | nil,
           timeout_ms: pos_integer(),
@@ -114,6 +125,26 @@ defmodule ASM.Stream do
     run_opts = merge_opts(session_run_opts, call_run_opts)
     provider_opts = merge_opts(session_provider_opts, call_provider_opts)
 
+    explicit_driver? = Keyword.has_key?(stream_opts, :driver)
+
+    execution_config =
+      case Config.resolve(session_stream_opts, call_stream_opts,
+             explicit_driver?: explicit_driver?
+           ) do
+        {:ok, cfg} ->
+          cfg
+
+        {:error, %Error{} = error} ->
+          raise error
+      end
+
+    run_opts =
+      Keyword.put(
+        run_opts,
+        :transport_call_timeout_ms,
+        execution_config.transport_call_timeout_ms
+      )
+
     run_opts =
       run_opts
       |> Keyword.update(:run_module_opts, [subscriber: self()], fn module_opts ->
@@ -132,8 +163,9 @@ defmodule ASM.Stream do
           provider_opts: provider_opts,
           run_id: run_id,
           run_pid: run_pid,
-          driver: Keyword.get(stream_opts, :driver, ASM.Stream.CLIDriver),
+          driver: select_driver(stream_opts, execution_config),
           driver_opts: Keyword.get(stream_opts, :driver_opts, []),
+          execution_config: execution_config,
           driver_pid: nil,
           driver_ref: nil,
           timeout_ms: max(Keyword.get(stream_opts, :stream_timeout_ms, 60_000), 1),
@@ -174,7 +206,7 @@ defmodule ASM.Stream do
         state = %{state | driver_pid: nil, driver_ref: nil}
 
         if reason not in [:normal, :shutdown] and is_pid(state.run_pid) and
-             state.driver != ASM.Stream.CLIDriver do
+             state.driver not in @transport_backed_drivers do
           emit_driver_error(
             state.run_pid,
             state,
@@ -195,9 +227,7 @@ defmodule ASM.Stream do
   defp close_stream(state) do
     if state.driver_ref, do: Process.demonitor(state.driver_ref, [:flush])
 
-    if is_pid(state.driver_pid) and Process.alive?(state.driver_pid) do
-      Process.exit(state.driver_pid, :kill)
-    end
+    close_driver(state)
 
     unless state.done? do
       _ = Session.Server.cancel_run(state.session, state.run_id)
@@ -214,7 +244,8 @@ defmodule ASM.Stream do
       provider: state.provider,
       prompt: state.prompt,
       provider_opts: state.provider_opts,
-      driver_opts: state.driver_opts
+      driver_opts: state.driver_opts,
+      execution_config: state.execution_config
     }
 
     case state.driver.start(driver_ctx) do
@@ -304,6 +335,41 @@ defmodule ASM.Stream do
   defp merge_keyword_list(_left, right) when is_list(right), do: right
   defp merge_keyword_list(left, _right) when is_list(left), do: left
   defp merge_keyword_list(_left, _right), do: []
+
+  defp close_driver(%{driver_pid: pid, driver: driver}) when is_pid(pid) do
+    cond do
+      driver in @transport_backed_drivers ->
+        _ = safe_close_transport(pid)
+        :ok
+
+      node(pid) == node() and Process.alive?(pid) ->
+        Process.exit(pid, :kill)
+
+      true ->
+        :ok
+    end
+  end
+
+  defp close_driver(_state), do: :ok
+
+  defp safe_close_transport(pid) do
+    Transport.close(pid)
+  catch
+    :exit, _ -> :ok
+  end
+
+  defp select_driver(stream_opts, execution_config) when is_list(stream_opts) do
+    case Keyword.fetch(stream_opts, :driver) do
+      {:ok, driver} ->
+        driver
+
+      :error ->
+        case execution_config.execution_mode do
+          :remote_node -> ASM.Stream.NodeDriver
+          _ -> ASM.Stream.CLIDriver
+        end
+    end
+  end
 
   defp reduce_event(%Event{} = event, nil) do
     Run.State.new(run_id: event.run_id, session_id: event.session_id, provider: provider(event))

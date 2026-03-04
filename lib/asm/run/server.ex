@@ -220,7 +220,9 @@ defmodule ASM.Run.Server do
   end
 
   defp do_attach_transport(%Run.State{transport_pid: nil} = state, transport_pid) do
-    case Transport.attach(transport_pid, self()) do
+    timeout_ms = transport_call_timeout_ms(state)
+
+    case Transport.attach(transport_pid, self(), timeout_ms) do
       {:ok, :attached} ->
         ref = Process.monitor(transport_pid)
         next_state = %{state | transport_pid: transport_pid, transport_ref: ref}
@@ -230,6 +232,15 @@ defmodule ASM.Run.Server do
       {:error, :busy} ->
         {:error, Error.new(:transport_busy, :transport, "Transport is already leased")}
     end
+  catch
+    :exit, reason ->
+      {:error,
+       Error.new(
+         :transport_error,
+         :transport,
+         "Transport attach failed: #{inspect(reason)}",
+         cause: reason
+       )}
   end
 
   defp do_attach_transport(%Run.State{transport_pid: transport_pid} = state, transport_pid) do
@@ -367,9 +378,12 @@ defmodule ASM.Run.Server do
   defp cleanup_transport(
          %Run.State{transport_pid: transport_pid, transport_ref: transport_ref} = state
        ) do
+    timeout_ms = transport_call_timeout_ms(state)
+
     if is_reference(transport_ref), do: Process.demonitor(transport_ref, [:flush])
-    _ = Transport.detach(transport_pid, self())
-    _ = Transport.close(transport_pid)
+    maybe_interrupt_before_close(state, transport_pid, timeout_ms)
+    _ = Transport.detach(transport_pid, self(), timeout_ms)
+    _ = Transport.close(transport_pid, timeout_ms)
     %{state | transport_pid: nil, transport_ref: nil}
   catch
     :exit, _ -> %{state | transport_pid: nil, transport_ref: nil}
@@ -505,9 +519,11 @@ defmodule ASM.Run.Server do
 
   defp maybe_interrupt_transport(%Run.State{transport_pid: nil}), do: :ok
 
-  defp maybe_interrupt_transport(%Run.State{transport_pid: transport_pid}) do
-    _ = Transport.interrupt(transport_pid)
+  defp maybe_interrupt_transport(%Run.State{transport_pid: transport_pid} = state) do
+    _ = Transport.interrupt(transport_pid, transport_call_timeout_ms(state))
     :ok
+  catch
+    :exit, _ -> :ok
   end
 
   defp demand_next(%Run.State{transport_pid: nil}), do: :ok
@@ -536,4 +552,27 @@ defmodule ASM.Run.Server do
 
   defp diagnostic_suffix([]), do: ""
   defp diagnostic_suffix(lines), do: ": " <> Enum.join(lines, " | ")
+
+  defp maybe_interrupt_before_close(
+         %Run.State{provider: provider_name},
+         transport_pid,
+         timeout_ms
+       ) do
+    case Provider.resolve(provider_name) do
+      {:ok, %Provider{profile: %{control_mode: :stdio_bidirectional}}} ->
+        _ = Transport.interrupt(transport_pid, timeout_ms)
+        :ok
+
+      _ ->
+        :ok
+    end
+  catch
+    :exit, _ -> :ok
+  end
+
+  defp transport_call_timeout_ms(%Run.State{transport_call_timeout_ms: timeout_ms})
+       when is_integer(timeout_ms) and timeout_ms > 0,
+       do: timeout_ms
+
+  defp transport_call_timeout_ms(_state), do: 5_000
 end

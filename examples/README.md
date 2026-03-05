@@ -21,6 +21,12 @@ mix run examples/live_pub_sub_stream.exs -- "Reply with exactly: PUBSUB_OK"
 mix run examples/live_workspace_snapshot.exs -- "Reply with exactly: WORKSPACE_OK"
 ```
 
+Supplemental SDK seam example (does not require provider CLI transport):
+
+```bash
+mix run examples/sdk_driver_demo.exs
+```
+
 ## Environment
 
 - `CLAUDE_CLI_PATH` (optional explicit path)
@@ -74,3 +80,4 @@ Shell example safety note:
 - `live_rendering_stream.exs`: rendering extension on live adapters with compact/verbose output streamed to terminal and file sinks.
 - `live_pub_sub_stream.exs`: PubSub broadcaster wired through the run pipeline, with local topic subscription and realtime message consumption output.
 - `live_workspace_snapshot.exs`: pre/post workspace snapshots around a live query, diff verification, rollback, and temporary workspace cleanup.
+- `sdk_driver_demo.exs`: supplemental SDK-native stream-driver seam demonstration using `ASM.Stream.SDKDriver` (not a live CLI adapter check).

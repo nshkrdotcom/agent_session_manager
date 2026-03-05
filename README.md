@@ -92,6 +92,8 @@ Per-run options override session defaults. Session defaults are inherited automa
 Runtime execution path:
 
 - `ASM.Stream.CLIDriver` resolves provider command + starts a supervised `ASM.Transport.Port`.
+- `ASM.Stream.NodeDriver` starts remote transports over Erlang distribution when `execution_mode: :remote_node`.
+- `ASM.Stream.SDKDriver` is the SDK-native seam for event streams that do not fit transport lease/demand semantics.
 - `ASM.Run.Server` owns parser dispatch and emits typed `%ASM.Event{}` envelopes.
 - `ASM.Session.Server` remains aggregate root for run admission and approval routing.
 
@@ -224,6 +226,12 @@ mix run examples/live_feature_matrix.exs
 mix run examples/live_persistence_stream.exs -- "Reply with exactly: PERSIST_OK"
 mix run examples/live_rendering_stream.exs -- "Reply with exactly: RENDER_OK"
 mix run examples/live_pub_sub_stream.exs -- "Reply with exactly: PUBSUB_OK"
+```
+
+Supplemental (non-live CLI) SDK seam demo:
+
+```bash
+mix run examples/sdk_driver_demo.exs
 ```
 
 Environment knobs used by examples:

@@ -6,7 +6,16 @@ defmodule ASM.Stream.NodeDriver do
   alias ASM.{Error, Options, Provider, Run, Telemetry, Transport}
   alias ASM.Execution.Config
   alias ASM.Remote.NodeConnector
+  alias ASM.Stream.Driver
+  alias ASM.Transport.Cleanup, as: TransportCleanup
 
+  @behaviour Driver
+
+  @impl Driver
+  @spec kind() :: Driver.kind()
+  def kind, do: :transport
+
+  @impl Driver
   @spec start(map()) :: {:ok, pid()} | {:error, Error.t()}
   def start(context) when is_map(context) do
     start(context, [])
@@ -34,6 +43,15 @@ defmodule ASM.Stream.NodeDriver do
       wrapped = runtime_error(Exception.message(error), error)
       emit_remote_error(context, execution_cfg_or_nil(context), wrapped)
       {:error, wrapped}
+  end
+
+  @impl Driver
+  @spec stop(pid(), Driver.context()) :: :ok
+  def stop(transport_pid, _context) when is_pid(transport_pid) do
+    _ = TransportCleanup.close(transport_pid)
+    :ok
+  catch
+    :exit, _ -> :ok
   end
 
   defp resolve_execution_config(%{execution_config: %Config{} = cfg}), do: {:ok, cfg}

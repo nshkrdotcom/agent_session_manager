@@ -5,6 +5,7 @@ defmodule ASM.Stream do
 
   alias ASM.{Content, Error, Event, Run, Session}
   alias ASM.Execution.Config
+  alias ASM.Stream.Driver
   alias ASM.Transport.Cleanup, as: TransportCleanup
 
   @stream_keys [
@@ -26,7 +27,6 @@ defmodule ASM.Stream do
     :approval_timeout_ms,
     :transport_call_timeout_ms
   ]
-  @transport_backed_drivers [ASM.Stream.CLIDriver, ASM.Stream.NodeDriver]
 
   @type stream_state :: %{
           session: GenServer.server(),
@@ -37,6 +37,7 @@ defmodule ASM.Stream do
           run_id: String.t(),
           run_pid: pid() | nil,
           driver: module(),
+          driver_kind: Driver.kind(),
           driver_opts: keyword(),
           execution_config: ASM.Execution.Config.t(),
           driver_pid: pid() | nil,
@@ -155,6 +156,7 @@ defmodule ASM.Stream do
     case Session.Server.submit_run(session, prompt, run_opts) do
       {:ok, run_id, run_pid_or_queued} ->
         run_pid = if(is_pid(run_pid_or_queued), do: run_pid_or_queued, else: nil)
+        driver = select_driver(stream_opts, execution_config)
 
         state = %{
           session: session,
@@ -164,7 +166,8 @@ defmodule ASM.Stream do
           provider_opts: provider_opts,
           run_id: run_id,
           run_pid: run_pid,
-          driver: select_driver(stream_opts, execution_config),
+          driver: driver,
+          driver_kind: driver_kind(driver),
           driver_opts: Keyword.get(stream_opts, :driver_opts, []),
           execution_config: execution_config,
           driver_pid: nil,
@@ -207,7 +210,7 @@ defmodule ASM.Stream do
         state = %{state | driver_pid: nil, driver_ref: nil}
 
         if reason not in [:normal, :shutdown] and is_pid(state.run_pid) and
-             state.driver not in @transport_backed_drivers do
+             state.driver_kind != :transport do
           emit_driver_error(
             state.run_pid,
             state,
@@ -238,18 +241,9 @@ defmodule ASM.Stream do
   end
 
   defp maybe_start_driver(%{run_pid: run_pid} = state) when is_pid(run_pid) do
-    driver_ctx = %{
-      run_id: state.run_id,
-      run_pid: run_pid,
-      session_id: state.session_id,
-      provider: state.provider,
-      prompt: state.prompt,
-      provider_opts: state.provider_opts,
-      driver_opts: state.driver_opts,
-      execution_config: state.execution_config
-    }
+    driver_ctx = driver_context(state)
 
-    case state.driver.start(driver_ctx) do
+    case invoke_driver_start(state.driver, driver_ctx) do
       {:ok, pid} when is_pid(pid) ->
         %{state | driver_pid: pid, driver_ref: Process.monitor(pid)}
 
@@ -337,26 +331,105 @@ defmodule ASM.Stream do
   defp merge_keyword_list(left, _right) when is_list(left), do: left
   defp merge_keyword_list(_left, _right), do: []
 
-  defp close_driver(%{driver_pid: pid, driver: driver}) when is_pid(pid) do
-    cond do
-      driver in @transport_backed_drivers ->
-        _ = safe_close_transport(pid)
-        :ok
-
-      node(pid) == node() and Process.alive?(pid) ->
-        Process.exit(pid, :kill)
-
-      true ->
-        :ok
-    end
+  defp close_driver(%{driver_pid: pid} = state) when is_pid(pid) do
+    driver_ctx = driver_context(state)
+    _ = invoke_driver_stop(state.driver, pid, driver_ctx, state.driver_kind)
+    :ok
   end
 
   defp close_driver(_state), do: :ok
+
+  defp driver_context(%{run_pid: run_pid} = state) when is_pid(run_pid) do
+    %{
+      run_id: state.run_id,
+      run_pid: run_pid,
+      session_id: state.session_id,
+      provider: state.provider,
+      prompt: state.prompt,
+      provider_opts: state.provider_opts,
+      driver_opts: state.driver_opts,
+      execution_config: state.execution_config
+    }
+  end
+
+  defp driver_context(_state), do: nil
+
+  defp invoke_driver_start(driver, driver_ctx) when is_map(driver_ctx) do
+    if driver_supports?(driver, :start, 1) do
+      driver.start(driver_ctx)
+    else
+      {:error, runtime_error("driver does not implement start/1: #{inspect(driver)}")}
+    end
+  rescue
+    error ->
+      {:error, runtime_error("driver start crashed: #{Exception.message(error)}")}
+  catch
+    kind, reason ->
+      {:error, runtime_error("driver start failed: #{inspect({kind, reason})}")}
+  end
+
+  defp invoke_driver_start(_driver, _driver_ctx) do
+    {:error, runtime_error("driver start context is unavailable")}
+  end
+
+  defp invoke_driver_stop(driver, pid, driver_ctx, driver_kind)
+       when is_pid(pid) and is_atom(driver_kind) do
+    cond do
+      driver_supports?(driver, :stop, 2) and is_map(driver_ctx) ->
+        normalize_stop(driver.stop(pid, driver_ctx))
+
+      true ->
+        default_driver_stop(pid, driver_kind)
+    end
+  rescue
+    _error ->
+      default_driver_stop(pid, driver_kind)
+  catch
+    _kind, _reason ->
+      default_driver_stop(pid, driver_kind)
+  end
+
+  defp normalize_stop(:ok), do: :ok
+  defp normalize_stop(_), do: :ok
+
+  defp default_driver_stop(pid, :transport) when is_pid(pid) do
+    _ = safe_close_transport(pid)
+    :ok
+  end
+
+  defp default_driver_stop(pid, _driver_kind) when is_pid(pid) do
+    if node(pid) == node() and Process.alive?(pid) do
+      Process.exit(pid, :shutdown)
+    end
+
+    :ok
+  end
 
   defp safe_close_transport(pid) do
     TransportCleanup.close(pid)
   catch
     :exit, _ -> :ok
+  end
+
+  defp driver_kind(driver) when is_atom(driver) do
+    if driver_supports?(driver, :kind, 0) do
+      case driver.kind() do
+        :transport -> :transport
+        :sdk -> :sdk
+        _other -> :sdk
+      end
+    else
+      :sdk
+    end
+  rescue
+    _ -> :sdk
+  catch
+    _kind, _reason -> :sdk
+  end
+
+  defp driver_supports?(driver, function, arity)
+       when is_atom(driver) and is_atom(function) and is_integer(arity) do
+    Code.ensure_loaded?(driver) and function_exported?(driver, function, arity)
   end
 
   defp select_driver(stream_opts, execution_config) when is_list(stream_opts) do

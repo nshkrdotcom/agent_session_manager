@@ -5,8 +5,17 @@ defmodule ASM.Stream.CLIDriver do
 
   alias ASM.{Error, Options, Provider, Run}
   alias ASM.Provider.Resolver
+  alias ASM.Stream.Driver
   alias ASM.Transport.PTY
+  alias ASM.Transport.Cleanup, as: TransportCleanup
 
+  @behaviour Driver
+
+  @impl Driver
+  @spec kind() :: Driver.kind()
+  def kind, do: :transport
+
+  @impl Driver
   @spec start(map()) :: {:ok, pid()} | {:error, Error.t() | term()}
   def start(%{} = context) do
     with {:ok, provider} <- Provider.resolve(context.provider),
@@ -35,6 +44,15 @@ defmodule ASM.Stream.CLIDriver do
   rescue
     error ->
       {:error, Error.new(:runtime, :runtime, Exception.message(error), cause: error)}
+  end
+
+  @impl Driver
+  @spec stop(pid(), Driver.context()) :: :ok
+  def stop(transport_pid, _context) when is_pid(transport_pid) do
+    _ = TransportCleanup.close(transport_pid)
+    :ok
+  catch
+    :exit, _ -> :ok
   end
 
   defp validate_options(provider, provider_opts) when is_list(provider_opts) do

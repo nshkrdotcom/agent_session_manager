@@ -11,6 +11,8 @@ mix run examples/live_codex_stream.exs -- "Reply with exactly: CODEX_OK"
 mix run examples/live_multi_provider_smoke.exs
 mix run examples/live_feature_matrix.exs
 mix run examples/live_persistence_stream.exs -- "Reply with exactly: PERSIST_OK"
+mix run examples/live_routing_round_robin.exs
+mix run examples/live_routing_failover.exs
 ```
 
 ## Environment
@@ -33,3 +35,5 @@ Each script checks CLI availability first and exits with actionable setup errors
 - `live_multi_provider_smoke.exs`: stream + one-shot `ASM.query/3` across all providers.
 - `live_feature_matrix.exs`: session lifecycle surface on live adapters (`start_session`, `stream`, `query`, `health`, `cost`, `stop_session`).
 - `live_persistence_stream.exs`: file-backed persistence with async writer hook, replay/rebuild checks, controlled error path, and guaranteed cleanup.
+- `live_routing_round_robin.exs`: deterministic routing selection over live provider runs.
+- `live_routing_failover.exs`: health-aware failover where an intentionally unavailable primary candidate falls back to a live provider.

@@ -38,6 +38,16 @@ mix run examples/live_multi_provider_smoke.exs
 mix run examples/live_feature_matrix.exs
 ```
 
+## Routing extension on live adapters
+
+```bash
+mix run examples/live_routing_round_robin.exs
+mix run examples/live_routing_failover.exs
+```
+
+The failover script intentionally makes the primary router candidate unavailable by
+setting an invalid CLI path and verifies fallback to a second live provider.
+
 The feature-matrix script validates:
 
 - `ASM.start_session/1`

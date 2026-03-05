@@ -223,6 +223,7 @@ mix run examples/check_amp_provider.exs
 mix run examples/live_shell_stream.exs -- "echo SHELL_OK"
 mix run examples/live_multi_provider_smoke.exs
 mix run examples/live_feature_matrix.exs
+mix run examples/live_main_compat_migration.exs
 mix run examples/live_persistence_stream.exs -- "Reply with exactly: PERSIST_OK"
 mix run examples/live_rendering_stream.exs -- "Reply with exactly: RENDER_OK"
 mix run examples/live_pub_sub_stream.exs -- "Reply with exactly: PUBSUB_OK"

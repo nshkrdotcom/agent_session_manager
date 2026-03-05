@@ -374,12 +374,10 @@ defmodule ASM.Stream do
 
   defp invoke_driver_stop(driver, pid, driver_ctx, driver_kind)
        when is_pid(pid) and is_atom(driver_kind) do
-    cond do
-      driver_supports?(driver, :stop, 2) and is_map(driver_ctx) ->
-        normalize_stop(driver.stop(pid, driver_ctx))
-
-      true ->
-        default_driver_stop(pid, driver_kind)
+    if driver_supports?(driver, :stop, 2) and is_map(driver_ctx) do
+      normalize_stop(driver.stop(pid, driver_ctx))
+    else
+      default_driver_stop(pid, driver_kind)
     end
   rescue
     _error ->

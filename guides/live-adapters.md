@@ -41,6 +41,7 @@ mix run examples/live_multi_provider_smoke.exs
 
 ```bash
 mix run examples/live_feature_matrix.exs
+mix run examples/live_main_compat_migration.exs
 ```
 
 ## Routing extension on live adapters
@@ -83,6 +84,12 @@ The feature-matrix script validates:
 - `ASM.health/1`
 - `ASM.cost/1`
 - `ASM.stop_session/1`
+
+`live_main_compat_migration.exs` validates:
+
+- `ASM.Migration.MainCompat` provider/input/option conversion from main-style shapes
+- legacy event callback bridging over live stream output
+- explicit unsupported migration errors for Amp/Shell adapter hints
 
 ## Useful environment knobs
 

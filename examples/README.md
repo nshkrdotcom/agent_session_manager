@@ -12,6 +12,7 @@ mix run examples/check_amp_provider.exs
 mix run examples/live_shell_stream.exs -- "echo SHELL_OK"
 mix run examples/live_multi_provider_smoke.exs
 mix run examples/live_feature_matrix.exs
+mix run examples/live_main_compat_migration.exs
 mix run examples/live_persistence_stream.exs -- "Reply with exactly: PERSIST_OK"
 mix run examples/live_routing_round_robin.exs
 mix run examples/live_routing_failover.exs
@@ -73,6 +74,7 @@ Shell example safety note:
 - `live_shell_stream.exs`: controlled shell command execution with strict policy defaults and timeout handling.
 - `live_multi_provider_smoke.exs`: stream + one-shot `ASM.query/3` across all providers.
 - `live_feature_matrix.exs`: session lifecycle surface on live adapters (`start_session`, `stream`, `query`, `health`, `cost`, `stop_session`).
+- `live_main_compat_migration.exs`: main-shape migration helper flow (`input/messages` conversion, legacy event callback bridging, and explicit Amp/Shell unsupported checks) on live Claude/Gemini/Codex adapters.
 - `live_persistence_stream.exs`: file-backed persistence with async writer hook, replay/rebuild checks, controlled error path, and guaranteed cleanup.
 - `live_routing_round_robin.exs`: deterministic routing selection over live provider runs.
 - `live_routing_failover.exs`: health-aware failover where an intentionally unavailable primary candidate falls back to a live provider.

@@ -61,9 +61,6 @@ defmodule ASM.Extensions.PubSub.Adapters.Local do
 
       {:error, {:already_registered, _owner}} ->
         :ok
-
-      {:error, reason} ->
-        {:error, runtime_error("local pubsub subscribe failed", reason)}
     end
   rescue
     error in [ArgumentError] ->

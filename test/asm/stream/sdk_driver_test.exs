@@ -2,11 +2,12 @@ defmodule ASM.Stream.SDKDriverTest do
   use ASM.TestCase
 
   alias ASM.{Event, Message, Stream}
+  alias ASM.Stream.{CLIDriver, NodeDriver, SDKDriver}
 
   test "stream drivers expose explicit transport/sdk contract kind" do
-    assert ASM.Stream.CLIDriver.kind() == :transport
-    assert ASM.Stream.NodeDriver.kind() == :transport
-    assert ASM.Stream.SDKDriver.kind() == :sdk
+    assert CLIDriver.kind() == :transport
+    assert NodeDriver.kind() == :transport
+    assert SDKDriver.kind() == :sdk
   end
 
   test "sdk driver streams normalized events without transport semantics" do
@@ -15,7 +16,7 @@ defmodule ASM.Stream.SDKDriverTest do
 
     events =
       ASM.stream(session, "hello",
-        driver: ASM.Stream.SDKDriver,
+        driver: SDKDriver,
         driver_opts: [
           stream_fun: fn _ctx ->
             [
@@ -43,7 +44,7 @@ defmodule ASM.Stream.SDKDriverTest do
 
     events =
       ASM.stream(session, "hello",
-        driver: ASM.Stream.SDKDriver,
+        driver: SDKDriver,
         driver_opts: [
           stream_fun: fn _ctx ->
             [{:assistant_delta, %Message.Partial{content_type: :text, delta: "auto-result"}}]
@@ -68,7 +69,7 @@ defmodule ASM.Stream.SDKDriverTest do
 
     events =
       ASM.stream(session, "hello",
-        driver: ASM.Stream.SDKDriver,
+        driver: SDKDriver,
         stream_timeout_ms: 250,
         driver_opts: [
           stream_fun: fn _ctx ->

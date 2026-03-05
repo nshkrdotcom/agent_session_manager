@@ -2,6 +2,7 @@ defmodule ASM.OptionsTest do
   use ASM.TestCase
 
   alias ASM.Options
+  alias ASM.Options.{Amp, Shell}
 
   test "validate/2 merges provider schema and applies defaults" do
     schema = [sandbox: [type: :boolean, default: false]]
@@ -24,7 +25,7 @@ defmodule ASM.OptionsTest do
     assert {:ok, opts} =
              Options.validate(
                [provider: :amp, permission_mode: :bypass, mode: "smart", include_thinking: true],
-               ASM.Options.Amp.schema()
+               Amp.schema()
              )
 
     assert opts[:mode] == "smart"
@@ -34,7 +35,7 @@ defmodule ASM.OptionsTest do
 
   test "validate/2 supports shell provider schema defaults" do
     assert {:ok, opts} =
-             Options.validate([provider: :shell], ASM.Options.Shell.schema())
+             Options.validate([provider: :shell], Shell.schema())
 
     assert is_list(opts[:allowed_commands])
     assert is_list(opts[:denied_commands])

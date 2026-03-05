@@ -6,8 +6,8 @@ defmodule ASM.Stream.CLIDriver do
   alias ASM.{Error, Options, Provider, Run}
   alias ASM.Provider.Resolver
   alias ASM.Stream.Driver
-  alias ASM.Transport.PTY
   alias ASM.Transport.Cleanup, as: TransportCleanup
+  alias ASM.Transport.PTY
 
   @behaviour Driver
 

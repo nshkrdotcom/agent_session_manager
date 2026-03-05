@@ -7,8 +7,8 @@ defmodule ASM.Stream.Driver do
   lease semantics.
   """
 
-  alias ASM.Execution.Config
   alias ASM.Error
+  alias ASM.Execution.Config
 
   @typedoc """
   Driver integration class.

@@ -14,6 +14,7 @@ defmodule ASM do
       ASM.Event,
       ASM.History,
       ASM.Message,
+      ASM.Migration.MainCompat,
       ASM.Options,
       ASM.Permission,
       ASM.Provider,

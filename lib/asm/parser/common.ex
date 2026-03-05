@@ -53,19 +53,22 @@ defmodule ASM.Parser.Common do
   def normalize_kind(nil), do: :unknown
   def normalize_kind(kind) when is_atom(kind), do: kind
 
+  @normalized_kinds %{
+    "user_cancelled" => :user_cancelled,
+    "cancelled" => :user_cancelled,
+    "parse_error" => :parse_error,
+    "timeout" => :timeout,
+    "tool_failed" => :tool_failed,
+    "approval_denied" => :approval_denied,
+    "rate_limit" => :rate_limit,
+    "transport_error" => :transport_error,
+    "auth_error" => :auth_error
+  }
+
   def normalize_kind(kind) when is_binary(kind) do
-    case String.downcase(kind) do
-      "user_cancelled" -> :user_cancelled
-      "cancelled" -> :user_cancelled
-      "parse_error" -> :parse_error
-      "timeout" -> :timeout
-      "tool_failed" -> :tool_failed
-      "approval_denied" -> :approval_denied
-      "rate_limit" -> :rate_limit
-      "transport_error" -> :transport_error
-      "auth_error" -> :auth_error
-      _ -> :unknown
-    end
+    kind
+    |> String.downcase()
+    |> then(&Map.get(@normalized_kinds, &1, :unknown))
   end
 
   def normalize_kind(_), do: :unknown

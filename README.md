@@ -224,6 +224,7 @@ Environment knobs used by examples:
 
 ## Guides
 
+- [Boundary Enforcement](guides/boundary-enforcement.md)
 - [Live Adapter Feature Matrix](guides/live-adapters.md)
 - [Remote Node Execution](guides/remote-node-execution.md)
 - [Transport Guarantees](guides/transport-guarantees.md)

@@ -9,6 +9,7 @@ defmodule AgentSessionManager.MixProject do
       app: :agent_session_manager,
       version: @version,
       elixir: "~> 1.18",
+      compilers: [:boundary | Mix.compilers()],
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -33,6 +34,7 @@ defmodule AgentSessionManager.MixProject do
 
   defp deps do
     [
+      {:boundary, path: "vendor/boundary", runtime: false},
       {:jason, "~> 1.4"},
       {:erlexec, "~> 2.0"},
       {:nimble_options, "~> 1.1"},

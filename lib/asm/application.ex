@@ -5,6 +5,8 @@ defmodule ASM.Application do
 
   @impl true
   def start(_type, _args) do
+    # Extension supervisors are intentionally started by the host app,
+    # so core keeps compile-time/runtime isolation from optional domains.
     children = [
       {Registry, keys: :unique, name: :asm_sessions},
       {Task.Supervisor, name: ASM.TaskSupervisor},

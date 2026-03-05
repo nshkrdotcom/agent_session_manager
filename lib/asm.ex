@@ -3,6 +3,25 @@ defmodule ASM do
   Public facade for the ASM session runtime.
   """
 
+  use Boundary,
+    deps: [],
+    exports: [
+      ASM,
+      ASM.Command,
+      ASM.Content,
+      ASM.Control,
+      ASM.Error,
+      ASM.Event,
+      ASM.History,
+      ASM.Message,
+      ASM.Options,
+      ASM.Permission,
+      ASM.Provider,
+      ASM.Result,
+      ASM.Stream,
+      ASM.Transport
+    ]
+
   alias ASM.{Error, Result, Session, Stream}
 
   @type session_ref :: GenServer.server()

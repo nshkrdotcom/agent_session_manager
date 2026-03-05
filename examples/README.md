@@ -8,6 +8,7 @@ These examples exercise real provider CLIs through the `ASM.stream/3` runtime pa
 mix run examples/live_claude_stream.exs -- "Reply with exactly: CLAUDE_OK"
 mix run examples/live_gemini_stream.exs -- "Reply with exactly: GEMINI_OK"
 mix run examples/live_codex_stream.exs -- "Reply with exactly: CODEX_OK"
+mix run examples/check_amp_provider.exs
 mix run examples/live_multi_provider_smoke.exs
 mix run examples/live_feature_matrix.exs
 mix run examples/live_persistence_stream.exs -- "Reply with exactly: PERSIST_OK"
@@ -24,6 +25,7 @@ mix run examples/live_workspace_snapshot.exs -- "Reply with exactly: WORKSPACE_O
 - `CLAUDE_CLI_PATH` (optional explicit path)
 - `GEMINI_CLI_PATH` (optional explicit path)
 - `CODEX_PATH` (optional explicit path)
+- `AMP_CLI_PATH` (optional explicit path)
 - `ASM_PERMISSION_MODE` (`default`, `auto`, `bypass`, `plan`; defaults to `auto`)
 - `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL` (optional)
 - `ASM_CODEX_REASONING` (`low`, `medium`, `high`; optional and auto-skipped when unsupported)
@@ -41,12 +43,18 @@ mix run examples/live_workspace_snapshot.exs -- "Reply with exactly: WORKSPACE_O
 - `ASM_WORKSPACE_PROVIDER` (`claude`, `gemini`, `codex`; optional, defaults to `codex`)
 - `ASM_WORKSPACE_DIR` (optional workspace path override for the snapshot example)
 - `ASM_WORKSPACE_KEEP_DIR` (`1`/`true` to retain the temporary workspace directory)
+- `ASM_AMP_MODEL` (optional Amp model identifier)
+- `ASM_AMP_MODE` (optional Amp mode, default `smart`)
+- `ASM_AMP_THINKING` (`1`/`true` enables Amp thinking)
+- `ASM_AMP_TOOLS` (optional comma-separated Amp tool allow-list)
+- `ASM_AMP_RUN_LIVE` (`1`/`true` to run a live Amp stream after contract checks)
 
 Each script checks CLI availability first and exits with actionable setup errors if missing.
 
 ## Coverage
 
 - `live_claude_stream.exs`, `live_gemini_stream.exs`, `live_codex_stream.exs`: provider-specific stream flow.
+- `check_amp_provider.exs`: Amp parser/command contract checks with optional live stream check when CLI is available.
 - `live_multi_provider_smoke.exs`: stream + one-shot `ASM.query/3` across all providers.
 - `live_feature_matrix.exs`: session lifecycle surface on live adapters (`start_session`, `stream`, `query`, `health`, `cost`, `stop_session`).
 - `live_persistence_stream.exs`: file-backed persistence with async writer hook, replay/rebuild checks, controlled error path, and guaranteed cleanup.

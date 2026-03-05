@@ -17,6 +17,7 @@ Optional explicit binary paths:
 - `CLAUDE_CLI_PATH`
 - `GEMINI_CLI_PATH`
 - `CODEX_PATH`
+- `AMP_CLI_PATH`
 
 ## Provider-specific stream checks
 
@@ -24,7 +25,11 @@ Optional explicit binary paths:
 mix run examples/live_claude_stream.exs -- "Reply with exactly: CLAUDE_OK"
 mix run examples/live_gemini_stream.exs -- "Reply with exactly: GEMINI_OK"
 mix run examples/live_codex_stream.exs -- "Reply with exactly: CODEX_OK"
+mix run examples/check_amp_provider.exs
 ```
+
+`check_amp_provider.exs` always runs parser/command contract checks.
+It runs a live Amp stream only when `ASM_AMP_RUN_LIVE=1` and the Amp CLI resolves.
 
 ## Multi-provider smoke (stream + one-shot query)
 
@@ -90,3 +95,5 @@ The feature-matrix script validates:
 - `ASM_RENDER_FILE` (render output file path)
 - `ASM_RENDER_KEEP_FILE` (`1`/`true` to keep output file)
 - `ASM_PUBSUB_PROVIDER` (`claude`, `gemini`, `codex`)
+- `ASM_AMP_MODEL`, `ASM_AMP_MODE`, `ASM_AMP_TOOLS`, `ASM_AMP_THINKING`
+- `ASM_AMP_RUN_LIVE` (`1`/`true` enables live Amp stream check)

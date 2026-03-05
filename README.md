@@ -11,6 +11,7 @@ Supported providers:
 - Claude CLI
 - Gemini CLI
 - Codex CLI (`exec` mode)
+- Amp CLI (extension path)
 
 ## Why ASM
 
@@ -47,6 +48,7 @@ Optional explicit CLI paths:
 - `CLAUDE_CLI_PATH`
 - `GEMINI_CLI_PATH`
 - `CODEX_PATH`
+- `AMP_CLI_PATH`
 
 ## Quick Start
 
@@ -202,6 +204,7 @@ Provider-specific examples:
 - Claude: `model`, `include_thinking`, `max_turns`
 - Gemini: `model`, `sandbox`, `extensions`
 - Codex: `model`, `reasoning_effort`, `output_schema`
+- Amp: `model`, `mode`, `include_thinking`, `tools`
 
 ## Live Examples
 
@@ -211,6 +214,7 @@ Run real CLI smoke tests:
 mix run examples/live_claude_stream.exs -- "Reply with exactly: CLAUDE_OK"
 mix run examples/live_gemini_stream.exs -- "Reply with exactly: GEMINI_OK"
 mix run examples/live_codex_stream.exs -- "Reply with exactly: CODEX_OK"
+mix run examples/check_amp_provider.exs
 mix run examples/live_multi_provider_smoke.exs
 mix run examples/live_feature_matrix.exs
 mix run examples/live_persistence_stream.exs -- "Reply with exactly: PERSIST_OK"
@@ -220,10 +224,11 @@ mix run examples/live_pub_sub_stream.exs -- "Reply with exactly: PUBSUB_OK"
 
 Environment knobs used by examples:
 
-- `CLAUDE_CLI_PATH`, `GEMINI_CLI_PATH`, `CODEX_PATH`
+- `CLAUDE_CLI_PATH`, `GEMINI_CLI_PATH`, `CODEX_PATH`, `AMP_CLI_PATH`
 - `ASM_PERMISSION_MODE` (`default`, `auto`, `bypass`, `plan`)
-- `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL`
+- `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL`, `ASM_AMP_MODEL`
 - `ASM_GEMINI_EXTENSIONS`, `ASM_CODEX_REASONING`
+- `ASM_AMP_MODE`, `ASM_AMP_TOOLS`, `ASM_AMP_THINKING`, `ASM_AMP_RUN_LIVE`
 - `ASM_PERSIST_PROVIDER`, `ASM_PERSIST_FILE`, `ASM_PERSIST_KEEP_FILE`
 - `ASM_RENDER_PROVIDER`, `ASM_RENDER_FORMAT`, `ASM_RENDER_FILE`, `ASM_RENDER_KEEP_FILE`
 - `ASM_PUBSUB_PROVIDER`

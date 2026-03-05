@@ -18,6 +18,11 @@ defmodule ASM.PermissionTest do
              Permission.normalize(:gemini, "yolo")
   end
 
+  test "normalizes amp bypass mode to dangerously allow all" do
+    assert {:ok, %{normalized: :bypass, native: :dangerously_allow_all}} =
+             Permission.normalize(:amp, :bypass)
+  end
+
   test "returns typed config error for unsupported provider mode" do
     assert {:error, error} = Permission.normalize(:gemini, :accept_edits)
 

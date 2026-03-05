@@ -4,6 +4,7 @@ defmodule ASM.Provider do
   """
 
   alias ASM.Error
+  alias ASM.Provider.Amp
   alias ASM.Provider.Claude
   alias ASM.Provider.CodexExec
   alias ASM.Provider.Gemini
@@ -40,7 +41,7 @@ defmodule ASM.Provider do
     metadata: %{}
   ]
 
-  @type provider_name :: :claude | :codex | :codex_exec | :gemini | atom()
+  @type provider_name :: :amp | :claude | :codex | :codex_exec | :gemini | atom()
 
   @type t :: %__MODULE__{
           name: provider_name(),
@@ -69,6 +70,7 @@ defmodule ASM.Provider do
   @spec resolve(t() | provider_name()) :: {:ok, t()} | {:error, Error.t()}
   def resolve(%__MODULE__{} = provider), do: {:ok, provider}
 
+  def resolve(:amp), do: {:ok, Amp.provider()}
   def resolve(:claude), do: {:ok, Claude.provider()}
   def resolve(:codex), do: {:ok, CodexExec.provider()}
   def resolve(:codex_exec), do: {:ok, CodexExec.provider()}

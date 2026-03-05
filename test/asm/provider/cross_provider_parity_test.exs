@@ -9,7 +9,8 @@ defmodule ASM.Provider.CrossProviderParityTest do
       {Parser.Claude, %{"type" => "assistant_delta", "delta" => "hello"}},
       {Parser.Codex, %{"type" => "response.output_text.delta", "delta" => "hello"}},
       {Parser.Gemini,
-       %{"type" => "message", "role" => "assistant", "content" => "hello", "delta" => true}}
+       %{"type" => "message", "role" => "assistant", "content" => "hello", "delta" => true}},
+      {Parser.Amp, %{"type" => "message_streamed", "delta" => "hello"}}
     ]
 
     Enum.each(samples, fn {module, raw} ->
@@ -38,6 +39,12 @@ defmodule ASM.Provider.CrossProviderParityTest do
          "type" => "result",
          "status" => "end_turn",
          "stats" => %{"input_tokens" => 2, "output_tokens" => 3}
+       }},
+      {Parser.Amp,
+       %{
+         "type" => "run_completed",
+         "stop_reason" => "end_turn",
+         "token_usage" => %{"input_tokens" => 2, "output_tokens" => 3}
        }}
     ]
 
@@ -53,7 +60,8 @@ defmodule ASM.Provider.CrossProviderParityTest do
     providers = [
       {ASM.Command.Claude, "claude", "/usr/bin/claude"},
       {ASM.Command.Codex, "codex", "/usr/bin/codex"},
-      {ASM.Command.Gemini, "gemini", "/usr/bin/gemini"}
+      {ASM.Command.Gemini, "gemini", "/usr/bin/gemini"},
+      {ASM.Command.Amp, "amp", "/usr/bin/amp"}
     ]
 
     Enum.each(providers, fn {module, binary_name, expected_path} ->
@@ -101,9 +109,20 @@ defmodule ASM.Provider.CrossProviderParityTest do
                end
              )
 
+    assert {:ok, _spec, amp_args} =
+             ASM.Command.Amp.build("prompt",
+               permission_mode: :bypass,
+               env: fn _ -> nil end,
+               find_executable: fn
+                 "amp" -> "/usr/bin/amp"
+                 _ -> nil
+               end
+             )
+
     assert contains_pair?(claude_args, "--permission-mode", "bypassPermissions")
     assert "--dangerously-bypass-approvals-and-sandbox" in codex_args
     assert "--yolo" in gemini_args
+    assert "--dangerously-allow-all" in amp_args
   end
 
   defp contains_pair?(args, flag, value) do

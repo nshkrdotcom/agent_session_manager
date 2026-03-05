@@ -9,6 +9,13 @@ defmodule ASM.ProviderTest do
     assert provider.profile.transport_mode == :exec_stdio
   end
 
+  test "resolve/1 supports amp provider" do
+    assert {:ok, provider} = Provider.resolve(:amp)
+    assert provider.name == :amp
+    assert provider.profile.transport_mode == :exec_stdio
+    assert provider.supports_tools
+  end
+
   test "resolve/1 accepts provider struct passthrough" do
     provider = %Provider{
       name: :custom,

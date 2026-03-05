@@ -30,6 +30,20 @@ defmodule ASM.Provider.ResolverTest do
     assert spec.program == "/usr/local/bin/codex"
   end
 
+  test "amp env var is used when explicit path absent" do
+    assert {:ok, spec} =
+             Resolver.resolve(:amp,
+               env: fn
+                 "AMP_CLI_PATH" -> "/usr/local/bin/amp"
+                 _ -> nil
+               end,
+               file_exists?: fn _ -> true end,
+               executable?: fn _ -> true end
+             )
+
+    assert spec.program == "/usr/local/bin/amp"
+  end
+
   test "path lookup fallback uses provider binary names" do
     assert {:ok, spec} =
              Resolver.resolve(:claude,

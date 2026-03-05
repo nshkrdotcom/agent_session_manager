@@ -20,6 +20,18 @@ defmodule ASM.OptionsTest do
     assert opts[:provider_permission_mode] == :yolo
   end
 
+  test "validate/2 supports amp provider schema and permission normalization" do
+    assert {:ok, opts} =
+             Options.validate(
+               [provider: :amp, permission_mode: :bypass, mode: "smart", include_thinking: true],
+               ASM.Options.Amp.schema()
+             )
+
+    assert opts[:mode] == "smart"
+    assert opts[:include_thinking] == true
+    assert opts[:provider_permission_mode] == :dangerously_allow_all
+  end
+
   test "validate/2 rejects reserved key collisions in provider schema" do
     schema = [provider: [type: :atom, required: true]]
 

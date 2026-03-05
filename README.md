@@ -213,6 +213,7 @@ mix run examples/live_gemini_stream.exs -- "Reply with exactly: GEMINI_OK"
 mix run examples/live_codex_stream.exs -- "Reply with exactly: CODEX_OK"
 mix run examples/live_multi_provider_smoke.exs
 mix run examples/live_feature_matrix.exs
+mix run examples/live_persistence_stream.exs -- "Reply with exactly: PERSIST_OK"
 ```
 
 Environment knobs used by examples:
@@ -221,6 +222,7 @@ Environment knobs used by examples:
 - `ASM_PERMISSION_MODE` (`default`, `auto`, `bypass`, `plan`)
 - `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL`
 - `ASM_GEMINI_EXTENSIONS`, `ASM_CODEX_REASONING`
+- `ASM_PERSIST_PROVIDER`, `ASM_PERSIST_FILE`, `ASM_PERSIST_KEEP_FILE`
 
 ## Guides
 

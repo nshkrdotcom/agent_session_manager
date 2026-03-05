@@ -10,6 +10,7 @@ mix run examples/live_gemini_stream.exs -- "Reply with exactly: GEMINI_OK"
 mix run examples/live_codex_stream.exs -- "Reply with exactly: CODEX_OK"
 mix run examples/live_multi_provider_smoke.exs
 mix run examples/live_feature_matrix.exs
+mix run examples/live_persistence_stream.exs -- "Reply with exactly: PERSIST_OK"
 ```
 
 ## Environment
@@ -20,6 +21,9 @@ mix run examples/live_feature_matrix.exs
 - `ASM_PERMISSION_MODE` (`default`, `auto`, `bypass`, `plan`; defaults to `auto`)
 - `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL` (optional)
 - `ASM_CODEX_REASONING` (`low`, `medium`, `high`; optional and auto-skipped when unsupported)
+- `ASM_PERSIST_PROVIDER` (`claude`, `gemini`, `codex`; optional, defaults to `claude`)
+- `ASM_PERSIST_FILE` (optional persistence file path override)
+- `ASM_PERSIST_KEEP_FILE` (`1`/`true` to retain file after run)
 
 Each script checks CLI availability first and exits with actionable setup errors if missing.
 
@@ -28,3 +32,4 @@ Each script checks CLI availability first and exits with actionable setup errors
 - `live_claude_stream.exs`, `live_gemini_stream.exs`, `live_codex_stream.exs`: provider-specific stream flow.
 - `live_multi_provider_smoke.exs`: stream + one-shot `ASM.query/3` across all providers.
 - `live_feature_matrix.exs`: session lifecycle surface on live adapters (`start_session`, `stream`, `query`, `health`, `cost`, `stop_session`).
+- `live_persistence_stream.exs`: file-backed persistence with async writer hook, replay/rebuild checks, controlled error path, and guaranteed cleanup.

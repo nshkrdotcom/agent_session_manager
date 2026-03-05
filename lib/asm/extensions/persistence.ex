@@ -55,6 +55,7 @@ defmodule ASM.Extensions.Persistence do
   def append_event(store, %Event{} = event) when is_pid(store) do
     store
     |> Store.append_event(event)
+    |> as_term()
     |> normalize_result("append_event/2 failed")
   catch
     :exit, reason ->
@@ -65,6 +66,7 @@ defmodule ASM.Extensions.Persistence do
   def list_events(store, session_id) when is_pid(store) and is_binary(session_id) do
     store
     |> Store.list_events(session_id)
+    |> as_term()
     |> normalize_result("list_events/2 failed")
   catch
     :exit, reason ->
@@ -75,6 +77,7 @@ defmodule ASM.Extensions.Persistence do
   def reset_session(store, session_id) when is_pid(store) and is_binary(session_id) do
     store
     |> Store.reset_session(session_id)
+    |> as_term()
     |> normalize_result("reset_session/2 failed")
   catch
     :exit, reason ->
@@ -87,6 +90,7 @@ defmodule ASM.Extensions.Persistence do
       when is_pid(store) and is_binary(session_id) and is_function(reducer, 2) do
     store
     |> History.replay_session(session_id, initial_state, reducer)
+    |> as_term()
     |> normalize_result("replay_session/4 failed")
   rescue
     error ->
@@ -103,6 +107,7 @@ defmodule ASM.Extensions.Persistence do
       when is_pid(store) and is_binary(session_id) and is_binary(run_id) do
     store
     |> History.rebuild_run(session_id, run_id)
+    |> as_term()
     |> normalize_result("rebuild_run/3 failed")
   rescue
     error ->
@@ -112,9 +117,14 @@ defmodule ASM.Extensions.Persistence do
       {:error, runtime_error("rebuild_run/3 failed", reason)}
   end
 
+  @dialyzer {:nowarn_function, normalize_result: 2}
   defp normalize_result(:ok, _message), do: :ok
   defp normalize_result({:ok, value}, _message), do: {:ok, value}
   defp normalize_result({:error, %Error{} = error}, _message), do: {:error, error}
+  defp normalize_result(other, message), do: {:error, runtime_error(message, other)}
+
+  @spec as_term(term()) :: term()
+  defp as_term(value), do: value
 
   defp runtime_error(message, cause) do
     Error.new(:unknown, :runtime, message, cause: cause)

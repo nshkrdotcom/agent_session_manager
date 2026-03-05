@@ -62,6 +62,7 @@ mix run examples/sdk_driver_demo.exs
 - `ASM_SHELL_TIMEOUT_MS` (optional shell command timeout override in milliseconds)
 
 Each script checks CLI availability first and exits with actionable setup errors if missing.
+Claude streams automatically use the `script` PTY wrapper when available, and fall back to direct execution when PTY setup is unavailable.
 
 Shell example safety note:
 - Run `live_shell_stream.exs` only in a disposable sandbox/workspace.

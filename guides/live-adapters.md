@@ -31,6 +31,8 @@ mix run examples/check_amp_provider.exs
 `check_amp_provider.exs` always runs parser/command contract checks.
 It runs a live Amp stream only when `ASM_AMP_RUN_LIVE=1` and the Amp CLI resolves.
 
+Claude runs use a PTY wrapper (`script`) when available. If PTY setup is not usable in the current environment, ASM falls back to direct CLI execution.
+
 ## Multi-provider smoke (stream + one-shot query)
 
 ```bash

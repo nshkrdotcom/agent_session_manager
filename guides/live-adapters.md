@@ -48,6 +48,18 @@ mix run examples/live_routing_failover.exs
 The failover script intentionally makes the primary router candidate unavailable by
 setting an invalid CLI path and verifies fallback to a second live provider.
 
+## Rendering extension on live adapters
+
+```bash
+mix run examples/live_rendering_stream.exs -- "Reply with exactly: RENDER_OK"
+```
+
+The rendering script consumes live `%ASM.Event{}` output and demonstrates
+multi-sink composition:
+
+- terminal output via `ASM.Extensions.Rendering.Sinks.TTY`
+- file logging via `ASM.Extensions.Rendering.Sinks.File`
+
 The feature-matrix script validates:
 
 - `ASM.start_session/1`
@@ -63,3 +75,7 @@ The feature-matrix script validates:
 - `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL`
 - `ASM_GEMINI_EXTENSIONS` (comma-separated list)
 - `ASM_CODEX_REASONING` (`low`, `medium`, `high`)
+- `ASM_RENDER_PROVIDER` (`claude`, `gemini`, `codex`)
+- `ASM_RENDER_FORMAT` (`compact`, `verbose`)
+- `ASM_RENDER_FILE` (render output file path)
+- `ASM_RENDER_KEEP_FILE` (`1`/`true` to keep output file)

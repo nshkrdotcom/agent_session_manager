@@ -214,6 +214,7 @@ mix run examples/live_codex_stream.exs -- "Reply with exactly: CODEX_OK"
 mix run examples/live_multi_provider_smoke.exs
 mix run examples/live_feature_matrix.exs
 mix run examples/live_persistence_stream.exs -- "Reply with exactly: PERSIST_OK"
+mix run examples/live_rendering_stream.exs -- "Reply with exactly: RENDER_OK"
 ```
 
 Environment knobs used by examples:
@@ -223,6 +224,7 @@ Environment knobs used by examples:
 - `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL`
 - `ASM_GEMINI_EXTENSIONS`, `ASM_CODEX_REASONING`
 - `ASM_PERSIST_PROVIDER`, `ASM_PERSIST_FILE`, `ASM_PERSIST_KEEP_FILE`
+- `ASM_RENDER_PROVIDER`, `ASM_RENDER_FORMAT`, `ASM_RENDER_FILE`, `ASM_RENDER_KEEP_FILE`
 
 ## Guides
 

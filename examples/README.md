@@ -14,6 +14,7 @@ mix run examples/live_persistence_stream.exs -- "Reply with exactly: PERSIST_OK"
 mix run examples/live_routing_round_robin.exs
 mix run examples/live_routing_failover.exs
 mix run examples/live_policy_stream.exs
+mix run examples/live_rendering_stream.exs -- "Reply with exactly: RENDER_OK"
 ```
 
 ## Environment
@@ -30,6 +31,10 @@ mix run examples/live_policy_stream.exs
 - `ASM_POLICY_PROVIDER` (`claude`, `gemini`, `codex`; optional, defaults to `codex`)
 - `ASM_POLICY_BUDGET_PROMPT` (optional override for budget-limit scenario prompt)
 - `ASM_POLICY_TOOL_PROMPT` (optional override for denied-tool scenario prompt)
+- `ASM_RENDER_PROVIDER` (`claude`, `gemini`, `codex`; optional, defaults to `claude`)
+- `ASM_RENDER_FORMAT` (`compact`, `verbose`; optional, defaults to `compact`)
+- `ASM_RENDER_FILE` (optional output file path for rendering sink)
+- `ASM_RENDER_KEEP_FILE` (`1`/`true` to retain the render output file)
 
 Each script checks CLI availability first and exits with actionable setup errors if missing.
 
@@ -42,3 +47,4 @@ Each script checks CLI availability first and exits with actionable setup errors
 - `live_routing_round_robin.exs`: deterministic routing selection over live provider runs.
 - `live_routing_failover.exs`: health-aware failover where an intentionally unavailable primary candidate falls back to a live provider.
 - `live_policy_stream.exs`: policy enforcer behavior on live streams, including output-budget warning and denied-tool cancellation scenarios.
+- `live_rendering_stream.exs`: rendering extension on live adapters with compact/verbose output streamed to terminal and file sinks.

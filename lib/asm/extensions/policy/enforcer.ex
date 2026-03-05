@@ -21,15 +21,16 @@ defmodule ASM.Extensions.Policy.Enforcer do
           | {:halt, Event.t(), [Event.t()], map()}
           | {:error, Error.t(), map()}
   def call(%Event{} = event, ctx, opts) when is_map(ctx) and is_list(opts) do
-    with {:ok, policy} <- resolve_policy(opts) do
-      case Policy.evaluate(policy, event, ctx) do
-        {:ok, next_ctx} ->
-          {:ok, event, next_ctx}
+    case resolve_policy(opts) do
+      {:ok, policy} ->
+        case Policy.evaluate(policy, event, ctx) do
+          {:ok, next_ctx} ->
+            {:ok, event, next_ctx}
 
-        {:violation, %Violation{} = violation, next_ctx} ->
-          handle_violation(event, next_ctx, violation, opts)
-      end
-    else
+          {:violation, %Violation{} = violation, next_ctx} ->
+            handle_violation(event, next_ctx, violation, opts)
+        end
+
       {:error, %Error{} = error} ->
         {:error, error, ctx}
     end

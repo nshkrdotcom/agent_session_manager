@@ -80,6 +80,7 @@ defmodule AgentSessionManager.MixProject do
         ASM.Command,
         ASM.Content,
         ASM.Control,
+        ASM.Extensions,
         ASM.Message,
         ASM.Options,
         ASM.Parser,
@@ -120,7 +121,14 @@ defmodule AgentSessionManager.MixProject do
       Runtime: ~r/^ASM\.(Session|Run)/,
       "Streaming & Transport": ~r/^ASM\.(Transport|Protocol|Parser|Store|Tool)/,
       Pipeline: ~r/^ASM\.Pipeline/,
-      "Payload Types": ~r/^ASM\.(Content|Message|Control)/
+      "Payload Types": ~r/^ASM\.(Content|Message|Control)/,
+      "Extensions/Persistence": ~r/^ASM\.Extensions\.Persistence/,
+      "Extensions/Routing": ~r/^ASM\.Extensions\.Routing/,
+      "Extensions/Policy": ~r/^ASM\.Extensions\.Policy/,
+      "Extensions/Rendering": ~r/^ASM\.Extensions\.Rendering/,
+      "Extensions/Workspace": ~r/^ASM\.Extensions\.Workspace/,
+      "Extensions/PubSub": ~r/^ASM\.Extensions\.PubSub/,
+      "Extensions/Providers": ~r/^ASM\.Extensions\.Provider/
     ]
   end
 end

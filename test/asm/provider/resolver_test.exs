@@ -57,6 +57,19 @@ defmodule ASM.Provider.ResolverTest do
     assert spec.program == "/bin/claude"
   end
 
+  test "shell provider resolves via shell binary name fallback" do
+    assert {:ok, spec} =
+             Resolver.resolve(:shell,
+               env: fn _ -> nil end,
+               find_executable: fn
+                 "sh" -> "/bin/sh"
+                 _ -> nil
+               end
+             )
+
+    assert spec.program == "/bin/sh"
+  end
+
   test "gemini can fallback to npx command spec" do
     assert {:ok, spec} =
              Resolver.resolve(:gemini,

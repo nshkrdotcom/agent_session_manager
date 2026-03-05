@@ -56,7 +56,9 @@ defmodule ASM.Transport.Port do
             task_supervisor: ASM.TaskSupervisor,
             diagnostics: [],
             max_diagnostic_lines: @default_max_diagnostic_lines,
-            max_diagnostic_line_length: @default_max_diagnostic_line_length
+            max_diagnostic_line_length: @default_max_diagnostic_line_length,
+            output_mode: :jsonl,
+            success_exit_codes: [0]
 
   @type t :: %__MODULE__{
           leasee: pid() | nil,
@@ -87,7 +89,9 @@ defmodule ASM.Transport.Port do
           task_supervisor: pid() | atom(),
           diagnostics: [String.t()],
           max_diagnostic_lines: pos_integer(),
-          max_diagnostic_line_length: pos_integer()
+          max_diagnostic_line_length: pos_integer(),
+          output_mode: :jsonl | :text,
+          success_exit_codes: [non_neg_integer()]
         }
 
   @impl true
@@ -176,6 +180,8 @@ defmodule ASM.Transport.Port do
       )
 
     task_supervisor = Keyword.get(opts, :task_supervisor, ASM.TaskSupervisor)
+    output_mode = normalize_output_mode(Keyword.get(opts, :output_mode, :jsonl))
+    success_exit_codes = normalize_success_exit_codes(Keyword.get(opts, :success_exit_codes, [0]))
 
     state = %__MODULE__{
       queue_limit: normalize_queue_limit(queue_limit),
@@ -187,7 +193,9 @@ defmodule ASM.Transport.Port do
       max_stderr_buffer_bytes: normalize_max_stderr_buffer_bytes(max_stderr_buffer_bytes),
       task_supervisor: task_supervisor,
       max_diagnostic_lines: max(max_diagnostic_lines, 1),
-      max_diagnostic_line_length: max(max_diagnostic_line_length, 16)
+      max_diagnostic_line_length: max(max_diagnostic_line_length, 16),
+      output_mode: output_mode,
+      success_exit_codes: success_exit_codes
     }
 
     case maybe_start_subprocess(opts, state) do
@@ -678,13 +686,18 @@ defmodule ASM.Transport.Port do
     end
   end
 
-  defp process_line(line, state) when is_binary(line) do
-    line = String.trim(line)
+  defp process_line(line, %__MODULE__{output_mode: :text} = state) when is_binary(line) do
+    map = %{"type" => "shell.output", "stream" => "stdout", "line" => line}
+    maybe_enqueue_or_deliver(state, map)
+  end
 
-    if line == "" do
+  defp process_line(line, state) when is_binary(line) do
+    trimmed = String.trim(line)
+
+    if trimmed == "" do
       {:ok, state}
     else
-      decode_line(line, state)
+      decode_line(trimmed, state)
     end
   end
 
@@ -727,6 +740,17 @@ defmodule ASM.Transport.Port do
 
   defp flush_stdout_fragment(%__MODULE__{overflowed?: true} = state) do
     {:ok, %{state | stdout_buffer: "", overflowed?: false}}
+  end
+
+  defp flush_stdout_fragment(%__MODULE__{output_mode: :text} = state) do
+    line = state.stdout_buffer
+    state = %{state | stdout_buffer: "", overflowed?: false}
+
+    if line == "" do
+      {:ok, state}
+    else
+      process_line(line, state)
+    end
   end
 
   defp flush_stdout_fragment(state) do
@@ -795,7 +819,11 @@ defmodule ASM.Transport.Port do
           |> append_stderr_diagnostics()
 
         exit_status = extract_exit_status(reason)
-        maybe_notify_exit(terminal_state, exit_status, terminal_state.diagnostics)
+
+        reported_exit_status =
+          normalize_reported_exit_status(exit_status, terminal_state.success_exit_codes)
+
+        maybe_notify_exit(terminal_state, reported_exit_status, terminal_state.diagnostics)
 
         {:stop, :normal, %{terminal_state | status: :closed, subprocess: nil}}
     end
@@ -1170,6 +1198,27 @@ defmodule ASM.Transport.Port do
 
   defp normalize_max_stderr_buffer_bytes(value) when is_integer(value) and value > 0, do: value
   defp normalize_max_stderr_buffer_bytes(_), do: @default_max_stderr_buffer_bytes
+
+  defp normalize_output_mode(:jsonl), do: :jsonl
+  defp normalize_output_mode(:text), do: :text
+  defp normalize_output_mode(_), do: :jsonl
+
+  defp normalize_success_exit_codes(codes) when is_list(codes) do
+    normalized =
+      codes
+      |> Enum.filter(&(is_integer(&1) and &1 >= 0))
+      |> Enum.map(&normalize_exit_status/1)
+      |> Enum.uniq()
+
+    if normalized == [], do: [0], else: normalized
+  end
+
+  defp normalize_success_exit_codes(_), do: [0]
+
+  defp normalize_reported_exit_status(exit_status, success_exit_codes)
+       when is_integer(exit_status) and is_list(success_exit_codes) do
+    if exit_status in success_exit_codes, do: 0, else: exit_status
+  end
 
   defp ensure_program_available(program) when is_binary(program) do
     cond do

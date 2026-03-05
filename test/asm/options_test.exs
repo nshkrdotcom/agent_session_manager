@@ -32,6 +32,16 @@ defmodule ASM.OptionsTest do
     assert opts[:provider_permission_mode] == :dangerously_allow_all
   end
 
+  test "validate/2 supports shell provider schema defaults" do
+    assert {:ok, opts} =
+             Options.validate([provider: :shell], ASM.Options.Shell.schema())
+
+    assert is_list(opts[:allowed_commands])
+    assert is_list(opts[:denied_commands])
+    assert opts[:command_timeout_ms] > 0
+    assert opts[:success_exit_codes] == [0]
+  end
+
   test "validate/2 rejects reserved key collisions in provider schema" do
     schema = [provider: [type: :atom, required: true]]
 

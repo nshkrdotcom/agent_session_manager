@@ -16,6 +16,13 @@ defmodule ASM.ProviderTest do
     assert provider.supports_tools
   end
 
+  test "resolve/1 supports shell provider" do
+    assert {:ok, provider} = Provider.resolve(:shell)
+    assert provider.name == :shell
+    assert provider.profile.transport_mode == :exec_stdio
+    refute provider.supports_tools
+  end
+
   test "resolve/1 accepts provider struct passthrough" do
     provider = %Provider{
       name: :custom,

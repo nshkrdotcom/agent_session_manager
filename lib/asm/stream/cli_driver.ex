@@ -57,6 +57,8 @@ defmodule ASM.Stream.CLIDriver do
 
     {program, args} = PTY.maybe_wrap(provider, command_spec.program, args)
 
+    transport_timeout_ms = transport_timeout_ms(provider, validated_opts)
+
     transport_opts = [
       program: program,
       args: args,
@@ -64,10 +66,12 @@ defmodule ASM.Stream.CLIDriver do
       env: Keyword.get(validated_opts, :env, %{}),
       queue_limit: Keyword.get(validated_opts, :queue_limit, 1_000),
       overflow_policy: Keyword.get(validated_opts, :overflow_policy, :fail_run),
-      transport_timeout_ms: Keyword.get(validated_opts, :transport_timeout_ms, 60_000),
+      transport_timeout_ms: transport_timeout_ms,
       headless_timeout_ms: Keyword.get(validated_opts, :transport_headless_timeout_ms, 5_000),
       max_stdout_buffer_bytes: Keyword.get(validated_opts, :max_stdout_buffer_bytes, 1_048_576),
-      max_stderr_buffer_bytes: Keyword.get(validated_opts, :max_stderr_buffer_bytes, 65_536)
+      max_stderr_buffer_bytes: Keyword.get(validated_opts, :max_stderr_buffer_bytes, 65_536),
+      output_mode: output_mode(provider),
+      success_exit_codes: success_exit_codes(provider, validated_opts)
     ]
 
     restart = provider.profile.transport_restart
@@ -82,4 +86,28 @@ defmodule ASM.Stream.CLIDriver do
 
     DynamicSupervisor.start_child(transport_sup, child_spec)
   end
+
+  defp transport_timeout_ms(%Provider{name: :shell}, validated_opts) do
+    Keyword.get(
+      validated_opts,
+      :command_timeout_ms,
+      Keyword.get(validated_opts, :transport_timeout_ms, 60_000)
+    )
+  end
+
+  defp transport_timeout_ms(_provider, validated_opts) do
+    Keyword.get(validated_opts, :transport_timeout_ms, 60_000)
+  end
+
+  defp output_mode(%Provider{name: :shell}), do: :text
+  defp output_mode(_provider), do: :jsonl
+
+  defp success_exit_codes(%Provider{name: :shell}, validated_opts) do
+    case Keyword.get(validated_opts, :success_exit_codes) do
+      codes when is_list(codes) -> codes
+      _ -> [0]
+    end
+  end
+
+  defp success_exit_codes(_provider, _validated_opts), do: [0]
 end

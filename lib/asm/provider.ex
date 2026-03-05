@@ -9,6 +9,7 @@ defmodule ASM.Provider do
   alias ASM.Provider.CodexExec
   alias ASM.Provider.Gemini
   alias ASM.Provider.Profile
+  alias ASM.Provider.Shell
 
   @enforce_keys [
     :name,
@@ -41,7 +42,7 @@ defmodule ASM.Provider do
     metadata: %{}
   ]
 
-  @type provider_name :: :amp | :claude | :codex | :codex_exec | :gemini | atom()
+  @type provider_name :: :amp | :claude | :codex | :codex_exec | :gemini | :shell | atom()
 
   @type t :: %__MODULE__{
           name: provider_name(),
@@ -75,6 +76,7 @@ defmodule ASM.Provider do
   def resolve(:codex), do: {:ok, CodexExec.provider()}
   def resolve(:codex_exec), do: {:ok, CodexExec.provider()}
   def resolve(:gemini), do: {:ok, Gemini.provider()}
+  def resolve(:shell), do: {:ok, Shell.provider()}
 
   def resolve(name) when is_atom(name),
     do:

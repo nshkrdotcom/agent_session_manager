@@ -9,6 +9,7 @@ mix run examples/live_claude_stream.exs -- "Reply with exactly: CLAUDE_OK"
 mix run examples/live_gemini_stream.exs -- "Reply with exactly: GEMINI_OK"
 mix run examples/live_codex_stream.exs -- "Reply with exactly: CODEX_OK"
 mix run examples/check_amp_provider.exs
+mix run examples/live_shell_stream.exs -- "echo SHELL_OK"
 mix run examples/live_multi_provider_smoke.exs
 mix run examples/live_feature_matrix.exs
 mix run examples/live_persistence_stream.exs -- "Reply with exactly: PERSIST_OK"
@@ -26,6 +27,7 @@ mix run examples/live_workspace_snapshot.exs -- "Reply with exactly: WORKSPACE_O
 - `GEMINI_CLI_PATH` (optional explicit path)
 - `CODEX_PATH` (optional explicit path)
 - `AMP_CLI_PATH` (optional explicit path)
+- `ASM_SHELL_PATH` (optional explicit path to shell executable)
 - `ASM_PERMISSION_MODE` (`default`, `auto`, `bypass`, `plan`; defaults to `auto`)
 - `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL` (optional)
 - `ASM_CODEX_REASONING` (`low`, `medium`, `high`; optional and auto-skipped when unsupported)
@@ -48,13 +50,21 @@ mix run examples/live_workspace_snapshot.exs -- "Reply with exactly: WORKSPACE_O
 - `ASM_AMP_THINKING` (`1`/`true` enables Amp thinking)
 - `ASM_AMP_TOOLS` (optional comma-separated Amp tool allow-list)
 - `ASM_AMP_RUN_LIVE` (`1`/`true` to run a live Amp stream after contract checks)
+- `ASM_SHELL_ALLOWED` (optional comma-separated shell allow-list override)
+- `ASM_SHELL_DENIED` (optional comma-separated shell deny-list override)
+- `ASM_SHELL_TIMEOUT_MS` (optional shell command timeout override in milliseconds)
 
 Each script checks CLI availability first and exits with actionable setup errors if missing.
+
+Shell example safety note:
+- Run `live_shell_stream.exs` only in a disposable sandbox/workspace.
+- Keep allow-lists strict and deny-lists explicit for production usage.
 
 ## Coverage
 
 - `live_claude_stream.exs`, `live_gemini_stream.exs`, `live_codex_stream.exs`: provider-specific stream flow.
 - `check_amp_provider.exs`: Amp parser/command contract checks with optional live stream check when CLI is available.
+- `live_shell_stream.exs`: controlled shell command execution with strict policy defaults and timeout handling.
 - `live_multi_provider_smoke.exs`: stream + one-shot `ASM.query/3` across all providers.
 - `live_feature_matrix.exs`: session lifecycle surface on live adapters (`start_session`, `stream`, `query`, `health`, `cost`, `stop_session`).
 - `live_persistence_stream.exs`: file-backed persistence with async writer hook, replay/rebuild checks, controlled error path, and guaranteed cleanup.

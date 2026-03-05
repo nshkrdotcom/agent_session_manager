@@ -1,7 +1,7 @@
 defmodule AgentSessionManager.MixProject do
   use Mix.Project
 
-  @version "0.8.0"
+  @version "0.9.0"
   @source_url "https://github.com/nshkrdotcom/agent_session_manager"
 
   def project do
@@ -37,8 +37,8 @@ defmodule AgentSessionManager.MixProject do
       {:jason, "~> 1.4"},
 
       # Agent SDKs
-      {:codex_sdk, "~> 0.10.1", optional: true},
-      {:claude_agent_sdk, "~> 0.14.0", optional: true},
+      {:codex_sdk, "~> 0.11.0", optional: true},
+      {:claude_agent_sdk, "~> 0.15.0", optional: true},
       {:gemini_cli_sdk, "~> 0.1.0", optional: true},
       {:amp_sdk, "~> 0.4.0", optional: true},
 

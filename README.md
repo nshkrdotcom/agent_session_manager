@@ -40,8 +40,8 @@ Add the dependency and at least one provider SDK:
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.8.0"},
-    {:claude_agent_sdk, "~> 0.14.0"}  # or {:codex_sdk, "~> 0.10.0"} / {:amp_sdk, "~> 0.4.0"}
+    {:agent_session_manager, "~> 0.9.0"},
+    {:claude_agent_sdk, "~> 0.15.0"}  # or {:codex_sdk, "~> 0.11.0"} / {:amp_sdk, "~> 0.4.0"}
   ]
 end
 ```

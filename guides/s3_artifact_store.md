@@ -13,7 +13,7 @@ Add the ExAws dependencies to your `mix.exs`:
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.8.0"},
+    {:agent_session_manager, "~> 0.9.0"},
     {:ex_aws, "~> 2.5"},
     {:ex_aws_s3, "~> 2.5"},
     {:sweet_xml, "~> 0.7"},     # required by ex_aws for XML response parsing

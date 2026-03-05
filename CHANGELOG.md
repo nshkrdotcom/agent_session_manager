@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Bump `codex_sdk` dependency from `~> 0.10.1` to `~> 0.11.0`
+- Bump `claude_agent_sdk` dependency from `~> 0.14.0` to `~> 0.15.0`
+
 ## [0.8.0] - 2026-02-10
 
 ### Added

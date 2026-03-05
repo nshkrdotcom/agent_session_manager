@@ -13,7 +13,7 @@ Add Ecto and SQLite dependencies:
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.8.0"},
+    {:agent_session_manager, "~> 0.9.0"},
     {:ecto_sql, "~> 3.12"},
     {:ecto_sqlite3, "~> 0.17"}
   ]

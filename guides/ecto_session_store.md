@@ -12,7 +12,7 @@ Add `ecto_sql` and a database adapter to your `mix.exs`:
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.8.0"},
+    {:agent_session_manager, "~> 0.9.0"},
     {:ecto_sql, "~> 3.12"},
     {:postgrex, "~> 0.19"}       # for PostgreSQL
     # or {:ecto_sqlite3, "~> 0.17"} for SQLite

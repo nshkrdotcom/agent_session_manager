@@ -47,7 +47,7 @@ defmodule ASM.Control do
     defstruct [:rule, :direction, :action]
 
     @type direction :: :input | :output
-    @type action :: :block | :warn
+    @type action :: :block | :warn | :request_approval | :cancel
     @type t :: %__MODULE__{rule: String.t(), direction: direction(), action: action()}
   end
 

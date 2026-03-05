@@ -13,6 +13,7 @@ mix run examples/live_feature_matrix.exs
 mix run examples/live_persistence_stream.exs -- "Reply with exactly: PERSIST_OK"
 mix run examples/live_routing_round_robin.exs
 mix run examples/live_routing_failover.exs
+mix run examples/live_policy_stream.exs
 ```
 
 ## Environment
@@ -26,6 +27,9 @@ mix run examples/live_routing_failover.exs
 - `ASM_PERSIST_PROVIDER` (`claude`, `gemini`, `codex`; optional, defaults to `claude`)
 - `ASM_PERSIST_FILE` (optional persistence file path override)
 - `ASM_PERSIST_KEEP_FILE` (`1`/`true` to retain file after run)
+- `ASM_POLICY_PROVIDER` (`claude`, `gemini`, `codex`; optional, defaults to `codex`)
+- `ASM_POLICY_BUDGET_PROMPT` (optional override for budget-limit scenario prompt)
+- `ASM_POLICY_TOOL_PROMPT` (optional override for denied-tool scenario prompt)
 
 Each script checks CLI availability first and exits with actionable setup errors if missing.
 
@@ -37,3 +41,4 @@ Each script checks CLI availability first and exits with actionable setup errors
 - `live_persistence_stream.exs`: file-backed persistence with async writer hook, replay/rebuild checks, controlled error path, and guaranteed cleanup.
 - `live_routing_round_robin.exs`: deterministic routing selection over live provider runs.
 - `live_routing_failover.exs`: health-aware failover where an intentionally unavailable primary candidate falls back to a live provider.
+- `live_policy_stream.exs`: policy enforcer behavior on live streams, including output-budget warning and denied-tool cancellation scenarios.

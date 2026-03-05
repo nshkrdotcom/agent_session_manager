@@ -15,6 +15,7 @@ mix run examples/live_routing_round_robin.exs
 mix run examples/live_routing_failover.exs
 mix run examples/live_policy_stream.exs
 mix run examples/live_rendering_stream.exs -- "Reply with exactly: RENDER_OK"
+mix run examples/live_workspace_snapshot.exs -- "Reply with exactly: WORKSPACE_OK"
 ```
 
 ## Environment
@@ -35,6 +36,9 @@ mix run examples/live_rendering_stream.exs -- "Reply with exactly: RENDER_OK"
 - `ASM_RENDER_FORMAT` (`compact`, `verbose`; optional, defaults to `compact`)
 - `ASM_RENDER_FILE` (optional output file path for rendering sink)
 - `ASM_RENDER_KEEP_FILE` (`1`/`true` to retain the render output file)
+- `ASM_WORKSPACE_PROVIDER` (`claude`, `gemini`, `codex`; optional, defaults to `codex`)
+- `ASM_WORKSPACE_DIR` (optional workspace path override for the snapshot example)
+- `ASM_WORKSPACE_KEEP_DIR` (`1`/`true` to retain the temporary workspace directory)
 
 Each script checks CLI availability first and exits with actionable setup errors if missing.
 
@@ -48,3 +52,4 @@ Each script checks CLI availability first and exits with actionable setup errors
 - `live_routing_failover.exs`: health-aware failover where an intentionally unavailable primary candidate falls back to a live provider.
 - `live_policy_stream.exs`: policy enforcer behavior on live streams, including output-budget warning and denied-tool cancellation scenarios.
 - `live_rendering_stream.exs`: rendering extension on live adapters with compact/verbose output streamed to terminal and file sinks.
+- `live_workspace_snapshot.exs`: pre/post workspace snapshots around a live query, diff verification, rollback, and temporary workspace cleanup.

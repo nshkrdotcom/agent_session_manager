@@ -109,6 +109,7 @@ defmodule ASM.Stream.CLIDriverIntegrationTest do
     end
   end
 
+  @tag :pty
   test "claude stream runs through PTY wrapper when provider requires tty-like execution" do
     script =
       write_script!("""

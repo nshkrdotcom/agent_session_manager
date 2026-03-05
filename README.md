@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/agent_session_manager.svg" alt="Agent Session Manager" />
+</p>
+
 # ASM (Agent Session Manager)
 
 `ASM` is an OTP-native Elixir runtime for running multi-turn AI sessions across multiple CLI providers with one API.

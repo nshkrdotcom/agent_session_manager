@@ -1,7 +1,7 @@
 defmodule AgentSessionManager.MixProject do
   use Mix.Project
 
-  @version "0.9.0-dev"
+  @version "0.10.0-dev"
   @source_url "https://github.com/nshkrdotcom/agent_session_manager"
 
   def project do
@@ -66,6 +66,8 @@ defmodule AgentSessionManager.MixProject do
 
     [
       main: "readme",
+      logo: "assets/agent_session_manager.svg",
+      assets: %{"assets" => "assets"},
       source_ref: "v#{@version}",
       source_url: @source_url,
       extras: ["README.md"] ++ guides ++ ["CHANGELOG.md", "LICENSE"],

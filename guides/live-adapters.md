@@ -60,6 +60,16 @@ multi-sink composition:
 - terminal output via `ASM.Extensions.Rendering.Sinks.TTY`
 - file logging via `ASM.Extensions.Rendering.Sinks.File`
 
+## PubSub extension on live adapters
+
+```bash
+mix run examples/live_pub_sub_stream.exs -- "Reply with exactly: PUBSUB_OK"
+```
+
+The PubSub script wires `ASM.Extensions.PubSub.broadcaster_plug/2` into the
+run pipeline, subscribes to `asm:events` and `asm:session:<session_id>` topics,
+and prints consumed `{:asm_pubsub, topic, payload}` messages.
+
 The feature-matrix script validates:
 
 - `ASM.start_session/1`
@@ -79,3 +89,4 @@ The feature-matrix script validates:
 - `ASM_RENDER_FORMAT` (`compact`, `verbose`)
 - `ASM_RENDER_FILE` (render output file path)
 - `ASM_RENDER_KEEP_FILE` (`1`/`true` to keep output file)
+- `ASM_PUBSUB_PROVIDER` (`claude`, `gemini`, `codex`)

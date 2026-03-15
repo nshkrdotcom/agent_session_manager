@@ -87,7 +87,7 @@ defmodule ASM.JidoHarness.ProviderAdapter do
 
     RuntimeContract.new!(%{
       provider: provider_name,
-      host_env_required_any: env_var_list(provider.env_var),
+      host_env_required_any: [],
       host_env_required_all: [],
       sprite_env_forward: env_var_list(provider.env_var),
       sprite_env_injected: %{},

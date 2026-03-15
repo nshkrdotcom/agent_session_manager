@@ -25,6 +25,14 @@ defmodule ASM.JidoHarness.DriverTest do
     refute descriptor.subscribe?
   end
 
+  test "provider adapters keep optional cli path env vars forwardable but not required" do
+    contract = ASM.JidoHarness.ClaudeAdapter.runtime_contract()
+
+    assert contract.host_env_required_any == []
+    assert contract.host_env_required_all == []
+    assert contract.sprite_env_forward == ["CLAUDE_CLI_PATH"]
+  end
+
   test "stream_run/3 maps asm envelopes to harness execution events" do
     assert {:ok, session} = ASM.JidoHarness.Driver.start_session(provider: :claude)
 
@@ -82,5 +90,39 @@ defmodule ASM.JidoHarness.DriverTest do
     assert result.status == :completed
     assert result.text == "hello from scripted driver"
     assert result.stop_reason == "end_turn"
+  end
+
+  test "run/3 maps cancelled asm results to cancelled execution results" do
+    assert {:ok, session} = ASM.JidoHarness.Driver.start_session(provider: :claude)
+
+    on_exit(fn ->
+      _ = ASM.JidoHarness.Driver.stop_session(session)
+    end)
+
+    request = RunRequest.new!(%{prompt: "hello", metadata: %{}})
+
+    assert {:ok, result} =
+             ASM.JidoHarness.Driver.run(session, request,
+               driver: StreamScriptedDriver,
+               run_id: "bridge-run-3",
+               driver_opts: [
+                 script: [
+                   {:assistant_delta,
+                    %ASM.Message.Partial{content_type: :text, delta: "partial"}},
+                   {:error,
+                    %ASM.Message.Error{
+                      severity: :warning,
+                      message: "Run interrupted",
+                      kind: :user_cancelled
+                    }}
+                 ]
+               ]
+             )
+
+    assert %ExecutionResult{} = result
+    assert result.run_id == "bridge-run-3"
+    assert result.status == :cancelled
+    assert result.error["kind"] == "user_cancelled"
+    assert result.error["message"] == "Run interrupted"
   end
 end

@@ -35,6 +35,7 @@ defmodule AgentSessionManager.MixProject do
   defp deps do
     [
       {:boundary, path: "vendor/boundary", runtime: false},
+      {:jido_harness, path: "../jido_harness"},
       {:jason, "~> 1.4"},
       {:erlexec, "~> 2.0"},
       {:nimble_options, "~> 1.1"},

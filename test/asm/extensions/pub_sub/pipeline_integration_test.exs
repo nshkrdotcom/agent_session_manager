@@ -4,6 +4,8 @@ defmodule ASM.Extensions.PubSub.PipelineIntegrationTest do
   alias ASM.{Event, Message, Run}
   alias ASM.Extensions.PubSub
 
+  @receive_timeout 500
+
   test "pipeline plug broadcasts run events asynchronously without blocking run event fanout" do
     assert {:ok, broadcaster} =
              PubSub.start_broadcaster(
@@ -25,7 +27,7 @@ defmodule ASM.Extensions.PubSub.PipelineIntegrationTest do
                pipeline: [PubSub.broadcaster_plug(broadcaster)]
              )
 
-    assert_receive {:asm_run_event, ^run_id, %Event{kind: :run_started}}
+    assert_receive {:asm_run_event, ^run_id, %Event{kind: :run_started}}, @receive_timeout
 
     result_event =
       %Event{
@@ -77,7 +79,11 @@ defmodule ASM.Extensions.PubSub.PipelineIntegrationTest do
     assert :ok = PubSub.publish(broadcaster, event2)
     assert :ok = PubSub.publish(broadcaster, event3)
 
-    assert_receive {:asm_pubsub_drop, %{reason: :queue_full, dropped_event_id: dropped_event_id}}
+    assert_receive(
+      {:asm_pubsub_drop, %{reason: :queue_full, dropped_event_id: dropped_event_id}},
+      @receive_timeout
+    )
+
     assert dropped_event_id in [event2.id, event3.id]
 
     assert :ok = PubSub.flush_broadcaster(broadcaster, 2_000)

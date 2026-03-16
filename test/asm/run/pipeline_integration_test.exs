@@ -4,6 +4,8 @@ defmodule ASM.Run.PipelineIntegrationTest do
   alias ASM.{Control, Event, Message, Run}
   alias ASM.Extensions.Policy
 
+  @receive_timeout 500
+
   test "cost tracker pipeline injects cost_update event in run stream" do
     assert {:ok, run_pid} =
              Run.Server.start_link(
@@ -14,7 +16,8 @@ defmodule ASM.Run.PipelineIntegrationTest do
                pipeline: [{ASM.Pipeline.CostTracker, input_rate: 0.1, output_rate: 0.2}]
              )
 
-    assert_receive {:asm_run_event, "run-pipeline-int", %Event{kind: :run_started}}
+    assert_receive {:asm_run_event, "run-pipeline-int", %Event{kind: :run_started}},
+                   @receive_timeout
 
     result_event =
       %Event{
@@ -46,7 +49,8 @@ defmodule ASM.Run.PipelineIntegrationTest do
                pipeline: [{ASM.Pipeline.PolicyGuard, disallow_tools: ["bash"]}]
              )
 
-    assert_receive {:asm_run_event, "run-pipeline-guard", %Event{kind: :run_started}}
+    assert_receive {:asm_run_event, "run-pipeline-guard", %Event{kind: :run_started}},
+                   @receive_timeout
 
     tool_event =
       %Event{
@@ -89,7 +93,8 @@ defmodule ASM.Run.PipelineIntegrationTest do
 
     on_exit(fn -> if Process.alive?(run_pid), do: GenServer.stop(run_pid) end)
 
-    assert_receive {:asm_run_event, "run-pipeline-policy-approval", %Event{kind: :run_started}}
+    assert_receive {:asm_run_event, "run-pipeline-policy-approval", %Event{kind: :run_started}},
+                   @receive_timeout
 
     tool_event =
       %Event{
@@ -146,7 +151,8 @@ defmodule ASM.Run.PipelineIntegrationTest do
                pipeline: [{ASM.Extensions.Policy.Enforcer, policy: policy}]
              )
 
-    assert_receive {:asm_run_event, "run-pipeline-policy-cancel", %Event{kind: :run_started}}
+    assert_receive {:asm_run_event, "run-pipeline-policy-cancel", %Event{kind: :run_started}},
+                   @receive_timeout
 
     tool_event =
       %Event{

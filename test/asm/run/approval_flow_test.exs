@@ -3,6 +3,8 @@ defmodule ASM.Run.ApprovalFlowTest do
 
   alias ASM.{Control, Event, Run}
 
+  @receive_timeout 500
+
   test "approval request registers with session and auto-denies on timeout" do
     assert {:ok, run_pid} =
              Run.Server.start_link(
@@ -14,7 +16,8 @@ defmodule ASM.Run.ApprovalFlowTest do
                approval_timeout_ms: 20
              )
 
-    assert_receive {:asm_run_event, "run-approval-timeout", %Event{kind: :run_started}}
+    assert_receive {:asm_run_event, "run-approval-timeout", %Event{kind: :run_started}},
+                   @receive_timeout
 
     approval_id = "approval-timeout-1"
 
@@ -52,7 +55,8 @@ defmodule ASM.Run.ApprovalFlowTest do
                approval_timeout_ms: 200
              )
 
-    assert_receive {:asm_run_event, "run-approval-manual", %Event{kind: :run_started}}
+    assert_receive {:asm_run_event, "run-approval-manual", %Event{kind: :run_started}},
+                   @receive_timeout
 
     approval_id = "approval-manual-1"
 

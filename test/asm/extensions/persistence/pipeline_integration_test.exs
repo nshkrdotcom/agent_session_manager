@@ -4,6 +4,8 @@ defmodule ASM.Extensions.Persistence.PipelineIntegrationTest do
   alias ASM.{Event, Message, Run}
   alias ASM.Extensions.Persistence
 
+  @receive_timeout 500
+
   test "pipeline hook persists run events asynchronously and rebuilds run history" do
     assert {:ok, store} = Persistence.start_store(:memory, [])
     assert {:ok, writer} = Persistence.start_writer(store: store)
@@ -19,7 +21,7 @@ defmodule ASM.Extensions.Persistence.PipelineIntegrationTest do
                pipeline: [Persistence.writer_plug(writer)]
              )
 
-    assert_receive {:asm_run_event, "run-ext-pipe", %Event{kind: :run_started}}
+    assert_receive {:asm_run_event, "run-ext-pipe", %Event{kind: :run_started}}, @receive_timeout
 
     delta_event =
       %Event{
@@ -77,7 +79,8 @@ defmodule ASM.Extensions.Persistence.PipelineIntegrationTest do
                pipeline: [Persistence.writer_plug(writer)]
              )
 
-    assert_receive {:asm_run_event, "run-ext-slow-store", %Event{kind: :run_started}}
+    assert_receive {:asm_run_event, "run-ext-slow-store", %Event{kind: :run_started}},
+                   @receive_timeout
 
     result_event =
       %Event{

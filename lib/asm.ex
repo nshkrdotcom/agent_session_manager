@@ -13,7 +13,6 @@ defmodule ASM do
       ASM.Error,
       ASM.Event,
       ASM.History,
-      ASM.JidoHarness,
       ASM.Message,
       ASM.Migration.MainCompat,
       ASM.Options,

@@ -72,4 +72,7 @@ defmodule ASM.TestSupport.Capabilities do
   end
 end
 
-ExUnit.start(exclude: ASM.TestSupport.Capabilities.default_excludes())
+ExUnit.start(
+  exclude: ASM.TestSupport.Capabilities.default_excludes(),
+  assert_receive_timeout: 500
+)

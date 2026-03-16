@@ -39,7 +39,7 @@ Each extension boundary currently declares `deps: [ASM]`.
 
 Extension lifecycle ownership stays outside core application child specs:
 
-- `ASM.Application` starts core-only children.
+- The core ASM OTP application starts core-only children.
 - Host applications (or extension-owned supervisors) decide which extension processes to start.
 
 This keeps both compile-time coupling and runtime ownership clean.

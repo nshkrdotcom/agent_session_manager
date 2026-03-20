@@ -1,6 +1,6 @@
 # Remote Node Execution Guide
 
-`ASM` can run provider CLI subprocesses on a remote BEAM node while keeping session/run processes local.
+`ASM` can start provider backends on a remote BEAM node while keeping the session and run processes local.
 
 ## Enable Remote Mode
 
@@ -34,7 +34,9 @@ Per-run local override:
 ASM.query(session, "run locally", execution_mode: :local)
 ```
 
-## Driver Options
+`ASM.ProviderBackend.Core` is the source of truth for remote execution. The optional SDK lane is local-only.
+
+## Remote Options
 
 - `remote_node` (required in remote mode)
 - `remote_cookie` (optional)
@@ -45,7 +47,7 @@ ASM.query(session, "run locally", execution_mode: :local)
   - `:require_prestarted` (default)
   - `:ensure_started` (attempts `Application.ensure_all_started(:agent_session_manager)` on remote node)
 - `remote_cwd` (optional override for provider `cwd` on remote host)
-- `remote_transport_call_timeout_ms` (default `5000`)
+- `remote_transport_call_timeout_ms` (default `5000`; backend control timeout)
 
 ## Failure Semantics
 
@@ -57,14 +59,12 @@ Typical remote startup failures surface as terminal `%ASM.Error{}` values:
 - remote capability/version mismatch
 - remote RPC timeout/failure
 - remote app bootstrap failure
-- workspace creation failure
-- remote CLI not found
-- remote transport start failure
+- remote backend start failure
 
 Runtime behavior:
 
-- `nodedown`/partition surfaces transport error (`:noconnection` detail in message)
-- remote transport crash/timeout uses normal transport error paths
+- `nodedown`/partition surfaces a terminal runtime error from the backend monitor path
+- remote backend crash/timeout uses the same terminal error path as local backend crashes
 
 ## Operational Constraints
 

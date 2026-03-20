@@ -7,11 +7,10 @@ defmodule ASM.Pipeline.PolicyGuard do
 
   alias ASM.Error
   alias ASM.Event
-  alias ASM.Message
-
   @impl true
-  def call(%Event{kind: :tool_use, payload: %Message.ToolUse{} = payload} = event, ctx, opts) do
+  def call(%Event{kind: :tool_use} = event, ctx, opts) do
     disallow_tools = Keyword.get(opts, :disallow_tools, [])
+    payload = Event.legacy_payload(event)
 
     if payload.tool_name in disallow_tools do
       {:error,
@@ -23,9 +22,9 @@ defmodule ASM.Pipeline.PolicyGuard do
     end
   end
 
-  def call(%Event{kind: :result, payload: %Message.Result{} = payload} = event, ctx, opts) do
+  def call(%Event{kind: :result} = event, ctx, opts) do
     max_output_tokens = Keyword.get(opts, :max_output_tokens)
-    output_tokens = extract_output_tokens(payload.usage)
+    output_tokens = extract_output_tokens(Event.result_usage(event))
 
     cond do
       is_nil(max_output_tokens) ->

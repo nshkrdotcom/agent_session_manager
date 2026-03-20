@@ -14,7 +14,7 @@ defmodule ASM.Extensions.Policy do
       ASM.Extensions.Policy.Violation
     ]
 
-  alias ASM.{Error, Event, Message}
+  alias ASM.{Error, Event}
   alias ASM.Extensions.Policy.{Enforcer, Violation}
 
   @typedoc "Violation action taken when a policy rule is triggered."
@@ -93,9 +93,11 @@ defmodule ASM.Extensions.Policy do
 
   defp evaluate_tool_rule(
          %__MODULE__{disallow_tools: disallow_tools, on_tool_violation: action},
-         %Event{kind: :tool_use, payload: %Message.ToolUse{} = payload},
+         %Event{kind: :tool_use} = event,
          ctx
        ) do
+    payload = Event.legacy_payload(event)
+
     if MapSet.member?(disallow_tools, payload.tool_name) do
       violation =
         Violation.new(
@@ -122,9 +124,10 @@ defmodule ASM.Extensions.Policy do
 
   defp evaluate_budget_rule(
          %__MODULE__{max_output_tokens: max_output_tokens, on_budget_violation: action},
-         %Event{kind: :result, payload: %Message.Result{} = payload},
+         %Event{kind: :result} = event,
          ctx
        ) do
+    payload = Event.legacy_payload(event)
     output_tokens = extract_output_tokens(payload.usage)
     current_total = default_zero(get_in(ctx, [:policy, :output_tokens]))
     next_total = current_total + output_tokens

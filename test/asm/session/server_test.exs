@@ -1,8 +1,11 @@
 defmodule ASM.Session.ServerTest do
   use ASM.TestCase
 
+  alias ASM.Execution.Config
   alias ASM.Session.Server
   alias ASM.Session.Supervisor, as: SessionSupervisor
+  alias ASM.TestSupport.FakeBackend
+  alias CliSubprocessCore.Payload
 
   defmodule RunProbe do
     @moduledoc false
@@ -159,9 +162,16 @@ defmodule ASM.Session.ServerTest do
   test "approval timeout clears session approval index and stale resolution returns error" do
     %{server: server, session_id: session_id} = start_session!(provider: :claude)
 
+    script = [
+      {:core, :run_started, Payload.RunStarted.new(command: "fake")}
+    ]
+
     assert {:ok, run_id, run_pid} =
              Server.submit_run(server, "approval-timeout",
                run_module: ASM.Run.Server,
+               backend_module: FakeBackend,
+               backend_opts: [script: script],
+               execution_config: local_execution_config(),
                run_module_opts: [subscriber: self(), approval_timeout_ms: 20]
              )
 
@@ -172,26 +182,26 @@ defmodule ASM.Session.ServerTest do
     assert :ok =
              ASM.Run.Server.ingest_event(
                run_pid,
-               %ASM.Event{
-                 id: ASM.Event.generate_id(),
-                 kind: :approval_requested,
+               ASM.Event.new(
+                 :approval_requested,
+                 Payload.ApprovalRequested.new(
+                   approval_id: approval_id,
+                   subject: "bash",
+                   details: %{"tool_input" => %{"cmd" => "ls"}}
+                 ),
                  run_id: run_id,
                  session_id: session_id,
-                 payload: %ASM.Control.ApprovalRequest{
-                   approval_id: approval_id,
-                   tool_name: "bash",
-                   tool_input: %{"cmd" => "ls"}
-                 },
+                 provider: :claude,
                  timestamp: DateTime.utc_now()
-               }
+               )
              )
 
     assert_receive {:asm_run_event, ^run_id, %ASM.Event{kind: :approval_resolved} = event}
 
     assert %ASM.Control.ApprovalResolution{approval_id: ^approval_id, decision: :deny} =
-             event.payload
+             ASM.Event.legacy_payload(event)
 
-    assert event.payload.reason == "timeout"
+    assert ASM.Event.legacy_payload(event).reason == "timeout"
 
     assert_eventually(fn ->
       state = Server.get_state(server)
@@ -236,5 +246,9 @@ defmodule ASM.Session.ServerTest do
 
   defp assert_eventually(fun, 0) do
     assert fun.()
+  end
+
+  defp local_execution_config do
+    %Config{execution_mode: :local, transport_call_timeout_ms: 1_000}
   end
 end

@@ -11,16 +11,15 @@ Supported providers:
 - Claude CLI
 - Gemini CLI
 - Codex CLI (`exec` mode)
-- Amp CLI (extension path)
-- Shell (controlled extension path)
+- Amp CLI
 
 ## Why ASM
 
 - One session/runtime model across providers.
-- Native Elixir streaming (`Enumerable`) with backpressure-friendly composition.
-- Deterministic event envelopes for replay, auditing, and reducer-based projections.
-- Provider-specific flags/options normalized behind a consistent API.
-- Lease-aware transport boundary with bounded queue and explicit overflow policy.
+- Shared core event vocabulary from `cli_subprocess_core`, wrapped in run/session-scoped `%ASM.Event{}` envelopes.
+- Native Elixir streaming (`Enumerable`) with reducer-based result projections.
+- Provider registry that resolves providers onto backend lanes instead of provider-specific command/parser ownership.
+- Remote-node execution that starts provider backends remotely while keeping the ASM session/run processes local.
 
 ## Install
 
@@ -50,7 +49,6 @@ Optional explicit CLI paths:
 - `GEMINI_CLI_PATH`
 - `CODEX_PATH`
 - `AMP_CLI_PATH`
-- `ASM_SHELL_PATH`
 
 ## Quick Start
 
@@ -85,17 +83,17 @@ Provider atom form for one-off queries:
 
 - Session defaults: passed to `ASM.start_link/1` or `ASM.start_session/1`.
 - Per-run overrides: passed to `ASM.stream/3` or `ASM.query/3`.
-- Provider options: validated against provider schemas and passed to CLI command builders.
+- Provider options: validated against provider schemas and handed to the resolved backend lane.
 
 Per-run options override session defaults. Session defaults are inherited automatically.
 
 Runtime execution path:
 
-- `ASM.Stream.CLIDriver` resolves provider command + starts a supervised `ASM.Transport.Port`.
-- `ASM.Stream.NodeDriver` starts remote transports over Erlang distribution when `execution_mode: :remote_node`.
-- `ASM.Stream.SDKDriver` is the SDK-native seam for event streams that do not fit transport lease/demand semantics.
-- `ASM.Run.Server` owns parser dispatch and emits typed `%ASM.Event{}` envelopes.
-- `ASM.Session.Server` remains aggregate root for run admission and approval routing.
+- `ASM.ProviderRegistry` resolves the provider onto `:core` or `:sdk`.
+- `ASM.ProviderBackend.Core` runs `cli_subprocess_core` and is the required lane for `:remote_node`.
+- `ASM.ProviderBackend.SDK` runs optional provider runtime kits when they are available locally.
+- `ASM.Run.Server` owns backend lifecycle, wraps core events in `%ASM.Event{}`, and applies pipelines/reducers.
+- `ASM.Session.Server` remains aggregate root for run admission, approval routing, and session-level cost accounting.
 
 ## Remote Node Execution
 
@@ -131,7 +129,7 @@ Per-run local override (when session default is remote):
 ASM.query(session, "quick local check", execution_mode: :local)
 ```
 
-Remote driver options:
+Remote execution options:
 
 - `remote_node` (required for `:remote_node`)
 - `remote_cookie` (optional)
@@ -140,7 +138,7 @@ Remote driver options:
 - `remote_boot_lease_timeout_ms` (default `10000`)
 - `remote_bootstrap_mode` (`:require_prestarted` | `:ensure_started`, default `:require_prestarted`)
 - `remote_cwd` (optional remote workspace override)
-- `remote_transport_call_timeout_ms` (transport control call timeout override)
+- `remote_transport_call_timeout_ms` (backend control call timeout override)
 
 Operational requirements for remote worker nodes:
 
@@ -209,7 +207,6 @@ Provider-specific examples:
 - Gemini: `model`, `sandbox`, `extensions`
 - Codex: `model`, `reasoning_effort`, `output_schema`
 - Amp: `model`, `mode`, `include_thinking`, `tools`
-- Shell: `allowed_commands`, `denied_commands`, `command_timeout_ms`, `success_exit_codes`
 
 ## Live Examples
 
@@ -220,7 +217,6 @@ mix run examples/live_claude_stream.exs -- "Reply with exactly: CLAUDE_OK"
 mix run examples/live_gemini_stream.exs -- "Reply with exactly: GEMINI_OK"
 mix run examples/live_codex_stream.exs -- "Reply with exactly: CODEX_OK"
 mix run examples/check_amp_provider.exs
-mix run examples/live_shell_stream.exs -- "echo SHELL_OK"
 mix run examples/live_multi_provider_smoke.exs
 mix run examples/live_feature_matrix.exs
 mix run examples/live_main_compat_migration.exs
@@ -229,7 +225,7 @@ mix run examples/live_rendering_stream.exs -- "Reply with exactly: RENDER_OK"
 mix run examples/live_pub_sub_stream.exs -- "Reply with exactly: PUBSUB_OK"
 ```
 
-Supplemental (non-live CLI) SDK seam demo:
+Supplemental SDK-lane demo:
 
 ```bash
 mix run examples/sdk_driver_demo.exs
@@ -238,7 +234,6 @@ mix run examples/sdk_driver_demo.exs
 Environment knobs used by examples:
 
 - `CLAUDE_CLI_PATH`, `GEMINI_CLI_PATH`, `CODEX_PATH`, `AMP_CLI_PATH`
-- `ASM_SHELL_PATH`, `ASM_SHELL_ALLOWED`, `ASM_SHELL_DENIED`, `ASM_SHELL_TIMEOUT_MS`
 - `ASM_PERMISSION_MODE` (`default`, `auto`, `bypass`, `plan`)
 - `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL`, `ASM_AMP_MODEL`
 - `ASM_GEMINI_EXTENSIONS`, `ASM_CODEX_REASONING`
@@ -246,8 +241,6 @@ Environment knobs used by examples:
 - `ASM_PERSIST_PROVIDER`, `ASM_PERSIST_FILE`, `ASM_PERSIST_KEEP_FILE`
 - `ASM_RENDER_PROVIDER`, `ASM_RENDER_FORMAT`, `ASM_RENDER_FILE`, `ASM_RENDER_KEEP_FILE`
 - `ASM_PUBSUB_PROVIDER`
-
-Shell safety note: run `examples/live_shell_stream.exs` only inside a disposable sandbox/workspace.
 
 ## Guides
 
@@ -260,17 +253,19 @@ Shell safety note: run `examples/live_shell_stream.exs` only inside a disposable
 
 Per-session subtree strategy uses `:rest_for_one`:
 
-- `ASM.Session.TransportSupervisor`
 - `ASM.Run.Supervisor`
 - `ASM.Session.Server`
 
 Run workers are `restart: :temporary` to avoid restart loops after normal completion.
 
+Remote backend sessions are supervised under `ASM.Remote.BackendSupervisor`, and remote startup is performed through `ASM.Remote.BackendStarter`.
+
 ## Quality Gates
 
 ```bash
-mix format
+mix format --check-formatted
 mix test
 mix credo --strict
 mix dialyzer
+mix docs
 ```

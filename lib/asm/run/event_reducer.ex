@@ -1,9 +1,9 @@
 defmodule ASM.Run.EventReducer do
   @moduledoc """
-  Deterministic reducer from event envelopes to run state projection.
+  Deterministic reducer from run-scoped events to result projections.
   """
 
-  alias ASM.{Content, Control, Error, Event, Message, Result, Run}
+  alias ASM.{Error, Event, Result, Run}
 
   @conversation_kinds [
     :assistant_message,
@@ -13,7 +13,7 @@ defmodule ASM.Run.EventReducer do
     :tool_result,
     :thinking,
     :result,
-    :system,
+    :stderr,
     :raw
   ]
 
@@ -62,6 +62,8 @@ defmodule ASM.Run.EventReducer do
       error: state.error,
       duration_ms: duration_ms,
       stop_reason: stop_reason,
+      session_id_from_cli:
+        state.metadata[:provider_session_id] || state.metadata["provider_session_id"],
       metadata: state.metadata
     }
   end
@@ -69,6 +71,8 @@ defmodule ASM.Run.EventReducer do
   defp append_event(state, event) do
     %{state | sequence: event.sequence, events_rev: [event | state.events_rev]}
   end
+
+  defp append_message(state, nil), do: state
 
   defp append_message(state, payload) do
     %{state | messages_rev: [payload | state.messages_rev]}
@@ -81,42 +85,26 @@ defmodule ASM.Run.EventReducer do
     %{state | text_chunks_rev: [text | state.text_chunks_rev]}
   end
 
-  defp apply_semantics(state, %Event{kind: :run_started}) do
-    %{state | status: :running}
+  defp apply_semantics(state, %Event{kind: :run_started, provider_session_id: provider_session_id}) do
+    metadata = put_if_present(state.metadata, :provider_session_id, provider_session_id)
+    %{state | status: :running, metadata: metadata}
   end
 
-  defp apply_semantics(state, %Event{
-         kind: :assistant_message,
-         payload: %Message.Assistant{} = msg
-       }) do
-    msg.content
-    |> extract_text_blocks()
-    |> then(fn text ->
-      state
-      |> append_message(msg)
-      |> append_text(text)
-    end)
-  end
+  defp apply_semantics(state, %Event{} = event)
+       when event.kind in [:assistant_delta, :assistant_message] do
+    legacy = Event.legacy_payload(event)
 
-  defp apply_semantics(
-         state,
-         %Event{
-           kind: :assistant_delta,
-           payload: %Message.Partial{content_type: :text, delta: delta} = msg
-         }
-       ) do
     state
-    |> append_message(msg)
-    |> append_text(delta)
+    |> append_message(legacy)
+    |> append_text(Event.assistant_text(event))
   end
 
-  defp apply_semantics(
-         state,
-         %Event{kind: :result, payload: %Message.Result{} = payload, timestamp: finished_at}
-       ) do
+  defp apply_semantics(state, %Event{kind: :result, timestamp: finished_at} = event) do
+    legacy = Event.legacy_payload(event)
+
     next_state =
       state
-      |> append_message(payload)
+      |> append_message(legacy)
       |> Map.put(:status, :completed)
       |> Map.put(:finished_at, finished_at)
 
@@ -130,68 +118,51 @@ defmodule ASM.Run.EventReducer do
         messages: materialized.messages_acc,
         cost: materialized.cost,
         error: materialized.error,
-        duration_ms: payload.duration_ms,
-        stop_reason: payload.stop_reason,
-        metadata: payload.metadata
+        duration_ms: legacy.duration_ms,
+        stop_reason: legacy.stop_reason,
+        metadata: materialized.metadata
       }
 
     %{next_state | result: result}
   end
 
-  defp apply_semantics(
-         state,
-         %Event{kind: :error, payload: %Message.Error{} = payload, timestamp: finished_at}
-       ) do
+  defp apply_semantics(state, %Event{kind: :error, timestamp: finished_at} = event) do
+    legacy = Event.legacy_payload(event)
+
     state
-    |> append_message(payload)
+    |> append_message(legacy)
     |> Map.put(:status, :failed)
     |> Map.put(:finished_at, finished_at)
-    |> Map.put(:error, error_from_message(payload))
+    |> Map.put(:error, error_from_message(legacy))
   end
 
   defp apply_semantics(state, %Event{kind: :run_completed, timestamp: finished_at}) do
     %{state | status: :completed, finished_at: finished_at}
   end
 
-  defp apply_semantics(
-         state,
-         %Event{kind: :approval_requested, payload: %ASM.Control.ApprovalRequest{} = payload}
-       ) do
+  defp apply_semantics(state, %Event{kind: :approval_requested} = event) do
+    payload = Event.legacy_payload(event)
     %{state | pending_approvals: Map.put(state.pending_approvals, payload.approval_id, payload)}
   end
 
-  defp apply_semantics(
-         state,
-         %Event{kind: :approval_resolved, payload: %ASM.Control.ApprovalResolution{} = payload}
-       ) do
+  defp apply_semantics(state, %Event{kind: :approval_resolved} = event) do
+    payload = Event.legacy_payload(event)
     %{state | pending_approvals: Map.delete(state.pending_approvals, payload.approval_id)}
   end
 
-  defp apply_semantics(
-         state,
-         %Event{kind: :cost_update, payload: %Control.CostUpdate{} = payload}
-       ) do
+  defp apply_semantics(state, %Event{kind: :cost_update} = event) do
+    payload = Event.legacy_payload(event)
     totals = add_cost(state.cost, payload)
     %{state | cost: totals, metadata: Map.put(state.metadata, :cost, totals)}
   end
 
-  defp apply_semantics(state, %Event{kind: kind, payload: payload})
-       when kind in @conversation_kinds do
-    append_message(state, payload)
+  defp apply_semantics(state, %Event{kind: kind} = event) when kind in @conversation_kinds do
+    append_message(state, Event.legacy_payload(event))
   end
 
   defp apply_semantics(state, _event), do: state
 
-  defp extract_text_blocks(content_blocks) do
-    content_blocks
-    |> Enum.flat_map(fn
-      %Content.Text{text: text} when is_binary(text) -> [text]
-      _other -> []
-    end)
-    |> Enum.join()
-  end
-
-  defp add_cost(current, %Control.CostUpdate{} = payload) do
+  defp add_cost(current, payload) do
     %{
       input_tokens: default_zero(current[:input_tokens]) + payload.input_tokens,
       output_tokens: default_zero(current[:output_tokens]) + payload.output_tokens,
@@ -202,7 +173,14 @@ defmodule ASM.Run.EventReducer do
   defp default_zero(nil), do: 0
   defp default_zero(value), do: value
 
-  defp error_from_message(%Message.Error{} = payload) do
+  defp error_from_message(%ASM.Message.Error{} = payload) do
     Error.new(payload.kind, :runtime, payload.message)
   end
+
+  defp error_from_message(_payload) do
+    Error.new(:unknown, :runtime, "Unknown runtime error")
+  end
+
+  defp put_if_present(map, _key, nil), do: map
+  defp put_if_present(map, key, value), do: Map.put(map, key, value)
 end

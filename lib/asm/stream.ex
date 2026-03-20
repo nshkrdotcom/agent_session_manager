@@ -5,43 +5,29 @@ defmodule ASM.Stream do
 
   alias ASM.{Content, Error, Event, Run, Session}
   alias ASM.Execution.Config
-  alias ASM.Stream.Driver
-  alias ASM.Transport.Cleanup, as: TransportCleanup
 
   @stream_keys [
-    :driver,
-    :driver_opts,
     :execution_mode,
     :stream_timeout_ms,
     :queue_timeout_ms,
-    :transport_call_timeout_ms
+    :transport_call_timeout_ms,
+    :lane
   ]
+
   @run_keys [
     :run_id,
     :run_module,
     :run_module_opts,
-    :tools,
-    :tool_executor,
     :pipeline,
     :pipeline_ctx,
     :approval_timeout_ms,
-    :transport_call_timeout_ms
+    :backend_module,
+    :backend_opts
   ]
 
   @type stream_state :: %{
           session: GenServer.server(),
-          session_id: String.t(),
-          provider: atom(),
-          prompt: String.t(),
-          provider_opts: keyword(),
           run_id: String.t(),
-          run_pid: pid() | nil,
-          driver: module(),
-          driver_kind: Driver.kind(),
-          driver_opts: keyword(),
-          execution_config: ASM.Execution.Config.t(),
-          driver_pid: pid() | nil,
-          driver_ref: reference() | nil,
           timeout_ms: pos_integer(),
           queue_timeout_ms: pos_integer() | :infinity,
           queue_started_at_ms: integer() | nil,
@@ -72,12 +58,11 @@ defmodule ASM.Stream do
   @spec text_deltas(Enumerable.t()) :: Enumerable.t()
   def text_deltas(events) do
     Elixir.Stream.flat_map(events, fn
-      %Event{
-        kind: :assistant_delta,
-        payload: %ASM.Message.Partial{content_type: :text, delta: delta}
-      }
-      when is_binary(delta) ->
-        [delta]
+      %Event{} = event ->
+        case Event.text_delta(event) do
+          nil -> []
+          delta -> [delta]
+        end
 
       _other ->
         []
@@ -87,15 +72,11 @@ defmodule ASM.Stream do
   @spec text_content(Enumerable.t()) :: Enumerable.t()
   def text_content(events) do
     Elixir.Stream.flat_map(events, fn
-      %Event{
-        kind: :assistant_delta,
-        payload: %ASM.Message.Partial{content_type: :text, delta: delta}
-      }
-      when is_binary(delta) ->
-        [delta]
-
-      %Event{kind: :assistant_message, payload: %ASM.Message.Assistant{content: blocks}} ->
-        extract_text_blocks(blocks)
+      %Event{} = event ->
+        case Event.assistant_text(event) do
+          nil -> []
+          text -> [text]
+        end
 
       %ASM.Message.Partial{content_type: :text, delta: delta} when is_binary(delta) ->
         [delta]
@@ -127,60 +108,42 @@ defmodule ASM.Stream do
     run_opts = merge_opts(session_run_opts, call_run_opts)
     provider_opts = merge_opts(session_provider_opts, call_provider_opts)
 
-    explicit_driver? = Keyword.has_key?(stream_opts, :driver)
-
     execution_config =
-      case Config.resolve(session_stream_opts, call_stream_opts,
-             explicit_driver?: explicit_driver?
-           ) do
-        {:ok, cfg} ->
-          cfg
+      case Config.resolve(session_stream_opts, call_stream_opts) do
+        {:ok, cfg} -> cfg
+        {:error, %Error{} = error} -> raise error
+      end
 
-        {:error, %Error{} = error} ->
-          raise error
+    provider_opts =
+      case ASM.Options.validate(
+             Keyword.put(provider_opts, :provider, session_state.provider.name),
+             session_state.provider.options_schema
+           ) do
+        {:ok, validated} -> Keyword.delete(validated, :provider)
+        {:error, %Error{} = error} -> raise error
       end
 
     run_opts =
-      Keyword.put(
-        run_opts,
-        :transport_call_timeout_ms,
-        execution_config.transport_call_timeout_ms
-      )
-
-    run_opts =
       run_opts
+      |> Keyword.put(:execution_config, execution_config)
+      |> Keyword.put(:provider_opts, provider_opts)
+      |> Keyword.put(:lane, Keyword.get(stream_opts, :lane, :auto))
       |> Keyword.update(:run_module_opts, [subscriber: self()], fn module_opts ->
         Keyword.put_new(module_opts, :subscriber, self())
       end)
 
     case Session.Server.submit_run(session, prompt, run_opts) do
       {:ok, run_id, run_pid_or_queued} ->
-        run_pid = if(is_pid(run_pid_or_queued), do: run_pid_or_queued, else: nil)
-        driver = select_driver(stream_opts, execution_config)
-
-        state = %{
+        %{
           session: session,
-          session_id: session_state.session_id,
-          provider: session_state.provider.name,
-          prompt: prompt,
-          provider_opts: provider_opts,
           run_id: run_id,
-          run_pid: run_pid,
-          driver: driver,
-          driver_kind: driver_kind(driver),
-          driver_opts: Keyword.get(stream_opts, :driver_opts, []),
-          execution_config: execution_config,
-          driver_pid: nil,
-          driver_ref: nil,
           timeout_ms: max(Keyword.get(stream_opts, :stream_timeout_ms, 60_000), 1),
           queue_timeout_ms:
             normalize_queue_timeout(Keyword.get(stream_opts, :queue_timeout_ms, :infinity)),
-          queue_started_at_ms: if(is_pid(run_pid), do: nil, else: monotonic_ms()),
-          started?: is_pid(run_pid),
+          queue_started_at_ms: if(is_pid(run_pid_or_queued), do: nil, else: monotonic_ms()),
+          started?: is_pid(run_pid_or_queued),
           done?: false
         }
-
-        maybe_start_driver(state)
 
       {:error, %Error{} = error} ->
         raise error
@@ -194,31 +157,12 @@ defmodule ASM.Stream do
 
     receive do
       {:asm_run_event, run_id, %Event{} = event} when run_id == state.run_id ->
-        next_state =
-          state
-          |> maybe_mark_started(event)
-          |> maybe_start_driver_on_bootstrap(event)
-
+        next_state = maybe_mark_started(state, event)
         {[event], next_state}
 
       {:asm_run_done, run_id} when run_id == state.run_id ->
         await_session_cleanup(state.session, state.run_id, state.timeout_ms)
         {:halt, %{state | done?: true}}
-
-      {:DOWN, ref, :process, pid, reason}
-      when ref == state.driver_ref and pid == state.driver_pid ->
-        state = %{state | driver_pid: nil, driver_ref: nil}
-
-        if reason not in [:normal, :shutdown] and is_pid(state.run_pid) and
-             state.driver_kind != :transport do
-          emit_driver_error(
-            state.run_pid,
-            state,
-            runtime_error("driver crashed: #{inspect(reason)}")
-          )
-        end
-
-        next_event(state)
 
       _other ->
         next_event(state)
@@ -229,85 +173,11 @@ defmodule ASM.Stream do
   end
 
   defp close_stream(state) do
-    if state.driver_ref, do: Process.demonitor(state.driver_ref, [:flush])
-
-    close_driver(state)
-
     unless state.done? do
       _ = Session.Server.cancel_run(state.session, state.run_id)
     end
 
     :ok
-  end
-
-  defp maybe_start_driver(%{run_pid: run_pid} = state) when is_pid(run_pid) do
-    driver_ctx = driver_context(state)
-
-    case invoke_driver_start(state.driver, driver_ctx) do
-      {:ok, pid} when is_pid(pid) ->
-        %{state | driver_pid: pid, driver_ref: Process.monitor(pid)}
-
-      {:error, %Error{} = error} ->
-        emit_driver_error(run_pid, state, error)
-        state
-
-      {:error, reason} ->
-        emit_driver_error(run_pid, state, runtime_error("driver failed: #{inspect(reason)}"))
-        state
-    end
-  end
-
-  defp maybe_start_driver(state), do: state
-
-  defp maybe_start_driver_on_bootstrap(%{run_pid: nil} = state, %Event{kind: :run_started}) do
-    case lookup_run_pid(state.session, state.run_id) do
-      {:ok, run_pid} -> maybe_start_driver(%{state | run_pid: run_pid, started?: true})
-      :error -> state
-    end
-  end
-
-  defp maybe_start_driver_on_bootstrap(state, _event), do: state
-
-  defp maybe_mark_started(state, %Event{kind: :run_started}) do
-    %{state | started?: true, queue_started_at_ms: nil}
-  end
-
-  defp maybe_mark_started(state, _event), do: state
-
-  defp lookup_run_pid(session, run_id, attempts \\ 40)
-
-  defp lookup_run_pid(_session, _run_id, 0), do: :error
-
-  defp lookup_run_pid(session, run_id, attempts) do
-    session_state = Session.Server.get_state(session)
-
-    case Map.fetch(session_state.active_runs, run_id) do
-      {:ok, run_pid} ->
-        {:ok, run_pid}
-
-      :error ->
-        Process.sleep(5)
-        lookup_run_pid(session, run_id, attempts - 1)
-    end
-  end
-
-  defp emit_driver_error(run_pid, state, %Error{} = error) when is_pid(run_pid) do
-    Run.Server.ingest_event(
-      run_pid,
-      %Event{
-        id: Event.generate_id(),
-        kind: :error,
-        run_id: state.run_id,
-        session_id: state.session_id,
-        provider: state.provider,
-        payload: %ASM.Message.Error{
-          severity: :error,
-          message: error.message,
-          kind: error.kind
-        },
-        timestamp: DateTime.utc_now()
-      }
-    )
   end
 
   defp partition_opts(opts) do
@@ -318,7 +188,6 @@ defmodule ASM.Stream do
 
   defp merge_opts(base, override) do
     Keyword.merge(base, override, fn
-      :driver_opts, left, right -> merge_keyword_list(left, right)
       :run_module_opts, left, right -> merge_keyword_list(left, right)
       _key, _left, right -> right
     end)
@@ -331,117 +200,11 @@ defmodule ASM.Stream do
   defp merge_keyword_list(left, _right) when is_list(left), do: left
   defp merge_keyword_list(_left, _right), do: []
 
-  defp close_driver(%{driver_pid: pid} = state) when is_pid(pid) do
-    driver_ctx = driver_context(state)
-    _ = invoke_driver_stop(state.driver, pid, driver_ctx, state.driver_kind)
-    :ok
+  defp maybe_mark_started(state, %Event{kind: :run_started}) do
+    %{state | started?: true, queue_started_at_ms: nil}
   end
 
-  defp close_driver(_state), do: :ok
-
-  defp driver_context(%{run_pid: run_pid} = state) when is_pid(run_pid) do
-    %{
-      run_id: state.run_id,
-      run_pid: run_pid,
-      session_id: state.session_id,
-      provider: state.provider,
-      prompt: state.prompt,
-      provider_opts: state.provider_opts,
-      driver_opts: state.driver_opts,
-      execution_config: state.execution_config
-    }
-  end
-
-  defp driver_context(_state), do: nil
-
-  defp invoke_driver_start(driver, driver_ctx) when is_map(driver_ctx) do
-    if driver_supports?(driver, :start, 1) do
-      driver.start(driver_ctx)
-    else
-      {:error, runtime_error("driver does not implement start/1: #{inspect(driver)}")}
-    end
-  rescue
-    error ->
-      {:error, runtime_error("driver start crashed: #{Exception.message(error)}")}
-  catch
-    kind, reason ->
-      {:error, runtime_error("driver start failed: #{inspect({kind, reason})}")}
-  end
-
-  defp invoke_driver_start(_driver, _driver_ctx) do
-    {:error, runtime_error("driver start context is unavailable")}
-  end
-
-  defp invoke_driver_stop(driver, pid, driver_ctx, driver_kind)
-       when is_pid(pid) and is_atom(driver_kind) do
-    if driver_supports?(driver, :stop, 2) and is_map(driver_ctx) do
-      normalize_stop(driver.stop(pid, driver_ctx))
-    else
-      default_driver_stop(pid, driver_kind)
-    end
-  rescue
-    _error ->
-      default_driver_stop(pid, driver_kind)
-  catch
-    _kind, _reason ->
-      default_driver_stop(pid, driver_kind)
-  end
-
-  defp normalize_stop(:ok), do: :ok
-  defp normalize_stop(_), do: :ok
-
-  defp default_driver_stop(pid, :transport) when is_pid(pid) do
-    _ = safe_close_transport(pid)
-    :ok
-  end
-
-  defp default_driver_stop(pid, _driver_kind) when is_pid(pid) do
-    if node(pid) == node() and Process.alive?(pid) do
-      Process.exit(pid, :shutdown)
-    end
-
-    :ok
-  end
-
-  defp safe_close_transport(pid) do
-    TransportCleanup.close(pid)
-  catch
-    :exit, _ -> :ok
-  end
-
-  defp driver_kind(driver) when is_atom(driver) do
-    if driver_supports?(driver, :kind, 0) do
-      case driver.kind() do
-        :transport -> :transport
-        :sdk -> :sdk
-        _other -> :sdk
-      end
-    else
-      :sdk
-    end
-  rescue
-    _ -> :sdk
-  catch
-    _kind, _reason -> :sdk
-  end
-
-  defp driver_supports?(driver, function, arity)
-       when is_atom(driver) and is_atom(function) and is_integer(arity) do
-    Code.ensure_loaded?(driver) and function_exported?(driver, function, arity)
-  end
-
-  defp select_driver(stream_opts, execution_config) when is_list(stream_opts) do
-    case Keyword.fetch(stream_opts, :driver) do
-      {:ok, driver} ->
-        driver
-
-      :error ->
-        case execution_config.execution_mode do
-          :remote_node -> ASM.Stream.NodeDriver
-          _ -> ASM.Stream.CLIDriver
-        end
-    end
-  end
+  defp maybe_mark_started(state, _event), do: state
 
   defp reduce_event(%Event{} = event, nil) do
     Run.State.new(run_id: event.run_id, session_id: event.session_id, provider: provider(event))
@@ -455,10 +218,6 @@ defmodule ASM.Stream do
 
   defp provider(%Event{provider: nil}), do: :unknown
   defp provider(%Event{provider: provider}), do: provider
-
-  defp runtime_error(message) do
-    Error.new(:runtime, :runtime, message)
-  end
 
   defp await_session_cleanup(session, run_id, timeout_ms) do
     attempts =
@@ -485,7 +244,7 @@ defmodule ASM.Stream do
     :exit, _ -> :ok
   end
 
-  defp receive_timeout(%{run_pid: nil, started?: false} = state) do
+  defp receive_timeout(%{started?: false} = state) do
     case state.queue_timeout_ms do
       :infinity -> :infinity
       timeout_ms -> max(timeout_ms - elapsed_queue_ms(state), 0)
@@ -500,7 +259,7 @@ defmodule ASM.Stream do
     max(monotonic_ms() - started_at_ms, 0)
   end
 
-  defp timeout_error(%{run_pid: nil, started?: false} = state) do
+  defp timeout_error(%{started?: false} = state) do
     Error.new(
       :timeout,
       :runtime,
@@ -509,11 +268,7 @@ defmodule ASM.Stream do
   end
 
   defp timeout_error(state) do
-    Error.new(
-      :timeout,
-      :runtime,
-      "stream timeout waiting for run #{state.run_id} events"
-    )
+    Error.new(:timeout, :runtime, "stream timeout waiting for run #{state.run_id} events")
   end
 
   defp normalize_queue_timeout(:infinity), do: :infinity

@@ -7,7 +7,6 @@ defmodule ASM do
     deps: [],
     exports: [
       ASM,
-      ASM.Command,
       ASM.Content,
       ASM.Control,
       ASM.Error,
@@ -18,6 +17,8 @@ defmodule ASM do
       ASM.Options,
       ASM.Permission,
       ASM.Provider,
+      ASM.ProviderBackend,
+      ASM.ProviderRegistry,
       ASM.Result,
       ASM.Stream,
       ASM.Transport

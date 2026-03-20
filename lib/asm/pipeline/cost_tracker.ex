@@ -5,13 +5,14 @@ defmodule ASM.Pipeline.CostTracker do
 
   @behaviour ASM.Pipeline.Plug
 
-  alias ASM.{Control, Event, Message}
+  alias ASM.Event
+  alias CliSubprocessCore.Payload
 
   @impl true
-  def call(%Event{kind: :result, payload: %Message.Result{} = result} = event, ctx, opts) do
+  def call(%Event{kind: :result} = event, ctx, opts) do
     input_rate = Keyword.get(opts, :input_rate, 0.0)
     output_rate = Keyword.get(opts, :output_rate, 0.0)
-    usage = normalize_usage(result.usage)
+    usage = normalize_usage(Event.result_usage(event))
 
     cost =
       usage.input_tokens * input_rate +
@@ -45,21 +46,21 @@ defmodule ASM.Pipeline.CostTracker do
   defp normalize_usage(_), do: %{input_tokens: 0, output_tokens: 0}
 
   defp cost_event(source_event, input_tokens, output_tokens, cost_usd) do
-    %Event{
-      id: Event.generate_id(),
-      kind: :cost_update,
+    Event.new(
+      :cost_update,
+      Payload.CostUpdate.new(
+        input_tokens: input_tokens,
+        output_tokens: output_tokens,
+        total_tokens: input_tokens + output_tokens,
+        cost_usd: cost_usd
+      ),
       run_id: source_event.run_id,
       session_id: source_event.session_id,
       provider: source_event.provider,
-      payload: %Control.CostUpdate{
-        input_tokens: input_tokens,
-        output_tokens: output_tokens,
-        cost_usd: cost_usd
-      },
       correlation_id: source_event.id,
       causation_id: source_event.id,
       timestamp: DateTime.utc_now()
-    }
+    )
   end
 
   defp default_zero(nil), do: 0

@@ -55,7 +55,7 @@ defmodule ASM.Remote.NodeConnector do
              remote_node,
              Code,
              :ensure_loaded?,
-             [ASM.Remote.TransportStarter],
+             [ASM.Remote.BackendStarter],
              rpc_timeout_ms
            ),
          {:ok, true} <-
@@ -64,7 +64,7 @@ defmodule ASM.Remote.NodeConnector do
              remote_node,
              :erlang,
              :function_exported,
-             [ASM.Remote.TransportStarter, :start_transport, 1],
+             [ASM.Remote.BackendStarter, :start_core_session, 1],
              rpc_timeout_ms
            ),
          {:ok, handshake} <-
@@ -85,7 +85,7 @@ defmodule ASM.Remote.NodeConnector do
              remote_node,
              Process,
              :whereis,
-             [ASM.Remote.TransportSupervisor],
+             [ASM.Remote.BackendSupervisor],
              rpc_timeout_ms
            ),
          :ok <- ensure_supervisor_ready(supervisor_pid) do

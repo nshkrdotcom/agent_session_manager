@@ -4,9 +4,8 @@ defmodule ASM.Session.Subtree do
 
   Child ordering is intentional and uses `:rest_for_one`:
 
-  1. transport supervisor
-  2. run supervisor
-  3. session aggregate server
+  1. run supervisor
+  2. session aggregate server
   """
 
   use Supervisor
@@ -33,8 +32,6 @@ defmodule ASM.Session.Subtree do
     session_options = Keyword.get(opts, :options, [])
 
     children = [
-      {ASM.Session.TransportSupervisor,
-       [session_id: session_id, name: via_name(session_id, :transport_sup)]},
       {ASM.Run.Supervisor, [session_id: session_id, name: via_name(session_id, :run_sup)]},
       {ASM.Session.Server,
        [

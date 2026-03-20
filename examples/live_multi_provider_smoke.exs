@@ -24,11 +24,7 @@ end
 missing =
   Enum.filter(providers, fn {provider, env_var, _prompt} ->
     cli_path = System.get_env(env_var)
-
-    case ASM.Provider.Resolver.resolve(provider, cli_path: cli_path) do
-      {:ok, _} -> false
-      {:error, _} -> true
-    end
+    not LiveSupport.cli_available?(provider, cli_path: cli_path)
   end)
 
 if missing != [] do

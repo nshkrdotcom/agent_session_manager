@@ -40,49 +40,27 @@ opts =
 prompt =
   LiveSupport.prompt_from_argv_or_default("Reply with exactly: AMP_OK")
 
-IO.puts("running amp provider contract checks...")
+IO.puts("running amp provider backend checks...")
 
-flags = ASM.Command.Amp.option_flags(opts)
-
-if Keyword.get(opts, :permission_mode) in ["bypass", :bypass] and
-     "--dangerously-allow-all" not in flags do
-  IO.puts("amp command check failed: bypass mode did not map to --dangerously-allow-all")
-  System.halt(1)
+with {:ok, provider} <- ASM.Provider.resolve(:amp),
+     {:ok, core_resolution} <-
+       ASM.ProviderRegistry.resolve(:amp, lane: :core, execution_mode: :local) do
+  IO.puts("provider=#{provider.name} display_name=#{provider.display_name}")
+  IO.puts("core_profile=#{inspect(provider.core_profile)}")
+  IO.puts("sdk_runtime=#{inspect(provider.sdk_runtime)}")
+  IO.puts("core_backend=#{inspect(core_resolution.backend)}")
+  IO.puts("sdk_available?=#{inspect(core_resolution.sdk_available?)}")
+else
+  {:error, error} ->
+    IO.puts("amp backend check failed: #{Exception.message(error)}")
+    System.halt(1)
 end
-
-check_event = fn raw, expected_kind ->
-  case ASM.Parser.Amp.parse(raw) do
-    {:ok, {^expected_kind, _payload}} -> :ok
-    {:ok, {kind, _payload}} -> raise "expected #{inspect(expected_kind)}, got #{inspect(kind)}"
-    {:error, error} -> raise "amp parser check failed: #{Exception.message(error)}"
-  end
-end
-
-check_event.(%{"type" => "message_streamed", "delta" => "amp-check"}, :assistant_delta)
-check_event.(%{"type" => "tool_call_started", "tool_call_id" => "tool-1"}, :tool_use)
-check_event.(%{"type" => "run_completed", "token_usage" => %{"input_tokens" => 1}}, :result)
-
-IO.puts("amp command/parser checks passed")
 
 run_live? = parse_bool.(System.get_env("ASM_AMP_RUN_LIVE"))
 
-case ASM.Provider.Resolver.resolve(:amp, Keyword.take(opts, [:cli_path])) do
-  {:ok, spec} ->
-    IO.puts("amp cli resolved: #{spec.program}")
-
-    if run_live? do
-      _ = LiveSupport.stream_and_collect!(:amp, prompt, opts)
-    else
-      IO.puts("live run skipped (set ASM_AMP_RUN_LIVE=1 to run a live stream check)")
-    end
-
-  {:error, error} ->
-    IO.puts("amp cli unavailable: #{Exception.message(error)}")
-
-    if run_live? do
-      IO.puts("ASM_AMP_RUN_LIVE=1 was requested, so this is a hard failure")
-      System.halt(1)
-    else
-      IO.puts("live run skipped; parser/command contract checks completed")
-    end
+if run_live? do
+  LiveSupport.ensure_cli!(:amp, Keyword.take(opts, [:cli_path]))
+  _ = LiveSupport.stream_and_collect!(:amp, prompt, opts)
+else
+  IO.puts("live run skipped (set ASM_AMP_RUN_LIVE=1 to run a live backend check)")
 end

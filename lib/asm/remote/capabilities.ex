@@ -4,9 +4,7 @@ defmodule ASM.Remote.Capabilities do
   """
 
   @required_capabilities [
-    :remote_transport_start_v1,
-    :startup_lease_timeout_v1,
-    :transport_call_timeout_v1
+    :remote_backend_start_v1
   ]
 
   @type handshake_t :: %{

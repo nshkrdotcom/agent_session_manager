@@ -9,7 +9,6 @@ mix run examples/live_claude_stream.exs -- "Reply with exactly: CLAUDE_OK"
 mix run examples/live_gemini_stream.exs -- "Reply with exactly: GEMINI_OK"
 mix run examples/live_codex_stream.exs -- "Reply with exactly: CODEX_OK"
 mix run examples/check_amp_provider.exs
-mix run examples/live_shell_stream.exs -- "echo SHELL_OK"
 mix run examples/live_multi_provider_smoke.exs
 mix run examples/live_feature_matrix.exs
 mix run examples/live_main_compat_migration.exs
@@ -22,7 +21,7 @@ mix run examples/live_pub_sub_stream.exs -- "Reply with exactly: PUBSUB_OK"
 mix run examples/live_workspace_snapshot.exs -- "Reply with exactly: WORKSPACE_OK"
 ```
 
-Supplemental SDK seam example (does not require provider CLI transport):
+Supplemental SDK-lane example:
 
 ```bash
 mix run examples/sdk_driver_demo.exs
@@ -34,7 +33,6 @@ mix run examples/sdk_driver_demo.exs
 - `GEMINI_CLI_PATH` (optional explicit path)
 - `CODEX_PATH` (optional explicit path)
 - `AMP_CLI_PATH` (optional explicit path)
-- `ASM_SHELL_PATH` (optional explicit path to shell executable)
 - `ASM_PERMISSION_MODE` (`default`, `auto`, `bypass`, `plan`; defaults to `auto`)
 - `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL` (optional)
 - `ASM_CODEX_REASONING` (`low`, `medium`, `high`; optional and auto-skipped when unsupported)
@@ -57,22 +55,14 @@ mix run examples/sdk_driver_demo.exs
 - `ASM_AMP_THINKING` (`1`/`true` enables Amp thinking)
 - `ASM_AMP_TOOLS` (optional comma-separated Amp tool allow-list)
 - `ASM_AMP_RUN_LIVE` (`1`/`true` to run a live Amp stream after contract checks)
-- `ASM_SHELL_ALLOWED` (optional comma-separated shell allow-list override)
-- `ASM_SHELL_DENIED` (optional comma-separated shell deny-list override)
-- `ASM_SHELL_TIMEOUT_MS` (optional shell command timeout override in milliseconds)
 
 Each script checks CLI availability first and exits with actionable setup errors if missing.
 Claude streams automatically use the `script` PTY wrapper when available, and fall back to direct execution when PTY setup is unavailable.
 
-Shell example safety note:
-- Run `live_shell_stream.exs` only in a disposable sandbox/workspace.
-- Keep allow-lists strict and deny-lists explicit for production usage.
-
 ## Coverage
 
 - `live_claude_stream.exs`, `live_gemini_stream.exs`, `live_codex_stream.exs`: provider-specific stream flow.
-- `check_amp_provider.exs`: Amp parser/command contract checks with optional live stream check when CLI is available.
-- `live_shell_stream.exs`: controlled shell command execution with strict policy defaults and timeout handling.
+- `check_amp_provider.exs`: Amp provider registry/backend checks with optional live stream check when CLI is available.
 - `live_multi_provider_smoke.exs`: stream + one-shot `ASM.query/3` across all providers.
 - `live_feature_matrix.exs`: session lifecycle surface on live adapters (`start_session`, `stream`, `query`, `health`, `cost`, `stop_session`).
 - `live_main_compat_migration.exs`: main-shape migration helper flow (`input/messages` conversion, legacy event callback bridging, and explicit Amp/Shell unsupported checks) on live Claude/Gemini/Codex adapters.
@@ -83,4 +73,4 @@ Shell example safety note:
 - `live_rendering_stream.exs`: rendering extension on live adapters with compact/verbose output streamed to terminal and file sinks.
 - `live_pub_sub_stream.exs`: PubSub broadcaster wired through the run pipeline, with local topic subscription and realtime message consumption output.
 - `live_workspace_snapshot.exs`: pre/post workspace snapshots around a live query, diff verification, rollback, and temporary workspace cleanup.
-- `sdk_driver_demo.exs`: supplemental SDK-native stream-driver seam demonstration using `ASM.Stream.SDKDriver` (not a live CLI adapter check).
+- `sdk_driver_demo.exs`: supplemental SDK-lane stream demonstration using `lane: :sdk`.

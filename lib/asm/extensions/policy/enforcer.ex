@@ -10,7 +10,7 @@ defmodule ASM.Extensions.Policy.Enforcer do
 
   @behaviour ASM.Pipeline.Plug
 
-  alias ASM.{Control, Error, Event, Message}
+  alias ASM.{Control, Error, Event}
   alias ASM.Extensions.Policy
   alias ASM.Extensions.Policy.Violation
 
@@ -126,9 +126,10 @@ defmodule ASM.Extensions.Policy.Enforcer do
   end
 
   defp approval_payload(
-         %Event{kind: :tool_use, payload: %Message.ToolUse{} = tool_use},
+         %Event{kind: :tool_use} = event,
          _violation
        ) do
+    tool_use = Event.legacy_payload(event)
     {tool_use.tool_name, tool_use.input}
   end
 
@@ -146,17 +147,16 @@ defmodule ASM.Extensions.Policy.Enforcer do
   defp build_event(%Event{} = source_event, kind, payload, opts) do
     now_fun = now_fun(opts)
 
-    %Event{
-      id: Event.generate_id(),
-      kind: kind,
+    Event.new(
+      kind,
+      payload,
       run_id: source_event.run_id,
       session_id: source_event.session_id,
       provider: source_event.provider,
-      payload: payload,
       correlation_id: source_event.id,
       causation_id: source_event.id,
       timestamp: now_fun.()
-    }
+    )
   end
 
   defp approval_id_fun(opts) do

@@ -14,7 +14,7 @@ available =
   |> Enum.reduce([], fn {provider, env_var, model_env}, acc ->
     cli_path = System.get_env(env_var)
 
-    with {:ok, _command_spec} <- ASM.Provider.Resolver.resolve(provider, cli_path: cli_path),
+    with true <- LiveSupport.cli_available?(provider, cli_path: cli_path),
          {:ok, resolved_provider} <- ASM.Provider.resolve(provider) do
       [
         %{

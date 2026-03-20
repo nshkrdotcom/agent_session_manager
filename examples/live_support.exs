@@ -3,6 +3,20 @@ defmodule ASM.Examples.LiveSupport do
 
   alias ASM.{Error, Event, Provider}
 
+  @cli_commands %{
+    claude: "claude",
+    gemini: "gemini",
+    codex: "codex",
+    amp: "amp"
+  }
+
+  @install_hints %{
+    claude: "npm install -g @anthropic-ai/claude-code",
+    gemini: "npm install -g @google/gemini-cli",
+    codex: "npm install -g @openai/codex",
+    amp: "install the Amp CLI and ensure it is available on PATH"
+  }
+
   @spec prompt_from_argv_or_default(String.t()) :: String.t()
   def prompt_from_argv_or_default(default) when is_binary(default) do
     argv =
@@ -17,8 +31,8 @@ defmodule ASM.Examples.LiveSupport do
 
   @spec ensure_cli!(Provider.provider_name(), keyword()) :: :ok
   def ensure_cli!(provider, resolver_opts \\ []) do
-    case ASM.Provider.Resolver.resolve(provider, resolver_opts) do
-      {:ok, _command_spec} ->
+    case cli_check(provider, resolver_opts) do
+      :ok ->
         :ok
 
       {:error, %Error{} = error} ->
@@ -32,6 +46,11 @@ defmodule ASM.Examples.LiveSupport do
 
         System.halt(1)
     end
+  end
+
+  @spec cli_available?(Provider.provider_name(), keyword()) :: boolean()
+  def cli_available?(provider, opts \\ []) do
+    cli_check(provider, opts) == :ok
   end
 
   @spec stream_and_collect!(Provider.provider_name(), String.t(), keyword()) :: ASM.Result.t()
@@ -136,35 +155,35 @@ defmodule ASM.Examples.LiveSupport do
   end
 
   @spec print_event(Event.t()) :: :ok
-  def print_event(%Event{kind: :assistant_delta, payload: %ASM.Message.Partial{delta: delta}}) do
-    IO.write(delta)
-    :ok
-  end
+  def print_event(%Event{} = event) do
+    case Event.legacy_payload(event) do
+      %ASM.Message.Partial{delta: delta} ->
+        IO.write(delta)
+        :ok
 
-  def print_event(%Event{
-        kind: :assistant_message,
-        payload: %ASM.Message.Assistant{content: blocks}
-      }) do
-    text =
-      blocks
-      |> Enum.flat_map(fn
-        %ASM.Content.Text{text: value} -> [value]
-        _ -> []
-      end)
-      |> Enum.join()
+      %ASM.Message.Assistant{content: blocks} ->
+        text =
+          blocks
+          |> Enum.flat_map(fn
+            %ASM.Content.Text{text: value} -> [value]
+            _ -> []
+          end)
+          |> Enum.join()
 
-    unless text == "", do: IO.puts(text)
-    :ok
-  end
+        unless text == "", do: IO.puts(text)
+        :ok
 
-  def print_event(%Event{kind: :result, payload: %ASM.Message.Result{stop_reason: stop_reason}}) do
-    IO.puts("\n[result stop_reason=#{inspect(stop_reason)}]")
-    :ok
-  end
+      %ASM.Message.Result{stop_reason: stop_reason} ->
+        IO.puts("\n[result stop_reason=#{inspect(stop_reason)}]")
+        :ok
 
-  def print_event(%Event{kind: :error, payload: %ASM.Message.Error{} = payload}) do
-    IO.puts("\n[error #{payload.kind}] #{payload.message}")
-    :ok
+      %ASM.Message.Error{} = payload ->
+        IO.puts("\n[error #{payload.kind}] #{payload.message}")
+        :ok
+
+      _other ->
+        :ok
+    end
   end
 
   def print_event(_event), do: :ok
@@ -188,30 +207,58 @@ defmodule ASM.Examples.LiveSupport do
   end
 
   defp provider_install_hint(provider) do
-    case Provider.resolve(provider) do
-      {:ok, %Provider{install_command: command}} when is_binary(command) and command != "" ->
-        "Install hint: #{command}"
-
-      _ ->
-        "Install hint: ensure the provider CLI is installed and on PATH."
-    end
+    "Install hint: #{Map.get(@install_hints, provider, "ensure the provider CLI is installed and on PATH.")}"
   end
 
   defp fail_if_error_events!(events) do
     errors =
       events
       |> Enum.filter(fn
-        %Event{kind: :error, payload: %ASM.Message.Error{}} -> true
+        %Event{kind: :error} -> true
         _ -> false
       end)
-      |> Enum.map(fn %Event{payload: %ASM.Message.Error{} = payload} ->
-        "[#{payload.kind}] #{payload.message}"
+      |> Enum.flat_map(fn
+        %Event{} = event ->
+          case Event.legacy_payload(event) do
+            %ASM.Message.Error{} = payload -> ["[#{payload.kind}] #{payload.message}"]
+            _ -> []
+          end
       end)
 
     if errors != [] do
       IO.puts("\nrun failed with error events:")
       Enum.each(errors, &IO.puts("  - " <> &1))
       System.halt(1)
+    end
+  end
+
+  defp cli_check(provider, opts) do
+    with {:ok, %Provider{name: resolved_provider}} <- Provider.resolve(provider),
+         :ok <- ensure_executable(resolved_provider, Keyword.get(opts, :cli_path)) do
+      :ok
+    end
+  end
+
+  defp ensure_executable(_provider, path) when is_binary(path) and path != "" do
+    if File.regular?(path) do
+      :ok
+    else
+      {:error, Error.new(:cli_not_found, :provider, "CLI executable not found at #{path}")}
+    end
+  end
+
+  defp ensure_executable(provider, _path) do
+    command = Map.get(@cli_commands, provider)
+
+    if is_binary(command) and System.find_executable(command) do
+      :ok
+    else
+      {:error,
+       Error.new(
+         :cli_not_found,
+         :provider,
+         "CLI executable #{inspect(command)} not found on PATH"
+       )}
     end
   end
 end

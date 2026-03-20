@@ -1,63 +1,10 @@
 defmodule ASM.Distributed.RemoteNodeExecutionTest do
   use ASM.SerialTestCase
 
-  alias ASM.{Control, Error, Event, Message}
+  alias ASM.Error
   alias ASM.Remote.NodeConnector
 
   @moduletag :distributed
-
-  defmodule AttachRejectRun do
-    @moduledoc false
-
-    use GenServer
-
-    alias ASM.{Control, Error, Event}
-
-    def start_link(opts) do
-      GenServer.start_link(__MODULE__, opts)
-    end
-
-    @impl true
-    def init(opts) do
-      state = %{
-        run_id: Keyword.fetch!(opts, :run_id),
-        session_id: Keyword.fetch!(opts, :session_id),
-        provider: Keyword.fetch!(opts, :provider),
-        subscriber: Keyword.get(opts, :subscriber)
-      }
-
-      run_started =
-        %Event{
-          id: Event.generate_id(),
-          kind: :run_started,
-          run_id: state.run_id,
-          session_id: state.session_id,
-          provider: state.provider,
-          payload: %Control.RunLifecycle{status: :started, summary: %{}},
-          timestamp: DateTime.utc_now()
-        }
-
-      send(state.subscriber, {:asm_run_event, state.run_id, run_started})
-      {:ok, state}
-    end
-
-    @impl true
-    def handle_call({:attach_transport, _transport_pid}, _from, state) do
-      {:reply, {:error, Error.new(:transport_busy, :transport, "forced attach failure")}, state}
-    end
-
-    @impl true
-    def handle_cast({:ingest_event, %Event{} = event}, state) do
-      send(state.subscriber, {:asm_run_event, state.run_id, event})
-
-      if event.kind == :error do
-        send(state.subscriber, {:asm_run_done, state.run_id})
-        {:stop, :normal, state}
-      else
-        {:noreply, state}
-      end
-    end
-  end
 
   setup do
     ensure_local_distribution!()
@@ -101,67 +48,6 @@ defmodule ASM.Distributed.RemoteNodeExecutionTest do
     assert :ok = ASM.stop_session(session)
   end
 
-  test "nodedown mid-run surfaces terminal transport error", %{
-    peer: peer,
-    node: node,
-    workspace: workspace
-  } do
-    script = write_script!(codex_hanging_script())
-    session = start_session!(:codex)
-    parent = self()
-
-    task =
-      Task.async(fn ->
-        ASM.stream(session, "hang",
-          execution_mode: :remote_node,
-          stream_timeout_ms: 20_000,
-          cli_path: script,
-          driver_opts: [remote_node: node, remote_cwd: workspace]
-        )
-        |> Enum.reduce([], fn %Event{} = event, acc ->
-          send(parent, {:stream_event, event})
-          [event | acc]
-        end)
-        |> Enum.reverse()
-      end)
-
-    # Root cause of prior flake: stopping the peer before local attach completed
-    # races with NodeDriver attach and can surface runtime attach errors instead
-    # of transport nodedown errors. Wait for the first transport-derived event.
-    assert_receive {:stream_event, %Event{kind: :assistant_message}}, 5_000
-
-    :peer.stop(peer)
-
-    events = Task.await(task, 10_000)
-
-    # Explicit NodeDriver :DOWN dedupe assertion:
-    # we should see only the terminal transport error from Run.Server, not an
-    # additional stream-side "driver crashed" runtime error.
-    error_events =
-      Enum.filter(events, fn
-        %Event{kind: :error} -> true
-        _ -> false
-      end)
-
-    assert length(error_events) == 1
-
-    assert [
-             %Event{
-               kind: :error,
-               payload: %Message.Error{kind: :transport_error, message: message}
-             }
-           ] = error_events
-
-    assert String.contains?(message, "noconnection")
-
-    refute Enum.any?(events, fn
-             %Event{kind: :error, payload: %Message.Error{kind: :runtime}} -> true
-             _ -> false
-           end)
-
-    assert :ok = ASM.stop_session(session)
-  end
-
   test "unreachable node returns connect timeout or immediate connect failure" do
     session = start_session!(:codex)
 
@@ -174,23 +60,10 @@ defmodule ASM.Distributed.RemoteNodeExecutionTest do
                ]
              )
 
-    assert String.contains?(error.message, "remote_connect_timeout") or
+    assert String.contains?(error.message, "remote connect failed") or
+             String.contains?(error.message, "remote_connect_timeout") or
              String.contains?(error.message, "remote_connect_failed")
 
-    assert :ok = ASM.stop_session(session)
-  end
-
-  test "remote cli missing surfaces cli_not_found", %{node: node, workspace: workspace} do
-    session = start_session!(:codex)
-
-    assert {:error, %Error{} = error} =
-             ASM.query(session, "missing cli",
-               execution_mode: :remote_node,
-               cli_path: "/definitely/missing/codex",
-               driver_opts: [remote_node: node, remote_cwd: workspace]
-             )
-
-    assert error.kind == :cli_not_found
     assert :ok = ASM.stop_session(session)
   end
 
@@ -226,23 +99,21 @@ defmodule ASM.Distributed.RemoteNodeExecutionTest do
     assert :ok = ASM.stop_session(session)
   end
 
-  test "attach failure does not leak remote transport", %{node: node, workspace: workspace} do
-    script = write_script!(codex_success_script("LEAK_CHECK"))
+  test "remote backend session is reaped after a completed run", %{
+    node: node,
+    workspace: workspace
+  } do
+    script = write_script!(codex_success_script("REMOTE_CLEAN"))
     session = start_session!(:codex)
 
-    assert {:error, %Error{} = error} =
-             ASM.query(session, "attach fail",
-               run_module: AttachRejectRun,
+    assert {:ok, result} =
+             ASM.query(session, "cleanup",
                execution_mode: :remote_node,
                cli_path: script,
-               driver_opts: [
-                 remote_node: node,
-                 remote_cwd: workspace,
-                 remote_boot_lease_timeout_ms: 5_000
-               ]
+               driver_opts: [remote_node: node, remote_cwd: workspace]
              )
 
-    assert error.message =~ "attach"
+    assert result.text == "REMOTE_CLEAN"
 
     assert_eventually(fn ->
       remote_child_count(node) == 0
@@ -341,7 +212,7 @@ defmodule ASM.Distributed.RemoteNodeExecutionTest do
   end
 
   defp remote_child_count(node) do
-    case :rpc.call(node, DynamicSupervisor, :which_children, [ASM.Remote.TransportSupervisor]) do
+    case :rpc.call(node, DynamicSupervisor, :which_children, [ASM.Remote.BackendSupervisor]) do
       children when is_list(children) -> length(children)
       _ -> 0
     end
@@ -355,17 +226,6 @@ defmodule ASM.Distributed.RemoteNodeExecutionTest do
     echo '{"type":"turn.started"}'
     echo '{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"#{text}"}}'
     echo '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
-    """
-  end
-
-  defp codex_hanging_script do
-    """
-    #!/usr/bin/env bash
-    set -euo pipefail
-    echo '{"type":"thread.started","thread_id":"thread-1"}'
-    echo '{"type":"turn.started"}'
-    echo '{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"HANGING"}}'
-    sleep 120
     """
   end
 

@@ -297,104 +297,204 @@ defmodule ASM.Migration.MainCompat do
   end
 
   @spec bridge_event(Event.t()) :: [legacy_event()]
-  def bridge_event(
-        %Event{kind: :assistant_delta, payload: %Message.Partial{delta: delta}} = event
-      )
-      when is_binary(delta) do
-    [legacy_event(event, :message_streamed, %{content: delta, delta: delta})]
+  def bridge_event(%Event{kind: :assistant_delta} = event) do
+    case Event.legacy_payload(event) do
+      %Message.Partial{delta: delta} when is_binary(delta) ->
+        [legacy_event(event, :message_streamed, %{content: delta, delta: delta})]
+
+      _ ->
+        []
+    end
   end
 
-  def bridge_event(
-        %Event{kind: :assistant_message, payload: %Message.Assistant{} = payload} = event
-      ) do
-    text = extract_text(payload.content)
-    [legacy_event(event, :message_received, %{content: text, role: "assistant"})]
+  def bridge_event(%Event{kind: :assistant_message} = event) do
+    case Event.legacy_payload(event) do
+      %Message.Assistant{} = payload ->
+        text = extract_text(payload.content)
+        [legacy_event(event, :message_received, %{content: text, role: "assistant"})]
+
+      _ ->
+        []
+    end
   end
 
-  def bridge_event(%Event{kind: :user_message, payload: %Message.User{} = payload} = event) do
-    text = extract_text(payload.content)
-    [legacy_event(event, :message_sent, %{content: text, role: "user"})]
+  def bridge_event(%Event{kind: :user_message} = event) do
+    case Event.legacy_payload(event) do
+      %Message.User{} = payload ->
+        text = extract_text(payload.content)
+        [legacy_event(event, :message_sent, %{content: text, role: "user"})]
+
+      _ ->
+        []
+    end
   end
 
-  def bridge_event(%Event{kind: :tool_use, payload: %Message.ToolUse{} = payload} = event) do
-    [
-      legacy_event(event, :tool_call_started, %{
-        tool_call_id: payload.tool_id,
-        tool_name: payload.tool_name,
-        tool_input: payload.input
-      })
-    ]
+  def bridge_event(%Event{kind: :tool_use} = event) do
+    case Event.legacy_payload(event) do
+      %Message.ToolUse{} = payload ->
+        [
+          legacy_event(event, :tool_call_started, %{
+            tool_call_id: payload.tool_id,
+            tool_name: payload.tool_name,
+            tool_input: payload.input
+          })
+        ]
+
+      _ ->
+        []
+    end
   end
 
-  def bridge_event(%Event{kind: :tool_result, payload: %Message.ToolResult{} = payload} = event) do
-    type = if payload.is_error, do: :tool_call_failed, else: :tool_call_completed
+  def bridge_event(%Event{kind: :tool_result} = event) do
+    case Event.legacy_payload(event) do
+      %Message.ToolResult{} = payload ->
+        type = if payload.is_error, do: :tool_call_failed, else: :tool_call_completed
 
-    [
-      legacy_event(event, type, %{
-        tool_call_id: payload.tool_id,
-        tool_output: payload.content,
-        is_error: payload.is_error
-      })
-    ]
+        [
+          legacy_event(event, type, %{
+            tool_call_id: payload.tool_id,
+            tool_output: payload.content,
+            is_error: payload.is_error
+          })
+        ]
+
+      _ ->
+        []
+    end
   end
 
-  def bridge_event(
-        %Event{kind: :thinking, payload: %Message.Thinking{thinking: thinking}} = event
-      )
-      when is_binary(thinking) do
-    [
-      legacy_event(event, :message_streamed, %{
-        content: thinking,
-        delta: thinking,
-        kind: :thinking
-      })
-    ]
+  def bridge_event(%Event{kind: :thinking} = event) do
+    case Event.legacy_payload(event) do
+      %Message.Thinking{thinking: thinking} when is_binary(thinking) ->
+        [
+          legacy_event(event, :message_streamed, %{
+            content: thinking,
+            delta: thinking,
+            kind: :thinking
+          })
+        ]
+
+      _ ->
+        []
+    end
   end
 
-  def bridge_event(%Event{kind: :result, payload: %Message.Result{} = payload} = event) do
-    usage = normalize_usage(payload.usage)
+  def bridge_event(%Event{kind: :result} = event) do
+    case Event.legacy_payload(event) do
+      %Message.Result{} = payload ->
+        usage = normalize_usage(payload.usage)
 
-    run_completed_data =
-      %{stop_reason: payload.stop_reason, duration_ms: payload.duration_ms, token_usage: usage}
-      |> maybe_put(:metadata, non_empty_map(payload.metadata))
+        run_completed_data =
+          %{
+            stop_reason: payload.stop_reason,
+            duration_ms: payload.duration_ms,
+            token_usage: usage
+          }
+          |> maybe_put(:metadata, non_empty_map(payload.metadata))
 
-    [
-      legacy_event(event, :token_usage_updated, usage),
-      legacy_event(event, :run_completed, run_completed_data)
-    ]
+        [
+          legacy_event(event, :token_usage_updated, usage),
+          legacy_event(event, :run_completed, run_completed_data)
+        ]
+
+      _ ->
+        []
+    end
   end
 
-  def bridge_event(%Event{kind: :error, payload: %Message.Error{} = payload} = event) do
-    error_data = %{
-      error_code: payload.kind,
-      error_message: payload.message,
-      severity: payload.severity
-    }
+  def bridge_event(%Event{kind: :error} = event) do
+    case Event.legacy_payload(event) do
+      %Message.Error{} = payload ->
+        error_data = %{
+          error_code: payload.kind,
+          error_message: payload.message,
+          severity: payload.severity
+        }
 
-    [
-      legacy_event(event, :error_occurred, error_data),
-      legacy_event(event, :run_failed, Map.drop(error_data, [:severity]))
-    ]
+        [
+          legacy_event(event, :error_occurred, error_data),
+          legacy_event(event, :run_failed, Map.drop(error_data, [:severity]))
+        ]
+
+      _ ->
+        []
+    end
   end
 
-  def bridge_event(
-        %Event{kind: :approval_requested, payload: %Control.ApprovalRequest{} = payload} = event
-      ) do
-    [
-      legacy_event(event, :tool_approval_requested, %{
-        approval_id: payload.approval_id,
-        tool_name: payload.tool_name,
-        tool_input: payload.tool_input
-      })
-    ]
+  def bridge_event(%Event{kind: :approval_requested} = event) do
+    case Event.legacy_payload(event) do
+      %Control.ApprovalRequest{} = payload ->
+        [
+          legacy_event(event, :tool_approval_requested, %{
+            approval_id: payload.approval_id,
+            tool_name: payload.tool_name,
+            tool_input: payload.tool_input
+          })
+        ]
+
+      _ ->
+        []
+    end
   end
 
-  def bridge_event(
-        %Event{kind: :approval_resolved, payload: %Control.ApprovalResolution{} = payload} = event
-      ) do
-    type = if payload.decision == :allow, do: :tool_approval_granted, else: :tool_approval_denied
+  def bridge_event(%Event{kind: :approval_resolved} = event) do
+    case Event.legacy_payload(event) do
+      %Control.ApprovalResolution{} = payload ->
+        type =
+          if payload.decision == :allow, do: :tool_approval_granted, else: :tool_approval_denied
 
-    [legacy_event(event, type, %{approval_id: payload.approval_id, reason: payload.reason})]
+        [legacy_event(event, type, %{approval_id: payload.approval_id, reason: payload.reason})]
+
+      _ ->
+        []
+    end
+  end
+
+  def bridge_event(%Event{kind: :cost_update} = event) do
+    case Event.legacy_payload(event) do
+      %Control.CostUpdate{} = payload ->
+        [
+          legacy_event(event, :token_usage_updated, %{
+            input_tokens: payload.input_tokens,
+            output_tokens: payload.output_tokens,
+            cost_usd: payload.cost_usd
+          })
+        ]
+
+      _ ->
+        []
+    end
+  end
+
+  def bridge_event(%Event{kind: :run_started} = event) do
+    summary =
+      case event.payload do
+        %CliSubprocessCore.Payload.RunStarted{} = payload ->
+          %{
+            provider_session_id: payload.provider_session_id,
+            command: payload.command,
+            args: payload.args,
+            cwd: payload.cwd
+          }
+          |> Enum.reject(fn {_k, v} -> is_nil(v) or v == [] end)
+          |> Map.new()
+
+        _ ->
+          %{}
+      end
+
+    [legacy_event(event, :run_started, summary)]
+  end
+
+  def bridge_event(%Event{kind: :run_completed} = event) do
+    summary =
+      case event.payload do
+        %Control.RunLifecycle{summary: summary} -> ensure_map(summary)
+        %{} = summary -> summary
+        _ -> %{}
+      end
+
+    [legacy_event(event, :run_completed, summary)]
   end
 
   def bridge_event(
@@ -407,26 +507,6 @@ defmodule ASM.Migration.MainCompat do
         action: payload.action
       })
     ]
-  end
-
-  def bridge_event(%Event{kind: :cost_update, payload: %Control.CostUpdate{} = payload} = event) do
-    [
-      legacy_event(event, :token_usage_updated, %{
-        input_tokens: payload.input_tokens,
-        output_tokens: payload.output_tokens,
-        cost_usd: payload.cost_usd
-      })
-    ]
-  end
-
-  def bridge_event(%Event{kind: :run_started, payload: %Control.RunLifecycle{} = payload} = event) do
-    [legacy_event(event, :run_started, ensure_map(payload.summary))]
-  end
-
-  def bridge_event(
-        %Event{kind: :run_completed, payload: %Control.RunLifecycle{} = payload} = event
-      ) do
-    [legacy_event(event, :run_completed, ensure_map(payload.summary))]
   end
 
   def bridge_event(%Event{}), do: []

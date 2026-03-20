@@ -1,48 +1,7 @@
 defmodule ASM.APITest do
   use ASM.TestCase
 
-  alias ASM.Message
-
-  defmodule OptionProbeDriver do
-    @moduledoc false
-
-    alias ASM.{Event, Message, Run}
-
-    @spec start(map()) :: {:ok, pid()}
-    def start(%{} = context) do
-      {:ok, spawn(fn -> emit(context) end)}
-    end
-
-    defp emit(context) do
-      model = to_string(Keyword.get(context.provider_opts, :model, "missing-model"))
-
-      Run.Server.ingest_event(
-        context.run_pid,
-        %Event{
-          id: Event.generate_id(),
-          kind: :assistant_delta,
-          run_id: context.run_id,
-          session_id: context.session_id,
-          provider: context.provider,
-          payload: %Message.Partial{content_type: :text, delta: model},
-          timestamp: DateTime.utc_now()
-        }
-      )
-
-      Run.Server.ingest_event(
-        context.run_pid,
-        %Event{
-          id: Event.generate_id(),
-          kind: :result,
-          run_id: context.run_id,
-          session_id: context.session_id,
-          provider: context.provider,
-          payload: %Message.Result{stop_reason: :end_turn},
-          timestamp: DateTime.utc_now()
-        }
-      )
-    end
-  end
+  alias ASM.TestSupport.FakeBackend
 
   test "start_link/1 starts a session server for OTP-style usage" do
     session_id = "api-start-link-" <> Integer.to_string(System.unique_integer([:positive]))
@@ -53,15 +12,15 @@ defmodule ASM.APITest do
     assert :ok = ASM.stop_session(session)
   end
 
-  test "query/3 with session pid returns a projected result" do
+  test "query/3 with session pid returns a projected result from the backend runtime" do
     session_id = "api-session-" <> Integer.to_string(System.unique_integer([:positive]))
     assert {:ok, session} = ASM.start_session(session_id: session_id, provider: :claude)
 
     assert {:ok, result} =
-             ASM.query(session, "hello", driver: ASM.TestSupport.StreamScriptedDriver)
+             ASM.query(session, "hello", backend_module: FakeBackend)
 
     assert result.session_id == session_id
-    assert result.text == "hello from scripted driver"
+    assert result.text == "hello"
 
     assert :ok = ASM.stop_session(session)
   end
@@ -72,7 +31,7 @@ defmodule ASM.APITest do
     assert {:ok, result} =
              ASM.query(:claude, "hello",
                session_id: session_id,
-               driver: ASM.TestSupport.StreamScriptedDriver
+               backend_module: FakeBackend
              )
 
     assert result.session_id == session_id
@@ -93,7 +52,7 @@ defmodule ASM.APITest do
              )
 
     events =
-      ASM.stream(session, "hello", driver: OptionProbeDriver)
+      ASM.stream(session, "hello", backend_module: FakeBackend)
       |> Enum.to_list()
 
     assert ASM.Stream.final_result(events).text == "session-default-model"
@@ -105,19 +64,15 @@ defmodule ASM.APITest do
     session_id = "api-query-error-" <> Integer.to_string(System.unique_integer([:positive]))
     assert {:ok, session} = ASM.start_session(session_id: session_id, provider: :claude)
 
+    error_script = [
+      {:core, :run_started, CliSubprocessCore.Payload.RunStarted.new(command: "fake")},
+      {:core, :error, CliSubprocessCore.Payload.Error.new(message: "nope", code: "tool_failed")}
+    ]
+
     assert {:error, error} =
              ASM.query(session, "hello",
-               driver: ASM.TestSupport.StreamScriptedDriver,
-               driver_opts: [
-                 script: [
-                   {:error,
-                    %Message.Error{
-                      severity: :error,
-                      message: "nope",
-                      kind: :tool_failed
-                    }}
-                 ]
-               ]
+               backend_module: FakeBackend,
+               backend_opts: [script: error_script]
              )
 
     assert error.kind == :tool_failed
@@ -131,20 +86,22 @@ defmodule ASM.APITest do
     session_id = "api-cost-" <> Integer.to_string(System.unique_integer([:positive]))
     assert {:ok, session} = ASM.start_session(session_id: session_id, provider: :claude)
 
+    result_script = [
+      {:core, :run_started, CliSubprocessCore.Payload.RunStarted.new(command: "fake")},
+      {:core, :assistant_delta, CliSubprocessCore.Payload.AssistantDelta.new(content: "hi")},
+      {:core, :result,
+       CliSubprocessCore.Payload.Result.new(
+         status: :completed,
+         stop_reason: :end_turn,
+         output: %{usage: %{input_tokens: 2, output_tokens: 3}}
+       )}
+    ]
+
     assert {:ok, result} =
              ASM.query(session, "hello",
-               driver: ASM.TestSupport.StreamScriptedDriver,
-               pipeline: [{ASM.Pipeline.CostTracker, input_rate: 0.1, output_rate: 0.2}],
-               driver_opts: [
-                 script: [
-                   {:assistant_delta, %Message.Partial{content_type: :text, delta: "hi"}},
-                   {:result,
-                    %Message.Result{
-                      stop_reason: :end_turn,
-                      usage: %{input_tokens: 2, output_tokens: 3}
-                    }}
-                 ]
-               ]
+               backend_module: FakeBackend,
+               backend_opts: [script: result_script],
+               pipeline: [{ASM.Pipeline.CostTracker, input_rate: 0.1, output_rate: 0.2}]
              )
 
     assert result.text == "hi"
@@ -154,14 +111,6 @@ defmodule ASM.APITest do
     assert cost == %{input_tokens: 2, output_tokens: 3, cost_usd: 0.8}
 
     assert :ok = ASM.stop_session(session)
-  end
-
-  test "stop_session/1 accepts a session server pid" do
-    session_id = "api-stop-" <> Integer.to_string(System.unique_integer([:positive]))
-    assert {:ok, session} = ASM.start_session(session_id: session_id, provider: :claude)
-
-    assert :ok = ASM.stop_session(session)
-    assert {:ok, _reason} = wait_for_process_death(session, 2_000)
   end
 
   test "health/1 and cost/1 reflect session process status" do

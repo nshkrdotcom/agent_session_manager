@@ -11,7 +11,10 @@ defmodule ASM.Remote.NodeConnector do
           required(:remote_node) => atom(),
           optional(:remote_cookie) => atom() | nil,
           optional(:remote_connect_timeout_ms) => pos_integer(),
-          optional(:remote_rpc_timeout_ms) => pos_integer()
+          optional(:remote_rpc_timeout_ms) => pos_integer(),
+          optional(:remote_boot_lease_timeout_ms) => pos_integer(),
+          optional(:remote_bootstrap_mode) => :require_prestarted | :ensure_started,
+          optional(:remote_cwd) => String.t() | nil
         }
 
   @spec ensure_connected(remote_cfg(), keyword()) ::

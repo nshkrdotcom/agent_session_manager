@@ -4,6 +4,7 @@ defmodule ASM.Run.State do
   """
 
   @enforce_keys [:run_id, :session_id, :provider]
+  # credo:disable-for-next-line Credo.Check.Warning.StructFieldAmount
   defstruct [
     :run_id,
     :session_id,
@@ -22,6 +23,7 @@ defmodule ASM.Run.State do
     :result,
     :error,
     :cost,
+    :tools,
     :backend,
     :backend_opts,
     :backend_pid,
@@ -67,6 +69,7 @@ defmodule ASM.Run.State do
           result: ASM.Result.t() | nil,
           error: ASM.Error.t() | nil,
           cost: cost_totals(),
+          tools: %{optional(String.t()) => term()},
           backend: module() | nil,
           backend_opts: keyword(),
           backend_pid: pid() | nil,
@@ -106,6 +109,7 @@ defmodule ASM.Run.State do
       result: nil,
       error: nil,
       cost: %{input_tokens: 0, output_tokens: 0, cost_usd: 0.0},
+      tools: Keyword.get(opts, :tools, %{}),
       backend: Keyword.get(opts, :backend_module),
       backend_opts: Keyword.get(opts, :backend_opts, []),
       backend_pid: nil,

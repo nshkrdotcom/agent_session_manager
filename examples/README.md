@@ -24,7 +24,7 @@ mix run examples/live_workspace_snapshot.exs -- "Reply with exactly: WORKSPACE_O
 Supplemental SDK-lane example:
 
 ```bash
-mix run examples/sdk_driver_demo.exs
+mix run examples/sdk_backend_demo.exs
 ```
 
 ## Environment
@@ -73,4 +73,4 @@ Claude streams automatically use the `script` PTY wrapper when available, and fa
 - `live_rendering_stream.exs`: rendering extension on live adapters with compact/verbose output streamed to terminal and file sinks.
 - `live_pub_sub_stream.exs`: PubSub broadcaster wired through the run pipeline, with local topic subscription and realtime message consumption output.
 - `live_workspace_snapshot.exs`: pre/post workspace snapshots around a live query, diff verification, rollback, and temporary workspace cleanup.
-- `sdk_driver_demo.exs`: supplemental SDK-lane stream demonstration using `lane: :sdk`.
+- `sdk_backend_demo.exs`: supplemental SDK-lane stream demonstration using `lane: :sdk`.

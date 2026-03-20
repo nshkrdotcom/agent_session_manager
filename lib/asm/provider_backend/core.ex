@@ -60,9 +60,8 @@ defmodule ASM.ProviderBackend.Core do
        when is_map(remote_cfg) do
     with :ok <- connect_remote(remote_cfg),
          :ok <- preflight_remote(remote_cfg),
-         :ok <- maybe_bootstrap_remote(remote_cfg),
-         {:ok, pid, info} <- remote_start(remote_cfg, session_opts) do
-      {:ok, pid, info}
+         :ok <- maybe_bootstrap_remote(remote_cfg) do
+      remote_start(remote_cfg, session_opts)
     end
   end
 
@@ -121,37 +120,43 @@ defmodule ASM.ProviderBackend.Core do
       :ok ->
         :ok
 
-      {:error, :remote_not_ready} when remote_cfg.remote_bootstrap_mode == :ensure_started ->
-        :ok
+      {:error, :remote_not_ready} ->
+        if Map.get(remote_cfg, :remote_bootstrap_mode, :require_prestarted) == :ensure_started do
+          :ok
+        else
+          {:error, remote_error("remote preflight failed: :remote_not_ready", :remote_not_ready)}
+        end
 
       {:error, reason} ->
         {:error, remote_error("remote preflight failed: #{inspect(reason)}", reason)}
     end
   end
 
-  defp maybe_bootstrap_remote(%{remote_bootstrap_mode: :ensure_started} = remote_cfg) do
-    case :rpc.call(
-           remote_cfg.remote_node,
-           Application,
-           :ensure_all_started,
-           [:agent_session_manager],
-           remote_cfg.remote_rpc_timeout_ms
-         ) do
-      {:ok, _apps} ->
-        :ok
+  defp maybe_bootstrap_remote(remote_cfg) do
+    if Map.get(remote_cfg, :remote_bootstrap_mode, :require_prestarted) == :ensure_started do
+      case :rpc.call(
+             remote_cfg.remote_node,
+             Application,
+             :ensure_all_started,
+             [:agent_session_manager],
+             remote_cfg.remote_rpc_timeout_ms
+           ) do
+        {:ok, _apps} ->
+          :ok
 
-      {:error, reason} ->
-        {:error, remote_error("remote bootstrap failed: #{inspect(reason)}", reason)}
+        {:error, reason} ->
+          {:error, remote_error("remote bootstrap failed: #{inspect(reason)}", reason)}
 
-      {:badrpc, reason} ->
-        {:error, remote_error("remote bootstrap failed: #{inspect(reason)}", reason)}
+        {:badrpc, reason} ->
+          {:error, remote_error("remote bootstrap failed: #{inspect(reason)}", reason)}
 
-      _other ->
-        :ok
+        _other ->
+          :ok
+      end
+    else
+      :ok
     end
   end
-
-  defp maybe_bootstrap_remote(_remote_cfg), do: :ok
 
   defp remote_start(remote_cfg, session_opts) do
     case :rpc.call(

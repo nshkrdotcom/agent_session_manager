@@ -1,15 +1,13 @@
 defmodule ASM.Session.Server do
   @moduledoc """
-  Session aggregate root process.
-
-  `T20` foundation keeps this server lean and topology-focused.
-  Behavioral run/approval logic is implemented in later phases.
+  Session aggregate root for run admission, approval routing, and cost totals.
   """
 
   use GenServer
 
   alias ASM.{Control, Error}
   alias ASM.Provider
+  alias ASM.Run.ApprovalCoordinator
   alias ASM.Session.State
 
   @spec start_link(keyword()) :: GenServer.on_start()
@@ -88,26 +86,31 @@ defmodule ASM.Session.Server do
   end
 
   def handle_call({:resolve_approval, approval_id, decision}, _from, state) do
-    case Map.pop(state.pending_approval_index, approval_id) do
-      {nil, _remaining} ->
+    case ApprovalCoordinator.resolve(state.pending_approval_index, approval_id) do
+      {:error, :unknown_approval, _remaining} ->
         {:reply, {:error, Error.new(:unknown, :approval, "Unknown approval id: #{approval_id}")},
          state}
 
-      {run_pid, remaining} ->
+      {:ok, run_pid, remaining} ->
         GenServer.cast(run_pid, {:resolve_approval, approval_id, decision})
         {:reply, :ok, %{state | pending_approval_index: remaining}}
     end
   end
 
   @impl true
-  def handle_info({:register_approval, approval_id, run_pid}, state)
-      when is_binary(approval_id) and is_pid(run_pid) do
-    {:noreply, put_in(state.pending_approval_index[approval_id], run_pid)}
+  def handle_info({:register_approval, run_pid, %Control.ApprovalRequest{} = request}, state)
+      when is_pid(run_pid) do
+    index = ApprovalCoordinator.register(state.pending_approval_index, run_pid, request)
+    {:noreply, %{state | pending_approval_index: index}}
   end
 
   def handle_info({:clear_approval, approval_id}, state) when is_binary(approval_id) do
     {:noreply,
-     %{state | pending_approval_index: Map.delete(state.pending_approval_index, approval_id)}}
+     %{
+       state
+       | pending_approval_index:
+           ApprovalCoordinator.clear(state.pending_approval_index, approval_id)
+     }}
   end
 
   def handle_info({:cost_update, %Control.CostUpdate{} = payload}, state) do

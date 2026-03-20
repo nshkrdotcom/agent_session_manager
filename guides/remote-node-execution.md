@@ -4,13 +4,14 @@
 
 ## Enable Remote Mode
 
-Use `execution_mode: :remote_node` and configure remote options in `driver_opts`.
+Use `execution_mode: :remote_node` and configure remote backend options in `driver_opts`.
 
 ```elixir
 {:ok, session} =
   ASM.start_session(
     provider: :codex,
     execution_mode: :remote_node,
+    # Phase 1 keeps remote backend options under :driver_opts
     driver_opts: [
       remote_node: :"asm@sandbox-a",
       remote_cookie: :cluster_cookie,

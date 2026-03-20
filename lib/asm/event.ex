@@ -56,6 +56,23 @@ defmodule ASM.Event do
   @crockford ~c"0123456789ABCDEFGHJKMNPQRSTVWXYZ"
   @ulid_chars 26
   @max_timestamp 281_474_976_710_655
+  @normalized_error_kinds %{
+    "approval_denied" => :approval_denied,
+    "auth_error" => :auth_error,
+    "buffer_overflow" => :buffer_overflow,
+    "cli_not_found" => :cli_not_found,
+    "config_invalid" => :config_invalid,
+    "connection_failed" => :connection_failed,
+    "json_decode_error" => :json_decode_error,
+    "parse_error" => :parse_error,
+    "rate_limit" => :rate_limit,
+    "timeout" => :timeout,
+    "tool_failed" => :tool_failed,
+    "transport_busy" => :transport_busy,
+    "transport_error" => :transport_error,
+    "unknown" => :unknown,
+    "user_cancelled" => :user_cancelled
+  }
 
   @spec kinds() :: [kind()]
   def kinds, do: @kinds
@@ -297,28 +314,13 @@ defmodule ASM.Event do
     |> String.trim()
     |> String.downcase()
     |> String.replace("-", "_")
-    |> case do
-      "" -> :unknown
-      "approval_denied" -> :approval_denied
-      "auth_error" -> :auth_error
-      "buffer_overflow" -> :buffer_overflow
-      "cli_not_found" -> :cli_not_found
-      "config_invalid" -> :config_invalid
-      "connection_failed" -> :connection_failed
-      "json_decode_error" -> :json_decode_error
-      "parse_error" -> :parse_error
-      "rate_limit" -> :rate_limit
-      "timeout" -> :timeout
-      "tool_failed" -> :tool_failed
-      "transport_busy" -> :transport_busy
-      "transport_error" -> :transport_error
-      "unknown" -> :unknown
-      "user_cancelled" -> :user_cancelled
-      _other -> :unknown
-    end
+    |> lookup_error_kind()
   end
 
   defp normalize_error_kind(_kind), do: :unknown
+
+  defp lookup_error_kind(""), do: :unknown
+  defp lookup_error_kind(kind), do: Map.get(@normalized_error_kinds, kind, :unknown)
 
   defp normalize_legacy_severity(:info), do: :warning
 

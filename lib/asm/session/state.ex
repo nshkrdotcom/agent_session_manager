@@ -12,7 +12,6 @@ defmodule ASM.Session.State do
     :provider_profile,
     :options,
     status: :ready,
-    transport_pid: nil,
     active_runs: %{},
     run_monitors: %{},
     run_queue: :queue.new(),
@@ -27,7 +26,6 @@ defmodule ASM.Session.State do
           provider_profile: Provider.Profile.t(),
           options: keyword(),
           status: :ready | :stopped,
-          transport_pid: pid() | nil,
           active_runs: %{optional(String.t()) => pid()},
           run_monitors: %{optional(pid()) => reference()},
           # :queue is opaque to Dialyzer; keep this field generic at the type level.
@@ -52,8 +50,32 @@ defmodule ASM.Session.State do
     %__MODULE__{
       session_id: session_id,
       provider: provider,
-      provider_profile: provider.profile,
+      provider_profile: profile_from_options(provider.profile, options),
       options: options
     }
+  end
+
+  defp profile_from_options(%Provider.Profile{} = profile, options) when is_list(options) do
+    %Provider.Profile{
+      profile
+      | max_concurrent_runs:
+          positive_integer_option(options, :max_concurrent_runs, profile.max_concurrent_runs),
+        max_queued_runs:
+          non_neg_integer_option(options, :max_queued_runs, profile.max_queued_runs)
+    }
+  end
+
+  defp positive_integer_option(options, key, default) do
+    case Keyword.get(options, key, default) do
+      value when is_integer(value) and value > 0 -> value
+      _other -> default
+    end
+  end
+
+  defp non_neg_integer_option(options, key, default) do
+    case Keyword.get(options, key, default) do
+      value when is_integer(value) and value >= 0 -> value
+      _other -> default
+    end
   end
 end

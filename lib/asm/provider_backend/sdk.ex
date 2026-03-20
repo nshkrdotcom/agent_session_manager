@@ -6,6 +6,7 @@ defmodule ASM.ProviderBackend.SDK do
   @behaviour ASM.ProviderBackend
 
   alias ASM.{Error, Execution, Provider}
+  alias ASM.ProviderBackend.SDK.SessionProxy
 
   @impl true
   def start_run(%{provider: %Provider{} = provider} = config) do
@@ -281,7 +282,7 @@ defmodule ASM.ProviderBackend.SDK do
 
     @impl true
     def init({runtime, start_opts, provider, caller, ref}) do
-      case apply(runtime, :start_session, [start_opts]) do
+      case runtime.start_session(start_opts) do
         {:ok, session, info} ->
           send(caller, {:asm_sdk_proxy_started, ref, info})
 
@@ -301,19 +302,19 @@ defmodule ASM.ProviderBackend.SDK do
 
     @impl true
     def handle_call({:send_input, input, opts}, _from, %__MODULE__{} = state) do
-      {:reply, apply(state.runtime, :send_input, [state.session, input, opts]), state}
+      {:reply, state.runtime.send_input(state.session, input, opts), state}
     end
 
     def handle_call(:end_input, _from, %__MODULE__{} = state) do
-      {:reply, apply(state.runtime, :end_input, [state.session]), state}
+      {:reply, state.runtime.end_input(state.session), state}
     end
 
     def handle_call(:interrupt, _from, %__MODULE__{} = state) do
-      {:reply, apply(state.runtime, :interrupt, [state.session]), state}
+      {:reply, state.runtime.interrupt(state.session), state}
     end
 
     def handle_call({:subscribe, pid, ref}, _from, %__MODULE__{} = state) do
-      {:reply, apply(state.runtime, :subscribe, [state.session, pid, ref]), state}
+      {:reply, state.runtime.subscribe(state.session, pid, ref), state}
     end
 
     def handle_call(:info, _from, %__MODULE__{} = state) do
@@ -327,7 +328,7 @@ defmodule ASM.ProviderBackend.SDK do
 
     @impl true
     def terminate(_reason, %__MODULE__{} = state) do
-      _ = apply(state.runtime, :close, [state.session])
+      _ = state.runtime.close(state.session)
       :ok
     end
 

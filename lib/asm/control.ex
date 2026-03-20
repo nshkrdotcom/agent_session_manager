@@ -3,17 +3,6 @@ defmodule ASM.Control do
   Control-layer payload variants.
   """
 
-  defmodule TransportStatus do
-    @moduledoc """
-    Transport lifecycle transition emitted by the runtime.
-    """
-    @enforce_keys [:status, :transport_pid]
-    defstruct [:status, :transport_pid]
-
-    @type status :: :opened | :closed
-    @type t :: %__MODULE__{status: status(), transport_pid: pid()}
-  end
-
   defmodule ApprovalRequest do
     @moduledoc """
     Tool approval prompt emitted when the provider requires operator input.
@@ -76,17 +65,6 @@ defmodule ASM.Control do
     @type t :: %__MODULE__{status: status(), summary: map()}
   end
 
-  defmodule Backpressure do
-    @moduledoc """
-    Backpressure status payload for queue growth and policy behavior.
-    """
-    @enforce_keys [:queue_size, :policy, :run_id]
-    defstruct [:queue_size, :policy, :run_id]
-
-    @type policy :: :drop_oldest | :fail_run | :block
-    @type t :: %__MODULE__{queue_size: non_neg_integer(), policy: policy(), run_id: String.t()}
-  end
-
   defmodule Raw do
     @moduledoc """
     Provider-native control event preserved in normalized form.
@@ -98,12 +76,10 @@ defmodule ASM.Control do
   end
 
   @type t ::
-          TransportStatus.t()
-          | ApprovalRequest.t()
+          ApprovalRequest.t()
           | ApprovalResolution.t()
           | GuardrailTrigger.t()
           | CostUpdate.t()
           | RunLifecycle.t()
-          | Backpressure.t()
           | Raw.t()
 end

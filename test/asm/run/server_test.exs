@@ -1,7 +1,7 @@
 defmodule ASM.Run.ServerTest do
   use ASM.TestCase
 
-  alias ASM.{Error, Event, Run}
+  alias ASM.{Event, Run}
   alias ASM.Execution.Config
   alias ASM.TestSupport.FakeBackend
   alias CliSubprocessCore.Payload
@@ -16,27 +16,36 @@ defmodule ASM.Run.ServerTest do
     alias CliSubprocessCore.Event, as: CoreEvent
     alias CliSubprocessCore.Payload
 
+    @impl true
     def start_run(config) do
-      GenServer.start_link(__MODULE__, config)
+      with {:ok, pid} <- GenServer.start_link(__MODULE__, config) do
+        {:ok, pid, %{backend: :interrupt_probe, provider: config.provider.name}}
+      end
     end
 
+    @impl true
     def send_input(_server, _input, _opts \\ []), do: :ok
+    @impl true
     def end_input(_server), do: :ok
 
+    @impl true
     def interrupt(server) do
       GenServer.call(server, :interrupt)
     end
 
+    @impl true
     def close(server) do
       GenServer.stop(server, :normal)
     catch
       :exit, _ -> :ok
     end
 
+    @impl true
     def subscribe(server, pid, ref) do
       GenServer.call(server, {:subscribe, pid, ref})
     end
 
+    @impl true
     def info(server) do
       GenServer.call(server, :info)
     end
@@ -98,24 +107,33 @@ defmodule ASM.Run.ServerTest do
     alias CliSubprocessCore.Event, as: CoreEvent
     alias CliSubprocessCore.Payload
 
+    @impl true
     def start_run(config) do
-      GenServer.start_link(__MODULE__, config)
+      with {:ok, pid} <- GenServer.start_link(__MODULE__, config) do
+        {:ok, pid, %{backend: :crash_probe, provider: config.provider.name}}
+      end
     end
 
+    @impl true
     def send_input(_server, _input, _opts \\ []), do: :ok
+    @impl true
     def end_input(_server), do: :ok
+    @impl true
     def interrupt(_server), do: :ok
 
+    @impl true
     def close(server) do
       GenServer.stop(server, :normal)
     catch
       :exit, _ -> :ok
     end
 
+    @impl true
     def subscribe(server, pid, ref) do
       GenServer.call(server, {:subscribe, pid, ref})
     end
 
+    @impl true
     def info(server) do
       GenServer.call(server, :info)
     end
@@ -164,6 +182,100 @@ defmodule ASM.Run.ServerTest do
     end
   end
 
+  defmodule SubscribeProbeBackend do
+    @moduledoc false
+
+    use GenServer
+
+    @behaviour ASM.ProviderBackend
+
+    alias CliSubprocessCore.Event, as: CoreEvent
+    alias CliSubprocessCore.Payload
+
+    @impl true
+    def start_run(config) do
+      with {:ok, pid} <- GenServer.start_link(__MODULE__, config) do
+        {:ok, pid, %{backend: :subscribe_probe, provider: config.provider.name}}
+      end
+    end
+
+    @impl true
+    def send_input(_server, _input, _opts \\ []), do: :ok
+    @impl true
+    def end_input(_server), do: :ok
+    @impl true
+    def interrupt(_server), do: :ok
+
+    @impl true
+    def close(server) do
+      GenServer.stop(server, :normal)
+    catch
+      :exit, _ -> :ok
+    end
+
+    @impl true
+    def subscribe(server, pid, ref) do
+      GenServer.call(server, {:subscribe, pid, ref})
+    end
+
+    @impl true
+    def info(server) do
+      GenServer.call(server, :info)
+    end
+
+    @impl true
+    def init(config) do
+      {:ok,
+       %{
+         provider: config.provider.name,
+         test_pid: Keyword.get(config.backend_opts, :test_pid)
+       }}
+    end
+
+    @impl true
+    def handle_call({:subscribe, pid, ref}, _from, state) do
+      if is_pid(state.test_pid) do
+        send(state.test_pid, {:backend_subscribed, self(), pid, ref})
+      end
+
+      emit_core_event(
+        pid,
+        ref,
+        state.provider,
+        :run_started,
+        Payload.RunStarted.new(command: "subscribe")
+      )
+
+      emit_core_event(
+        pid,
+        ref,
+        state.provider,
+        :assistant_delta,
+        Payload.AssistantDelta.new(content: "ready")
+      )
+
+      emit_core_event(
+        pid,
+        ref,
+        state.provider,
+        :result,
+        Payload.Result.new(status: :completed, stop_reason: :end_turn)
+      )
+
+      {:reply, :ok, state}
+    end
+
+    def handle_call(:info, _from, state) do
+      {:reply, %{backend: :subscribe_probe, provider: state.provider}, state}
+    end
+
+    defp emit_core_event(pid, ref, provider, kind, payload)
+         when is_pid(pid) and is_reference(ref) do
+      event = CoreEvent.new(kind, provider: provider, payload: payload)
+      send(pid, {:cli_subprocess_core_session, ref, {:event, event}})
+    end
+  end
+
   test "bootstrap consumes backend events and finishes on result" do
     assert {:ok, run_pid} =
              Run.Server.start_link(
@@ -179,6 +291,26 @@ defmodule ASM.Run.ServerTest do
     assert_receive {:asm_run_event, "run-boot", %Event{kind: :assistant_delta}}
     assert_receive {:asm_run_event, "run-boot", %Event{kind: :result}}
     assert_receive {:asm_run_done, "run-boot"}
+    assert {:ok, :normal} = wait_for_process_death(run_pid, 2_000)
+  end
+
+  test "bootstrap explicitly subscribes to backend events" do
+    assert {:ok, run_pid} =
+             Run.Server.start_link(
+               run_id: "run-subscribe",
+               session_id: "session-subscribe",
+               provider: :claude,
+               subscriber: self(),
+               backend_module: SubscribeProbeBackend,
+               backend_opts: [test_pid: self()],
+               execution_config: local_execution_config()
+             )
+
+    assert_receive {:backend_subscribed, _backend_pid, ^run_pid, ref} when is_reference(ref)
+    assert_receive {:asm_run_event, "run-subscribe", %Event{kind: :run_started}}
+    assert_receive {:asm_run_event, "run-subscribe", %Event{kind: :assistant_delta}}
+    assert_receive {:asm_run_event, "run-subscribe", %Event{kind: :result}}
+    assert_receive {:asm_run_done, "run-subscribe"}
     assert {:ok, :normal} = wait_for_process_death(run_pid, 2_000)
   end
 
@@ -257,6 +389,7 @@ defmodule ASM.Run.ServerTest do
     assert_receive {:DOWN, ^ref, :process, ^run_pid, :normal}
   end
 
+  @tag capture_log: true
   test "backend crash surfaces terminal error and stops run" do
     assert {:ok, run_pid} =
              Run.Server.start_link(
@@ -272,13 +405,8 @@ defmodule ASM.Run.ServerTest do
     assert_receive {:asm_run_event, "run-crash", %Event{kind: :error} = event}
     assert Event.legacy_payload(event).kind == :transport_error
     assert_receive {:asm_run_done, "run-crash"}
-    assert {:ok, :normal} = wait_for_process_death(run_pid, 2_000)
-  end
-
-  test "attach_transport/2 returns explicit config error in backend runtime" do
-    assert {:error, %Error{} = error} = Run.Server.attach_transport(self(), self())
-    assert error.kind == :config_invalid
-    assert error.message =~ "unavailable"
+    assert {:ok, reason} = wait_for_process_death(run_pid, 2_000)
+    assert reason in [:normal, :noproc]
   end
 
   defp local_execution_config do

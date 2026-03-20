@@ -2,6 +2,7 @@ defmodule ASM.APITest do
   use ASM.TestCase
 
   alias ASM.TestSupport.FakeBackend
+  alias CliSubprocessCore.Payload.{AssistantDelta, Error, Result, RunStarted}
 
   test "start_link/1 starts a session server for OTP-style usage" do
     session_id = "api-start-link-" <> Integer.to_string(System.unique_integer([:positive]))
@@ -65,8 +66,8 @@ defmodule ASM.APITest do
     assert {:ok, session} = ASM.start_session(session_id: session_id, provider: :claude)
 
     error_script = [
-      {:core, :run_started, CliSubprocessCore.Payload.RunStarted.new(command: "fake")},
-      {:core, :error, CliSubprocessCore.Payload.Error.new(message: "nope", code: "tool_failed")}
+      {:core, :run_started, RunStarted.new(command: "fake")},
+      {:core, :error, Error.new(message: "nope", code: "tool_failed")}
     ]
 
     assert {:error, error} =
@@ -87,10 +88,10 @@ defmodule ASM.APITest do
     assert {:ok, session} = ASM.start_session(session_id: session_id, provider: :claude)
 
     result_script = [
-      {:core, :run_started, CliSubprocessCore.Payload.RunStarted.new(command: "fake")},
-      {:core, :assistant_delta, CliSubprocessCore.Payload.AssistantDelta.new(content: "hi")},
+      {:core, :run_started, RunStarted.new(command: "fake")},
+      {:core, :assistant_delta, AssistantDelta.new(content: "hi")},
       {:core, :result,
-       CliSubprocessCore.Payload.Result.new(
+       Result.new(
          status: :completed,
          stop_reason: :end_turn,
          output: %{usage: %{input_tokens: 2, output_tokens: 3}}

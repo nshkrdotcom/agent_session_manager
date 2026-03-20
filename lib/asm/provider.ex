@@ -31,77 +31,8 @@ defmodule ASM.Provider do
           metadata: map()
         }
 
-  @providers %{
-    claude: %__MODULE__{
-      name: :claude,
-      display_name: "Claude CLI",
-      core_profile: CliSubprocessCore.ProviderProfiles.Claude,
-      sdk_runtime: ClaudeAgentSDK.Runtime.CLI,
-      options_schema: ASM.Options.Claude.schema(),
-      profile:
-        Profile.new!(
-          transport_mode: :persistent_stdio,
-          input_mode: :stdin,
-          control_mode: :stdio_bidirectional,
-          session_mode: :provider_managed,
-          transport_restart: :transient,
-          max_concurrent_runs: 1,
-          max_queued_runs: 10
-        )
-    },
-    codex: %__MODULE__{
-      name: :codex,
-      display_name: "Codex CLI",
-      core_profile: CliSubprocessCore.ProviderProfiles.Codex,
-      sdk_runtime: Codex.Runtime.Exec,
-      options_schema: ASM.Options.Codex.schema(),
-      aliases: [:codex_exec],
-      profile:
-        Profile.new!(
-          transport_mode: :exec_stdio,
-          input_mode: :flag,
-          control_mode: :none,
-          session_mode: :asm_managed,
-          max_concurrent_runs: 1,
-          max_queued_runs: 10
-        )
-    },
-    gemini: %__MODULE__{
-      name: :gemini,
-      display_name: "Gemini CLI",
-      core_profile: CliSubprocessCore.ProviderProfiles.Gemini,
-      sdk_runtime: GeminiCliSdk.Runtime.CLI,
-      options_schema: ASM.Options.Gemini.schema(),
-      profile:
-        Profile.new!(
-          transport_mode: :exec_stdio,
-          input_mode: :flag,
-          control_mode: :none,
-          session_mode: :asm_managed,
-          max_concurrent_runs: 1,
-          max_queued_runs: 10
-        )
-    },
-    amp: %__MODULE__{
-      name: :amp,
-      display_name: "Amp CLI",
-      core_profile: CliSubprocessCore.ProviderProfiles.Amp,
-      sdk_runtime: AmpSdk.Runtime.CLI,
-      options_schema: ASM.Options.Amp.schema(),
-      profile:
-        Profile.new!(
-          transport_mode: :exec_stdio,
-          input_mode: :flag,
-          control_mode: :none,
-          session_mode: :asm_managed,
-          max_concurrent_runs: 1,
-          max_queued_runs: 10
-        )
-    }
-  }
-
   @spec supported_providers() :: [provider_name()]
-  def supported_providers, do: Map.keys(@providers)
+  def supported_providers, do: Map.keys(providers())
 
   @spec resolve(t() | provider_name()) :: {:ok, t()} | {:error, Error.t()}
   def resolve(%__MODULE__{} = provider), do: {:ok, provider}
@@ -144,20 +75,74 @@ defmodule ASM.Provider do
   end
 
   defp find_provider(name) do
-    case Map.fetch(@providers, normalize_name(name)) do
+    case Map.fetch(providers(), normalize_name(name)) do
       {:ok, provider} -> {:ok, provider}
       :error -> find_alias(name)
     end
   end
 
   defp find_alias(name) do
-    Enum.find_value(@providers, :error, fn {_id, provider} ->
+    Enum.find_value(providers(), :error, fn {_id, provider} ->
       if name in provider.aliases do
         {:ok, provider}
       else
         false
       end
     end)
+  end
+
+  defp providers do
+    %{
+      claude: %__MODULE__{
+        name: :claude,
+        display_name: "Claude CLI",
+        core_profile: CliSubprocessCore.ProviderProfiles.Claude,
+        sdk_runtime: ClaudeAgentSDK.Runtime.CLI,
+        options_schema: ASM.Options.Claude.schema(),
+        profile:
+          Profile.new!(
+            max_concurrent_runs: 1,
+            max_queued_runs: 10
+          )
+      },
+      codex: %__MODULE__{
+        name: :codex,
+        display_name: "Codex CLI",
+        core_profile: CliSubprocessCore.ProviderProfiles.Codex,
+        sdk_runtime: Codex.Runtime.Exec,
+        options_schema: ASM.Options.Codex.schema(),
+        aliases: [:codex_exec],
+        profile:
+          Profile.new!(
+            max_concurrent_runs: 1,
+            max_queued_runs: 10
+          )
+      },
+      gemini: %__MODULE__{
+        name: :gemini,
+        display_name: "Gemini CLI",
+        core_profile: CliSubprocessCore.ProviderProfiles.Gemini,
+        sdk_runtime: GeminiCliSdk.Runtime.CLI,
+        options_schema: ASM.Options.Gemini.schema(),
+        profile:
+          Profile.new!(
+            max_concurrent_runs: 1,
+            max_queued_runs: 10
+          )
+      },
+      amp: %__MODULE__{
+        name: :amp,
+        display_name: "Amp CLI",
+        core_profile: CliSubprocessCore.ProviderProfiles.Amp,
+        sdk_runtime: AmpSdk.Runtime.CLI,
+        options_schema: ASM.Options.Amp.schema(),
+        profile:
+          Profile.new!(
+            max_concurrent_runs: 1,
+            max_queued_runs: 10
+          )
+      }
+    }
   end
 
   defp normalize_name(:codex_exec), do: :codex

@@ -20,8 +20,7 @@ defmodule ASM do
       ASM.ProviderBackend,
       ASM.ProviderRegistry,
       ASM.Result,
-      ASM.Stream,
-      ASM.Transport
+      ASM.Stream
     ]
 
   alias ASM.{Error, Result, Session, Stream}
@@ -89,9 +88,11 @@ defmodule ASM do
   def query(provider, prompt, opts) when is_atom(provider) and is_binary(prompt) do
     case start_session(Keyword.put(opts, :provider, provider)) do
       {:ok, session} ->
+        run_opts = Keyword.drop(opts, [:session_id, :provider, :name, :options])
+
         result =
           try do
-            query(session, prompt, opts)
+            query(session, prompt, run_opts)
           after
             _ = stop_session(session)
           end

@@ -36,16 +36,6 @@ defmodule ASM.Run.Server do
     :ok
   end
 
-  @spec attach_transport(GenServer.server(), pid()) :: :ok | {:error, Error.t()}
-  def attach_transport(_server, _transport_pid) do
-    {:error,
-     Error.new(
-       :config_invalid,
-       :runtime,
-       "attach_transport/2 is unavailable in the provider backend runtime"
-     )}
-  end
-
   @impl true
   def init(opts) do
     {:ok, Run.State.new(opts), {:continue, :bootstrap}}
@@ -234,6 +224,8 @@ defmodule ASM.Run.Server do
            resolve_backend(provider, state),
          start_config <- backend_start_config(provider, state),
          {:ok, pid, info} <- resolution.backend.start_run(start_config),
+         :ok <- detach_backend_link(pid),
+         :ok <- subscribe_backend(resolution.backend, pid, start_config.subscription_ref),
          next_state <- put_backend_state(state, resolution, pid, info, start_config),
          :ok <- deliver_prompt(next_state) do
       {:ok, next_state}
@@ -278,6 +270,39 @@ defmodule ASM.Run.Server do
       subscription_ref: subscription_ref,
       metadata: %{run_id: state.run_id, session_id: state.session_id}
     }
+  end
+
+  defp detach_backend_link(pid) when is_pid(pid) do
+    Process.unlink(pid)
+    :ok
+  rescue
+    _ -> :ok
+  end
+
+  defp subscribe_backend(backend, pid, ref) when is_atom(backend) and is_pid(pid) do
+    case backend.subscribe(pid, self(), ref) do
+      :ok ->
+        :ok
+
+      {:error, %Error{} = error} ->
+        _ = safe_close_backend(backend, pid)
+        {:error, error}
+
+      {:error, reason} ->
+        _ = safe_close_backend(backend, pid)
+
+        {:error,
+         Error.new(
+           :runtime,
+           :runtime,
+           "backend subscribe failed: #{inspect(reason)}",
+           cause: reason
+         )}
+    end
+  rescue
+    error ->
+      _ = safe_close_backend(backend, pid)
+      {:error, Error.new(:runtime, :runtime, Exception.message(error), cause: error)}
   end
 
   defp put_backend_state(state, resolution, pid, info, start_config) do
@@ -359,7 +384,7 @@ defmodule ASM.Run.Server do
 
   defp maybe_track_approval(state, %Event{kind: :approval_requested} = event) do
     payload = Event.legacy_payload(event)
-    notify_session(state, {:register_approval, payload.approval_id, self()})
+    notify_session(state, {:register_approval, self(), payload})
 
     timer_ref =
       Process.send_after(
@@ -373,15 +398,20 @@ defmodule ASM.Run.Server do
 
   defp maybe_track_approval(state, _event), do: state
 
-  defp fanout(%Run.State{subscriber: subscriber}, event) when is_pid(subscriber) do
+  defp fanout(%Run.State{} = state, %Event{kind: :cost_update} = event) do
+    notify_session(state, {:cost_update, Event.legacy_payload(event)})
+    fanout_to_subscriber(state, event)
+  end
+
+  defp fanout(%Run.State{} = state, event) do
+    fanout_to_subscriber(state, event)
+  end
+
+  defp fanout_to_subscriber(%Run.State{subscriber: subscriber}, event) when is_pid(subscriber) do
     send(subscriber, {:asm_run_event, event.run_id, event})
   end
 
-  defp fanout(%Run.State{} = state, %Event{kind: :cost_update} = event) do
-    notify_session(state, {:cost_update, Event.legacy_payload(event)})
-  end
-
-  defp fanout(_state, _event), do: :ok
+  defp fanout_to_subscriber(_state, _event), do: :ok
 
   defp finish_run(state) do
     notify_done(state)
@@ -430,12 +460,18 @@ defmodule ASM.Run.Server do
 
   defp maybe_close_backend(%Run.State{backend: backend, backend_pid: pid})
        when is_atom(backend) and is_pid(pid) do
-    backend.close(pid)
+    safe_close_backend(backend, pid)
   rescue
     _ -> :ok
   end
 
   defp maybe_close_backend(_state), do: :ok
+
+  defp safe_close_backend(backend, pid) when is_atom(backend) and is_pid(pid) do
+    backend.close(pid)
+  rescue
+    _ -> :ok
+  end
 
   defp normalize_backend_info(%{} = info), do: info
   defp normalize_backend_info(other), do: %{session: other}

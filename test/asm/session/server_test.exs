@@ -1,6 +1,7 @@
 defmodule ASM.Session.ServerTest do
   use ASM.TestCase
 
+  alias ASM.Control
   alias ASM.Execution.Config
   alias ASM.Session.Server
   alias ASM.Session.Supervisor, as: SessionSupervisor
@@ -119,7 +120,16 @@ defmodule ASM.Session.ServerTest do
 
     assert_receive {:run_started, ^run_id, ^run_pid}
 
-    send(server, {:register_approval, "approval-1", run_pid})
+    send(
+      server,
+      {:register_approval, run_pid,
+       %Control.ApprovalRequest{
+         approval_id: "approval-1",
+         tool_name: "bash",
+         tool_input: %{"cmd" => "ls"}
+       }}
+    )
+
     assert :ok = Server.resolve_approval(server, "approval-1", :allow)
 
     assert_receive {:approval_resolved, ^run_id, "approval-1", :allow}

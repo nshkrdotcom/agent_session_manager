@@ -92,7 +92,7 @@ Runtime execution path:
 - `ASM.ProviderRegistry` resolves the provider onto `:core` or `:sdk`.
 - `ASM.ProviderBackend.Core` runs `cli_subprocess_core` and is the required lane for `:remote_node`.
 - `ASM.ProviderBackend.SDK` runs optional provider runtime kits when they are available locally.
-- `ASM.Run.Server` owns backend lifecycle, wraps core events in `%ASM.Event{}`, and applies pipelines/reducers.
+- `ASM.Run.Server` starts the resolved backend, subscribes to backend events, wraps core events in `%ASM.Event{}`, and applies pipelines/reducers.
 - `ASM.Session.Server` remains aggregate root for run admission, approval routing, and session-level cost accounting.
 
 ## Remote Node Execution
@@ -106,6 +106,7 @@ Session-level remote default:
   ASM.start_session(
     provider: :codex,
     execution_mode: :remote_node,
+    # Phase 1 keeps remote backend options under :driver_opts
     driver_opts: [
       remote_node: :"asm@sandbox-a",
       remote_cookie: :cluster_cookie,
@@ -199,7 +200,8 @@ Common options:
 - `cwd`
 - `env`
 - `approval_timeout_ms`
-- `transport_timeout_ms`
+- `transport_timeout_ms` (core lane subprocess/session timeout)
+- `transport_headless_timeout_ms` (core lane subprocess headless timeout)
 
 Provider-specific examples:
 
@@ -228,7 +230,7 @@ mix run examples/live_pub_sub_stream.exs -- "Reply with exactly: PUBSUB_OK"
 Supplemental SDK-lane demo:
 
 ```bash
-mix run examples/sdk_driver_demo.exs
+mix run examples/sdk_backend_demo.exs
 ```
 
 Environment knobs used by examples:
@@ -247,7 +249,6 @@ Environment knobs used by examples:
 - [Boundary Enforcement](guides/boundary-enforcement.md)
 - [Live Adapter Feature Matrix](guides/live-adapters.md)
 - [Remote Node Execution](guides/remote-node-execution.md)
-- [Transport Guarantees](guides/transport-guarantees.md)
 
 ## Architecture Notes
 
@@ -258,7 +259,7 @@ Per-session subtree strategy uses `:rest_for_one`:
 
 Run workers are `restart: :temporary` to avoid restart loops after normal completion.
 
-Remote backend sessions are supervised under `ASM.Remote.BackendSupervisor`, and remote startup is performed through `ASM.Remote.BackendStarter`.
+Remote backend sessions are supervised on the remote node, and startup is performed through the remote backend starter.
 
 ## Quality Gates
 

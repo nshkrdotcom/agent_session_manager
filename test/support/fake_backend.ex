@@ -11,24 +11,31 @@ defmodule ASM.TestSupport.FakeBackend do
   defstruct [:config, :subscriber, :subscription_ref, :emitted?]
 
   @spec start_run(map()) :: {:ok, pid(), map()} | {:error, term()}
+  @impl true
   def start_run(config) when is_map(config) do
-    GenServer.start_link(__MODULE__, config)
+    with {:ok, pid} <- GenServer.start_link(__MODULE__, config) do
+      {:ok, pid, %{backend: :fake, provider: config.provider.name}}
+    end
   end
 
   @spec send_input(pid(), iodata(), keyword()) :: :ok | {:error, term()}
+  @impl true
   def send_input(server, input, _opts \\ []) do
     GenServer.call(server, {:send_input, IO.iodata_to_binary(input)})
   end
 
   @spec end_input(pid()) :: :ok | {:error, term()}
+  @impl true
   def end_input(_server), do: :ok
 
   @spec interrupt(pid()) :: :ok | {:error, term()}
+  @impl true
   def interrupt(server) do
     GenServer.call(server, :interrupt)
   end
 
   @spec close(pid()) :: :ok
+  @impl true
   def close(server) do
     GenServer.stop(server, :normal)
   catch
@@ -36,11 +43,13 @@ defmodule ASM.TestSupport.FakeBackend do
   end
 
   @spec subscribe(pid(), pid(), reference()) :: :ok | {:error, term()}
+  @impl true
   def subscribe(server, pid, ref) do
     GenServer.call(server, {:subscribe, pid, ref})
   end
 
   @spec info(pid()) :: map()
+  @impl true
   def info(server) do
     GenServer.call(server, :info)
   end

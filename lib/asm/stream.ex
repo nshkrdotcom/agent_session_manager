@@ -11,7 +11,16 @@ defmodule ASM.Stream do
     :stream_timeout_ms,
     :queue_timeout_ms,
     :transport_call_timeout_ms,
-    :lane
+    :lane,
+    :driver_opts,
+    :remote_node,
+    :remote_cookie,
+    :remote_connect_timeout_ms,
+    :remote_rpc_timeout_ms,
+    :remote_boot_lease_timeout_ms,
+    :remote_bootstrap_mode,
+    :remote_cwd,
+    :remote_transport_call_timeout_ms
   ]
 
   @run_keys [

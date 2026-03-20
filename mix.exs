@@ -28,7 +28,7 @@ defmodule AgentSessionManager.MixProject do
   def application do
     [
       mod: {ASM.Application, []},
-      extra_applications: [:logger, :erlexec]
+      extra_applications: [:logger]
     ]
   end
 
@@ -41,7 +41,6 @@ defmodule AgentSessionManager.MixProject do
       {:amp_sdk, path: "../amp_sdk", optional: true},
       {:boundary, path: "vendor/boundary", runtime: false},
       {:jason, "~> 1.4"},
-      {:erlexec, "~> 2.0"},
       {:nimble_options, "~> 1.1"},
       {:telemetry, "~> 1.3"},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},
@@ -90,13 +89,11 @@ defmodule AgentSessionManager.MixProject do
         ASM.Pipeline,
         ASM.Provider,
         ASM.ProviderBackend,
-        ASM.Protocol,
         ASM.Run,
         ASM.Session,
         ASM.Store,
         ASM.Stream,
-        ASM.Tool,
-        ASM.Transport
+        ASM.Tool
       ]
     ]
   end
@@ -125,7 +122,7 @@ defmodule AgentSessionManager.MixProject do
       Backends: [ASM.ProviderBackend, ASM.ProviderBackend.Core, ASM.ProviderBackend.SDK],
       Providers: ~r/^ASM\.(Provider|Options)/,
       Runtime: ~r/^ASM\.(Session|Run)/,
-      "Streaming & Transport": ~r/^ASM\.(Transport|Protocol|Store|Tool)/,
+      "Streaming & Tooling": ~r/^ASM\.(Store|Tool)/,
       Pipeline: ~r/^ASM\.Pipeline/,
       "Payload Types": ~r/^ASM\.(Content|Message|Control)/,
       "Extensions/Persistence": ~r/^ASM\.Extensions\.Persistence/,

@@ -7,8 +7,9 @@
 # The directory Mix downloads your dependencies sources to.
 /deps/
 
-# Where third-party dependencies like ExDoc output generated docs.
+# Where Mix/ExDoc output generated docs for this repo or nested Mix projects.
 /doc/
+**/doc/
 
 # If the VM crashes, it generates a dump, let's ignore it too.
 erl_crash.dump

@@ -73,12 +73,12 @@ Use `ASM.ProviderRegistry.resolve/2` when you need to inspect the effective back
 - `remote_cookie` (optional)
 - `remote_connect_timeout_ms` (default `5000`)
 - `remote_rpc_timeout_ms` (default `15000`)
-- `remote_boot_lease_timeout_ms` (default `10000`)
+- `remote_boot_lease_timeout_ms` (accepted for config compatibility and carried in the resolved execution config, but not consumed by the Phase 1 backend start path)
 - `remote_bootstrap_mode`
   - `:require_prestarted` (default)
   - `:ensure_started` (attempts `Application.ensure_all_started(:agent_session_manager)` on remote node)
 - `remote_cwd` (optional override for provider `cwd` on remote host)
-- `remote_transport_call_timeout_ms` (default `5000`; backend control timeout)
+- `remote_transport_call_timeout_ms` (default `5000`; overrides `transport_call_timeout_ms` for remote backend control calls)
 
 ## Failure Semantics
 

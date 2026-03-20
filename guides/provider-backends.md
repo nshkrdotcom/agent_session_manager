@@ -1,0 +1,62 @@
+# Provider Backends Guide
+
+ASM runs providers through a small backend contract instead of provider-specific
+driver/parser stacks.
+
+## Backend Roles
+
+`ASM.ProviderBackend.Core` is the required baseline backend:
+
+- starts `CliSubprocessCore.Session`
+- works in `execution_mode: :local`
+- works in `execution_mode: :remote_node`
+- uses the built-in provider profiles from `cli_subprocess_core`
+
+`ASM.ProviderBackend.SDK` is optional and additive:
+
+- starts provider runtime kits when they are installed locally
+- works only in `execution_mode: :local`
+- preserves the same session/run/event model as the core backend
+- never becomes a required dependency for ASM itself
+
+## Common Contract
+
+Both backends satisfy the same `ASM.ProviderBackend` behaviour:
+
+```elixir
+@callback start_run(map()) :: {:ok, pid(), term()} | {:error, term()}
+@callback send_input(pid(), iodata(), keyword()) :: :ok | {:error, term()}
+@callback end_input(pid()) :: :ok | {:error, term()}
+@callback interrupt(pid()) :: :ok | {:error, term()}
+@callback close(pid()) :: :ok
+@callback subscribe(pid(), pid(), reference()) :: :ok | {:error, term()}
+@callback info(pid()) :: map()
+```
+
+That keeps `ASM.Run.Server` lane-agnostic after resolution.
+
+## Backend Selection
+
+`ASM.ProviderRegistry.resolve/2` chooses which backend module to use.
+
+- `lane: :core` resolves to `ASM.ProviderBackend.Core`
+- `lane: :sdk` resolves to `ASM.ProviderBackend.SDK` only when the runtime kit is available locally
+- `lane: :auto` prefers the SDK lane when available and otherwise falls back to the core lane
+
+`execution_mode` is applied after lane discovery. In Phase 1, remote execution
+always uses the core backend even if `:auto` preferred `:sdk`.
+
+## Observability
+
+Backend choice is visible in run/event metadata:
+
+- `requested_lane`
+- `preferred_lane`
+- `lane`
+- `backend`
+- `execution_mode`
+- `lane_reason`
+- `lane_fallback_reason`
+
+That metadata is merged into both streamed `%ASM.Event{}` values and the final
+`%ASM.Result.metadata` projection.

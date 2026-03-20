@@ -111,6 +111,8 @@ This produces three distinct values in observability metadata:
 
 When `lane: :auto` prefers `:sdk` but `execution_mode: :remote_node`, ASM records `preferred_lane: :sdk` and executes with `lane: :core`, `backend: ASM.ProviderBackend.Core`, and `lane_fallback_reason: :sdk_remote_unsupported`. An explicit `lane: :sdk` with `execution_mode: :remote_node` is a configuration error.
 
+See [Lane Selection](guides/lane-selection.md) for the full discovery and resolution flow.
+
 ## Lane Selection
 
 Use `ASM.ProviderRegistry` to inspect lane availability and resolution:
@@ -186,6 +188,8 @@ Lane rules:
 
 Approval routing, interrupt control, and result projection are lane-agnostic. The lane changes how the provider backend is started, not how the session aggregate behaves.
 
+See [Provider Backends](guides/provider-backends.md) for the backend contract and lane responsibilities.
+
 ## Event Model And Result Projection
 
 Backends emit core runtime events. `ASM.Run.Server` wraps them into `%ASM.Event{}` values that carry run/session scope plus stable observability metadata. Stream consumers therefore see the same lane and execution metadata that final results expose.
@@ -207,6 +211,8 @@ Common metadata keys include:
 
 `ASM.Stream.final_result/1` reduces the streamed `%ASM.Event{}` sequence through `ASM.Run.EventReducer` and projects a final `%ASM.Result{}`. `%ASM.Result.metadata` is therefore derived from the event stream rather than from a side channel, which keeps streaming and query-style consumption aligned.
 
+See [Event Model And Result Projection](guides/event-model-and-result-projection.md) for the reducer and metadata projection details.
+
 ## Approval Routing And Interrupts
 
 Approvals are session-scoped even though they originate from individual runs:
@@ -224,6 +230,8 @@ Interrupts are run-scoped:
 - queued runs are removed from the session queue before they start
 
 These control semantics stay the same across `:core` and `:sdk`, and across local versus remote execution.
+
+See [Approvals And Interrupts](guides/approvals-and-interrupts.md) for the session/run control flow in more detail.
 
 ## Remote Node Execution
 
@@ -266,10 +274,10 @@ Remote execution options:
 - `remote_cookie` (optional)
 - `remote_connect_timeout_ms` (default `5000`)
 - `remote_rpc_timeout_ms` (default `15000`)
-- `remote_boot_lease_timeout_ms` (default `10000`)
+- `remote_boot_lease_timeout_ms` (accepted for config compatibility; retained in resolved execution config but not consumed by the Phase 1 backend start path)
 - `remote_bootstrap_mode` (`:require_prestarted` | `:ensure_started`, default `:require_prestarted`)
 - `remote_cwd` (optional remote workspace override)
-- `remote_transport_call_timeout_ms` (backend control call timeout override)
+- `remote_transport_call_timeout_ms` (overrides `transport_call_timeout_ms` for remote backend control calls)
 
 Operational requirements for remote worker nodes:
 
@@ -326,6 +334,17 @@ Result projections also include structured cost and terminal error:
 - `%ASM.Result{cost: %{input_tokens: ..., output_tokens: ..., cost_usd: ...}}`
 - `%ASM.Result{error: %ASM.Error{} | nil}`
 
+## Execution Control Options
+
+Session defaults and per-run overrides can also control execution behavior:
+
+- `execution_mode` (`:local | :remote_node`)
+- `lane` (`:auto | :core | :sdk`)
+- `stream_timeout_ms` (maximum wait for the next run event; default `60000`)
+- `queue_timeout_ms` (maximum time a queued run waits for capacity; default `:infinity`)
+- `transport_call_timeout_ms` (backend control timeout used by the effective lane)
+- `driver_opts` (remote execution settings bag for `:remote_node`)
+
 ## Provider Options
 
 Common options:
@@ -336,7 +355,7 @@ Common options:
 - `cwd`
 - `env`
 - `approval_timeout_ms`
-- `transport_timeout_ms` (core lane subprocess/session timeout)
+- `transport_timeout_ms` (lane runtime timeout forwarded to the effective core or SDK backend)
 - `transport_headless_timeout_ms` (core lane subprocess headless timeout)
 
 Provider-specific examples:
@@ -383,6 +402,10 @@ Environment knobs used by examples:
 ## Guides
 
 - [Boundary Enforcement](guides/boundary-enforcement.md)
+- [Lane Selection](guides/lane-selection.md)
+- [Provider Backends](guides/provider-backends.md)
+- [Event Model And Result Projection](guides/event-model-and-result-projection.md)
+- [Approvals And Interrupts](guides/approvals-and-interrupts.md)
 - [Live Adapter Feature Matrix](guides/live-adapters.md)
 - [Remote Node Execution](guides/remote-node-execution.md)
 

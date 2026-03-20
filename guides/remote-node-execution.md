@@ -37,6 +37,36 @@ ASM.query(session, "run locally", execution_mode: :local)
 
 `ASM.ProviderBackend.Core` is the source of truth for remote execution. The optional SDK lane is local-only.
 
+## Lane Behavior In Remote Mode
+
+Lane resolution remains discovery-driven even when the run executes remotely.
+
+- `lane: :core` executes remotely on `ASM.ProviderBackend.Core`
+- `lane: :auto` still prefers `:sdk` when a local runtime kit is installed, but Phase 1 remote execution falls back to `lane: :core`
+- `lane: :sdk` with `execution_mode: :remote_node` is rejected as a configuration error
+
+This means remote results and streamed events can show:
+
+- `requested_lane: :auto`
+- `preferred_lane: :sdk`
+- `lane: :core`
+- `lane_fallback_reason: :sdk_remote_unsupported`
+
+Example `%ASM.Result.metadata` shape for that case:
+
+```elixir
+%{
+  requested_lane: :auto,
+  preferred_lane: :sdk,
+  lane: :core,
+  backend: ASM.ProviderBackend.Core,
+  execution_mode: :remote_node,
+  lane_fallback_reason: :sdk_remote_unsupported
+}
+```
+
+Use `ASM.ProviderRegistry.resolve/2` when you need to inspect the effective backend choice before starting a run.
+
 ## Remote Options
 
 - `remote_node` (required in remote mode)
@@ -66,6 +96,37 @@ Runtime behavior:
 
 - `nodedown`/partition surfaces a terminal runtime error from the backend monitor path
 - remote backend crash/timeout uses the same terminal error path as local backend crashes
+
+## Approval Routing And Interrupts
+
+Remote execution does not change the control surface that callers use.
+
+Approval flow:
+
+- the remote backend emits an approval event
+- the local `ASM.Run.Server` wraps it as `%ASM.Event{}`
+- the local `ASM.Session.Server` indexes `approval_id` to the owning run
+- `ASM.approve/3` routes the decision back to that run
+
+If `approval_timeout_ms` expires first, ASM emits `:approval_resolved` with `decision: :deny` and `reason: "timeout"`.
+
+Interrupt flow:
+
+- `ASM.interrupt/2` targets a run id, not a backend implementation
+- queued runs are removed locally before they start
+- active remote runs forward the interrupt through the core backend control path
+- the run terminates with the same `user_cancelled` semantics used in local mode
+
+## Event And Result Observability
+
+Remote runs use the same `%ASM.Event{}` and `%ASM.Result{}` projection model as local runs. The effective backend choice is visible in stream and result metadata, including:
+
+- `requested_lane`
+- `preferred_lane`
+- `lane`
+- `backend`
+- `execution_mode`
+- `lane_fallback_reason`
 
 ## Operational Constraints
 

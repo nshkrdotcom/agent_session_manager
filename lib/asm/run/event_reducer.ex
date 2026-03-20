@@ -3,7 +3,7 @@ defmodule ASM.Run.EventReducer do
   Deterministic reducer from run-scoped events to result projections.
   """
 
-  alias ASM.{Error, Event, Result, Run}
+  alias ASM.{Error, Event, Metadata, Result, Run}
 
   @conversation_kinds [
     :assistant_message,
@@ -21,6 +21,7 @@ defmodule ASM.Run.EventReducer do
   def apply_event!(%Run.State{} = state, %Event{} = event) do
     next_sequence = max(state.sequence + 1, event.sequence || state.sequence + 1)
     event = %{event | sequence: next_sequence}
+    state = %{state | metadata: Metadata.merge_run_metadata(state.metadata, event.metadata)}
 
     state
     |> append_event(event)

@@ -372,6 +372,7 @@ defmodule ASM.Run.ServerTest do
                run_id: "run-int",
                session_id: "session-int",
                provider: :claude,
+               lane: :sdk,
                subscriber: self(),
                backend_module: InterruptProbeBackend,
                backend_opts: [test_pid: self()],
@@ -379,6 +380,10 @@ defmodule ASM.Run.ServerTest do
              )
 
     assert_receive {:asm_run_event, "run-int", %Event{kind: :run_started}}
+
+    state = Run.Server.get_state(run_pid)
+    assert state.lane == :sdk
+    assert state.metadata.requested_lane == :sdk
 
     ref = Process.monitor(run_pid)
     assert :ok = Run.Server.interrupt(run_pid)

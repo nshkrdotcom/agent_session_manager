@@ -97,7 +97,7 @@ defmodule ASM.Provider do
         name: :claude,
         display_name: "Claude CLI",
         core_profile: CliSubprocessCore.ProviderProfiles.Claude,
-        sdk_runtime: ClaudeAgentSDK.Runtime.CLI,
+        sdk_runtime: Module.concat(["ClaudeAgentSDK", "Runtime", "CLI"]),
         options_schema: ASM.Options.Claude.schema(),
         profile:
           Profile.new!(
@@ -109,7 +109,7 @@ defmodule ASM.Provider do
         name: :codex,
         display_name: "Codex CLI",
         core_profile: CliSubprocessCore.ProviderProfiles.Codex,
-        sdk_runtime: Codex.Runtime.Exec,
+        sdk_runtime: Module.concat(["Codex", "Runtime", "Exec"]),
         options_schema: ASM.Options.Codex.schema(),
         aliases: [:codex_exec],
         profile:
@@ -122,7 +122,7 @@ defmodule ASM.Provider do
         name: :gemini,
         display_name: "Gemini CLI",
         core_profile: CliSubprocessCore.ProviderProfiles.Gemini,
-        sdk_runtime: GeminiCliSdk.Runtime.CLI,
+        sdk_runtime: Module.concat(["GeminiCliSdk", "Runtime", "CLI"]),
         options_schema: ASM.Options.Gemini.schema(),
         profile:
           Profile.new!(
@@ -134,7 +134,7 @@ defmodule ASM.Provider do
         name: :amp,
         display_name: "Amp CLI",
         core_profile: CliSubprocessCore.ProviderProfiles.Amp,
-        sdk_runtime: AmpSdk.Runtime.CLI,
+        sdk_runtime: Module.concat(["AmpSdk", "Runtime", "CLI"]),
         options_schema: ASM.Options.Amp.schema(),
         profile:
           Profile.new!(

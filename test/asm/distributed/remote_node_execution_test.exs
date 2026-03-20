@@ -10,6 +10,8 @@ defmodule ASM.Distributed.RemoteNodeExecutionTest do
     ensure_local_distribution!()
     NodeConnector.reset_cookie_book()
 
+    original = Application.get_env(:agent_session_manager, ASM.ProviderRegistry)
+
     {:ok, peer, node} = start_peer!()
 
     workspace =
@@ -21,6 +23,12 @@ defmodule ASM.Distributed.RemoteNodeExecutionTest do
              :rpc.call(node, Application, :ensure_all_started, [:agent_session_manager])
 
     on_exit(fn ->
+      if is_nil(original) do
+        Application.delete_env(:agent_session_manager, ASM.ProviderRegistry)
+      else
+        Application.put_env(:agent_session_manager, ASM.ProviderRegistry, original)
+      end
+
       File.rm_rf!(workspace)
 
       try do
@@ -160,6 +168,59 @@ defmodule ASM.Distributed.RemoteNodeExecutionTest do
     assert :ok = ASM.stop_session(session)
   end
 
+  test "auto lane keeps sdk preference metadata but runs the core backend remotely", %{
+    node: node,
+    workspace: workspace
+  } do
+    put_runtime_loader(fn
+      Codex.Runtime.Exec -> true
+      runtime -> Code.ensure_loaded?(runtime)
+    end)
+
+    script = write_script!(codex_success_script("REMOTE_AUTO_LANE_OK"))
+    session = start_session!(:codex)
+
+    assert {:ok, result} =
+             ASM.query(session, "remote auto lane",
+               lane: :auto,
+               execution_mode: :remote_node,
+               cli_path: script,
+               driver_opts: [remote_node: node, remote_cwd: workspace]
+             )
+
+    assert result.text == "REMOTE_AUTO_LANE_OK"
+    assert result.metadata.requested_lane == :auto
+    assert result.metadata.preferred_lane == :sdk
+    assert result.metadata.lane == :core
+    assert result.metadata.execution_mode == :remote_node
+    assert result.metadata.lane_fallback_reason == :sdk_remote_unsupported
+    assert result.metadata.backend == ASM.ProviderBackend.Core
+
+    assert :ok = ASM.stop_session(session)
+  end
+
+  test "explicit sdk lane is rejected for remote execution", %{node: node, workspace: workspace} do
+    put_runtime_loader(fn
+      Codex.Runtime.Exec -> true
+      runtime -> Code.ensure_loaded?(runtime)
+    end)
+
+    script = write_script!(codex_success_script("REMOTE_SDK_REJECT"))
+    session = start_session!(:codex)
+
+    assert {:error, %Error{} = error} =
+             ASM.query(session, "remote sdk lane",
+               lane: :sdk,
+               execution_mode: :remote_node,
+               cli_path: script,
+               driver_opts: [remote_node: node, remote_cwd: workspace]
+             )
+
+    assert error.kind == :config_invalid
+    assert error.message =~ "sdk lane"
+    assert :ok = ASM.stop_session(session)
+  end
+
   defp start_session!(provider) when is_atom(provider) do
     start_session!(provider: provider)
   end
@@ -239,6 +300,10 @@ defmodule ASM.Distributed.RemoteNodeExecutionTest do
     File.write!(path, contents)
     File.chmod!(path, 0o755)
     path
+  end
+
+  defp put_runtime_loader(fun) when is_function(fun, 1) do
+    Application.put_env(:agent_session_manager, ASM.ProviderRegistry, runtime_loader: fun)
   end
 
   defp assert_eventually(fun, attempts \\ 80)

@@ -1,6 +1,10 @@
 defmodule ASM.Event do
   @moduledoc """
-  Run-scoped envelope around core runtime events.
+  Run-scoped envelope around normalized core runtime events.
+
+  `%ASM.Event{}` preserves the `CliSubprocessCore.Event` in `:core_event` while
+  adding ASM run/session scope plus observability metadata such as lane,
+  backend, and execution mode.
   """
 
   import Bitwise

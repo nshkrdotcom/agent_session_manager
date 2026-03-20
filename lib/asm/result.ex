@@ -1,6 +1,9 @@
 defmodule ASM.Result do
   @moduledoc """
   Final run projection returned by `ASM.query/3`.
+
+  Result metadata is derived from the run event stream so streaming consumers
+  and query-style consumers observe the same lane/backend/execution metadata.
   """
 
   @enforce_keys [:run_id, :session_id]

@@ -8,6 +8,13 @@ defmodule ASM.ProviderBackend.SDK do
   alias ASM.{Error, Execution, Provider}
   alias ASM.ProviderBackend.SDK.SessionProxy
 
+  @claude_options_module Module.concat(["ClaudeAgentSDK", "Options"])
+  @gemini_options_module Module.concat(["GeminiCliSdk", "Options"])
+  @amp_options_module Module.concat(["AmpSdk", "Types", "Options"])
+  @codex_options_module Module.concat(["Codex", "Options"])
+  @codex_thread_options_module Module.concat(["Codex", "Thread", "Options"])
+  @codex_exec_options_module Module.concat(["Codex", "Exec", "Options"])
+
   @impl true
   def start_run(%{provider: %Provider{} = provider} = config) do
     with {:ok, %Execution.Config{execution_mode: :local}} <- fetch_execution_config(config),
@@ -80,87 +87,55 @@ defmodule ASM.ProviderBackend.SDK do
   end
 
   defp build_start_opts(%Provider{name: :claude, sdk_runtime: runtime}, config) do
-    options =
-      struct!(
-        ClaudeAgentSDK.Options,
-        %{
-          cwd: kw(config, :cwd),
-          env: kw(config, :env, %{}),
-          path_to_claude_code_executable: kw(config, :cli_path),
-          permission_mode: kw(config, :provider_permission_mode),
-          model: kw(config, :model),
-          max_turns: kw(config, :max_turns),
-          system_prompt: kw(config, :system_prompt),
-          append_system_prompt: kw(config, :append_system_prompt),
-          include_partial_messages: true,
-          output_format: :stream_json,
-          timeout_ms: kw(config, :transport_timeout_ms),
-          max_stderr_buffer_size: kw(config, :max_stderr_buffer_bytes)
-        }
-        |> drop_nil_values()
-      )
-
-    {:ok,
-     sdk_start_opts(runtime, config,
-       options: options,
-       metadata: %{lane: :sdk, asm_provider: :claude}
-     )}
+    with {:ok, options} <-
+           new_sdk_struct(@claude_options_module, claude_option_attrs(config), "claude") do
+      {:ok,
+       sdk_start_opts(runtime, config,
+         options: options,
+         metadata: %{lane: :sdk, asm_provider: :claude}
+       )}
+    end
   end
 
   defp build_start_opts(%Provider{name: :gemini, sdk_runtime: runtime}, config) do
-    options =
-      struct!(
-        GeminiCliSdk.Options,
-        %{
-          model: kw(config, :model),
-          yolo: kw(config, :provider_permission_mode) == :yolo,
-          approval_mode: gemini_approval_mode(kw(config, :provider_permission_mode)),
-          sandbox: kw(config, :sandbox, false),
-          extensions: kw(config, :extensions, []),
-          cwd: kw(config, :cwd),
-          env: kw(config, :env, %{}),
-          timeout_ms: kw(config, :transport_timeout_ms),
-          max_stderr_buffer_bytes: kw(config, :max_stderr_buffer_bytes)
-        }
-        |> drop_nil_values()
-      )
-
-    {:ok,
-     sdk_start_opts(runtime, config,
-       prompt: Map.fetch!(config, :prompt),
-       options: options,
-       metadata: %{lane: :sdk, asm_provider: :gemini}
-     )}
+    with {:ok, options} <-
+           build_sdk_struct(@gemini_options_module, gemini_option_attrs(config), "gemini"),
+         {:ok, options} <- validate_sdk_struct(@gemini_options_module, options, "gemini") do
+      {:ok,
+       sdk_start_opts(runtime, config,
+         prompt: Map.fetch!(config, :prompt),
+         options: options,
+         metadata: %{lane: :sdk, asm_provider: :gemini}
+       )}
+    end
   end
 
   defp build_start_opts(%Provider{name: :amp, sdk_runtime: runtime}, config) do
-    options =
-      struct!(
-        AmpSdk.Types.Options,
-        %{
-          cwd: kw(config, :cwd),
-          mode: kw(config, :mode, "smart"),
-          dangerously_allow_all: kw(config, :provider_permission_mode) == :dangerously_allow_all,
-          env: kw(config, :env, %{}),
-          thinking: kw(config, :include_thinking, false),
-          stream_timeout_ms: kw(config, :transport_timeout_ms),
-          max_stderr_buffer_bytes: kw(config, :max_stderr_buffer_bytes)
-        }
-        |> drop_nil_values()
-      )
-
-    {:ok,
-     sdk_start_opts(runtime, config,
-       input: Map.fetch!(config, :prompt),
-       options: options,
-       metadata: %{lane: :sdk, asm_provider: :amp}
-     )}
+    with {:ok, options} <- build_sdk_struct(@amp_options_module, amp_option_attrs(config), "amp") do
+      {:ok,
+       sdk_start_opts(runtime, config,
+         input: Map.fetch!(config, :prompt),
+         options: options,
+         metadata: %{lane: :sdk, asm_provider: :amp}
+       )}
+    end
   end
 
   defp build_start_opts(%Provider{name: :codex, sdk_runtime: runtime}, config) do
-    with {:ok, codex_opts} <- Codex.Options.new(codex_option_attrs(config)),
-         {:ok, thread_opts} <- Codex.Thread.Options.new(codex_thread_option_attrs(config)),
-         {:ok, exec_opts} <- Codex.Exec.Options.new(codex_opts: codex_opts, thread: thread_opts) do
+    with {:ok, codex_opts} <-
+           new_sdk_struct(@codex_options_module, codex_option_attrs(config), "codex"),
+         {:ok, thread_opts} <-
+           new_sdk_struct(
+             @codex_thread_options_module,
+             codex_thread_option_attrs(config),
+             "codex"
+           ),
+         {:ok, exec_opts} <-
+           new_sdk_struct(
+             @codex_exec_options_module,
+             codex_exec_option_attrs(codex_opts, thread_opts, config),
+             "codex"
+           ) do
       {:ok,
        sdk_start_opts(runtime, config,
          input: Map.fetch!(config, :prompt),
@@ -168,11 +143,8 @@ defmodule ASM.ProviderBackend.SDK do
          metadata: %{lane: :sdk, asm_provider: :codex}
        )}
     else
-      {:error, reason} ->
-        {:error,
-         Error.new(:config_invalid, :config, "invalid codex sdk options: #{inspect(reason)}",
-           cause: reason
-         )}
+      {:error, %Error{} = error} ->
+        {:error, error}
     end
   end
 
@@ -183,7 +155,14 @@ defmodule ASM.ProviderBackend.SDK do
         _ -> nil
       end
 
+    metadata =
+      Map.merge(
+        Map.get(config, :metadata, %{}),
+        Keyword.get(extra, :metadata, %{})
+      )
+
     extra
+    |> Keyword.put(:metadata, metadata)
     |> Keyword.put(:subscriber, subscriber)
     |> Keyword.put(:session_event_tag, :cli_subprocess_core_session)
   end
@@ -192,23 +171,138 @@ defmodule ASM.ProviderBackend.SDK do
   defp gemini_approval_mode(:default), do: nil
   defp gemini_approval_mode(mode), do: mode
 
+  defp claude_option_attrs(config) do
+    [
+      cwd: kw(config, :cwd),
+      env: kw(config, :env, %{}),
+      path_to_claude_code_executable: kw(config, :cli_path),
+      permission_mode: kw(config, :provider_permission_mode),
+      model: kw(config, :model),
+      max_turns: kw(config, :max_turns),
+      system_prompt: kw(config, :system_prompt),
+      append_system_prompt: kw(config, :append_system_prompt),
+      include_partial_messages: true,
+      output_format: :stream_json,
+      timeout_ms: kw(config, :transport_timeout_ms),
+      max_stderr_buffer_size: kw(config, :max_stderr_buffer_bytes)
+    ]
+    |> drop_nil_values()
+  end
+
+  defp gemini_option_attrs(config) do
+    [
+      model: kw(config, :model),
+      yolo: kw(config, :provider_permission_mode) == :yolo,
+      approval_mode: gemini_approval_mode(kw(config, :provider_permission_mode)),
+      sandbox: kw(config, :sandbox, false),
+      extensions: kw(config, :extensions, []),
+      cwd: kw(config, :cwd),
+      env: kw(config, :env, %{}),
+      timeout_ms: kw(config, :transport_timeout_ms),
+      max_stderr_buffer_bytes: kw(config, :max_stderr_buffer_bytes)
+    ]
+    |> drop_nil_values()
+  end
+
+  defp amp_option_attrs(config) do
+    [
+      cwd: kw(config, :cwd),
+      mode: kw(config, :mode, "smart"),
+      dangerously_allow_all: kw(config, :provider_permission_mode) == :dangerously_allow_all,
+      env: kw(config, :env, %{}),
+      thinking: kw(config, :include_thinking, false),
+      stream_timeout_ms: kw(config, :transport_timeout_ms),
+      max_stderr_buffer_bytes: kw(config, :max_stderr_buffer_bytes)
+    ]
+    |> drop_nil_values()
+  end
+
   defp codex_option_attrs(config) do
-    %{
+    [
       model: kw(config, :model),
       reasoning_effort: kw(config, :reasoning_effort),
       codex_path_override: kw(config, :cli_path)
-    }
+    ]
     |> drop_nil_values()
   end
 
   defp codex_thread_option_attrs(config) do
-    %{
+    [
       working_directory: kw(config, :cwd),
       full_auto: kw(config, :provider_permission_mode) == :auto_edit,
       dangerously_bypass_approvals_and_sandbox: kw(config, :provider_permission_mode) == :yolo,
       output_schema: kw(config, :output_schema)
-    }
+    ]
     |> drop_nil_values()
+  end
+
+  defp codex_exec_option_attrs(codex_opts, thread_opts, config) do
+    [
+      codex_opts: codex_opts,
+      thread: thread_opts,
+      timeout_ms: kw(config, :transport_timeout_ms),
+      max_stderr_buffer_bytes: kw(config, :max_stderr_buffer_bytes)
+    ]
+    |> drop_nil_values()
+  end
+
+  defp new_sdk_struct(module, attrs, provider_name) when is_atom(module) do
+    with :ok <- ensure_sdk_module(module, provider_name),
+         true <- function_exported?(module, :new, 1) do
+      case module.new(attrs) do
+        {:ok, value} ->
+          {:ok, value}
+
+        {:error, reason} ->
+          {:error, invalid_sdk_options(provider_name, reason)}
+
+        value ->
+          {:ok, value}
+      end
+    else
+      false ->
+        build_sdk_struct(module, attrs, provider_name)
+
+      {:error, %Error{} = error} ->
+        {:error, error}
+    end
+  rescue
+    error ->
+      {:error, invalid_sdk_options(provider_name, error)}
+  end
+
+  defp build_sdk_struct(module, attrs, provider_name) when is_atom(module) do
+    with :ok <- ensure_sdk_module(module, provider_name) do
+      {:ok, struct(module, attrs)}
+    end
+  rescue
+    error in [ArgumentError] ->
+      {:error, invalid_sdk_options(provider_name, error)}
+  end
+
+  defp validate_sdk_struct(module, options, provider_name) when is_atom(module) do
+    if Code.ensure_loaded?(module) and function_exported?(module, :validate!, 1) do
+      {:ok, module.validate!(options)}
+    else
+      {:ok, options}
+    end
+  rescue
+    error in [ArgumentError] ->
+      {:error, invalid_sdk_options(provider_name, error)}
+  end
+
+  defp ensure_sdk_module(module, provider_name) when is_atom(module) do
+    if Code.ensure_loaded?(module) do
+      :ok
+    else
+      {:error,
+       Error.new(
+         :config_invalid,
+         :provider,
+         "sdk module is unavailable for #{provider_name}: #{inspect(module)}",
+         cause: module
+       )}
+    end
   end
 
   defp kw(config, key, default \\ nil) do
@@ -217,9 +311,17 @@ defmodule ASM.ProviderBackend.SDK do
     |> Keyword.get(key, default)
   end
 
-  defp drop_nil_values(map) do
-    Enum.reject(map, fn {_key, value} -> is_nil(value) end)
-    |> Map.new()
+  defp drop_nil_values(attrs) when is_list(attrs) do
+    Enum.reject(attrs, fn {_key, value} -> is_nil(value) end)
+  end
+
+  defp invalid_sdk_options(provider_name, reason) do
+    Error.new(
+      :config_invalid,
+      :config,
+      "invalid #{provider_name} sdk options: #{inspect(reason)}",
+      cause: reason
+    )
   end
 
   defmodule SessionProxy do
@@ -318,7 +420,13 @@ defmodule ASM.ProviderBackend.SDK do
     end
 
     def handle_call(:info, _from, %__MODULE__{} = state) do
-      {:reply, Map.put(state.info, :runtime, state.runtime), state}
+      info =
+        state.info
+        |> Map.put(:provider, state.provider)
+        |> Map.put(:runtime, state.runtime)
+        |> Map.put(:capabilities, runtime_capabilities(state.runtime))
+
+      {:reply, info, state}
     end
 
     @impl true
@@ -334,5 +442,13 @@ defmodule ASM.ProviderBackend.SDK do
 
     defp normalize_info(%{} = info), do: info
     defp normalize_info(other), do: %{session_info: other}
+
+    defp runtime_capabilities(runtime) when is_atom(runtime) do
+      if Code.ensure_loaded?(runtime) and function_exported?(runtime, :capabilities, 0) do
+        runtime.capabilities()
+      else
+        []
+      end
+    end
   end
 end

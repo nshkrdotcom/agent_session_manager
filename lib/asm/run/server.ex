@@ -5,7 +5,7 @@ defmodule ASM.Run.Server do
 
   use GenServer, restart: :temporary
 
-  alias ASM.{Error, Event, Provider, ProviderRegistry, Run}
+  alias ASM.{Error, Event, Metadata, Provider, ProviderRegistry, Run}
   alias CliSubprocessCore.Payload
 
   @backend_event_tag :cli_subprocess_core_session
@@ -240,20 +240,35 @@ defmodule ASM.Run.Server do
     end
   end
 
-  defp resolve_backend(_provider, %Run.State{backend: backend}) when is_atom(backend) do
-    {:ok, %{backend: backend, lane: :core, observability: %{provider: :test, lane: :test}}}
+  defp resolve_backend(provider, %Run.State{backend: backend} = state)
+       when is_atom(backend) and not is_nil(backend) do
+    lane = backend_override_lane(state.lane)
+    execution_mode = execution_mode(state)
+
+    {:ok,
+     %{
+       backend: backend,
+       requested_lane: state.lane || lane,
+       preferred_lane: lane,
+       lane: lane,
+       observability: %{
+         provider: provider.name,
+         provider_display_name: provider.display_name,
+         requested_lane: state.lane || lane,
+         preferred_lane: lane,
+         lane: lane,
+         lane_reason: :backend_override,
+         lane_fallback_reason: nil,
+         execution_mode: execution_mode,
+         backend: backend
+       }
+     }}
   end
 
   defp resolve_backend(provider, %Run.State{} = state) do
-    execution_mode =
-      case state.execution_config do
-        %ASM.Execution.Config{execution_mode: mode} -> mode
-        _ -> :local
-      end
-
     ProviderRegistry.resolve(provider.name,
       lane: state.lane || :auto,
-      execution_mode: execution_mode
+      execution_mode: execution_mode(state)
     )
   end
 
@@ -308,13 +323,19 @@ defmodule ASM.Run.Server do
   defp put_backend_state(state, resolution, pid, info, start_config) do
     ref = Process.monitor(pid)
 
+    backend_info =
+      info
+      |> normalize_backend_info()
+      |> Map.merge(fetch_backend_info(resolution.backend, pid))
+      |> Map.merge(resolution.observability)
+
     %{
       state
       | backend: resolution.backend,
         backend_pid: pid,
         backend_ref: ref,
         backend_subscription_ref: start_config.subscription_ref,
-        backend_info: Map.merge(resolution.observability, normalize_backend_info(info)),
+        backend_info: backend_info,
         lane: resolution.lane,
         metadata: Map.merge(state.metadata, resolution.observability)
     }
@@ -376,6 +397,7 @@ defmodule ASM.Run.Server do
 
   defp process_events(state, events) when is_list(events) do
     Enum.reduce(events, state, fn event, acc ->
+      event = merge_event_metadata(event, acc.metadata)
       next_state = Run.EventReducer.apply_event!(acc, event)
       fanout(next_state, event)
       maybe_track_approval(next_state, event)
@@ -475,4 +497,28 @@ defmodule ASM.Run.Server do
 
   defp normalize_backend_info(%{} = info), do: info
   defp normalize_backend_info(other), do: %{session: other}
+
+  defp merge_event_metadata(%Event{} = event, metadata) when is_map(metadata) do
+    %{event | metadata: Metadata.merge_run_metadata(metadata, event.metadata)}
+  end
+
+  defp fetch_backend_info(backend, pid) when is_atom(backend) and is_pid(pid) do
+    backend.info(pid)
+    |> normalize_backend_info()
+  rescue
+    _error ->
+      %{}
+  catch
+    :exit, _reason ->
+      %{}
+  end
+
+  defp execution_mode(%Run.State{execution_config: %ASM.Execution.Config{execution_mode: mode}})
+       when mode in [:local, :remote_node],
+       do: mode
+
+  defp execution_mode(_state), do: :local
+
+  defp backend_override_lane(lane) when lane in [:core, :sdk], do: lane
+  defp backend_override_lane(_lane), do: :core
 end

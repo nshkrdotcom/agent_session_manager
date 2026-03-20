@@ -179,6 +179,7 @@ defmodule ASM.Session.ServerTest do
     assert {:ok, run_id, run_pid} =
              Server.submit_run(server, "approval-timeout",
                run_module: ASM.Run.Server,
+               lane: :sdk,
                backend_module: FakeBackend,
                backend_opts: [script: script],
                execution_config: local_execution_config(),
@@ -186,6 +187,10 @@ defmodule ASM.Session.ServerTest do
              )
 
     assert_receive {:asm_run_event, ^run_id, %ASM.Event{kind: :run_started}}
+
+    run_state = ASM.Run.Server.get_state(run_pid)
+    assert run_state.lane == :sdk
+    assert run_state.metadata.requested_lane == :sdk
 
     approval_id = "approval-timeout-session-1"
 

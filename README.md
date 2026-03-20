@@ -87,6 +87,8 @@ Provider atom form for one-off queries:
 
 Per-run options override session defaults. Session defaults are inherited automatically.
 
+## Runtime Architecture
+
 Runtime execution path:
 
 - `ASM.ProviderRegistry` resolves the provider onto `:core` or `:sdk`.
@@ -94,6 +96,134 @@ Runtime execution path:
 - `ASM.ProviderBackend.SDK` runs optional provider runtime kits when they are available locally.
 - `ASM.Run.Server` starts the resolved backend, subscribes to backend events, wraps core events in `%ASM.Event{}`, and applies pipelines/reducers.
 - `ASM.Session.Server` remains aggregate root for run admission, approval routing, and session-level cost accounting.
+
+Lane selection is intentionally separate from execution mode:
+
+- provider discovery chooses the preferred lane first
+- execution mode then decides whether that preferred lane can execute as requested
+- `:remote_node` always executes the core lane in Phase 1
+
+This produces three distinct values in observability metadata:
+
+- `requested_lane`: the caller request (`:auto | :core | :sdk`)
+- `preferred_lane`: the lane selected by provider/runtime discovery
+- `lane`: the effective lane that actually executed
+
+When `lane: :auto` prefers `:sdk` but `execution_mode: :remote_node`, ASM records `preferred_lane: :sdk` and executes with `lane: :core`, `backend: ASM.ProviderBackend.Core`, and `lane_fallback_reason: :sdk_remote_unsupported`. An explicit `lane: :sdk` with `execution_mode: :remote_node` is a configuration error.
+
+## Lane Selection
+
+Use `ASM.ProviderRegistry` to inspect lane availability and resolution:
+
+```elixir
+{:ok, provider_info} = ASM.ProviderRegistry.provider_info(:codex)
+{:ok, lane_info} = ASM.ProviderRegistry.lane_info(:codex, lane: :auto)
+
+{:ok, resolution} =
+  ASM.ProviderRegistry.resolve(:codex,
+    lane: :auto,
+    execution_mode: :remote_node
+  )
+```
+
+`provider_info/1` reports provider-level facts such as:
+
+- `sdk_runtime`
+- `sdk_available?`
+- `available_lanes`
+- `core_capabilities`
+- `sdk_capabilities`
+
+`lane_info/2` is discovery-only and returns:
+
+- `requested_lane`
+- `preferred_lane`
+- `backend` for that preferred lane
+- `lane_reason`
+- lane-specific `capabilities`
+
+`resolve/2` adds execution-mode compatibility and returns the effective:
+
+- `lane`
+- `backend`
+- `execution_mode`
+- `lane_fallback_reason`
+
+Typical projected metadata for a remote auto-lane run:
+
+```elixir
+%{
+  requested_lane: :auto,
+  preferred_lane: :sdk,
+  lane: :core,
+  backend: ASM.ProviderBackend.Core,
+  execution_mode: :remote_node,
+  lane_fallback_reason: :sdk_remote_unsupported
+}
+```
+
+Lane rules:
+
+- `:core` is always available
+- `:sdk` is optional and requires the provider runtime kit to be installed and loadable
+- `:auto` prefers `:sdk` when the runtime kit is available locally, otherwise it uses `:core`
+
+## Provider Backend Model
+
+`ASM.ProviderBackend.Core` is the baseline backend for every provider:
+
+- required dependency surface
+- works in `execution_mode: :local`
+- works in `execution_mode: :remote_node`
+- uses provider core profiles from `cli_subprocess_core`
+
+`ASM.ProviderBackend.SDK` is additive, not foundational:
+
+- selected only when the provider runtime kit is installed locally
+- limited to `execution_mode: :local`
+- keeps the same session/run/event model as the core lane
+- remains optional so ASM still runs cleanly without SDK dependencies present
+
+Approval routing, interrupt control, and result projection are lane-agnostic. The lane changes how the provider backend is started, not how the session aggregate behaves.
+
+## Event Model And Result Projection
+
+Backends emit core runtime events. `ASM.Run.Server` wraps them into `%ASM.Event{}` values that carry run/session scope plus stable observability metadata. Stream consumers therefore see the same lane and execution metadata that final results expose.
+
+Common metadata keys include:
+
+- `provider`
+- `provider_display_name`
+- `requested_lane`
+- `preferred_lane`
+- `lane`
+- `backend`
+- `execution_mode`
+- `lane_reason`
+- `lane_fallback_reason`
+- `sdk_runtime`
+- `sdk_available?`
+- `capabilities`
+
+`ASM.Stream.final_result/1` reduces the streamed `%ASM.Event{}` sequence through `ASM.Run.EventReducer` and projects a final `%ASM.Result{}`. `%ASM.Result.metadata` is therefore derived from the event stream rather than from a side channel, which keeps streaming and query-style consumption aligned.
+
+## Approval Routing And Interrupts
+
+Approvals are session-scoped even though they originate from individual runs:
+
+- a backend emits `:approval_requested`
+- `ASM.Run.Server` notifies `ASM.Session.Server`
+- the session indexes `approval_id` to the owning run process
+- `ASM.approve/3` routes the decision back to that run
+
+If an approval is not resolved before `approval_timeout_ms`, ASM emits `:approval_resolved` with `decision: :deny` and `reason: "timeout"`.
+
+Interrupts are run-scoped:
+
+- `ASM.interrupt/2` interrupts an active run through its backend and the run ends with a terminal `user_cancelled` error
+- queued runs are removed from the session queue before they start
+
+These control semantics stay the same across `:core` and `:sdk`, and across local versus remote execution.
 
 ## Remote Node Execution
 
@@ -170,6 +300,12 @@ Runtime control:
 - `ASM.cost/1`
 - `ASM.interrupt/2`
 - `ASM.approve/3`
+
+Lane and provider introspection:
+
+- `ASM.ProviderRegistry.provider_info/1`
+- `ASM.ProviderRegistry.lane_info/2`
+- `ASM.ProviderRegistry.resolve/2`
 
 Streaming helpers:
 

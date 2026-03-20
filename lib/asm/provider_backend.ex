@@ -1,6 +1,14 @@
 defmodule ASM.ProviderBackend do
   @moduledoc """
   Runtime contract for provider backends.
+
+  Both Phase 1 lanes satisfy this behaviour:
+
+  - `ASM.ProviderBackend.Core`
+  - `ASM.ProviderBackend.SDK`
+
+  Lane selection is owned by `ASM.ProviderRegistry` and remains orthogonal to
+  `execution_mode`.
   """
 
   @callback start_run(map()) :: {:ok, pid(), term()} | {:error, term()}

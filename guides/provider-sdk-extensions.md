@@ -114,6 +114,9 @@ into the Claude-native client surface.
 - ASM does not re-model those richer APIs in the kernel
 - the Claude bridge keeps ASM config and Claude-native config in separate
   arguments on purpose
+- ASM-derived fields such as `:cwd`, `:permission_mode`, `:model`,
+  `:max_turns`, and `:timeout_ms` must stay in ASM config and are rejected from
+  `native_overrides`
 
 ## Current Native Capability Inventory
 

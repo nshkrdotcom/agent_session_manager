@@ -26,6 +26,12 @@ defmodule ASM do
   alias ASM.{Error, Result, Session, Stream}
 
   @type session_ref :: GenServer.server()
+  @type session_info :: %{
+          session_id: String.t(),
+          provider: ASM.Provider.provider_name(),
+          options: keyword(),
+          status: atom()
+        }
 
   @spec start_link(keyword()) :: {:ok, session_ref()} | {:error, Error.t() | term()}
   def start_link(opts \\ []), do: start_session(opts)
@@ -118,6 +124,22 @@ defmodule ASM do
     Session.Server.get_state(session).session_id
   rescue
     _ -> nil
+  end
+
+  @spec session_info(session_ref()) :: {:ok, session_info()} | {:error, Error.t()}
+  def session_info(session) do
+    state = Session.Server.get_state(session)
+
+    {:ok,
+     %{
+       session_id: state.session_id,
+       provider: state.provider.name,
+       options: state.options,
+       status: state.status
+     }}
+  rescue
+    error ->
+      {:error, Error.new(:runtime, :runtime, "unable to read ASM session info", cause: error)}
   end
 
   @spec health(session_ref()) :: :healthy | :degraded | {:unhealthy, term()}

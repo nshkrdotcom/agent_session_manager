@@ -14,11 +14,22 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
 
     @behaviour ClaudeAgentSDK.Transport
 
+    @impl true
     def start(opts), do: GenServer.start(__MODULE__, opts)
+
+    @impl true
     def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
+
+    @impl true
     def send(transport, message), do: GenServer.call(transport, {:send, message})
+
+    @impl true
     def subscribe(transport, pid), do: GenServer.call(transport, {:subscribe, pid})
+
+    @impl true
     def close(transport), do: GenServer.stop(transport, :normal)
+
+    @impl true
     def status(transport), do: GenServer.call(transport, :status)
 
     def push_message(transport, payload) do
@@ -193,6 +204,19 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
 
     assert error.kind == :config_invalid
     assert error.domain == :provider
+  end
+
+  test "sdk_options/2 rejects native overrides that redefine ASM-derived fields" do
+    assert {:error, error} =
+             Claude.sdk_options(
+               [provider: :claude, permission_mode: :plan],
+               permission_mode: :auto
+             )
+
+    assert error.kind == :config_invalid
+    assert error.domain == :config
+    assert error.message =~ "native_overrides"
+    assert error.message =~ ":permission_mode"
   end
 
   defp safe_stop_client(pid) when is_pid(pid) do

@@ -61,6 +61,29 @@ defmodule ASM.APITest do
     assert :ok = ASM.stop_session(session)
   end
 
+  test "session_info/1 returns normalized kernel session metadata" do
+    session_id = "api-session-info-" <> Integer.to_string(System.unique_integer([:positive]))
+
+    assert {:ok, session} =
+             ASM.start_session(
+               session_id: session_id,
+               provider: :claude,
+               cwd: "/tmp/asm-session-info",
+               permission_mode: :plan,
+               model: "sonnet"
+             )
+
+    assert {:ok, info} = ASM.session_info(session)
+    assert info.session_id == session_id
+    assert info.provider == :claude
+    assert info.status == :ready
+    assert info.options[:cwd] == "/tmp/asm-session-info"
+    assert info.options[:permission_mode] == :plan
+    assert info.options[:model] == "sonnet"
+
+    assert :ok = ASM.stop_session(session)
+  end
+
   test "query/3 surfaces terminal run errors as {:error, %ASM.Error{}}" do
     session_id = "api-query-error-" <> Integer.to_string(System.unique_integer([:positive]))
     assert {:ok, session} = ASM.start_session(session_id: session_id, provider: :claude)

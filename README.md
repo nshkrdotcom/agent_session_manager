@@ -273,6 +273,8 @@ That bridge is intentionally separate from the normalized kernel:
 
 - ASM-style options stay in the first argument
 - Claude-native options stay in `native_overrides`
+- overlapping keys such as `:cwd`, `:permission_mode`, `:model`, and
+  `:max_turns` are rejected and must stay in `asm_opts`
 - control calls still use `ClaudeAgentSDK.Client.*`
 
 See [Provider SDK Extensions](guides/provider-sdk-extensions.md) for the

@@ -25,6 +25,15 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
   @hooks_module Module.concat(["ClaudeAgentSDK", "Hooks"])
   @permission_module Module.concat(["ClaudeAgentSDK", "Permission"])
   @control_protocol_module Module.concat(["ClaudeAgentSDK", "ControlProtocol", "Protocol"])
+  @asm_derived_sdk_option_keys [
+    :cwd,
+    :env,
+    :path_to_claude_code_executable,
+    :permission_mode,
+    :model,
+    :max_turns,
+    :timeout_ms
+  ]
   @native_capabilities [:control_client, :control_protocol, :hooks, :permission_callbacks]
 
   @native_surface_modules [
@@ -100,6 +109,7 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
       when is_list(asm_opts) and is_list(native_overrides) do
     with :ok <- ensure_sdk_module(@sdk_options_module, "Claude SDK options"),
          {:ok, validated} <- validate_asm_options(asm_opts),
+         :ok <- ensure_native_override_boundary(native_overrides),
          attrs <- sdk_option_attrs(validated, native_overrides),
          {:ok, options} <- build_sdk_options(attrs) do
       {:ok, options}
@@ -155,19 +165,20 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
   end
 
   defp asm_options_from_session(session, asm_overrides) do
-    state = :sys.get_state(session)
-
-    case state do
-      %{provider: %{name: :claude}, options: options} when is_list(options) ->
+    case ASM.session_info(session) do
+      {:ok, %{provider: :claude, options: options}} when is_list(options) ->
         {:ok, Keyword.merge(Keyword.put(options, :provider, :claude), asm_overrides)}
 
-      %{provider: %{name: provider}} ->
+      {:ok, %{provider: provider}} ->
         {:error,
          Error.new(
            :config_invalid,
            :provider,
            "Claude extension requires an ASM Claude session, got #{inspect(provider)}"
          )}
+
+      {:error, %Error{} = error} ->
+        {:error, error}
 
       other ->
         {:error,
@@ -178,15 +189,6 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
            cause: other
          )}
     end
-  catch
-    :exit, reason ->
-      {:error,
-       Error.new(
-         :runtime,
-         :runtime,
-         "unable to read ASM session state for Claude extension",
-         cause: reason
-       )}
   end
 
   defp validate_asm_options(asm_opts) do
@@ -211,6 +213,27 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
     |> base_sdk_option_attrs()
     |> maybe_add_thinking(validated, native_overrides)
     |> Keyword.merge(native_overrides)
+  end
+
+  defp ensure_native_override_boundary(native_overrides) when is_list(native_overrides) do
+    conflicts =
+      native_overrides
+      |> Keyword.keys()
+      |> Enum.uniq()
+      |> Enum.filter(&(&1 in @asm_derived_sdk_option_keys))
+
+    if conflicts == [] do
+      :ok
+    else
+      {:error,
+       Error.new(
+         :config_invalid,
+         :config,
+         "Claude native_overrides must not redefine ASM-derived options: " <>
+           Enum.map_join(conflicts, ", ", &inspect/1) <> ". Set those fields in asm_opts instead.",
+         cause: conflicts
+       )}
+    end
   end
 
   defp base_sdk_option_attrs(validated) do

@@ -11,11 +11,22 @@ defmodule ASM.Examples.ClaudeControlExtensionDemo.Transport do
 
   @behaviour ClaudeAgentSDK.Transport
 
+  @impl true
   def start(opts), do: GenServer.start(__MODULE__, opts)
+
+  @impl true
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
+
+  @impl true
   def send(transport, payload), do: GenServer.call(transport, {:send, payload})
+
+  @impl true
   def subscribe(transport, pid), do: GenServer.call(transport, {:subscribe, pid})
+
+  @impl true
   def close(transport), do: GenServer.stop(transport, :normal)
+
+  @impl true
   def status(_transport), do: :connected
 
   @impl GenServer

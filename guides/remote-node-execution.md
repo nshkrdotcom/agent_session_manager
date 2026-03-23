@@ -11,7 +11,7 @@ Use `execution_mode: :remote_node` and configure remote backend options in `driv
   ASM.start_session(
     provider: :codex,
     execution_mode: :remote_node,
-    # Phase 1 keeps remote backend options under :driver_opts
+    # Remote backend options stay under :driver_opts
     driver_opts: [
       remote_node: :"asm@sandbox-a",
       remote_cookie: :cluster_cookie,
@@ -42,7 +42,7 @@ ASM.query(session, "run locally", execution_mode: :local)
 Lane resolution remains discovery-driven even when the run executes remotely.
 
 - `lane: :core` executes remotely on `ASM.ProviderBackend.Core`
-- `lane: :auto` still prefers `:sdk` when a local runtime kit is installed, but Phase 1 remote execution falls back to `lane: :core`
+- `lane: :auto` still prefers `:sdk` when a local runtime kit is installed, but the landed Phase 2A remote boundary falls back to `lane: :core`
 - `lane: :sdk` with `execution_mode: :remote_node` is rejected as a configuration error
 
 This means remote results and streamed events can show:
@@ -73,7 +73,7 @@ Use `ASM.ProviderRegistry.resolve/2` when you need to inspect the effective back
 - `remote_cookie` (optional)
 - `remote_connect_timeout_ms` (default `5000`)
 - `remote_rpc_timeout_ms` (default `15000`)
-- `remote_boot_lease_timeout_ms` (accepted for config compatibility and carried in the resolved execution config, but not consumed by the Phase 1 backend start path)
+- `remote_boot_lease_timeout_ms` (accepted for config compatibility and carried in the resolved execution config, but not consumed by the current remote backend start path)
 - `remote_bootstrap_mode`
   - `:require_prestarted` (default)
   - `:ensure_started` (attempts `Application.ensure_all_started(:agent_session_manager)` on remote node)

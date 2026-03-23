@@ -101,7 +101,7 @@ Lane selection is intentionally separate from execution mode:
 
 - provider discovery chooses the preferred lane first
 - execution mode then decides whether that preferred lane can execute as requested
-- `:remote_node` always executes the core lane in Phase 1
+- `:remote_node` always executes the core lane in the landed Phase 2A boundary
 
 This produces three distinct values in observability metadata:
 
@@ -188,6 +188,11 @@ Lane rules:
 
 Approval routing, interrupt control, and result projection are lane-agnostic. The lane changes how the provider backend is started, not how the session aggregate behaves.
 
+ASM intentionally stops at this normalized backend boundary. Rich
+provider-native control families such as Claude hooks/permission callbacks and
+Codex app-server remain in the provider SDK repos and stay out of ASM's core
+execution model.
+
 See [Provider Backends](guides/provider-backends.md) for the backend contract and lane responsibilities.
 
 ## Event Model And Result Projection
@@ -244,7 +249,7 @@ Session-level remote default:
   ASM.start_session(
     provider: :codex,
     execution_mode: :remote_node,
-    # Phase 1 keeps remote backend options under :driver_opts
+    # Remote backend options stay under :driver_opts
     driver_opts: [
       remote_node: :"asm@sandbox-a",
       remote_cookie: :cluster_cookie,
@@ -274,7 +279,7 @@ Remote execution options:
 - `remote_cookie` (optional)
 - `remote_connect_timeout_ms` (default `5000`)
 - `remote_rpc_timeout_ms` (default `15000`)
-- `remote_boot_lease_timeout_ms` (accepted for config compatibility; retained in resolved execution config but not consumed by the Phase 1 backend start path)
+- `remote_boot_lease_timeout_ms` (accepted for config compatibility; retained in resolved execution config but not consumed by the current remote backend start path)
 - `remote_bootstrap_mode` (`:require_prestarted` | `:ensure_started`, default `:require_prestarted`)
 - `remote_cwd` (optional remote workspace override)
 - `remote_transport_call_timeout_ms` (overrides `transport_call_timeout_ms` for remote backend control calls)

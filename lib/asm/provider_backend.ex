@@ -2,7 +2,7 @@ defmodule ASM.ProviderBackend do
   @moduledoc """
   Runtime contract for provider backends.
 
-  Both Phase 1 lanes satisfy this behaviour:
+  Both landed backend lanes satisfy this behaviour:
 
   - `ASM.ProviderBackend.Core`
   - `ASM.ProviderBackend.SDK`

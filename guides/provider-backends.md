@@ -43,8 +43,9 @@ That keeps `ASM.Run.Server` lane-agnostic after resolution.
 - `lane: :sdk` resolves to `ASM.ProviderBackend.SDK` only when the runtime kit is available locally
 - `lane: :auto` prefers the SDK lane when available and otherwise falls back to the core lane
 
-`execution_mode` is applied after lane discovery. In Phase 1, remote execution
-always uses the core backend even if `:auto` preferred `:sdk`.
+`execution_mode` is applied after lane discovery. In the landed Phase 2A
+boundary, remote execution always uses the core backend even if `:auto`
+preferred `:sdk`.
 
 ## Observability
 

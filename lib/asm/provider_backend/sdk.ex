@@ -92,6 +92,7 @@ defmodule ASM.ProviderBackend.SDK do
       {:ok,
        sdk_start_opts(runtime, config,
          options: options,
+         max_stderr_buffer_size: kw(config, :max_stderr_buffer_bytes),
          metadata: %{lane: :sdk, asm_provider: :claude}
        )}
     end
@@ -183,8 +184,7 @@ defmodule ASM.ProviderBackend.SDK do
       append_system_prompt: kw(config, :append_system_prompt),
       include_partial_messages: true,
       output_format: :stream_json,
-      timeout_ms: kw(config, :transport_timeout_ms),
-      max_stderr_buffer_size: kw(config, :max_stderr_buffer_bytes)
+      timeout_ms: kw(config, :transport_timeout_ms)
     ]
     |> drop_nil_values()
   end

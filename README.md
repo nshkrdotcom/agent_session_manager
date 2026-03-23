@@ -49,6 +49,11 @@ provider SDK dependency only when you explicitly want its SDK-local family:
 - `{:amp_sdk, "~> 0.4.0", optional: true}` for Amp-specific
   compatibility/runtime-kit surfaces above the shared core
 
+No extra ASM wiring is required for those optional deps. ASM always keeps the
+common surface available through `cli_subprocess_core`, auto-detects optional
+provider runtime availability, and activates only the provider-native
+extension namespaces that genuinely exist today.
+
 The published dependency cutover order is fixed for this stack:
 `cli_subprocess_core` first, then the provider SDK packages, then
 `agent_session_manager`.
@@ -234,19 +239,31 @@ provider-native seams without widening `ASM`, `ASM.Stream`, or
 ```elixir
 alias ASM.Extensions.ProviderSDK
 
+catalog = ProviderSDK.extensions()
+active_extensions = ProviderSDK.available_extensions()
 {:ok, claude_extension} = ProviderSDK.extension(:claude)
 {:ok, codex_native_caps} = ProviderSDK.provider_capabilities(:codex)
+{:ok, gemini_report} = ProviderSDK.provider_report(:gemini)
 
 report = ProviderSDK.capability_report()
 
 claude_extension.namespace
 # ASM.Extensions.ProviderSDK.Claude
 
+Enum.map(catalog, & &1.provider)
+# [:claude, :codex]
+
+Enum.map(active_extensions, & &1.provider)
+# subset of [:claude, :codex], depending on installed optional deps
+
 codex_native_caps
 # [:app_server, :mcp, :realtime, :voice]
 
 report.claude.sdk_available?
 # true | false
+
+gemini_report.namespaces
+# []
 ```
 
 Current built-in namespaces:
@@ -256,11 +273,18 @@ Current built-in namespaces:
 
 Optional-loading rules:
 
+- `extensions/0` is the static native-extension catalog
+- `available_extensions/0`, `provider_report/1`, and `capability_report/0`
+  report the active composition state for the currently installed optional deps
 - extension discovery is always safe to call
-- `sdk_available?` reports whether the backing SDK package is loadable locally
+- `sdk_available?` reports whether the backing provider runtime kit is loadable
+  locally
 - rich provider-native APIs still live in `claude_agent_sdk` and `codex_sdk`
 - ASM does not normalize those richer APIs into `ASM`, `ASM.Stream`, or
   `ASM.ProviderRegistry`
+- Gemini and Amp may report `sdk_available?: true` while still exposing
+  `namespaces: []` because they currently compose only through the common ASM
+  surface and not through a separate provider-native extension namespace
 
 The Claude namespace now exposes an explicit bridge into the SDK-local control
 family:

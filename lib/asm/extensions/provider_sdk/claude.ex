@@ -15,7 +15,7 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
   The actual control family remains in `claude_agent_sdk`.
   """
 
-  alias ASM.{Error, Options, Provider}
+  alias ASM.{Error, Options, Provider, ProviderRegistry}
   alias ASM.Extensions.ProviderSDK.Extension
 
   @sdk_app :claude_agent_sdk
@@ -42,6 +42,7 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
     @hooks_module,
     @permission_module
   ]
+  @compile {:no_warn_undefined, [@sdk_options_module | @native_surface_modules]}
 
   @spec extension() :: Extension.t()
   def extension do
@@ -59,7 +60,7 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
   end
 
   @spec available?() :: boolean()
-  def available?, do: Code.ensure_loaded?(@sdk_module)
+  def available?, do: ProviderRegistry.sdk_available?(:claude)
 
   @doc """
   Returns the SDK-local Claude client module.

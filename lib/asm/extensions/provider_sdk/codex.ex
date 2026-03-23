@@ -18,7 +18,7 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
   `codex_sdk`.
   """
 
-  alias ASM.{Error, Options, Provider}
+  alias ASM.{Error, Options, Provider, ProviderRegistry}
   alias ASM.Extensions.ProviderSDK.Extension
 
   @sdk_app :codex_sdk
@@ -49,6 +49,8 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
     Module.concat(["Codex", "Realtime"]),
     Module.concat(["Codex", "Voice"])
   ]
+  @compile {:no_warn_undefined,
+            [@sdk_options_module, @thread_options_module | @native_surface_modules]}
 
   @spec extension() :: Extension.t()
   def extension do
@@ -66,7 +68,7 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
   end
 
   @spec available?() :: boolean()
-  def available?, do: Code.ensure_loaded?(@sdk_module)
+  def available?, do: ProviderRegistry.sdk_available?(:codex)
 
   @spec sdk_app() :: atom()
   def sdk_app, do: @sdk_app

@@ -55,7 +55,7 @@ defmodule ASM.Extensions.ProviderSDKTest do
     assert capabilities == [:control_client, :control_protocol, :hooks, :permission_callbacks]
   end
 
-  test "capability_report/0 groups namespaces and native surfaces by provider" do
+  test "capability_report/0 reports all providers while keeping Gemini and Amp common-surface-only" do
     report = ProviderSDK.capability_report()
 
     assert report.claude.namespaces == [ASM.Extensions.ProviderSDK.Claude]
@@ -82,6 +82,16 @@ defmodule ASM.Extensions.ProviderSDKTest do
              Codex.Realtime,
              Codex.Voice
            ]
+
+    assert report.gemini.sdk_available? == true
+    assert report.gemini.namespaces == []
+    assert report.gemini.extensions == []
+    assert report.gemini.native_capabilities == []
+
+    assert report.amp.sdk_available? == true
+    assert report.amp.namespaces == []
+    assert report.amp.extensions == []
+    assert report.amp.native_capabilities == []
   end
 
   test "available?/1 reflects optional sdk loading without widening the kernel export list" do

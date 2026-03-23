@@ -45,10 +45,12 @@ into one API.
 alias ASM.Extensions.ProviderSDK
 
 ProviderSDK.extensions()
+ProviderSDK.available_extensions()
 
 {:ok, claude_extension} = ProviderSDK.extension(:claude)
 {:ok, codex_extensions} = ProviderSDK.provider_extensions(:codex)
 {:ok, codex_native_caps} = ProviderSDK.provider_capabilities(:codex)
+{:ok, gemini_report} = ProviderSDK.provider_report(:gemini)
 
 report = ProviderSDK.capability_report()
 ```
@@ -60,6 +62,18 @@ Current built-in namespaces:
 
 These root modules are the namespace anchors for optional provider-native
 helpers.
+
+Activation-aware discovery follows a separate rule:
+
+- `extensions/0` is the static Claude/Codex native-extension catalog
+- `available_extensions/0` reports which of those namespaces are active for the
+  currently installed optional deps
+- `provider_report/1` and `capability_report/0` always include all ASM
+  providers, including Gemini and Amp, and show whether each provider SDK
+  runtime is available plus any active native namespace inventory
+- Gemini and Amp may therefore report `sdk_available?: true` with
+  `namespaces: []`, because they currently compose only through the common ASM
+  surface
 
 Claude now exposes an explicit bridge into the SDK-local control family:
 
@@ -164,6 +178,8 @@ alias Codex, as: CodexSDK
 - discovery calls are always available from ASM
 - each extension reports `sdk_available?`
 - `sdk_available?` only means the backing SDK package is loadable locally
+- `provider_capabilities/1` reports only active native capabilities for the
+  current dependency set
 - richer provider-native APIs still live in the provider SDK repos
 - ASM does not re-model those richer APIs in the kernel
 - the Claude bridge keeps ASM config and Claude-native config in separate

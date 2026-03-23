@@ -42,7 +42,6 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
     @hooks_module,
     @permission_module
   ]
-  @compile {:no_warn_undefined, [@sdk_options_module | @native_surface_modules]}
 
   @spec extension() :: Extension.t()
   def extension do
@@ -142,7 +141,7 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
       when is_list(asm_opts) and is_list(native_overrides) and is_list(client_opts) do
     with :ok <- ensure_sdk_module(@sdk_client_module, "Claude SDK client"),
          {:ok, options} <- sdk_options(asm_opts, native_overrides) do
-      @sdk_client_module.start_link(options, client_opts)
+      start_sdk_client(options, client_opts)
     end
   end
 
@@ -255,16 +254,68 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
   end
 
   defp build_sdk_options(attrs) do
-    {:ok, @sdk_options_module.new(attrs)}
+    new_sdk_struct(@sdk_options_module, attrs)
+  rescue
+    error ->
+      {:error, invalid_sdk_options(error)}
+  end
+
+  defp new_sdk_struct(module, attrs) when is_atom(module) do
+    with :ok <- ensure_sdk_module(module, "Claude SDK options") do
+      if function_exported?(module, :new, 1) do
+        {:ok, module.new(attrs)}
+      else
+        build_sdk_struct(module, attrs)
+      end
+    end
   rescue
     error in [ArgumentError, KeyError] ->
-      {:error,
-       Error.new(
-         :config_invalid,
-         :config,
-         "invalid Claude SDK options for ASM extension: #{Exception.message(error)}",
-         cause: error
-       )}
+      {:error, invalid_sdk_options(error)}
+  end
+
+  defp build_sdk_struct(module, attrs) when is_atom(module) do
+    with :ok <- ensure_sdk_module(module, "Claude SDK options") do
+      {:ok, struct(module, attrs)}
+    end
+  rescue
+    error in [ArgumentError, KeyError] ->
+      {:error, invalid_sdk_options(error)}
+  end
+
+  defp start_sdk_client(options, client_opts) when is_list(client_opts) do
+    with :ok <- ensure_sdk_module(@sdk_client_module, "Claude SDK client"),
+         true <- function_exported?(@sdk_client_module, :start_link, 2) do
+      module = @sdk_client_module
+      module.start_link(options, client_opts)
+    else
+      false ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :provider,
+           "Claude SDK client is missing start_link/2",
+           cause: @sdk_client_module
+         )}
+
+      {:error, %Error{} = error} ->
+        {:error, error}
+    end
+  end
+
+  defp invalid_sdk_options(reason) do
+    Error.new(
+      :config_invalid,
+      :config,
+      "invalid Claude SDK options for ASM extension: #{describe_invalid_sdk_options(reason)}",
+      cause: reason
+    )
+  end
+
+  defp describe_invalid_sdk_options(reason) do
+    Exception.message(reason)
+  rescue
+    _error in [Protocol.UndefinedError, FunctionClauseError] ->
+      inspect(reason)
   end
 
   defp ensure_sdk_module(module, label) when is_atom(module) do

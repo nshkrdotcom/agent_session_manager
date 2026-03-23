@@ -49,8 +49,6 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
     Module.concat(["Codex", "Realtime"]),
     Module.concat(["Codex", "Voice"])
   ]
-  @compile {:no_warn_undefined,
-            [@sdk_options_module, @thread_options_module | @native_surface_modules]}
 
   @spec extension() :: Extension.t()
   def extension do
@@ -162,7 +160,7 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
       when is_list(asm_opts) and is_list(native_overrides) and is_list(connect_opts) do
     with :ok <- ensure_sdk_module(@app_server_module, "Codex app-server"),
          {:ok, options} <- codex_options(asm_opts, native_overrides) do
-      @app_server_module.connect(options, connect_opts)
+      connect_sdk_app_server(options, connect_opts)
     end
   end
 
@@ -335,5 +333,25 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
         "invalid #{provider_name} SDK options: #{inspect(reason)}",
         cause: error
       )
+  end
+
+  defp connect_sdk_app_server(options, connect_opts) when is_list(connect_opts) do
+    with :ok <- ensure_sdk_module(@app_server_module, "Codex app-server"),
+         true <- function_exported?(@app_server_module, :connect, 2) do
+      module = @app_server_module
+      module.connect(options, connect_opts)
+    else
+      false ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :provider,
+           "Codex app-server is missing connect/2",
+           cause: @app_server_module
+         )}
+
+      {:error, %Error{} = error} ->
+        {:error, error}
+    end
   end
 end

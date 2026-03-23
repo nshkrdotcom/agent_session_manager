@@ -456,6 +456,7 @@ Environment knobs used by examples:
 - [Boundary Enforcement](guides/boundary-enforcement.md)
 - [Lane Selection](guides/lane-selection.md)
 - [Provider Backends](guides/provider-backends.md)
+- [Provider SDK Extensions](guides/provider-sdk-extensions.md)
 - [Event Model And Result Projection](guides/event-model-and-result-projection.md)
 - [Approvals And Interrupts](guides/approvals-and-interrupts.md)
 - [Live Adapter Feature Matrix](guides/live-adapters.md)
@@ -476,8 +477,10 @@ Remote backend sessions are supervised on the remote node, and startup is perfor
 
 ```bash
 mix format --check-formatted
+mix compile --warnings-as-errors
 mix test
 mix credo --strict
 mix dialyzer
 mix docs
+mix hex.build
 ```

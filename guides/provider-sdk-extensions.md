@@ -24,13 +24,11 @@ Provider-native extension discovery now lives under
 
 ## Why This Is Separate
 
-`ASM.ProviderRegistry` reports normalized lane/runtime facts:
+`ASM.ProviderRegistry` keeps normalized discovery on its existing surfaces:
 
-- `available_lanes`
-- `core_capabilities`
-- `sdk_capabilities`
-- `backend`
-- `lane`
+- `provider_info/1`: `available_lanes`, `core_capabilities`, `sdk_capabilities`
+- `lane_info/2`: `preferred_lane`, `backend`
+- `resolve/2`: effective `lane`, `backend`
 
 `ASM.Extensions.ProviderSDK` reports provider-native extension facts:
 
@@ -59,6 +57,9 @@ Current built-in namespaces:
 
 - `ASM.Extensions.ProviderSDK.Claude`
 - `ASM.Extensions.ProviderSDK.Codex`
+
+These root modules are the namespace anchors for later optional helpers. In
+this foundation slice they publish discovery metadata only.
 
 ## Optional-Loading Rules
 

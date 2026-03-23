@@ -105,6 +105,60 @@ native_overrides = [
 The normalized ASM APIs stay unchanged. Only the optional extension crosses
 into the Claude-native client surface.
 
+Codex now exposes a similarly narrow bridge into the SDK-local app-server
+entry path:
+
+- `ASM.Extensions.ProviderSDK.Codex.codex_options/2`
+- `ASM.Extensions.ProviderSDK.Codex.codex_options_for_session/3`
+- `ASM.Extensions.ProviderSDK.Codex.thread_options/2`
+- `ASM.Extensions.ProviderSDK.Codex.thread_options_for_session/3`
+- `ASM.Extensions.ProviderSDK.Codex.connect_app_server/3`
+- `ASM.Extensions.ProviderSDK.Codex.connect_app_server_for_session/4`
+
+Those helpers do not re-model app-server, MCP, realtime, or voice as ASM
+kernel APIs. They only:
+
+- derive `Codex.Options` from ASM-style config or session defaults
+- derive `Codex.Thread.Options` from ASM-style config or session defaults
+- keep Codex-native global or thread-only fields in explicit override bags
+- start `Codex.AppServer` when callers explicitly opt into the SDK-local
+  app-server family
+
+Example:
+
+```elixir
+alias ASM.Extensions.ProviderSDK.Codex
+alias Codex, as: CodexSDK
+
+{:ok, conn} =
+  Codex.connect_app_server(
+    [provider: :codex, model: "gpt-5.4", reasoning_effort: :high],
+    [model_personality: :pragmatic],
+    experimental_api: true
+  )
+
+{:ok, thread_opts} =
+  Codex.thread_options(
+    [
+      provider: :codex,
+      cwd: "/repo",
+      permission_mode: :auto,
+      approval_timeout_ms: 45_000,
+      output_schema: %{"type" => "object"}
+    ],
+    transport: {:app_server, conn},
+    personality: :pragmatic
+  )
+
+{:ok, codex_opts} =
+  Codex.codex_options(
+    [provider: :codex, model: "gpt-5.4"],
+    model_personality: :pragmatic
+  )
+
+{:ok, thread} = CodexSDK.start_thread(codex_opts, thread_opts)
+```
+
 ## Optional-Loading Rules
 
 - discovery calls are always available from ASM
@@ -117,6 +171,11 @@ into the Claude-native client surface.
 - ASM-derived fields such as `:cwd`, `:permission_mode`, `:model`,
   `:max_turns`, and `:timeout_ms` must stay in ASM config and are rejected from
   `native_overrides`
+- the Codex bridge follows the same rule for ASM-derived fields such as
+  `:model`, `:reasoning_effort`, `:cwd`, `:approval_timeout_ms`, and
+  `:output_schema`
+- the Codex bridge is intentionally useful only at the app-server entry seam;
+  the actual app-server, MCP, realtime, and voice APIs remain in `codex_sdk`
 
 ## Current Native Capability Inventory
 

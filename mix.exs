@@ -67,8 +67,12 @@ defmodule AgentSessionManager.MixProject do
 
   defp package do
     [
+      files: ~w(lib guides assets mix.exs README.md CHANGELOG.md LICENSE .formatter.exs),
       licenses: ["Apache-2.0"],
-      links: %{"GitHub" => @source_url}
+      links: %{
+        "GitHub" => @source_url,
+        "HexDocs" => "https://hexdocs.pm/agent_session_manager"
+      }
     ]
   end
 

@@ -31,6 +31,18 @@ def deps do
 end
 ```
 
+That dependency is the normalized kernel plus the built-in Phase 2B extension
+namespaces.
+
+Optional provider-native rich surfaces stay in provider SDK packages. Add a
+provider SDK dependency only when you explicitly want its richer SDK-local
+family:
+
+- `{:claude_agent_sdk, "~> 0.16", optional: true}` for Claude control-protocol
+  helpers
+- `{:codex_sdk, "~> 0.15", optional: true}` for Codex app-server, MCP,
+  realtime, or voice helpers
+
 ## CLI Setup
 
 Install provider CLIs you plan to use:
@@ -276,6 +288,57 @@ That bridge is intentionally separate from the normalized kernel:
 - overlapping keys such as `:cwd`, `:permission_mode`, `:model`, and
   `:max_turns` are rejected and must stay in `asm_opts`
 - control calls still use `ClaudeAgentSDK.Client.*`
+
+The Codex namespace now exposes a narrow bridge into the SDK-local app-server
+entry path:
+
+```elixir
+alias ASM.Extensions.ProviderSDK.Codex
+alias Codex, as: CodexSDK
+
+{:ok, conn} =
+  Codex.connect_app_server(
+    [
+      provider: :codex,
+      cli_path: "/usr/local/bin/codex",
+      model: "gpt-5.4",
+      reasoning_effort: :high
+    ],
+    [model_personality: :pragmatic],
+    experimental_api: true
+  )
+
+{:ok, thread_opts} =
+  Codex.thread_options(
+    [
+      provider: :codex,
+      cwd: "/workspaces/repo",
+      permission_mode: :auto,
+      approval_timeout_ms: 45_000,
+      output_schema: %{"type" => "object"}
+    ],
+    transport: {:app_server, conn},
+    personality: :pragmatic
+  )
+
+{:ok, codex_opts} =
+  Codex.codex_options(
+    [provider: :codex, model: "gpt-5.4"],
+    model_personality: :pragmatic
+  )
+
+{:ok, thread} = CodexSDK.start_thread(codex_opts, thread_opts)
+```
+
+That bridge is intentionally narrow:
+
+- ASM-derived fields such as `:model`, `:reasoning_effort`, `:cwd`,
+  `:approval_timeout_ms`, and `:output_schema` stay in ASM config
+- Codex-native fields such as `:personality`, `:collaboration_mode`,
+  `:attachments`, and app-server `transport` stay in `native_overrides`
+- richer Codex APIs still live in `codex_sdk`
+- app-server, MCP, realtime, and voice remain outside `ASM`, `ASM.Stream`, and
+  `ASM.ProviderRegistry`
 
 See [Provider SDK Extensions](guides/provider-sdk-extensions.md) for the
 kernel-versus-extension split and the discovery API.

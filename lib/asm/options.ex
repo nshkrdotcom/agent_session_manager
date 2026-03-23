@@ -37,7 +37,7 @@ defmodule ASM.Options do
       provider_permission_mode: [type: {:or, [:atom, nil]}, default: nil],
       cli_path: [type: {:or, [:string, nil]}, default: nil],
       cwd: [type: {:or, [:string, nil]}, default: nil],
-      env: [type: :map, default: %{}],
+      env: [type: {:custom, __MODULE__, :validate_passthrough_map, [:env]}, default: %{}],
       args: [type: {:list, :string}, default: []],
       queue_limit: [type: :pos_integer, default: app_default(:queue_limit, 1_000)],
       overflow_policy: [
@@ -146,6 +146,21 @@ defmodule ASM.Options do
 
   defp app_default(key, default) do
     Application.get_env(:agent_session_manager, key, default)
+  end
+
+  @doc false
+  def validate_passthrough_map(value, key) when is_map(value) do
+    if Enum.all?(Map.keys(value), &(is_atom(&1) or is_binary(&1))) do
+      {:ok, value}
+    else
+      {:error, "expected #{inspect(key)} map keys to be atoms or strings"}
+    end
+  end
+
+  def validate_passthrough_map(nil, _key), do: {:ok, nil}
+
+  def validate_passthrough_map(value, key) do
+    {:error, "expected #{inspect(key)} to be a map, got: #{inspect(value)}"}
   end
 
   defp config_error(message, details) do

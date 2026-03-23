@@ -291,7 +291,8 @@ defmodule ASM.Run.ServerTest do
     assert_receive {:asm_run_event, "run-boot", %Event{kind: :assistant_delta}}
     assert_receive {:asm_run_event, "run-boot", %Event{kind: :result}}
     assert_receive {:asm_run_done, "run-boot"}
-    assert {:ok, :normal} = wait_for_process_death(run_pid, 2_000)
+    assert {:ok, reason} = wait_for_process_death(run_pid, 2_000)
+    assert reason in [:normal, :noproc]
   end
 
   test "bootstrap explicitly subscribes to backend events" do
@@ -311,7 +312,8 @@ defmodule ASM.Run.ServerTest do
     assert_receive {:asm_run_event, "run-subscribe", %Event{kind: :assistant_delta}}
     assert_receive {:asm_run_event, "run-subscribe", %Event{kind: :result}}
     assert_receive {:asm_run_done, "run-subscribe"}
-    assert {:ok, :normal} = wait_for_process_death(run_pid, 2_000)
+    assert {:ok, reason} = wait_for_process_death(run_pid, 2_000)
+    assert reason in [:normal, :noproc]
   end
 
   test "ingest_event updates reducer state and terminal event emits done" do

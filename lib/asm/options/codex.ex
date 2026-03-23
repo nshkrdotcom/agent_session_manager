@@ -8,7 +8,10 @@ defmodule ASM.Options.Codex do
     [
       model: [type: :string],
       reasoning_effort: [type: {:in, [:low, :medium, :high, nil]}, default: nil],
-      output_schema: [type: {:or, [:map, nil]}, default: nil]
+      output_schema: [
+        type: {:custom, ASM.Options, :validate_passthrough_map, [:output_schema]},
+        default: nil
+      ]
     ]
   end
 end

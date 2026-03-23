@@ -1,8 +1,15 @@
 defmodule AgentSessionManager.MixProject do
   use Mix.Project
 
-  @version "0.10.0-dev"
+  @version "0.10.0"
   @source_url "https://github.com/nshkrdotcom/agent_session_manager"
+  @homepage_url "https://hex.pm/packages/agent_session_manager"
+  @docs_url "https://hexdocs.pm/agent_session_manager"
+  @cli_subprocess_core_requirement "~> 0.1.0"
+  @claude_agent_sdk_requirement "~> 0.16.0"
+  @codex_sdk_requirement "~> 0.15.0"
+  @gemini_cli_sdk_requirement "~> 0.1.0"
+  @amp_sdk_requirement "~> 0.4.0"
 
   def project do
     [
@@ -18,7 +25,7 @@ defmodule AgentSessionManager.MixProject do
       docs: docs(),
       name: "ASM",
       source_url: @source_url,
-      homepage_url: @source_url
+      homepage_url: @homepage_url
     ]
   end
 
@@ -42,11 +49,19 @@ defmodule AgentSessionManager.MixProject do
 
   defp deps do
     [
-      workspace_dep(:cli_subprocess_core, "../cli_subprocess_core", "~> 0.1.0"),
-      workspace_dep(:claude_agent_sdk, "../claude_agent_sdk", "~> 0.16.0", optional: true),
-      workspace_dep(:codex_sdk, "../codex_sdk", "~> 0.15.0", optional: true),
-      workspace_dep(:gemini_cli_sdk, "../gemini_cli_sdk", "~> 0.1.0", optional: true),
-      workspace_dep(:amp_sdk, "../amp_sdk", "~> 0.4.0", optional: true),
+      workspace_dep(
+        :cli_subprocess_core,
+        "../cli_subprocess_core",
+        @cli_subprocess_core_requirement
+      ),
+      workspace_dep(:claude_agent_sdk, "../claude_agent_sdk", @claude_agent_sdk_requirement,
+        optional: true
+      ),
+      workspace_dep(:codex_sdk, "../codex_sdk", @codex_sdk_requirement, optional: true),
+      workspace_dep(:gemini_cli_sdk, "../gemini_cli_sdk", @gemini_cli_sdk_requirement,
+        optional: true
+      ),
+      workspace_dep(:amp_sdk, "../amp_sdk", @amp_sdk_requirement, optional: true),
       {:boundary, path: "vendor/boundary", only: [:dev, :test], runtime: false},
       {:jason, "~> 1.4"},
       {:nimble_options, "~> 1.1"},
@@ -67,11 +82,16 @@ defmodule AgentSessionManager.MixProject do
 
   defp package do
     [
+      name: "agent_session_manager",
+      description: description(),
       files: ~w(lib guides assets mix.exs README.md CHANGELOG.md LICENSE .formatter.exs),
       licenses: ["Apache-2.0"],
+      maintainers: ["nshkrdotcom"],
       links: %{
         "GitHub" => @source_url,
-        "HexDocs" => "https://hexdocs.pm/agent_session_manager"
+        "Hex" => @homepage_url,
+        "HexDocs" => @docs_url,
+        "Changelog" => "#{@source_url}/blob/main/CHANGELOG.md"
       }
     ]
   end
@@ -88,6 +108,7 @@ defmodule AgentSessionManager.MixProject do
       assets: %{"assets" => "assets"},
       source_ref: "v#{@version}",
       source_url: @source_url,
+      homepage_url: @homepage_url,
       extras: ["README.md"] ++ guides ++ ["CHANGELOG.md", "LICENSE"],
       groups_for_extras: groups_for_extras(guides),
       groups_for_modules: groups_for_modules(),

@@ -92,9 +92,8 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
              @asm_derived_codex_option_keys,
              "Codex native_overrides"
            ),
-         attrs <- Keyword.merge(codex_option_attrs(validated), native_overrides),
-         {:ok, options} <- new_sdk_struct(@sdk_options_module, attrs, "codex") do
-      {:ok, options}
+         attrs <- Keyword.merge(codex_option_attrs(validated), native_overrides) do
+      new_sdk_struct(@sdk_options_module, attrs, "codex")
     end
   end
 
@@ -130,9 +129,8 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
              @asm_derived_thread_option_keys,
              "Codex native_overrides"
            ),
-         attrs <- Keyword.merge(thread_option_attrs(validated), native_overrides),
-         {:ok, options} <- new_sdk_struct(@thread_options_module, attrs, "codex") do
-      {:ok, options}
+         attrs <- Keyword.merge(thread_option_attrs(validated), native_overrides) do
+      new_sdk_struct(@thread_options_module, attrs, "codex")
     end
   end
 
@@ -162,7 +160,7 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
       when is_list(asm_opts) and is_list(native_overrides) and is_list(connect_opts) do
     with :ok <- ensure_sdk_module(@app_server_module, "Codex app-server"),
          {:ok, options} <- codex_options(asm_opts, native_overrides) do
-      apply(@app_server_module, :connect, [options, connect_opts])
+      @app_server_module.connect(options, connect_opts)
     end
   end
 
@@ -205,15 +203,6 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
 
       {:error, %Error{} = error} ->
         {:error, error}
-
-      other ->
-        {:error,
-         Error.new(
-           :runtime,
-           :runtime,
-           "unable to read ASM session state for Codex extension",
-           cause: other
-         )}
     end
   end
 
@@ -280,7 +269,7 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
   defp new_sdk_struct(module, attrs, provider_name) when is_atom(module) do
     with :ok <- ensure_sdk_module(module, provider_name),
          true <- function_exported?(module, :new, 1) do
-      case apply(module, :new, [attrs]) do
+      case module.new(attrs) do
         {:ok, value} ->
           {:ok, value}
 
@@ -337,12 +326,12 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
       cause: reason
     )
   rescue
-    Protocol.UndefinedError ->
+    error in [Protocol.UndefinedError, FunctionClauseError] ->
       Error.new(
         :config_invalid,
         :config,
         "invalid #{provider_name} SDK options: #{inspect(reason)}",
-        cause: reason
+        cause: error
       )
   end
 end

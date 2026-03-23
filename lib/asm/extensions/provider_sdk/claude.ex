@@ -110,9 +110,8 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
     with :ok <- ensure_sdk_module(@sdk_options_module, "Claude SDK options"),
          {:ok, validated} <- validate_asm_options(asm_opts),
          :ok <- ensure_native_override_boundary(native_overrides),
-         attrs <- sdk_option_attrs(validated, native_overrides),
-         {:ok, options} <- build_sdk_options(attrs) do
-      {:ok, options}
+         attrs <- sdk_option_attrs(validated, native_overrides) do
+      build_sdk_options(attrs)
     end
   end
 
@@ -142,7 +141,7 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
       when is_list(asm_opts) and is_list(native_overrides) and is_list(client_opts) do
     with :ok <- ensure_sdk_module(@sdk_client_module, "Claude SDK client"),
          {:ok, options} <- sdk_options(asm_opts, native_overrides) do
-      apply(@sdk_client_module, :start_link, [options, client_opts])
+      @sdk_client_module.start_link(options, client_opts)
     end
   end
 
@@ -179,15 +178,6 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
 
       {:error, %Error{} = error} ->
         {:error, error}
-
-      other ->
-        {:error,
-         Error.new(
-           :runtime,
-           :runtime,
-           "unable to read ASM session state for Claude extension",
-           cause: other
-         )}
     end
   end
 
@@ -264,7 +254,7 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
   end
 
   defp build_sdk_options(attrs) do
-    {:ok, apply(@sdk_options_module, :new, [attrs])}
+    {:ok, @sdk_options_module.new(attrs)}
   rescue
     error in [ArgumentError, KeyError] ->
       {:error,

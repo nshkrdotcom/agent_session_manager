@@ -26,22 +26,32 @@ Supported providers:
 ```elixir
 def deps do
   [
-    {:agent_session_manager, path: "../agent_session_manager"}
+    {:agent_session_manager, "~> 0.10.0"}
   ]
 end
 ```
+
+For local workspace development, replace that published requirement with the
+repo-local `path:` override.
 
 That dependency is the normalized kernel plus the built-in Phase 2B extension
 namespaces.
 
 Optional provider-native rich surfaces stay in provider SDK packages. Add a
-provider SDK dependency only when you explicitly want its richer SDK-local
-family:
+provider SDK dependency only when you explicitly want its SDK-local family:
 
-- `{:claude_agent_sdk, "~> 0.16", optional: true}` for Claude control-protocol
+- `{:claude_agent_sdk, "~> 0.16.0", optional: true}` for Claude control-protocol
   helpers
-- `{:codex_sdk, "~> 0.15", optional: true}` for Codex app-server, MCP,
+- `{:codex_sdk, "~> 0.15.0", optional: true}` for Codex app-server, MCP,
   realtime, or voice helpers
+- `{:gemini_cli_sdk, "~> 0.1.0", optional: true}` for Gemini-specific
+  compatibility/runtime-kit surfaces above the shared core
+- `{:amp_sdk, "~> 0.4.0", optional: true}` for Amp-specific
+  compatibility/runtime-kit surfaces above the shared core
+
+The published dependency cutover order is fixed for this stack:
+`cli_subprocess_core` first, then the provider SDK packages, then
+`agent_session_manager`.
 
 ## CLI Setup
 
@@ -51,6 +61,7 @@ Install provider CLIs you plan to use:
 npm install -g @anthropic-ai/claude-code
 npm install -g @google/gemini-cli
 npm install -g @openai/codex
+npm install -g @sourcegraph/amp
 ```
 
 Authenticate each CLI with its native flow before using ASM.

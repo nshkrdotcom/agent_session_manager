@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-03-23
+
 ### Added
 
 - Provider-native extension foundation under `ASM.Extensions.ProviderSDK`
@@ -23,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Distributed integration coverage with real `:peer` nodes (`@tag :distributed`)
 - Startup lease timeout support in `ASM.Transport.Port` (`startup_lease_timeout_ms`) to prevent orphaned transports when startup/attach paths fail
 - Timeout-aware transport control call variants in `ASM.Transport` and run-level timeout wiring via `transport_call_timeout_ms`
+
+### Changed
+
+- Published dependency cutover is now frozen to `cli_subprocess_core ~> 0.1.0`
+  plus optional `claude_agent_sdk ~> 0.16.0`, `codex_sdk ~> 0.15.0`,
+  `gemini_cli_sdk ~> 0.1.0`, and `amp_sdk ~> 0.4.0`.
 
 ### Fixed
 

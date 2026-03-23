@@ -105,7 +105,7 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
     assert options.cwd == "/tmp/asm-claude-extension"
     assert options.env == %{"FOO" => "bar"}
     assert options.path_to_claude_code_executable == "/usr/local/bin/claude"
-    assert options.permission_mode == :auto
+    assert options.permission_mode == :accept_edits
     assert options.model == "sonnet"
     assert options.max_turns == 3
     assert options.timeout_ms == 12_000

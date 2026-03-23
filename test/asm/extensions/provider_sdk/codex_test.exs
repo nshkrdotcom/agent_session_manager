@@ -1,7 +1,7 @@
 defmodule ASM.Extensions.ProviderSDK.CodexTest do
   use ASM.TestCase
 
-  alias ASM.Extensions.ProviderSDK.Codex
+  alias ASM.Extensions.ProviderSDK.Codex, as: CodexExtension
   alias Codex.{Options, Thread}
   alias Codex.Thread.Options, as: ThreadOptions
 
@@ -18,7 +18,8 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
       hide_agent_reasoning: true
     ]
 
-    assert {:ok, %Options{} = options} = Codex.codex_options(asm_opts, native_overrides)
+    assert {:ok, %Options{} = options} =
+             CodexExtension.codex_options(asm_opts, native_overrides)
 
     assert options.codex_path_override == "/usr/local/bin/codex"
     assert options.model == "gpt-5-codex"
@@ -38,10 +39,11 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
 
     native_overrides = [
       personality: :pragmatic,
-      collaboration_mode: :plan
+      collaboration_mode: %{mode: :plan}
     ]
 
-    assert {:ok, %ThreadOptions{} = options} = Codex.thread_options(asm_opts, native_overrides)
+    assert {:ok, %ThreadOptions{} = options} =
+             CodexExtension.thread_options(asm_opts, native_overrides)
 
     assert options.working_directory == "/tmp/asm-codex-thread"
     assert options.approval_timeout_ms == 45_000
@@ -49,7 +51,13 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
     assert options.dangerously_bypass_approvals_and_sandbox == false
     assert options.output_schema == %{"type" => "object"}
     assert options.personality == :pragmatic
-    assert options.collaboration_mode == :plan
+
+    assert options.collaboration_mode == %Codex.Protocol.CollaborationMode{
+             mode: :plan,
+             model: "",
+             reasoning_effort: nil,
+             developer_instructions: nil
+           }
   end
 
   test "session-based helpers merge ASM session defaults with explicit overrides" do
@@ -66,14 +74,14 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
     on_exit(fn -> safe_stop_session(session) end)
 
     assert {:ok, %Options{} = codex_options} =
-             Codex.codex_options_for_session(
+             CodexExtension.codex_options_for_session(
                session,
                [model: "gpt-5.4"],
                model_personality: :friendly
              )
 
     assert {:ok, %ThreadOptions{} = thread_options} =
-             Codex.thread_options_for_session(
+             CodexExtension.thread_options_for_session(
                session,
                [cwd: "/tmp/asm-codex-session-override"],
                personality: :none
@@ -95,7 +103,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
     conn = self()
 
     assert {:ok, %ThreadOptions{} = options} =
-             Codex.thread_options(
+             CodexExtension.thread_options(
                asm_opts,
                transport: {:app_server, conn},
                personality: :pragmatic
@@ -106,7 +114,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
   end
 
   test "codex_options/2 rejects non-Codex providers" do
-    assert {:error, error} = Codex.codex_options(provider: :claude)
+    assert {:error, error} = CodexExtension.codex_options(provider: :claude)
 
     assert error.kind == :config_invalid
     assert error.domain == :provider
@@ -114,7 +122,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
 
   test "native overrides may not redefine ASM-derived Codex option fields" do
     assert {:error, error} =
-             Codex.codex_options(
+             CodexExtension.codex_options(
                [provider: :codex, model: "gpt-5.4"],
                model: "gpt-5-codex"
              )
@@ -127,7 +135,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
 
   test "native overrides may not redefine ASM-derived Codex thread fields" do
     assert {:error, error} =
-             Codex.thread_options(
+             CodexExtension.thread_options(
                [provider: :codex, cwd: "/tmp/asm-codex"],
                working_directory: "/tmp/native-codex"
              )
@@ -139,10 +147,10 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
   end
 
   test "thread_options/2 returns a struct that can seed Codex.start_thread/2" do
-    assert {:ok, %Options{} = codex_opts} = Codex.codex_options(provider: :codex)
-    assert {:ok, %ThreadOptions{} = thread_opts} = Codex.thread_options(provider: :codex)
+    assert {:ok, %Options{} = codex_opts} = CodexExtension.codex_options(provider: :codex)
+    assert {:ok, %ThreadOptions{} = thread_opts} = CodexExtension.thread_options(provider: :codex)
 
-    assert {:ok, %Thread{} = thread} = Codex.start_thread(codex_opts, thread_opts)
+    assert {:ok, %Thread{} = thread} = Elixir.Codex.start_thread(codex_opts, thread_opts)
     assert thread.codex_opts == codex_opts
     assert thread.thread_opts == thread_opts
   end

@@ -22,7 +22,13 @@ defmodule ASM.Extensions.ProviderSDKTest do
     assert by_provider == by_module
     assert by_provider.provider == :claude
     assert by_provider.namespace == ASM.Extensions.ProviderSDK.Claude
-    assert by_provider.native_capabilities == [:control_protocol, :hooks, :permission_callbacks]
+
+    assert by_provider.native_capabilities == [
+             :control_client,
+             :control_protocol,
+             :hooks,
+             :permission_callbacks
+           ]
   end
 
   test "provider_extensions/1 resolves provider aliases and preserves kernel/provider split" do
@@ -43,11 +49,30 @@ defmodule ASM.Extensions.ProviderSDKTest do
     assert capabilities == [:app_server, :mcp, :realtime, :voice]
   end
 
+  test "claude provider_capabilities/1 includes the control-client bridge surface" do
+    assert {:ok, capabilities} = ProviderSDK.provider_capabilities(:claude)
+
+    assert capabilities == [:control_client, :control_protocol, :hooks, :permission_callbacks]
+  end
+
   test "capability_report/0 groups namespaces and native surfaces by provider" do
     report = ProviderSDK.capability_report()
 
     assert report.claude.namespaces == [ASM.Extensions.ProviderSDK.Claude]
-    assert report.claude.native_capabilities == [:control_protocol, :hooks, :permission_callbacks]
+
+    assert report.claude.native_capabilities == [
+             :control_client,
+             :control_protocol,
+             :hooks,
+             :permission_callbacks
+           ]
+
+    assert report.claude.native_surface_modules == [
+             ClaudeAgentSDK.Client,
+             ClaudeAgentSDK.ControlProtocol.Protocol,
+             ClaudeAgentSDK.Hooks,
+             ClaudeAgentSDK.Permission
+           ]
 
     assert report.codex.namespaces == [ASM.Extensions.ProviderSDK.Codex]
 

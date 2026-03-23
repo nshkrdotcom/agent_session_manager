@@ -1,22 +1,37 @@
 defmodule ASM.Extensions.ProviderSDK.Claude do
   @moduledoc """
-  Discovery metadata for the optional Claude-native ASM extension namespace.
+  Discovery metadata and bridge helpers for the optional Claude-native ASM
+  extension namespace.
 
-  This module does not implement Claude's richer APIs. It only declares the
-  namespace and native surface inventory that lives above ASM's normalized
-  kernel.
+  This namespace lives above ASM's normalized kernel.
+
+  It does not implement Claude's richer control semantics itself. Instead it:
+
+  - publishes discovery metadata for the optional Claude-native surface
+  - derives `ClaudeAgentSDK.Options` from ASM-style configuration
+  - starts `ClaudeAgentSDK.Client` when callers explicitly opt into the
+    SDK-local control family
+
+  The actual control family remains in `claude_agent_sdk`.
   """
 
+  alias ASM.{Error, Options, Provider}
   alias ASM.Extensions.ProviderSDK.Extension
 
   @sdk_app :claude_agent_sdk
   @sdk_module Module.concat(["ClaudeAgentSDK"])
-  @native_capabilities [:control_protocol, :hooks, :permission_callbacks]
+  @sdk_client_module Module.concat(["ClaudeAgentSDK", "Client"])
+  @sdk_options_module Module.concat(["ClaudeAgentSDK", "Options"])
+  @hooks_module Module.concat(["ClaudeAgentSDK", "Hooks"])
+  @permission_module Module.concat(["ClaudeAgentSDK", "Permission"])
+  @control_protocol_module Module.concat(["ClaudeAgentSDK", "ControlProtocol", "Protocol"])
+  @native_capabilities [:control_client, :control_protocol, :hooks, :permission_callbacks]
 
   @native_surface_modules [
-    Module.concat(["ClaudeAgentSDK", "ControlProtocol", "Protocol"]),
-    Module.concat(["ClaudeAgentSDK", "Hooks"]),
-    Module.concat(["ClaudeAgentSDK", "Permission"])
+    @sdk_client_module,
+    @control_protocol_module,
+    @hooks_module,
+    @permission_module
   ]
 
   @spec extension() :: Extension.t()
@@ -37,15 +52,218 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
   @spec available?() :: boolean()
   def available?, do: Code.ensure_loaded?(@sdk_module)
 
+  @doc """
+  Returns the SDK-local Claude client module.
+  """
+  @spec client_module() :: module()
+  def client_module, do: @sdk_client_module
+
   @spec sdk_app() :: atom()
   def sdk_app, do: @sdk_app
 
   @spec sdk_module() :: module()
   def sdk_module, do: @sdk_module
 
+  @doc """
+  Returns the Claude SDK control protocol module.
+  """
+  @spec control_protocol_module() :: module()
+  def control_protocol_module, do: @control_protocol_module
+
+  @doc """
+  Returns the Claude SDK hooks module.
+  """
+  @spec hooks_module() :: module()
+  def hooks_module, do: @hooks_module
+
+  @doc """
+  Returns the Claude SDK permission module.
+  """
+  @spec permission_module() :: module()
+  def permission_module, do: @permission_module
+
   @spec native_capabilities() :: [atom()]
   def native_capabilities, do: @native_capabilities
 
   @spec native_surface_modules() :: [module()]
   def native_surface_modules, do: @native_surface_modules
+
+  @doc """
+  Derives `ClaudeAgentSDK.Options` from ASM-style Claude configuration.
+
+  `native_overrides` remains the explicit home for Claude-native options such as
+  hooks, permission callbacks, SDK MCP servers, file checkpointing, or thinking
+  configuration. Those fields are not normalized into ASM's kernel API.
+  """
+  @spec sdk_options(keyword(), keyword()) :: {:ok, struct()} | {:error, Error.t()}
+  def sdk_options(asm_opts, native_overrides \\ [])
+      when is_list(asm_opts) and is_list(native_overrides) do
+    with :ok <- ensure_sdk_module(@sdk_options_module, "Claude SDK options"),
+         {:ok, validated} <- validate_asm_options(asm_opts),
+         attrs <- sdk_option_attrs(validated, native_overrides),
+         {:ok, options} <- build_sdk_options(attrs) do
+      {:ok, options}
+    end
+  end
+
+  @doc """
+  Derives `ClaudeAgentSDK.Options` from an ASM session plus optional ASM/native
+  overrides.
+  """
+  @spec sdk_options_for_session(term(), keyword(), keyword()) ::
+          {:ok, struct()} | {:error, Error.t()}
+  def sdk_options_for_session(session, asm_overrides \\ [], native_overrides \\ [])
+      when is_list(asm_overrides) and is_list(native_overrides) do
+    with {:ok, asm_opts} <- asm_options_from_session(session, asm_overrides) do
+      sdk_options(asm_opts, native_overrides)
+    end
+  end
+
+  @doc """
+  Starts `ClaudeAgentSDK.Client` from ASM-style Claude configuration.
+
+  ASM configuration stays on the first argument. Claude-native options live in
+  `native_overrides`. Direct client startup knobs such as `:transport` live in
+  `client_opts`.
+  """
+  @spec start_client(keyword(), keyword(), keyword()) ::
+          GenServer.on_start() | {:error, Error.t() | term()}
+  def start_client(asm_opts, native_overrides \\ [], client_opts \\ [])
+      when is_list(asm_opts) and is_list(native_overrides) and is_list(client_opts) do
+    with :ok <- ensure_sdk_module(@sdk_client_module, "Claude SDK client"),
+         {:ok, options} <- sdk_options(asm_opts, native_overrides) do
+      apply(@sdk_client_module, :start_link, [options, client_opts])
+    end
+  end
+
+  @doc """
+  Starts `ClaudeAgentSDK.Client` from an ASM session plus optional ASM/native
+  overrides.
+  """
+  @spec start_client_for_session(term(), keyword(), keyword(), keyword()) ::
+          GenServer.on_start() | {:error, Error.t() | term()}
+  def start_client_for_session(
+        session,
+        asm_overrides \\ [],
+        native_overrides \\ [],
+        client_opts \\ []
+      )
+      when is_list(asm_overrides) and is_list(native_overrides) and is_list(client_opts) do
+    with {:ok, asm_opts} <- asm_options_from_session(session, asm_overrides) do
+      start_client(asm_opts, native_overrides, client_opts)
+    end
+  end
+
+  defp asm_options_from_session(session, asm_overrides) do
+    state = :sys.get_state(session)
+
+    case state do
+      %{provider: %{name: :claude}, options: options} when is_list(options) ->
+        {:ok, Keyword.merge(Keyword.put(options, :provider, :claude), asm_overrides)}
+
+      %{provider: %{name: provider}} ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :provider,
+           "Claude extension requires an ASM Claude session, got #{inspect(provider)}"
+         )}
+
+      other ->
+        {:error,
+         Error.new(
+           :runtime,
+           :runtime,
+           "unable to read ASM session state for Claude extension",
+           cause: other
+         )}
+    end
+  catch
+    :exit, reason ->
+      {:error,
+       Error.new(
+         :runtime,
+         :runtime,
+         "unable to read ASM session state for Claude extension",
+         cause: reason
+       )}
+  end
+
+  defp validate_asm_options(asm_opts) do
+    provider_schema = Provider.resolve!(:claude).options_schema
+
+    case Keyword.get(asm_opts, :provider, :claude) do
+      :claude ->
+        Options.validate(Keyword.put(asm_opts, :provider, :claude), provider_schema)
+
+      other ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :provider,
+           "Claude extension requires provider :claude, got #{inspect(other)}"
+         )}
+    end
+  end
+
+  defp sdk_option_attrs(validated, native_overrides) do
+    validated
+    |> base_sdk_option_attrs()
+    |> maybe_add_thinking(validated, native_overrides)
+    |> Keyword.merge(native_overrides)
+  end
+
+  defp base_sdk_option_attrs(validated) do
+    [
+      cwd: Keyword.get(validated, :cwd),
+      env: Keyword.get(validated, :env, %{}),
+      path_to_claude_code_executable: Keyword.get(validated, :cli_path),
+      permission_mode: Keyword.get(validated, :provider_permission_mode),
+      model: Keyword.get(validated, :model),
+      max_turns: Keyword.get(validated, :max_turns),
+      timeout_ms: Keyword.get(validated, :transport_timeout_ms)
+    ]
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+  end
+
+  defp maybe_add_thinking(attrs, validated, native_overrides) do
+    include_thinking? = Keyword.get(validated, :include_thinking, false)
+
+    explicit_thinking? =
+      Keyword.has_key?(native_overrides, :thinking) or
+        Keyword.has_key?(native_overrides, :max_thinking_tokens)
+
+    if include_thinking? and not explicit_thinking? do
+      Keyword.put_new(attrs, :thinking, %{type: :adaptive})
+    else
+      attrs
+    end
+  end
+
+  defp build_sdk_options(attrs) do
+    {:ok, apply(@sdk_options_module, :new, [attrs])}
+  rescue
+    error in [ArgumentError, KeyError] ->
+      {:error,
+       Error.new(
+         :config_invalid,
+         :config,
+         "invalid Claude SDK options for ASM extension: #{Exception.message(error)}",
+         cause: error
+       )}
+  end
+
+  defp ensure_sdk_module(module, label) when is_atom(module) do
+    if Code.ensure_loaded?(module) do
+      :ok
+    else
+      {:error,
+       Error.new(
+         :config_invalid,
+         :provider,
+         "#{label} is unavailable because claude_agent_sdk is not loaded",
+         cause: module
+       )}
+    end
+  end
 end

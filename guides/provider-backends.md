@@ -78,3 +78,7 @@ Provider-native capability reporting now lives under
 That keeps backend discovery focused on `:core` versus `:sdk`, while
 provider-native surfaces such as Claude control semantics and Codex app-server,
 MCP, realtime, and voice remain explicit optional seams above the kernel.
+
+For Claude specifically, `ASM.Extensions.ProviderSDK.Claude` can bridge ASM
+config into `ClaudeAgentSDK.Client`, but the resulting control calls still live
+on `ClaudeAgentSDK.Client.*` rather than the backend contract.

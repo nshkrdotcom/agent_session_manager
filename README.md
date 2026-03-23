@@ -236,8 +236,44 @@ Optional-loading rules:
 - extension discovery is always safe to call
 - `sdk_available?` reports whether the backing SDK package is loadable locally
 - rich provider-native APIs still live in `claude_agent_sdk` and `codex_sdk`
-- ASM does not implement those richer APIs yet; this slice only lands the
-  namespace and capability foundation
+- ASM does not normalize those richer APIs into `ASM`, `ASM.Stream`, or
+  `ASM.ProviderRegistry`
+
+The Claude namespace now exposes an explicit bridge into the SDK-local control
+family:
+
+```elixir
+alias ASM.Extensions.ProviderSDK.Claude
+
+asm_opts = [
+  provider: :claude,
+  cwd: File.cwd!(),
+  permission_mode: :plan,
+  model: "sonnet"
+]
+
+native_overrides = [
+  enable_file_checkpointing: true,
+  thinking: %{type: :adaptive}
+]
+
+{:ok, sdk_options} = Claude.sdk_options(asm_opts, native_overrides)
+
+{:ok, client} =
+  Claude.start_client(
+    asm_opts,
+    native_overrides,
+    transport: MyApp.MockTransport
+  )
+
+:ok = ClaudeAgentSDK.Client.set_permission_mode(client, :plan)
+```
+
+That bridge is intentionally separate from the normalized kernel:
+
+- ASM-style options stay in the first argument
+- Claude-native options stay in `native_overrides`
+- control calls still use `ClaudeAgentSDK.Client.*`
 
 See [Provider SDK Extensions](guides/provider-sdk-extensions.md) for the
 kernel-versus-extension split and the discovery API.

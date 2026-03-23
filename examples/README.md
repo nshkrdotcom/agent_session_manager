@@ -25,6 +25,7 @@ Supplemental SDK-lane example:
 
 ```bash
 mix run examples/sdk_backend_demo.exs
+mix run examples/claude_control_extension_demo.exs
 ```
 
 ## Environment
@@ -74,3 +75,4 @@ Claude streams automatically use the `script` PTY wrapper when available, and fa
 - `live_pub_sub_stream.exs`: PubSub broadcaster wired through the run pipeline, with local topic subscription and realtime message consumption output.
 - `live_workspace_snapshot.exs`: pre/post workspace snapshots around a live query, diff verification, rollback, and temporary workspace cleanup.
 - `sdk_backend_demo.exs`: supplemental SDK-lane stream demonstration using `lane: :sdk`.
+- `claude_control_extension_demo.exs`: deterministic optional Claude extension bridge demo that derives `ClaudeAgentSDK.Options` from ASM config and starts the SDK-local client without widening the normalized ASM API.

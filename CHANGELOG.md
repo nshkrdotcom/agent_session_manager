@@ -189,7 +189,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`InMemorySessionStore` event appends moved to queue-based buffering** to avoid O(n) append overhead under load
 - **`CompositeSessionStore` direct-call timeout handling** now propagates `wait_timeout_ms` and isolates artifact failures from session persistence paths
 - `crypto.strong_rand_bytes` used for workspace artifact keys instead of `System.unique_integer`
-- **Current-only contract cleanup** (backward-compatibility shims removed):
+- **Current-only contract cleanup** (backward-compatibility helpers removed):
   - Boolean continuation value `true` is no longer accepted; use `:auto`, `:replay`, `:native`, or `false`
   - Adapter tool events emit canonical keys only: `tool_call_id`, `tool_name`, `tool_input`, `tool_output`; provider-native aliases (`call_id`, `tool_use_id`, `arguments`, `input`, `output`, `content`) removed
   - `TranscriptBuilder` and renderers consume canonical tool keys only; fallback chains through legacy keys removed

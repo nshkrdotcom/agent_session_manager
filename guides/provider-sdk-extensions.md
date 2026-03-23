@@ -1,6 +1,6 @@
 # Provider SDK Extensions Guide
 
-Phase 2B adds an explicit optional layer for provider-native surfaces above
+Phase 3 keeps an explicit optional layer for provider-native surfaces above
 ASM's normalized kernel.
 
 ## Kernel Versus Extension Split

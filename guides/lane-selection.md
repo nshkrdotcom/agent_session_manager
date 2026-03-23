@@ -27,7 +27,7 @@ Use `ASM.ProviderRegistry.provider_info/1` when you want provider-level facts,
 Lane selection remains discovery-driven in both modes:
 
 - local runs can execute either `:core` or `:sdk`
-- remote runs execute only the core lane in the landed Phase 2A boundary
+- remote runs execute only the core lane in the landed Phase 3 boundary
 - `lane: :sdk` with `execution_mode: :remote_node` is a configuration error
 - `lane: :auto` may still report `preferred_lane: :sdk` but execute with `lane: :core`
 

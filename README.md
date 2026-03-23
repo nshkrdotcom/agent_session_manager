@@ -60,7 +60,7 @@ through `cli_subprocess_core`, auto-detects optional provider runtime
 availability, and activates only the provider-native extension namespaces that
 genuinely exist today.
 
-The published dependency cutover order is fixed for this stack:
+The package publication order for this stack remains:
 `cli_subprocess_core` first, then the provider SDK packages, then
 `agent_session_manager`.
 
@@ -135,7 +135,7 @@ Lane selection is intentionally separate from execution mode:
 
 - provider discovery chooses the preferred lane first
 - execution mode then decides whether that preferred lane can execute as requested
-- `:remote_node` always executes the core lane in the landed Phase 2A boundary
+- `:remote_node` always executes the core lane in the landed Phase 3 boundary
 
 This produces three distinct values in observability metadata:
 
@@ -235,7 +235,7 @@ See [Provider Backends](guides/provider-backends.md) for the backend contract an
 
 ## Provider SDK Extensions
 
-Phase 2B adds an explicit provider-native extension foundation above the
+Phase 3 keeps an explicit provider-native extension foundation above the
 normalized kernel.
 
 Use `ASM.Extensions.ProviderSDK` when you need to discover optional richer

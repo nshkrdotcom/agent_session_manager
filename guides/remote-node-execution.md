@@ -42,7 +42,7 @@ ASM.query(session, "run locally", execution_mode: :local)
 Lane resolution remains discovery-driven even when the run executes remotely.
 
 - `lane: :core` executes remotely on `ASM.ProviderBackend.Core`
-- `lane: :auto` still prefers `:sdk` when a local runtime kit is installed, but the landed Phase 2A remote boundary falls back to `lane: :core`
+- `lane: :auto` still prefers `:sdk` when a local runtime kit is installed, but the landed Phase 3 remote boundary falls back to `lane: :core`
 - `lane: :sdk` with `execution_mode: :remote_node` is rejected as a configuration error
 
 This means remote results and streamed events can show:

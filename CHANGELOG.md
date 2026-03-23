@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- README, guides, and lineage references now describe the final Phase 3
+  packaging model explicitly: `cli_subprocess_core` is the only required common
+  dependency, provider SDKs stay optional, and release publication order remains
+  core, provider SDKs, then ASM.
+
 ## [0.10.0] - 2026-03-23
 
 ### Added

@@ -136,6 +136,10 @@ Use `ASM.ProviderRegistry` to inspect lane availability and resolution:
 - `core_capabilities`
 - `sdk_capabilities`
 
+Those fields stay scoped to normalized lane/runtime discovery. Provider-native
+extension inventory is reported separately through
+`ASM.Extensions.ProviderSDK`.
+
 `lane_info/2` is discovery-only and returns:
 
 - `requested_lane`
@@ -194,6 +198,49 @@ Codex app-server remain in the provider SDK repos and stay out of ASM's core
 execution model.
 
 See [Provider Backends](guides/provider-backends.md) for the backend contract and lane responsibilities.
+
+## Provider SDK Extensions
+
+Phase 2B adds an explicit provider-native extension foundation above the
+normalized kernel.
+
+Use `ASM.Extensions.ProviderSDK` when you need to discover optional richer
+provider-native seams without widening `ASM`, `ASM.Stream`, or
+`ASM.ProviderRegistry`:
+
+```elixir
+alias ASM.Extensions.ProviderSDK
+
+{:ok, claude_extension} = ProviderSDK.extension(:claude)
+{:ok, codex_native_caps} = ProviderSDK.provider_capabilities(:codex)
+
+report = ProviderSDK.capability_report()
+
+claude_extension.namespace
+# ASM.Extensions.ProviderSDK.Claude
+
+codex_native_caps
+# [:app_server, :mcp, :realtime, :voice]
+
+report.claude.sdk_available?
+# true | false
+```
+
+Current built-in namespaces:
+
+- `ASM.Extensions.ProviderSDK.Claude`
+- `ASM.Extensions.ProviderSDK.Codex`
+
+Optional-loading rules:
+
+- extension discovery is always safe to call
+- `sdk_available?` reports whether the backing SDK package is loadable locally
+- rich provider-native APIs still live in `claude_agent_sdk` and `codex_sdk`
+- ASM does not implement those richer APIs yet; this slice only lands the
+  namespace and capability foundation
+
+See [Provider SDK Extensions](guides/provider-sdk-extensions.md) for the
+kernel-versus-extension split and the discovery API.
 
 ## Event Model And Result Projection
 

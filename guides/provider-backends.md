@@ -61,3 +61,20 @@ Backend choice is visible in run/event metadata:
 
 That metadata is merged into both streamed `%ASM.Event{}` values and the final
 `%ASM.Result.metadata` projection.
+
+## Provider-Native Extensions Stay Above The Backend Boundary
+
+`ASM.ProviderRegistry` and the backend modules stop at normalized lane/runtime
+selection.
+
+Provider-native capability reporting now lives under
+`ASM.Extensions.ProviderSDK`:
+
+- `ASM.Extensions.ProviderSDK.extension/1`
+- `ASM.Extensions.ProviderSDK.provider_extensions/1`
+- `ASM.Extensions.ProviderSDK.provider_capabilities/1`
+- `ASM.Extensions.ProviderSDK.capability_report/0`
+
+That keeps backend discovery focused on `:core` versus `:sdk`, while
+provider-native surfaces such as Claude control semantics and Codex app-server,
+MCP, realtime, and voice remain explicit optional seams above the kernel.

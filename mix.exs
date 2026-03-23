@@ -9,7 +9,7 @@ defmodule AgentSessionManager.MixProject do
       app: :agent_session_manager,
       version: @version,
       elixir: "~> 1.18",
-      compilers: [:boundary | Mix.compilers()],
+      compilers: project_compilers(),
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -32,14 +32,22 @@ defmodule AgentSessionManager.MixProject do
     ]
   end
 
+  defp project_compilers do
+    if Mix.env() in [:dev, :test] do
+      [:boundary | Mix.compilers()]
+    else
+      Mix.compilers()
+    end
+  end
+
   defp deps do
     [
-      {:cli_subprocess_core, path: "../cli_subprocess_core"},
-      {:claude_agent_sdk, path: "../claude_agent_sdk", optional: true},
-      {:codex_sdk, path: "../codex_sdk", optional: true},
-      {:gemini_cli_sdk, path: "../gemini_cli_sdk", optional: true},
-      {:amp_sdk, path: "../amp_sdk", optional: true},
-      {:boundary, path: "vendor/boundary", runtime: false},
+      workspace_dep(:cli_subprocess_core, "../cli_subprocess_core", "~> 0.1.0"),
+      workspace_dep(:claude_agent_sdk, "../claude_agent_sdk", "~> 0.16.0", optional: true),
+      workspace_dep(:codex_sdk, "../codex_sdk", "~> 0.15.0", optional: true),
+      workspace_dep(:gemini_cli_sdk, "../gemini_cli_sdk", "~> 0.1.0", optional: true),
+      workspace_dep(:amp_sdk, "../amp_sdk", "~> 0.4.0", optional: true),
+      {:boundary, path: "vendor/boundary", only: [:dev, :test], runtime: false},
       {:jason, "~> 1.4"},
       {:nimble_options, "~> 1.1"},
       {:telemetry, "~> 1.3"},
@@ -131,7 +139,19 @@ defmodule AgentSessionManager.MixProject do
       "Extensions/Rendering": ~r/^ASM\.Extensions\.Rendering/,
       "Extensions/Workspace": ~r/^ASM\.Extensions\.Workspace/,
       "Extensions/PubSub": ~r/^ASM\.Extensions\.PubSub/,
-      "Extensions/Providers": ~r/^ASM\.Extensions\.Provider/
+      "Extensions/Provider Native": ~r/^ASM\.Extensions\.Provider(SDK)?/
     ]
+  end
+
+  defp workspace_dep(app, path, requirement, opts \\ []) do
+    if hex_packaging?() do
+      {app, requirement, opts}
+    else
+      {app, Keyword.put(opts, :path, path)}
+    end
+  end
+
+  defp hex_packaging? do
+    Enum.any?(System.argv(), &String.starts_with?(&1, "hex."))
   end
 end

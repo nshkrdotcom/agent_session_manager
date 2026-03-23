@@ -8,7 +8,8 @@ defmodule ASM.BoundaryEnforcementTest do
     ASM.Extensions.Rendering,
     ASM.Extensions.Workspace,
     ASM.Extensions.PubSub,
-    ASM.Extensions.Provider
+    ASM.Extensions.Provider,
+    ASM.Extensions.ProviderSDK
   ]
 
   test "boundary compiler is enabled" do

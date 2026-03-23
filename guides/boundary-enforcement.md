@@ -32,6 +32,7 @@ Extension boundaries:
 - `ASM.Extensions.Workspace`
 - `ASM.Extensions.PubSub`
 - `ASM.Extensions.Provider`
+- `ASM.Extensions.ProviderSDK`
 
 Each extension boundary currently declares `deps: [ASM]`.
 

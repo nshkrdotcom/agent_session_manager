@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Provider-native extension foundation under `ASM.Extensions.ProviderSDK`
+  - New explicit optional namespaces: `ASM.Extensions.ProviderSDK.Claude` and
+    `ASM.Extensions.ProviderSDK.Codex`
+  - New discovery/capability reporting API that keeps provider-native metadata
+    out of `ASM.ProviderRegistry`
+  - Documentation for the normalized-kernel versus provider-extension split
 - Remote-node execution mode for stream/query runs via `execution_mode: :remote_node`
   - New execution config normalization: `ASM.Execution.Config`
   - New remote runtime modules: `ASM.Stream.NodeDriver`, `ASM.Remote.NodeConnector`,

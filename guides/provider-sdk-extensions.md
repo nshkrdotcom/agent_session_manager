@@ -22,6 +22,20 @@ Those APIs continue to own:
 Provider-native extension discovery now lives under
 `ASM.Extensions.ProviderSDK`.
 
+## Dependency Model
+
+ASM keeps `cli_subprocess_core` required and all provider SDK packages
+optional.
+
+- depending only on `:agent_session_manager` gives you the common ASM surface
+- adding `:claude_agent_sdk` or `:codex_sdk` activates the matching SDK lane
+  and the matching provider-native namespace when it is loadable locally
+- adding `:gemini_cli_sdk` or `:amp_sdk` activates only SDK lane/runtime-kit
+  availability today; Gemini and Amp still have no separate ASM native
+  namespace
+- declaring the optional dependency is the only client-app activation step;
+  ASM performs discovery and activation automatically
+
 ## Why This Is Separate
 
 `ASM.ProviderRegistry` keeps normalized discovery on its existing surfaces:
@@ -48,6 +62,7 @@ ProviderSDK.extensions()
 ProviderSDK.available_extensions()
 
 {:ok, claude_extension} = ProviderSDK.extension(:claude)
+{:ok, active_claude_extensions} = ProviderSDK.available_provider_extensions(:claude)
 {:ok, codex_extensions} = ProviderSDK.provider_extensions(:codex)
 {:ok, codex_native_caps} = ProviderSDK.provider_capabilities(:codex)
 {:ok, gemini_report} = ProviderSDK.provider_report(:gemini)
@@ -66,11 +81,18 @@ helpers.
 Activation-aware discovery follows a separate rule:
 
 - `extensions/0` is the static Claude/Codex native-extension catalog
+- `provider_extensions/1` is the static native-extension catalog for one
+  provider
 - `available_extensions/0` reports which of those namespaces are active for the
   currently installed optional deps
+- `available_provider_extensions/1` reports the active native-extension subset
+  for one provider
 - `provider_report/1` and `capability_report/0` always include all ASM
   providers, including Gemini and Amp, and show whether each provider SDK
   runtime is available plus any active native namespace inventory
+- `registered_namespaces` and `registered_extensions` keep the static catalog
+  visible even when a provider currently composes only through the common
+  surface
 - Gemini and Amp may therefore report `sdk_available?: true` with
   `namespaces: []`, because they currently compose only through the common ASM
   surface

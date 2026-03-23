@@ -18,6 +18,8 @@ driver/parser stacks.
 - works only in `execution_mode: :local`
 - preserves the same session/run/event model as the core backend
 - never becomes a required dependency for ASM itself
+- may exist without any separate ASM provider-native namespace, as with Gemini
+  and Amp today
 
 ## Common Contract
 
@@ -72,12 +74,17 @@ Provider-native capability reporting now lives under
 
 - `ASM.Extensions.ProviderSDK.extension/1`
 - `ASM.Extensions.ProviderSDK.provider_extensions/1`
+- `ASM.Extensions.ProviderSDK.available_provider_extensions/1`
 - `ASM.Extensions.ProviderSDK.provider_capabilities/1`
 - `ASM.Extensions.ProviderSDK.capability_report/0`
 
 That keeps backend discovery focused on `:core` versus `:sdk`, while
 provider-native surfaces such as Claude control semantics and Codex app-server,
 MCP, realtime, and voice remain explicit optional seams above the kernel.
+
+Gemini and Amp still affect backend lane availability through their optional
+runtime kits, but they do not add separate ASM provider-native namespaces in
+the current catalog.
 
 For Claude specifically, `ASM.Extensions.ProviderSDK.Claude` can bridge ASM
 config into `ClaudeAgentSDK.Client`, but the resulting control calls still live

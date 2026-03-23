@@ -34,25 +34,31 @@ end
 For local workspace development, replace that published requirement with the
 repo-local `path:` override.
 
-That dependency is the normalized kernel plus the built-in Phase 2B extension
-namespaces.
+That dependency gives you ASM's normalized kernel plus the discovery modules
+for the current built-in Claude/Codex extension namespaces. Those namespace
+modules are always present in ASM, but they activate only when the matching
+optional provider SDK dependency is installed.
 
-Optional provider-native rich surfaces stay in provider SDK packages. Add a
-provider SDK dependency only when you explicitly want its SDK-local family:
+Optional provider SDK dependencies stay additive. Add one only when you want
+that provider's SDK lane/runtime kit or, where it exists today, its ASM
+provider-native namespace:
 
 - `{:claude_agent_sdk, "~> 0.16.0", optional: true}` for Claude control-protocol
-  helpers
+  helpers and `ASM.Extensions.ProviderSDK.Claude`
 - `{:codex_sdk, "~> 0.15.0", optional: true}` for Codex app-server, MCP,
-  realtime, or voice helpers
-- `{:gemini_cli_sdk, "~> 0.1.0", optional: true}` for Gemini-specific
-  compatibility/runtime-kit surfaces above the shared core
-- `{:amp_sdk, "~> 0.4.0", optional: true}` for Amp-specific
-  compatibility/runtime-kit surfaces above the shared core
+  realtime, voice helpers, and `ASM.Extensions.ProviderSDK.Codex`
+- `{:gemini_cli_sdk, "~> 0.1.0", optional: true}` for Gemini SDK lane/runtime-kit
+  availability only; ASM does not expose a separate Gemini native extension
+  namespace today
+- `{:amp_sdk, "~> 0.4.0", optional: true}` for Amp SDK lane/runtime-kit
+  availability only; ASM does not expose a separate Amp native extension
+  namespace today
 
-No extra ASM wiring is required for those optional deps. ASM always keeps the
-common surface available through `cli_subprocess_core`, auto-detects optional
-provider runtime availability, and activates only the provider-native
-extension namespaces that genuinely exist today.
+Declaring the optional dependency is the only client-side activation step. No
+extra ASM wiring is required. ASM always keeps the common surface available
+through `cli_subprocess_core`, auto-detects optional provider runtime
+availability, and activates only the provider-native extension namespaces that
+genuinely exist today.
 
 The published dependency cutover order is fixed for this stack:
 `cli_subprocess_core` first, then the provider SDK packages, then
@@ -241,6 +247,7 @@ alias ASM.Extensions.ProviderSDK
 
 catalog = ProviderSDK.extensions()
 active_extensions = ProviderSDK.available_extensions()
+{:ok, active_claude_extensions} = ProviderSDK.available_provider_extensions(:claude)
 {:ok, claude_extension} = ProviderSDK.extension(:claude)
 {:ok, codex_native_caps} = ProviderSDK.provider_capabilities(:codex)
 {:ok, gemini_report} = ProviderSDK.provider_report(:gemini)
@@ -255,6 +262,9 @@ Enum.map(catalog, & &1.provider)
 
 Enum.map(active_extensions, & &1.provider)
 # subset of [:claude, :codex], depending on installed optional deps
+
+Enum.map(active_claude_extensions, & &1.namespace)
+# [] or [ASM.Extensions.ProviderSDK.Claude]
 
 codex_native_caps
 # [:app_server, :mcp, :realtime, :voice]
@@ -274,11 +284,17 @@ Current built-in namespaces:
 Optional-loading rules:
 
 - `extensions/0` is the static native-extension catalog
+- `provider_extensions/1` is the static native-extension catalog for one provider
 - `available_extensions/0`, `provider_report/1`, and `capability_report/0`
   report the active composition state for the currently installed optional deps
+- `available_provider_extensions/1` reports the active native-extension subset
+  for one provider
 - extension discovery is always safe to call
 - `sdk_available?` reports whether the backing provider runtime kit is loadable
   locally
+- `registered_namespaces` and `registered_extensions` keep the static catalog
+  explicit even when `namespaces` and `extensions` are empty for the current
+  dependency set
 - rich provider-native APIs still live in `claude_agent_sdk` and `codex_sdk`
 - ASM does not normalize those richer APIs into `ASM`, `ASM.Stream`, or
   `ASM.ProviderRegistry`

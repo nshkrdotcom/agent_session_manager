@@ -47,6 +47,28 @@ defmodule ASM.Extensions.ProviderSDK.CompositionTest do
     end
   end
 
+  test "provider reports keep the static native-extension catalog separate from active namespaces" do
+    put_loaded_providers([])
+
+    assert {:ok, [registered_claude_extension]} = ProviderSDK.provider_extensions(:claude)
+    assert registered_claude_extension.namespace == ASM.Extensions.ProviderSDK.Claude
+    assert registered_claude_extension.sdk_available? == false
+
+    assert {:ok, []} = ProviderSDK.available_provider_extensions(:claude)
+
+    assert {:ok, claude_report} = ProviderSDK.provider_report(:claude)
+    assert claude_report.composition_mode == :common_surface_only
+    assert claude_report.registered_namespaces == [ASM.Extensions.ProviderSDK.Claude]
+    assert claude_report.namespaces == []
+    assert Enum.map(claude_report.registered_extensions, & &1.provider) == [:claude]
+    assert claude_report.extensions == []
+
+    assert {:ok, gemini_report} = ProviderSDK.provider_report(:gemini)
+    assert gemini_report.composition_mode == :common_surface_only
+    assert gemini_report.registered_namespaces == []
+    assert gemini_report.registered_extensions == []
+  end
+
   test "a single optional provider dependency activates only its matching native extension" do
     put_loaded_providers([:claude])
 
@@ -60,6 +82,11 @@ defmodule ASM.Extensions.ProviderSDK.CompositionTest do
     assert ProviderSDK.available?(:claude)
     refute ProviderSDK.available?(:codex)
 
+    assert {:ok, [available_extension]} = ProviderSDK.available_provider_extensions(:claude)
+    assert available_extension.namespace == ASM.Extensions.ProviderSDK.Claude
+
+    assert {:ok, []} = ProviderSDK.available_provider_extensions(:codex)
+
     assert {:ok, [:control_client, :control_protocol, :hooks, :permission_callbacks]} =
              ProviderSDK.provider_capabilities(:claude)
 
@@ -71,6 +98,7 @@ defmodule ASM.Extensions.ProviderSDK.CompositionTest do
     assert report.claude.namespaces == [ASM.Extensions.ProviderSDK.Claude]
 
     assert report.codex.sdk_available? == false
+    assert report.codex.registered_namespaces == [ASM.Extensions.ProviderSDK.Codex]
     assert report.codex.namespaces == []
 
     assert report.gemini.sdk_available? == false

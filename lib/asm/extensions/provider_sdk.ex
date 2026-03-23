@@ -8,6 +8,19 @@ defmodule ASM.Extensions.ProviderSDK do
 
   Use `ASM.ProviderRegistry` for normalized lane/runtime discovery and
   `ASM.Extensions.ProviderSDK` for provider-native extension discovery.
+
+  Discovery is intentionally split into registered-versus-active views:
+
+  - `extensions/0` and `provider_extensions/1` return the static Claude/Codex
+    native-extension catalog that ASM knows about
+  - `available_extensions/0` and `available_provider_extensions/1` return only
+    the active subset for the currently installed optional deps
+  - `provider_report/1` and `capability_report/0` expose both views through
+    `registered_namespaces` versus `namespaces`
+
+  Gemini and Amp may therefore compose with `sdk_available?: true` while still
+  reporting no native namespaces, because they currently use only the common
+  ASM surface plus the optional SDK lane/runtime kit.
   """
 
   use Boundary,
@@ -27,6 +40,13 @@ defmodule ASM.Extensions.ProviderSDK do
     ASM.Extensions.ProviderSDK.Codex
   ]
 
+  @typedoc """
+  Active and registered provider-native composition facts for one provider.
+
+  `registered_namespaces` and `registered_extensions` describe the static
+  catalog ASM ships for that provider. `namespaces` and `extensions` describe
+  the active subset for the currently installed optional deps.
+  """
   @type provider_report :: %{
           provider: Provider.provider_name(),
           composition_mode: :common_surface_only | :native_extension,
@@ -39,6 +59,13 @@ defmodule ASM.Extensions.ProviderSDK do
           extensions: [Extension.t()]
         }
 
+  @doc """
+  Returns ASM's static provider-native extension catalog.
+
+  This is the compile-time Claude/Codex catalog that ASM ships, regardless of
+  whether the matching optional provider SDK deps are active in the current
+  application.
+  """
   @spec extensions() :: [Extension.t()]
   def extensions do
     @catalog
@@ -46,11 +73,19 @@ defmodule ASM.Extensions.ProviderSDK do
     |> Enum.sort_by(& &1.provider)
   end
 
+  @doc """
+  Returns the active provider-native extension catalog for the current deps.
+  """
   @spec available_extensions() :: [Extension.t()]
   def available_extensions do
     Enum.filter(extensions(), & &1.sdk_available?)
   end
 
+  @doc """
+  Returns the active provider-native extensions for one provider.
+
+  Providers with no active native namespace return `{:ok, []}`.
+  """
   @spec available_provider_extensions(Provider.provider_name() | Provider.t()) ::
           {:ok, [Extension.t()]} | {:error, Error.t()}
   def available_provider_extensions(provider) do
@@ -59,6 +94,9 @@ defmodule ASM.Extensions.ProviderSDK do
     end
   end
 
+  @doc """
+  Resolves one registered provider-native extension by provider atom or module.
+  """
   @spec extension(atom() | module()) :: {:ok, Extension.t()} | {:error, Error.t()}
   def extension(identifier) when is_atom(identifier) do
     with {:ok, module} <- extension_module(identifier) do
@@ -66,6 +104,9 @@ defmodule ASM.Extensions.ProviderSDK do
     end
   end
 
+  @doc """
+  Returns whether a registered provider-native extension is active locally.
+  """
   @spec available?(atom() | module()) :: boolean()
   def available?(identifier) when is_atom(identifier) do
     case extension(identifier) do
@@ -74,6 +115,12 @@ defmodule ASM.Extensions.ProviderSDK do
     end
   end
 
+  @doc """
+  Returns the registered provider-native extension catalog for one provider.
+
+  This reports what ASM knows how to expose for that provider, even if the
+  matching optional dependency is currently inactive.
+  """
   @spec provider_extensions(Provider.provider_name() | Provider.t()) ::
           {:ok, [Extension.t()]} | {:error, Error.t()}
   def provider_extensions(provider) do
@@ -82,6 +129,9 @@ defmodule ASM.Extensions.ProviderSDK do
     end
   end
 
+  @doc """
+  Returns the active provider-native capability labels for one provider.
+  """
   @spec provider_capabilities(Provider.provider_name() | Provider.t()) ::
           {:ok, [atom()]} | {:error, Error.t()}
   def provider_capabilities(provider) do
@@ -94,6 +144,13 @@ defmodule ASM.Extensions.ProviderSDK do
     end
   end
 
+  @doc """
+  Returns active and registered composition facts for one provider.
+
+  `sdk_available?` reports whether the provider runtime kit is loadable for the
+  current dependency set. `registered_namespaces` reports the static ASM
+  catalog, while `namespaces` reports the active subset.
+  """
   @spec provider_report(Provider.provider_name() | Provider.t()) ::
           {:ok, provider_report()} | {:error, Error.t()}
   def provider_report(provider) do
@@ -125,6 +182,9 @@ defmodule ASM.Extensions.ProviderSDK do
     end
   end
 
+  @doc """
+  Returns `provider_report/1` for every ASM provider.
+  """
   @spec capability_report() :: %{optional(Provider.provider_name()) => provider_report()}
   def capability_report do
     Provider.supported_providers()

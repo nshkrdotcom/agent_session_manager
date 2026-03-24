@@ -582,6 +582,4 @@ defmodule ASM.Run.Server do
       []
     end
   end
-
-  defp module_capabilities(_module), do: []
 end

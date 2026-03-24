@@ -13,21 +13,19 @@ defmodule ASM.ProviderBackend.Core do
   @impl true
   def start_run(%{provider: %Provider{} = provider} = config) do
     with {:ok, execution_config} <- fetch_execution_config(config),
-         session_opts <- build_session_opts(provider, config),
-         {:ok, proxy, info} <-
-           Proxy.start_link(
-             starter: fn subscriber ->
-               do_start_run(execution_config, Keyword.put(session_opts, :subscriber, subscriber))
-             end,
-             runtime_api: Session,
-             runtime: Session,
-             provider: provider.name,
-             lane: :core,
-             backend: __MODULE__,
-             capabilities: core_capabilities(provider),
-             initial_subscribers: initial_subscribers(config)
-           ) do
-      {:ok, proxy, info}
+         session_opts <- build_session_opts(provider, config) do
+      Proxy.start_link(
+        starter: fn subscriber ->
+          do_start_run(execution_config, Keyword.put(session_opts, :subscriber, subscriber))
+        end,
+        runtime_api: Session,
+        runtime: Session,
+        provider: provider.name,
+        lane: :core,
+        backend: __MODULE__,
+        capabilities: core_capabilities(provider),
+        initial_subscribers: initial_subscribers(config)
+      )
     end
   end
 

@@ -25,6 +25,7 @@ defmodule AgentSessionManager.MixProject do
       description: description(),
       package: package(),
       docs: docs(),
+      dialyzer: dialyzer(),
       name: "ASM",
       source_url: @source_url,
       homepage_url: @homepage_url
@@ -82,6 +83,15 @@ defmodule AgentSessionManager.MixProject do
 
   defp description do
     "Lean OTP-correct multi-provider CLI session runtime (ASM)."
+  end
+
+  defp dialyzer do
+    [
+      plt_add_apps: [:mix, :ex_unit],
+      plt_core_path: "priv/plts/core",
+      plt_local_path: "priv/plts",
+      plt_file: {:no_warn, "priv/plts/project.plt"}
+    ]
   end
 
   defp package do

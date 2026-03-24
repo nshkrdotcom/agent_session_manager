@@ -135,7 +135,7 @@ Lane selection is intentionally separate from execution mode:
 
 - provider discovery chooses the preferred lane first
 - execution mode then decides whether that preferred lane can execute as requested
-- `:remote_node` always executes the core lane in the landed Phase 3 boundary
+- `:remote_node` always executes the core lane in the landed Phase 4 boundary
 
 This produces three distinct values in observability metadata:
 
@@ -235,7 +235,7 @@ See [Provider Backends](guides/provider-backends.md) for the backend contract an
 
 ## Provider SDK Extensions
 
-Phase 3 keeps an explicit provider-native extension foundation above the
+Phase 4 keeps an explicit provider-native extension foundation above the
 normalized kernel.
 
 Use `ASM.Extensions.ProviderSDK` when you need to discover optional richer

@@ -97,30 +97,26 @@ defmodule ASM.ProviderBackend.Proxy do
         raw_session_event_tag =
           Info.session_event_tag(raw_info, runtime_session_event_tag(runtime_api))
 
-        if is_atom(raw_session_event_tag) do
-          info =
-            build_info(provider, lane, backend, runtime, session, capabilities, raw_info)
+        info =
+          build_info(provider, lane, backend, runtime, session, capabilities, raw_info)
 
-          send(caller, {:asm_backend_proxy_started, reply_ref, info})
+        send(caller, {:asm_backend_proxy_started, reply_ref, info})
 
-          {:ok,
-           %__MODULE__{
-             runtime_api: runtime_api,
-             runtime: runtime,
-             provider: provider,
-             lane: lane,
-             backend: backend,
-             session: session,
-             session_ref: Process.monitor(session),
-             upstream_subscription_ref: upstream_subscription_ref,
-             raw_session_event_tag: raw_session_event_tag,
-             info: info,
-             capabilities: capabilities,
-             subscribers: initial_subscribers
-           }}
-        else
-          {:stop, :missing_session_event_tag}
-        end
+        {:ok,
+         %__MODULE__{
+           runtime_api: runtime_api,
+           runtime: runtime,
+           provider: provider,
+           lane: lane,
+           backend: backend,
+           session: session,
+           session_ref: Process.monitor(session),
+           upstream_subscription_ref: upstream_subscription_ref,
+           raw_session_event_tag: raw_session_event_tag,
+           info: info,
+           capabilities: capabilities,
+           subscribers: initial_subscribers
+         }}
 
       {:ok, _session, _raw_info} ->
         {:stop, :invalid_backend_session}
@@ -234,11 +230,9 @@ defmodule ASM.ProviderBackend.Proxy do
   end
 
   defp runtime_session_event_tag(runtime_api) when is_atom(runtime_api) do
-    if function_exported?(runtime_api, :session_event_tag, 0) do
-      runtime_api.session_event_tag()
-    else
-      nil
-    end
+    runtime_api.session_event_tag()
+  rescue
+    UndefinedFunctionError -> nil
   end
 
   defp start_backend_session(starter, subscriber) when is_function(starter, 1) do

@@ -131,15 +131,11 @@ defmodule ASM.ProviderBackend do
 
     @spec session_event_tag(term(), atom() | nil) :: atom() | nil
     def session_event_tag(raw_info, fallback \\ nil) do
-      case raw_session_details(raw_info) do
-        %{} = details ->
-          Map.get(details, :session_event_tag) ||
-            Map.get(details, "session_event_tag") ||
-            fallback
+      details = raw_session_details(raw_info)
 
-        _other ->
-          fallback
-      end
+      Map.get(details, :session_event_tag) ||
+        Map.get(details, "session_event_tag") ||
+        fallback
     end
 
     defp session_details(%{} = raw_info) do

@@ -75,7 +75,7 @@ defmodule ASM.Run.State do
           backend_pid: pid() | nil,
           backend_ref: reference() | nil,
           backend_subscription_ref: reference() | nil,
-          backend_info: map() | nil,
+          backend_info: ASM.ProviderBackend.Info.t() | nil,
           lane: :core | :sdk | nil,
           execution_config: ASM.Execution.Config.t() | nil,
           provider_opts: keyword(),

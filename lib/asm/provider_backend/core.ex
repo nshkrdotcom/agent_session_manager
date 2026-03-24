@@ -6,41 +6,52 @@ defmodule ASM.ProviderBackend.Core do
   @behaviour ASM.ProviderBackend
 
   alias ASM.{Error, Execution, Provider}
+  alias ASM.ProviderBackend.Proxy
   alias ASM.Remote.NodeConnector
   alias CliSubprocessCore.Session
-
-  @session_event_tag :cli_subprocess_core_session
 
   @impl true
   def start_run(%{provider: %Provider{} = provider} = config) do
     with {:ok, execution_config} <- fetch_execution_config(config),
          session_opts <- build_session_opts(provider, config),
-         {:ok, pid, info} <- do_start_run(execution_config, session_opts) do
-      {:ok, pid, %{lane: :core, provider: provider.name, session: info}}
+         {:ok, proxy, info} <-
+           Proxy.start_link(
+             starter: fn subscriber ->
+               do_start_run(execution_config, Keyword.put(session_opts, :subscriber, subscriber))
+             end,
+             runtime_api: Session,
+             runtime: Session,
+             provider: provider.name,
+             lane: :core,
+             backend: __MODULE__,
+             capabilities: core_capabilities(provider),
+             initial_subscribers: initial_subscribers(config)
+           ) do
+      {:ok, proxy, info}
     end
   end
 
   @impl true
   def send_input(session, input, opts \\ []) when is_pid(session) do
-    Session.send_input(session, input, opts)
+    Proxy.send_input(session, input, opts)
   end
 
   @impl true
-  def end_input(session) when is_pid(session), do: Session.end_input(session)
+  def end_input(session) when is_pid(session), do: Proxy.end_input(session)
 
   @impl true
-  def interrupt(session) when is_pid(session), do: Session.interrupt(session)
+  def interrupt(session) when is_pid(session), do: Proxy.interrupt(session)
 
   @impl true
-  def close(session) when is_pid(session), do: Session.close(session)
+  def close(session) when is_pid(session), do: Proxy.close(session)
 
   @impl true
   def subscribe(session, pid, ref) when is_pid(session) and is_pid(pid) and is_reference(ref) do
-    Session.subscribe(session, pid, ref)
+    Proxy.subscribe(session, pid, ref)
   end
 
   @impl true
-  def info(session) when is_pid(session), do: Session.info(session)
+  def info(session) when is_pid(session), do: Proxy.info(session)
 
   defp fetch_execution_config(%{execution_config: %Execution.Config{} = config}),
     do: {:ok, config}
@@ -72,12 +83,6 @@ defmodule ASM.ProviderBackend.Core do
         Map.get(config, :metadata, %{})
       )
 
-    subscriber =
-      case {Map.get(config, :subscriber_pid), Map.get(config, :subscription_ref)} do
-        {pid, ref} when is_pid(pid) and is_reference(ref) -> {pid, ref}
-        _ -> nil
-      end
-
     provider_opts =
       config
       |> Map.get(:provider_opts, [])
@@ -87,9 +92,7 @@ defmodule ASM.ProviderBackend.Core do
     [
       provider: provider.name,
       profile: provider.core_profile,
-      subscriber: subscriber,
-      metadata: metadata,
-      session_event_tag: @session_event_tag
+      metadata: metadata
     ] ++ provider_opts
   end
 
@@ -182,5 +185,20 @@ defmodule ASM.ProviderBackend.Core do
 
   defp remote_error(message, cause) do
     Error.new(:connection_failed, :runtime, message, cause: cause)
+  end
+
+  defp core_capabilities(%Provider{core_profile: profile}) when is_atom(profile) do
+    if function_exported?(profile, :capabilities, 0) do
+      profile.capabilities()
+    else
+      []
+    end
+  end
+
+  defp initial_subscribers(config) do
+    case {Map.get(config, :subscription_ref), Map.get(config, :subscriber_pid)} do
+      {ref, pid} when is_reference(ref) and is_pid(pid) -> %{ref => pid}
+      _ -> %{}
+    end
   end
 end

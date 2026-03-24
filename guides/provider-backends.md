@@ -26,16 +26,34 @@ driver/parser stacks.
 Both backends satisfy the same `ASM.ProviderBackend` behaviour:
 
 ```elixir
-@callback start_run(map()) :: {:ok, pid(), term()} | {:error, term()}
+@callback start_run(map()) :: {:ok, pid(), ASM.ProviderBackend.Info.t()} | {:error, term()}
 @callback send_input(pid(), iodata(), keyword()) :: :ok | {:error, term()}
 @callback end_input(pid()) :: :ok | {:error, term()}
 @callback interrupt(pid()) :: :ok | {:error, term()}
 @callback close(pid()) :: :ok
 @callback subscribe(pid(), pid(), reference()) :: :ok | {:error, term()}
-@callback info(pid()) :: map()
+@callback info(pid()) :: ASM.ProviderBackend.Info.t()
 ```
 
 That keeps `ASM.Run.Server` lane-agnostic after resolution.
+
+After `subscribe/3`, the kernel receives `%ASM.ProviderBackend.Event{}` messages
+instead of matching provider or transport mailbox tags directly.
+
+`ASM.ProviderBackend.Info` is the ASM-owned metadata contract consumed by the
+kernel:
+
+- `provider`
+- `lane`
+- `backend`
+- `runtime`
+- `capabilities`
+- `session`
+- `observability`
+
+The `session` field may still contain backend/runtime details, but backend
+adapters must strip raw delivery tags such as `session_event_tag` before that
+data crosses into ASM kernel state.
 
 ## Backend Selection
 

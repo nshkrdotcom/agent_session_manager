@@ -5,16 +5,26 @@ defmodule ASM.TestSupport.FakeBackend do
 
   @behaviour ASM.ProviderBackend
 
+  alias ASM.ProviderBackend.{Event, Info}
   alias CliSubprocessCore.Event, as: CoreEvent
   alias CliSubprocessCore.Payload
 
   defstruct [:config, :subscriber, :subscription_ref, :emitted?]
 
-  @spec start_run(map()) :: {:ok, pid(), map()} | {:error, term()}
+  @spec start_run(map()) :: {:ok, pid(), Info.t()} | {:error, term()}
   @impl true
   def start_run(config) when is_map(config) do
     with {:ok, pid} <- GenServer.start_link(__MODULE__, config) do
-      {:ok, pid, %{backend: :fake, provider: config.provider.name}}
+      {:ok, pid,
+       Info.new(
+         provider: config.provider.name,
+         lane: Map.get(config, :lane, :core),
+         backend: __MODULE__,
+         runtime: __MODULE__,
+         capabilities: [],
+         session_pid: pid,
+         raw_info: %{backend: :fake, provider: config.provider.name}
+       )}
     end
   end
 
@@ -48,7 +58,7 @@ defmodule ASM.TestSupport.FakeBackend do
     GenServer.call(server, {:subscribe, pid, ref})
   end
 
-  @spec info(pid()) :: map()
+  @spec info(pid()) :: Info.t()
   @impl true
   def info(server) do
     GenServer.call(server, :info)
@@ -97,7 +107,18 @@ defmodule ASM.TestSupport.FakeBackend do
   end
 
   def handle_call(:info, _from, state) do
-    {:reply, %{backend: :fake, provider: state.config.provider.name}, state}
+    info =
+      Info.new(
+        provider: state.config.provider.name,
+        lane: Map.get(state.config, :lane, :core),
+        backend: __MODULE__,
+        runtime: __MODULE__,
+        capabilities: [],
+        session_pid: self(),
+        raw_info: %{backend: :fake, provider: state.config.provider.name}
+      )
+
+    {:reply, info, state}
   end
 
   defp emit_script(state, nil) do
@@ -148,7 +169,7 @@ defmodule ASM.TestSupport.FakeBackend do
 
       send(
         state.subscriber,
-        {:cli_subprocess_core_session, state.subscription_ref, {:event, event}}
+        Event.new(state.subscription_ref, event)
       )
 
       :ok

@@ -36,6 +36,10 @@ optional.
 - declaring the optional dependency is the only client-app activation step;
   ASM performs discovery and activation automatically
 
+ASM handles those optional dependencies through runtime-checked module loading
+and explicit extension/backend boundaries. The kernel never relies on
+compile-time warning suppression to reference provider SDK packages.
+
 ## Why This Is Separate
 
 `ASM.ProviderRegistry` keeps normalized discovery on its existing surfaces:

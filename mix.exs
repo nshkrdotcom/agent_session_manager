@@ -6,6 +6,8 @@ defmodule AgentSessionManager.MixProject do
   @homepage_url "https://hex.pm/packages/agent_session_manager"
   @docs_url "https://hexdocs.pm/agent_session_manager"
   @cli_subprocess_core_requirement "~> 0.1.0"
+  @cli_subprocess_core_repo "nshkrdotcom/cli_subprocess_core"
+  @cli_subprocess_core_ref "d5f7c5daa810965f60503bd4499c42ca3c4f5574"
   @claude_agent_sdk_requirement "~> 0.16.0"
   @codex_sdk_requirement "~> 0.15.0"
   @gemini_cli_sdk_requirement "~> 0.1.0"
@@ -52,7 +54,9 @@ defmodule AgentSessionManager.MixProject do
       workspace_dep(
         :cli_subprocess_core,
         "../cli_subprocess_core",
-        @cli_subprocess_core_requirement
+        @cli_subprocess_core_requirement,
+        github: @cli_subprocess_core_repo,
+        ref: @cli_subprocess_core_ref
       ),
       workspace_dep(:claude_agent_sdk, "../claude_agent_sdk", @claude_agent_sdk_requirement,
         optional: true
@@ -168,11 +172,22 @@ defmodule AgentSessionManager.MixProject do
     ]
   end
 
-  defp workspace_dep(app, path, requirement, opts \\ []) do
-    if hex_packaging?() do
-      {app, requirement, opts}
-    else
-      {app, Keyword.put(opts, :path, path)}
+  defp workspace_dep(app, path, requirement, opts) do
+    {release_opts, dep_opts} = Keyword.split(opts, [:github, :git, :branch, :tag, :ref])
+    expanded_path = Path.expand(path, __DIR__)
+
+    cond do
+      File.dir?(expanded_path) ->
+        {app, Keyword.put(dep_opts, :path, path)}
+
+      hex_packaging?() ->
+        {app, requirement, dep_opts}
+
+      release_opts != [] ->
+        {app, Keyword.merge(dep_opts, release_opts)}
+
+      true ->
+        {app, Keyword.put(dep_opts, :path, path)}
     end
   end
 

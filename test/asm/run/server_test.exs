@@ -3,6 +3,8 @@ defmodule ASM.Run.ServerTest do
 
   alias ASM.{Event, Run}
   alias ASM.Execution.Config
+  alias ASM.ProviderBackend.Event, as: BackendEvent
+  alias ASM.ProviderBackend.Info, as: BackendInfo
   alias ASM.TestSupport.FakeBackend
   alias CliSubprocessCore.Payload
 
@@ -13,13 +15,24 @@ defmodule ASM.Run.ServerTest do
 
     @behaviour ASM.ProviderBackend
 
+    alias ASM.ProviderBackend.Event, as: BackendEvent
+    alias ASM.ProviderBackend.Info, as: BackendInfo
     alias CliSubprocessCore.Event, as: CoreEvent
     alias CliSubprocessCore.Payload
 
     @impl true
     def start_run(config) do
       with {:ok, pid} <- GenServer.start_link(__MODULE__, config) do
-        {:ok, pid, %{backend: :interrupt_probe, provider: config.provider.name}}
+        {:ok, pid,
+         BackendInfo.new(
+           provider: config.provider.name,
+           lane: Map.get(config, :lane, :sdk),
+           backend: __MODULE__,
+           runtime: __MODULE__,
+           capabilities: [],
+           session_pid: pid,
+           raw_info: %{backend: :interrupt_probe, provider: config.provider.name}
+         )}
       end
     end
 
@@ -82,7 +95,16 @@ defmodule ASM.Run.ServerTest do
     end
 
     def handle_call(:info, _from, state) do
-      {:reply, %{backend: :interrupt_probe, provider: state.provider}, state}
+      {:reply,
+       BackendInfo.new(
+         provider: state.provider,
+         lane: :sdk,
+         backend: __MODULE__,
+         runtime: __MODULE__,
+         capabilities: [],
+         session_pid: self(),
+         raw_info: %{backend: :interrupt_probe, provider: state.provider}
+       ), state}
     end
 
     defp emit_core_event(state, kind, payload) do
@@ -91,7 +113,7 @@ defmodule ASM.Run.ServerTest do
 
         send(
           state.subscriber,
-          {:cli_subprocess_core_session, state.subscription_ref, {:event, event}}
+          BackendEvent.new(state.subscription_ref, event)
         )
       end
     end
@@ -104,13 +126,24 @@ defmodule ASM.Run.ServerTest do
 
     @behaviour ASM.ProviderBackend
 
+    alias ASM.ProviderBackend.Event, as: BackendEvent
+    alias ASM.ProviderBackend.Info, as: BackendInfo
     alias CliSubprocessCore.Event, as: CoreEvent
     alias CliSubprocessCore.Payload
 
     @impl true
     def start_run(config) do
       with {:ok, pid} <- GenServer.start_link(__MODULE__, config) do
-        {:ok, pid, %{backend: :crash_probe, provider: config.provider.name}}
+        {:ok, pid,
+         BackendInfo.new(
+           provider: config.provider.name,
+           lane: Map.get(config, :lane, :core),
+           backend: __MODULE__,
+           runtime: __MODULE__,
+           capabilities: [],
+           session_pid: pid,
+           raw_info: %{backend: :crash_probe, provider: config.provider.name}
+         )}
       end
     end
 
@@ -162,7 +195,16 @@ defmodule ASM.Run.ServerTest do
     end
 
     def handle_call(:info, _from, state) do
-      {:reply, %{backend: :crash_probe, provider: state.provider}, state}
+      {:reply,
+       BackendInfo.new(
+         provider: state.provider,
+         lane: :core,
+         backend: __MODULE__,
+         runtime: __MODULE__,
+         capabilities: [],
+         session_pid: self(),
+         raw_info: %{backend: :crash_probe, provider: state.provider}
+       ), state}
     end
 
     @impl true
@@ -176,7 +218,7 @@ defmodule ASM.Run.ServerTest do
 
         send(
           state.subscriber,
-          {:cli_subprocess_core_session, state.subscription_ref, {:event, event}}
+          BackendEvent.new(state.subscription_ref, event)
         )
       end
     end
@@ -189,13 +231,24 @@ defmodule ASM.Run.ServerTest do
 
     @behaviour ASM.ProviderBackend
 
+    alias ASM.ProviderBackend.Event, as: BackendEvent
+    alias ASM.ProviderBackend.Info, as: BackendInfo
     alias CliSubprocessCore.Event, as: CoreEvent
     alias CliSubprocessCore.Payload
 
     @impl true
     def start_run(config) do
       with {:ok, pid} <- GenServer.start_link(__MODULE__, config) do
-        {:ok, pid, %{backend: :subscribe_probe, provider: config.provider.name}}
+        {:ok, pid,
+         BackendInfo.new(
+           provider: config.provider.name,
+           lane: Map.get(config, :lane, :core),
+           backend: __MODULE__,
+           runtime: __MODULE__,
+           capabilities: [],
+           session_pid: pid,
+           raw_info: %{backend: :subscribe_probe, provider: config.provider.name}
+         )}
       end
     end
 
@@ -266,13 +319,22 @@ defmodule ASM.Run.ServerTest do
     end
 
     def handle_call(:info, _from, state) do
-      {:reply, %{backend: :subscribe_probe, provider: state.provider}, state}
+      {:reply,
+       BackendInfo.new(
+         provider: state.provider,
+         lane: :core,
+         backend: __MODULE__,
+         runtime: __MODULE__,
+         capabilities: [],
+         session_pid: self(),
+         raw_info: %{backend: :subscribe_probe, provider: state.provider}
+       ), state}
     end
 
     defp emit_core_event(pid, ref, provider, kind, payload)
          when is_pid(pid) and is_reference(ref) do
       event = CoreEvent.new(kind, provider: provider, payload: payload)
-      send(pid, {:cli_subprocess_core_session, ref, {:event, event}})
+      send(pid, BackendEvent.new(ref, event))
     end
   end
 
@@ -393,6 +455,58 @@ defmodule ASM.Run.ServerTest do
     assert_receive {:asm_run_event, "run-int", %Event{kind: :error} = event}
     assert Event.legacy_payload(event).kind == :user_cancelled
     assert_receive {:asm_run_done, "run-int"}
+    assert_receive {:DOWN, ^ref, :process, ^run_pid, :normal}
+  end
+
+  test "run state stores normalized ASM backend info" do
+    script = [
+      {:core, :run_started, Payload.RunStarted.new(command: "normalized-info")}
+    ]
+
+    assert {:ok, run_pid} =
+             Run.Server.start_link(
+               run_id: "run-info",
+               session_id: "session-info",
+               provider: :claude,
+               subscriber: self(),
+               backend_module: FakeBackend,
+               backend_opts: [script: script],
+               execution_config: local_execution_config()
+             )
+
+    assert_receive {:asm_run_event, "run-info", %Event{kind: :run_started}}
+
+    state = Run.Server.get_state(run_pid)
+
+    assert %BackendInfo{
+             provider: :claude,
+             lane: :core,
+             backend: FakeBackend,
+             runtime: FakeBackend,
+             observability: observability,
+             session: %{pid: pid, details: details}
+           } = state.backend_info
+
+    assert pid == state.backend_pid
+    assert observability.provider == :claude
+    assert observability.lane == :core
+    refute Map.has_key?(details, :session_event_tag)
+    refute Map.has_key?(details, "session_event_tag")
+
+    result_event =
+      Event.new(
+        :result,
+        Payload.Result.new(status: :completed, stop_reason: :end_turn),
+        run_id: "run-info",
+        session_id: "session-info",
+        provider: :claude,
+        timestamp: DateTime.utc_now()
+      )
+
+    ref = Process.monitor(run_pid)
+    assert :ok = Run.Server.ingest_event(run_pid, result_event)
+    assert_receive {:asm_run_event, "run-info", %Event{kind: :result}}
+    assert_receive {:asm_run_done, "run-info"}
     assert_receive {:DOWN, ^ref, :process, ^run_pid, :normal}
   end
 

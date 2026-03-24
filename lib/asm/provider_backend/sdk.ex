@@ -6,7 +6,7 @@ defmodule ASM.ProviderBackend.SDK do
   @behaviour ASM.ProviderBackend
 
   alias ASM.{Error, Execution, Provider}
-  alias ASM.ProviderBackend.SDK.SessionProxy
+  alias ASM.ProviderBackend.Proxy
 
   @claude_options_module Module.concat(["ClaudeAgentSDK", "Options"])
   @gemini_options_module Module.concat(["GeminiCliSdk", "Options"])
@@ -21,8 +21,20 @@ defmodule ASM.ProviderBackend.SDK do
          runtime when is_atom(runtime) <- provider.sdk_runtime,
          true <- Code.ensure_loaded?(runtime),
          {:ok, start_opts} <- build_start_opts(provider, config),
-         {:ok, proxy, info} <- SessionProxy.start_link(runtime, start_opts, provider.name) do
-      {:ok, proxy, %{lane: :sdk, provider: provider.name, session: info}}
+         {:ok, proxy, info} <-
+           Proxy.start_link(
+             starter: fn subscriber ->
+               runtime.start_session(Keyword.put(start_opts, :subscriber, subscriber))
+             end,
+             runtime_api: runtime,
+             runtime: runtime,
+             provider: provider.name,
+             lane: :sdk,
+             backend: __MODULE__,
+             capabilities: runtime_capabilities(runtime),
+             initial_subscribers: initial_subscribers(config)
+           ) do
+      {:ok, proxy, info}
     else
       {:ok, %Execution.Config{execution_mode: :remote_node}} ->
         {:error,
@@ -51,32 +63,32 @@ defmodule ASM.ProviderBackend.SDK do
 
   @impl true
   def send_input(session, input, opts \\ []) when is_pid(session) do
-    SessionProxy.send_input(session, input, opts)
+    Proxy.send_input(session, input, opts)
   end
 
   @impl true
   def end_input(session) when is_pid(session) do
-    SessionProxy.end_input(session)
+    Proxy.end_input(session)
   end
 
   @impl true
   def interrupt(session) when is_pid(session) do
-    SessionProxy.interrupt(session)
+    Proxy.interrupt(session)
   end
 
   @impl true
   def close(session) when is_pid(session) do
-    SessionProxy.close(session)
+    Proxy.close(session)
   end
 
   @impl true
   def subscribe(session, pid, ref) when is_pid(session) and is_pid(pid) and is_reference(ref) do
-    SessionProxy.subscribe(session, pid, ref)
+    Proxy.subscribe(session, pid, ref)
   end
 
   @impl true
   def info(session) when is_pid(session) do
-    SessionProxy.info(session)
+    Proxy.info(session)
   end
 
   defp fetch_execution_config(%{execution_config: %Execution.Config{} = config}),
@@ -150,12 +162,6 @@ defmodule ASM.ProviderBackend.SDK do
   end
 
   defp sdk_start_opts(_runtime, config, extra) do
-    subscriber =
-      case {Map.get(config, :subscriber_pid), Map.get(config, :subscription_ref)} do
-        {pid, ref} when is_pid(pid) and is_reference(ref) -> {pid, ref}
-        _ -> nil
-      end
-
     metadata =
       Map.merge(
         Map.get(config, :metadata, %{}),
@@ -164,8 +170,6 @@ defmodule ASM.ProviderBackend.SDK do
 
     extra
     |> Keyword.put(:metadata, metadata)
-    |> Keyword.put(:subscriber, subscriber)
-    |> Keyword.put(:session_event_tag, :cli_subprocess_core_session)
   end
 
   defp gemini_approval_mode(nil), do: nil
@@ -324,131 +328,18 @@ defmodule ASM.ProviderBackend.SDK do
     )
   end
 
-  defmodule SessionProxy do
-    @moduledoc false
-
-    use GenServer
-
-    defstruct [:runtime, :provider, :session, :session_ref, info: %{}]
-
-    @type t :: %__MODULE__{
-            runtime: module(),
-            provider: atom(),
-            session: pid(),
-            session_ref: reference(),
-            info: map()
-          }
-
-    @spec start_link(module(), keyword(), atom()) :: {:ok, pid(), map()} | {:error, term()}
-    def start_link(runtime, start_opts, provider)
-        when is_atom(runtime) and is_list(start_opts) and is_atom(provider) do
-      ref = make_ref()
-
-      case GenServer.start_link(__MODULE__, {runtime, start_opts, provider, self(), ref}) do
-        {:ok, pid} ->
-          receive do
-            {:asm_sdk_proxy_started, ^ref, info} -> {:ok, pid, info}
-          after
-            5_000 -> {:error, :sdk_proxy_start_timeout}
-          end
-
-        {:error, reason} ->
-          {:error, reason}
-      end
+  defp runtime_capabilities(runtime) when is_atom(runtime) do
+    if Code.ensure_loaded?(runtime) and function_exported?(runtime, :capabilities, 0) do
+      runtime.capabilities()
+    else
+      []
     end
+  end
 
-    @spec send_input(pid(), iodata(), keyword()) :: :ok | {:error, term()}
-    def send_input(proxy, input, opts) when is_pid(proxy),
-      do: GenServer.call(proxy, {:send_input, input, opts})
-
-    @spec end_input(pid()) :: :ok | {:error, term()}
-    def end_input(proxy) when is_pid(proxy), do: GenServer.call(proxy, :end_input)
-
-    @spec interrupt(pid()) :: :ok | {:error, term()}
-    def interrupt(proxy) when is_pid(proxy), do: GenServer.call(proxy, :interrupt)
-
-    @spec close(pid()) :: :ok
-    def close(proxy) when is_pid(proxy) do
-      GenServer.stop(proxy, :normal)
-    catch
-      :exit, _ -> :ok
-    end
-
-    @spec subscribe(pid(), pid(), reference()) :: :ok | {:error, term()}
-    def subscribe(proxy, pid, ref) when is_pid(proxy) and is_pid(pid) and is_reference(ref) do
-      GenServer.call(proxy, {:subscribe, pid, ref})
-    end
-
-    @spec info(pid()) :: map()
-    def info(proxy) when is_pid(proxy), do: GenServer.call(proxy, :info)
-
-    @impl true
-    def init({runtime, start_opts, provider, caller, ref}) do
-      case runtime.start_session(start_opts) do
-        {:ok, session, info} ->
-          send(caller, {:asm_sdk_proxy_started, ref, info})
-
-          {:ok,
-           %__MODULE__{
-             runtime: runtime,
-             provider: provider,
-             session: session,
-             session_ref: Process.monitor(session),
-             info: normalize_info(info)
-           }}
-
-        {:error, reason} ->
-          {:stop, reason}
-      end
-    end
-
-    @impl true
-    def handle_call({:send_input, input, opts}, _from, %__MODULE__{} = state) do
-      {:reply, state.runtime.send_input(state.session, input, opts), state}
-    end
-
-    def handle_call(:end_input, _from, %__MODULE__{} = state) do
-      {:reply, state.runtime.end_input(state.session), state}
-    end
-
-    def handle_call(:interrupt, _from, %__MODULE__{} = state) do
-      {:reply, state.runtime.interrupt(state.session), state}
-    end
-
-    def handle_call({:subscribe, pid, ref}, _from, %__MODULE__{} = state) do
-      {:reply, state.runtime.subscribe(state.session, pid, ref), state}
-    end
-
-    def handle_call(:info, _from, %__MODULE__{} = state) do
-      info =
-        state.info
-        |> Map.put(:provider, state.provider)
-        |> Map.put(:runtime, state.runtime)
-        |> Map.put(:capabilities, runtime_capabilities(state.runtime))
-
-      {:reply, info, state}
-    end
-
-    @impl true
-    def handle_info({:DOWN, ref, :process, _pid, reason}, %__MODULE__{session_ref: ref} = state) do
-      {:stop, reason, state}
-    end
-
-    @impl true
-    def terminate(_reason, %__MODULE__{} = state) do
-      _ = state.runtime.close(state.session)
-      :ok
-    end
-
-    defp normalize_info(%{} = info), do: info
-    defp normalize_info(other), do: %{session_info: other}
-
-    defp runtime_capabilities(runtime) when is_atom(runtime) do
-      if Code.ensure_loaded?(runtime) and function_exported?(runtime, :capabilities, 0) do
-        runtime.capabilities()
-      else
-        []
-      end
+  defp initial_subscribers(config) do
+    case {Map.get(config, :subscription_ref), Map.get(config, :subscriber_pid)} do
+      {ref, pid} when is_reference(ref) and is_pid(pid) -> %{ref => pid}
+      _ -> %{}
     end
   end
 end

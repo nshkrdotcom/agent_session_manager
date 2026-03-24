@@ -6,9 +6,9 @@ defmodule ASM.Run.Server do
   use GenServer, restart: :temporary
 
   alias ASM.{Error, Event, Metadata, Provider, ProviderRegistry, Run}
+  alias ASM.ProviderBackend.Event, as: BackendEvent
+  alias ASM.ProviderBackend.Info, as: BackendInfo
   alias CliSubprocessCore.Payload
-
-  @backend_event_tag :cli_subprocess_core_session
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
@@ -126,19 +126,9 @@ defmodule ASM.Run.Server do
 
   @impl true
   def handle_info(
-        {@backend_event_tag, ref, {:event, core_event}},
+        %BackendEvent{subscription_ref: ref, core_event: core_event},
         %{backend_subscription_ref: ref} = state
       ) do
-    event =
-      Event.wrap_core(
-        %{run_id: state.run_id, session_id: state.session_id, provider: state.provider},
-        core_event
-      )
-
-    consume_event(state, event)
-  end
-
-  def handle_info({@backend_event_tag, ref, core_event}, %{backend_subscription_ref: ref} = state) do
     event =
       Event.wrap_core(
         %{run_id: state.run_id, session_id: state.session_id, provider: state.provider},
@@ -222,7 +212,7 @@ defmodule ASM.Run.Server do
     with {:ok, provider} <- Provider.resolve(state.provider),
          {:ok, resolution} <-
            resolve_backend(provider, state),
-         start_config <- backend_start_config(provider, state),
+         start_config <- backend_start_config(provider, state, resolution),
          {:ok, pid, info} <- resolution.backend.start_run(start_config),
          :ok <- detach_backend_link(pid),
          :ok <- subscribe_backend(resolution.backend, pid, start_config.subscription_ref),
@@ -243,14 +233,17 @@ defmodule ASM.Run.Server do
   defp resolve_backend(provider, %Run.State{backend: backend} = state)
        when is_atom(backend) and not is_nil(backend) do
     lane = backend_override_lane(state.lane)
+    capabilities = backend_override_capabilities(provider, lane)
     execution_mode = execution_mode(state)
 
     {:ok,
      %{
+       provider: provider,
        backend: backend,
        requested_lane: state.lane || lane,
        preferred_lane: lane,
        lane: lane,
+       capabilities: capabilities,
        observability: %{
          provider: provider.name,
          provider_display_name: provider.display_name,
@@ -260,7 +253,8 @@ defmodule ASM.Run.Server do
          lane_reason: :backend_override,
          lane_fallback_reason: nil,
          execution_mode: execution_mode,
-         backend: backend
+         backend: backend,
+         capabilities: capabilities
        }
      }}
   end
@@ -272,11 +266,13 @@ defmodule ASM.Run.Server do
     )
   end
 
-  defp backend_start_config(provider, state) do
+  defp backend_start_config(provider, state, resolution) do
     subscription_ref = make_ref()
 
     %{
       provider: provider,
+      lane: resolution.lane,
+      backend: resolution.backend,
       prompt: state.prompt,
       provider_opts: state.provider_opts,
       backend_opts: state.backend_opts,
@@ -323,11 +319,7 @@ defmodule ASM.Run.Server do
   defp put_backend_state(state, resolution, pid, info, start_config) do
     ref = Process.monitor(pid)
 
-    backend_info =
-      info
-      |> normalize_backend_info()
-      |> Map.merge(fetch_backend_info(resolution.backend, pid))
-      |> Map.merge(resolution.observability)
+    backend_info = resolved_backend_info(info, resolution, pid)
 
     %{
       state
@@ -495,22 +487,57 @@ defmodule ASM.Run.Server do
     _ -> :ok
   end
 
-  defp normalize_backend_info(%{} = info), do: info
-  defp normalize_backend_info(other), do: %{session: other}
-
   defp merge_event_metadata(%Event{} = event, metadata) when is_map(metadata) do
     %{event | metadata: Metadata.merge_run_metadata(metadata, event.metadata)}
   end
 
-  defp fetch_backend_info(backend, pid) when is_atom(backend) and is_pid(pid) do
+  defp resolved_backend_info(info, resolution, pid) do
+    fallback =
+      normalize_backend_info(info, resolution, pid)
+      |> BackendInfo.merge_observability(resolution.observability)
+
+    case fetch_backend_info(resolution.backend, pid, resolution) do
+      %BackendInfo{} = refreshed ->
+        refreshed
+
+      _other ->
+        fallback
+    end
+  end
+
+  defp normalize_backend_info(info, resolution, pid) do
+    case info do
+      %BackendInfo{} = normalized ->
+        BackendInfo.normalize(normalized,
+          provider: resolution.provider.name,
+          lane: resolution.lane,
+          backend: resolution.backend,
+          capabilities: resolution.capabilities,
+          session_pid: pid
+        )
+
+      other ->
+        BackendInfo.normalize(other,
+          provider: resolution.provider.name,
+          lane: resolution.lane,
+          backend: resolution.backend,
+          runtime: resolution.backend,
+          capabilities: resolution.capabilities,
+          session_pid: pid
+        )
+    end
+  end
+
+  defp fetch_backend_info(backend, pid, resolution) when is_atom(backend) and is_pid(pid) do
     backend.info(pid)
-    |> normalize_backend_info()
+    |> normalize_backend_info(resolution, pid)
+    |> BackendInfo.merge_observability(resolution.observability)
   rescue
     _error ->
-      %{}
+      nil
   catch
     :exit, _reason ->
-      %{}
+      nil
   end
 
   defp execution_mode(%Run.State{execution_config: %ASM.Execution.Config{execution_mode: mode}})
@@ -521,4 +548,22 @@ defmodule ASM.Run.Server do
 
   defp backend_override_lane(lane) when lane in [:core, :sdk], do: lane
   defp backend_override_lane(_lane), do: :core
+
+  defp backend_override_capabilities(%Provider{} = provider, :core) do
+    module_capabilities(provider.core_profile)
+  end
+
+  defp backend_override_capabilities(%Provider{} = provider, :sdk) do
+    module_capabilities(provider.sdk_runtime)
+  end
+
+  defp module_capabilities(module) when is_atom(module) do
+    if function_exported?(module, :capabilities, 0) do
+      module.capabilities()
+    else
+      []
+    end
+  end
+
+  defp module_capabilities(_module), do: []
 end

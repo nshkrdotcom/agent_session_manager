@@ -329,7 +329,7 @@ defmodule ASM.Run.Server do
         backend_subscription_ref: start_config.subscription_ref,
         backend_info: backend_info,
         lane: resolution.lane,
-        metadata: Map.merge(state.metadata, resolution.observability)
+        metadata: Map.merge(state.metadata, backend_info.observability)
     }
   end
 
@@ -494,11 +494,11 @@ defmodule ASM.Run.Server do
   defp resolved_backend_info(info, resolution, pid) do
     fallback =
       normalize_backend_info(info, resolution, pid)
-      |> BackendInfo.merge_observability(resolution.observability)
+      |> normalize_backend_observability(resolution)
 
     case fetch_backend_info(resolution.backend, pid, resolution) do
       %BackendInfo{} = refreshed ->
-        refreshed
+        normalize_backend_observability(refreshed, resolution)
 
       _other ->
         fallback
@@ -512,7 +512,6 @@ defmodule ASM.Run.Server do
           provider: resolution.provider.name,
           lane: resolution.lane,
           backend: resolution.backend,
-          capabilities: resolution.capabilities,
           session_pid: pid
         )
 
@@ -531,13 +530,32 @@ defmodule ASM.Run.Server do
   defp fetch_backend_info(backend, pid, resolution) when is_atom(backend) and is_pid(pid) do
     backend.info(pid)
     |> normalize_backend_info(resolution, pid)
-    |> BackendInfo.merge_observability(resolution.observability)
   rescue
     _error ->
       nil
   catch
     :exit, _reason ->
       nil
+  end
+
+  defp normalize_backend_observability(%BackendInfo{} = info, resolution) do
+    %{info | observability: backend_observability(info, resolution)}
+  end
+
+  defp backend_observability(%BackendInfo{} = info, resolution) do
+    capabilities =
+      case info.capabilities do
+        [] -> resolution.capabilities
+        values -> values
+      end
+
+    resolution.observability
+    |> Map.merge(info.observability)
+    |> Map.put(:provider, info.provider || resolution.provider.name)
+    |> Map.put(:lane, info.lane || resolution.lane)
+    |> Map.put(:backend, info.backend || resolution.backend)
+    |> Map.put(:runtime, info.runtime || resolution.backend)
+    |> Map.put(:capabilities, capabilities)
   end
 
   defp execution_mode(%Run.State{execution_config: %ASM.Execution.Config{execution_mode: mode}})

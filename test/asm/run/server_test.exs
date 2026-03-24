@@ -338,6 +338,105 @@ defmodule ASM.Run.ServerTest do
     end
   end
 
+  defmodule CapabilityProbeBackend do
+    @moduledoc false
+
+    use GenServer
+
+    @behaviour ASM.ProviderBackend
+
+    alias ASM.ProviderBackend.Event, as: BackendEvent
+    alias ASM.ProviderBackend.Info, as: BackendInfo
+    alias CliSubprocessCore.Event, as: CoreEvent
+    alias CliSubprocessCore.Payload
+
+    @capabilities [:custom_transport]
+    @runtime :capability_probe_runtime
+
+    @impl true
+    def start_run(config) do
+      with {:ok, pid} <- GenServer.start_link(__MODULE__, config) do
+        {:ok, pid,
+         BackendInfo.new(
+           provider: config.provider.name,
+           lane: Map.get(config, :lane, :core),
+           backend: __MODULE__,
+           runtime: @runtime,
+           capabilities: @capabilities,
+           session_pid: pid,
+           raw_info: %{provider: config.provider.name, backend: :capability_probe}
+         )}
+      end
+    end
+
+    @impl true
+    def send_input(_server, _input, _opts \\ []), do: :ok
+
+    @impl true
+    def end_input(_server), do: :ok
+
+    @impl true
+    def interrupt(_server), do: :ok
+
+    @impl true
+    def close(server) do
+      GenServer.stop(server, :normal)
+    catch
+      :exit, _ -> :ok
+    end
+
+    @impl true
+    def subscribe(server, pid, ref) do
+      GenServer.call(server, {:subscribe, pid, ref})
+    end
+
+    @impl true
+    def info(server) do
+      GenServer.call(server, :info)
+    end
+
+    @impl true
+    def init(config) do
+      {:ok,
+       %{
+         provider: config.provider.name,
+         subscriber: config.subscriber_pid,
+         subscription_ref: config.subscription_ref
+       }, {:continue, :emit_run_started}}
+    end
+
+    @impl true
+    def handle_continue(:emit_run_started, state) do
+      emit_core_event(state, :run_started, Payload.RunStarted.new(command: "capability-probe"))
+      {:noreply, state}
+    end
+
+    @impl true
+    def handle_call({:subscribe, pid, ref}, _from, state) do
+      {:reply, :ok, %{state | subscriber: pid, subscription_ref: ref}}
+    end
+
+    def handle_call(:info, _from, state) do
+      {:reply,
+       BackendInfo.new(
+         provider: state.provider,
+         lane: :core,
+         backend: __MODULE__,
+         runtime: @runtime,
+         capabilities: @capabilities,
+         session_pid: self(),
+         raw_info: %{provider: state.provider, backend: :capability_probe}
+       ), state}
+    end
+
+    defp emit_core_event(state, kind, payload) do
+      if is_pid(state.subscriber) and is_reference(state.subscription_ref) do
+        event = CoreEvent.new(kind, provider: state.provider, payload: payload)
+        send(state.subscriber, BackendEvent.new(state.subscription_ref, event))
+      end
+    end
+  end
+
   test "bootstrap consumes backend events and finishes on result" do
     assert {:ok, run_pid} =
              Run.Server.start_link(
@@ -507,6 +606,51 @@ defmodule ASM.Run.ServerTest do
     assert :ok = Run.Server.ingest_event(run_pid, result_event)
     assert_receive {:asm_run_event, "run-info", %Event{kind: :result}}
     assert_receive {:asm_run_done, "run-info"}
+    assert_receive {:DOWN, ^ref, :process, ^run_pid, :normal}
+  end
+
+  test "backend info and event metadata preserve backend-provided capabilities" do
+    assert {:ok, run_pid} =
+             Run.Server.start_link(
+               run_id: "run-capabilities",
+               session_id: "session-capabilities",
+               provider: :claude,
+               subscriber: self(),
+               backend_module: CapabilityProbeBackend,
+               execution_config: local_execution_config()
+             )
+
+    assert_receive {:asm_run_event, "run-capabilities", %Event{kind: :run_started} = event}
+
+    assert event.metadata.backend == CapabilityProbeBackend
+    assert event.metadata.runtime == :capability_probe_runtime
+    assert event.metadata.capabilities == [:custom_transport]
+
+    state = Run.Server.get_state(run_pid)
+
+    assert %BackendInfo{
+             backend: CapabilityProbeBackend,
+             runtime: :capability_probe_runtime,
+             capabilities: [:custom_transport]
+           } = state.backend_info
+
+    ref = Process.monitor(run_pid)
+
+    assert :ok =
+             Run.Server.ingest_event(
+               run_pid,
+               Event.new(
+                 :result,
+                 Payload.Result.new(status: :completed, stop_reason: :end_turn),
+                 run_id: "run-capabilities",
+                 session_id: "session-capabilities",
+                 provider: :claude,
+                 timestamp: DateTime.utc_now()
+               )
+             )
+
+    assert_receive {:asm_run_event, "run-capabilities", %Event{kind: :result}}
+    assert_receive {:asm_run_done, "run-capabilities"}
     assert_receive {:DOWN, ^ref, :process, ^run_pid, :normal}
   end
 

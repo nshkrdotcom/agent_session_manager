@@ -131,7 +131,7 @@ defmodule ASM.ProviderBackend do
 
     @spec session_event_tag(term(), atom() | nil) :: atom() | nil
     def session_event_tag(raw_info, fallback \\ nil) do
-      case session_details(raw_info) do
+      case raw_session_details(raw_info) do
         %{} = details ->
           Map.get(details, :session_event_tag) ||
             Map.get(details, "session_event_tag") ||
@@ -144,13 +144,20 @@ defmodule ASM.ProviderBackend do
 
     defp session_details(%{} = raw_info) do
       raw_info
-      |> unwrap_runtime_info()
-      |> normalize_map()
+      |> raw_session_details()
       |> Map.drop([:session_event_tag, "session_event_tag"])
     end
 
     defp session_details(nil), do: %{}
     defp session_details(other), do: %{value: other}
+
+    defp raw_session_details(%{} = raw_info) do
+      raw_info
+      |> unwrap_runtime_info()
+      |> normalize_map()
+    end
+
+    defp raw_session_details(_raw_info), do: %{}
 
     defp unwrap_runtime_info(%{info: %{} = info}), do: info
     defp unwrap_runtime_info(%{"info" => %{} = info}), do: info

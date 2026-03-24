@@ -7,7 +7,6 @@ defmodule AgentSessionManager.MixProject do
   @docs_url "https://hexdocs.pm/agent_session_manager"
   @cli_subprocess_core_requirement "~> 0.1.0"
   @cli_subprocess_core_repo "nshkrdotcom/cli_subprocess_core"
-  @cli_subprocess_core_ref "d5f7c5daa810965f60503bd4499c42ca3c4f5574"
   @claude_agent_sdk_requirement "~> 0.16.0"
   @codex_sdk_requirement "~> 0.15.0"
   @gemini_cli_sdk_requirement "~> 0.1.0"
@@ -56,8 +55,7 @@ defmodule AgentSessionManager.MixProject do
         :cli_subprocess_core,
         "../cli_subprocess_core",
         @cli_subprocess_core_requirement,
-        github: @cli_subprocess_core_repo,
-        ref: @cli_subprocess_core_ref
+        github: @cli_subprocess_core_repo
       ),
       workspace_dep(:claude_agent_sdk, "../claude_agent_sdk", @claude_agent_sdk_requirement,
         optional: true

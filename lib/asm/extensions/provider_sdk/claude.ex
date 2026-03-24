@@ -16,7 +16,7 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
   """
 
   alias ASM.{Error, Options, Provider, ProviderRegistry}
-  alias ASM.Extensions.ProviderSDK.Extension
+  alias ASM.Extensions.ProviderSDK.{Dispatch, Extension}
 
   @sdk_app :claude_agent_sdk
   @sdk_module Module.concat(["ClaudeAgentSDK"])
@@ -286,7 +286,7 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
     with :ok <- ensure_sdk_module(@sdk_client_module, "Claude SDK client"),
          true <- function_exported?(@sdk_client_module, :start_link, 2) do
       module = @sdk_client_module
-      module.start_link(options, client_opts)
+      Dispatch.invoke_2(module, :start_link, options, client_opts)
     else
       false ->
         {:error,

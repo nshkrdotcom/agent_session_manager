@@ -19,7 +19,7 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
   """
 
   alias ASM.{Error, Options, Provider, ProviderRegistry}
-  alias ASM.Extensions.ProviderSDK.Extension
+  alias ASM.Extensions.ProviderSDK.{Dispatch, Extension}
 
   @sdk_app :codex_sdk
   @sdk_module Module.concat(["Codex"])
@@ -339,7 +339,7 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
     with :ok <- ensure_sdk_module(@app_server_module, "Codex app-server"),
          true <- function_exported?(@app_server_module, :connect, 2) do
       module = @app_server_module
-      module.connect(options, connect_opts)
+      Dispatch.invoke_2(module, :connect, options, connect_opts)
     else
       false ->
         {:error,

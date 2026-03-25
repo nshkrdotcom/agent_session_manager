@@ -13,6 +13,14 @@ Supported providers:
 - Codex CLI (`exec` mode)
 - Amp CLI
 
+## Documentation Menu
+
+- `README.md` - install, lanes, provider boundaries, and validation workflow
+- `guides/lane-selection.md` - lane discovery and execution fallback rules
+- `guides/provider-backends.md` - core vs SDK backend responsibilities
+- `guides/streaming.md` - stream projection and reducers
+- `guides/remote-nodes.md` - remote execution model
+
 ## Why ASM
 
 - One session/runtime model across providers.
@@ -146,6 +154,29 @@ This produces three distinct values in observability metadata:
 When `lane: :auto` prefers `:sdk` but `execution_mode: :remote_node`, ASM records `preferred_lane: :sdk` and executes with `lane: :core`, `backend: ASM.ProviderBackend.Core`, and `lane_fallback_reason: :sdk_remote_unsupported`. An explicit `lane: :sdk` with `execution_mode: :remote_node` is a configuration error.
 
 See [Lane Selection](guides/lane-selection.md) for the full discovery and resolution flow.
+
+## Centralized Model Selection
+
+ASM does not own provider model policy.
+
+The authoritative model-selection contract is provided by
+`cli_subprocess_core`, and ASM consumes the resolved payload before dispatching
+into provider adapters.
+
+Authoritative core surface:
+
+- `CliSubprocessCore.ModelRegistry.resolve/3`
+- `CliSubprocessCore.ModelRegistry.validate/2`
+- `CliSubprocessCore.ModelRegistry.default_model/2`
+- `CliSubprocessCore.ModelRegistry.build_arg_payload/3`
+
+ASM-side rules:
+
+- option schemas remain value carriers
+- provider backends and SDK extensions consume resolved payloads only
+- missing provider path, missing SDK path, missing model, placeholder model
+  input, and invalid reasoning effort remain hard failures
+- ASM does not implement a second provider-specific fallback path
 
 ## Lane Selection
 

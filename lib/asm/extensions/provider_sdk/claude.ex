@@ -335,9 +335,11 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
     end
   end
 
-  defp model_payload_value(payload, key) when is_map(payload) do
-    Map.get(payload, key, Map.get(payload, Atom.to_string(key)))
+  defp model_payload_value(
+         %CliSubprocessCore.ModelRegistry.Selection{} = payload,
+         key
+       )
+       when is_atom(key) do
+    Map.get(payload, key)
   end
-
-  defp model_payload_value(_payload, _key), do: nil
 end

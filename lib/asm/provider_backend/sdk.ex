@@ -344,11 +344,13 @@ defmodule ASM.ProviderBackend.SDK do
     Enum.reject(attrs, fn {_key, value} -> is_nil(value) end)
   end
 
-  defp model_payload_value(payload, key) when is_map(payload) do
-    Map.get(payload, key, Map.get(payload, Atom.to_string(key)))
+  defp model_payload_value(
+         %CliSubprocessCore.ModelRegistry.Selection{} = payload,
+         key
+       )
+       when is_atom(key) do
+    Map.get(payload, key)
   end
-
-  defp model_payload_value(_payload, _key), do: nil
 
   defp reasoning_atom(nil), do: nil
   defp reasoning_atom(value) when is_atom(value), do: value

@@ -165,7 +165,7 @@ defmodule ASM.Options do
   end
 
   @spec resolve_model_payload(atom(), keyword()) ::
-          {:ok, CliSubprocessCore.ModelRegistry.Selection.t()} | {:error, Error.t()}
+          {:ok, CliSubprocessCore.ModelRegistry.selection()} | {:error, Error.t()}
   def resolve_model_payload(provider, provider_opts)
       when is_atom(provider) and is_list(provider_opts) do
     requested_model = Keyword.get(provider_opts, :model)

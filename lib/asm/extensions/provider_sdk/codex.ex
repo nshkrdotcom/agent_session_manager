@@ -246,9 +246,12 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
   end
 
   defp codex_option_attrs(validated) do
+    {:ok, model_payload} = Options.resolve_model_payload(:codex, validated)
+
     [
-      model: Keyword.get(validated, :model),
-      reasoning_effort: Keyword.get(validated, :reasoning_effort),
+      model_payload: model_payload,
+      model: model_payload_value(model_payload, :resolved_model),
+      reasoning_effort: reasoning_atom(model_payload_value(model_payload, :reasoning)),
       codex_path_override: Keyword.get(validated, :cli_path)
     ]
     |> drop_nil_values()
@@ -317,6 +320,16 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
   defp drop_nil_values(attrs) when is_list(attrs) do
     Enum.reject(attrs, fn {_key, value} -> is_nil(value) end)
   end
+
+  defp model_payload_value(payload, key) when is_map(payload) do
+    Map.get(payload, key, Map.get(payload, Atom.to_string(key)))
+  end
+
+  defp model_payload_value(_payload, _key), do: nil
+
+  defp reasoning_atom(nil), do: nil
+  defp reasoning_atom(value) when is_atom(value), do: value
+  defp reasoning_atom(value) when is_binary(value), do: String.to_atom(value)
 
   defp invalid_sdk_options(provider_name, reason) do
     Error.new(

@@ -5,7 +5,7 @@ defmodule ASM.ProviderBackend.SDK do
 
   @behaviour ASM.ProviderBackend
 
-  alias ASM.{Error, Execution, Provider}
+  alias ASM.{Error, Execution, Options, Provider}
   alias ASM.ProviderBackend.Proxy
 
   @claude_options_module Module.concat(["ClaudeAgentSDK", "Options"])
@@ -99,8 +99,14 @@ defmodule ASM.ProviderBackend.SDK do
   end
 
   defp build_start_opts(%Provider{name: :claude, sdk_runtime: runtime}, config) do
-    with {:ok, options} <-
-           new_sdk_struct(@claude_options_module, claude_option_attrs(config), "claude") do
+    with {:ok, model_payload} <-
+           Options.resolve_model_payload(:claude, Map.get(config, :provider_opts, [])),
+         {:ok, options} <-
+           new_sdk_struct(
+             @claude_options_module,
+             claude_option_attrs(config, model_payload),
+             "claude"
+           ) do
       {:ok,
        sdk_start_opts(runtime, config,
          options: options,
@@ -111,8 +117,14 @@ defmodule ASM.ProviderBackend.SDK do
   end
 
   defp build_start_opts(%Provider{name: :gemini, sdk_runtime: runtime}, config) do
-    with {:ok, options} <-
-           build_sdk_struct(@gemini_options_module, gemini_option_attrs(config), "gemini"),
+    with {:ok, model_payload} <-
+           Options.resolve_model_payload(:gemini, Map.get(config, :provider_opts, [])),
+         {:ok, options} <-
+           build_sdk_struct(
+             @gemini_options_module,
+             gemini_option_attrs(config, model_payload),
+             "gemini"
+           ),
          {:ok, options} <- validate_sdk_struct(@gemini_options_module, options, "gemini") do
       {:ok,
        sdk_start_opts(runtime, config,
@@ -124,7 +136,10 @@ defmodule ASM.ProviderBackend.SDK do
   end
 
   defp build_start_opts(%Provider{name: :amp, sdk_runtime: runtime}, config) do
-    with {:ok, options} <- build_sdk_struct(@amp_options_module, amp_option_attrs(config), "amp") do
+    with {:ok, model_payload} <-
+           Options.resolve_model_payload(:amp, Map.get(config, :provider_opts, [])),
+         {:ok, options} <-
+           build_sdk_struct(@amp_options_module, amp_option_attrs(config, model_payload), "amp") do
       {:ok,
        sdk_start_opts(runtime, config,
          input: Map.fetch!(config, :prompt),
@@ -135,8 +150,14 @@ defmodule ASM.ProviderBackend.SDK do
   end
 
   defp build_start_opts(%Provider{name: :codex, sdk_runtime: runtime}, config) do
-    with {:ok, codex_opts} <-
-           new_sdk_struct(@codex_options_module, codex_option_attrs(config), "codex"),
+    with {:ok, model_payload} <-
+           Options.resolve_model_payload(:codex, Map.get(config, :provider_opts, [])),
+         {:ok, codex_opts} <-
+           new_sdk_struct(
+             @codex_options_module,
+             codex_option_attrs(config, model_payload),
+             "codex"
+           ),
          {:ok, thread_opts} <-
            new_sdk_struct(
              @codex_thread_options_module,
@@ -176,13 +197,14 @@ defmodule ASM.ProviderBackend.SDK do
   defp gemini_approval_mode(:default), do: nil
   defp gemini_approval_mode(mode), do: mode
 
-  defp claude_option_attrs(config) do
+  defp claude_option_attrs(config, model_payload) do
     [
       cwd: kw(config, :cwd),
       env: kw(config, :env, %{}),
       path_to_claude_code_executable: kw(config, :cli_path),
       permission_mode: kw(config, :provider_permission_mode),
-      model: kw(config, :model),
+      model_payload: model_payload,
+      model: model_payload_value(model_payload, :resolved_model),
       max_turns: kw(config, :max_turns),
       system_prompt: kw(config, :system_prompt),
       append_system_prompt: kw(config, :append_system_prompt),
@@ -193,9 +215,10 @@ defmodule ASM.ProviderBackend.SDK do
     |> drop_nil_values()
   end
 
-  defp gemini_option_attrs(config) do
+  defp gemini_option_attrs(config, model_payload) do
     [
-      model: kw(config, :model),
+      model_payload: model_payload,
+      model: model_payload_value(model_payload, :resolved_model),
       yolo: kw(config, :provider_permission_mode) == :yolo,
       approval_mode: gemini_approval_mode(kw(config, :provider_permission_mode)),
       sandbox: kw(config, :sandbox, false),
@@ -208,8 +231,9 @@ defmodule ASM.ProviderBackend.SDK do
     |> drop_nil_values()
   end
 
-  defp amp_option_attrs(config) do
+  defp amp_option_attrs(config, model_payload) do
     [
+      model_payload: model_payload,
       cwd: kw(config, :cwd),
       mode: kw(config, :mode, "smart"),
       dangerously_allow_all: kw(config, :provider_permission_mode) == :dangerously_allow_all,
@@ -221,10 +245,11 @@ defmodule ASM.ProviderBackend.SDK do
     |> drop_nil_values()
   end
 
-  defp codex_option_attrs(config) do
+  defp codex_option_attrs(config, model_payload) do
     [
-      model: kw(config, :model),
-      reasoning_effort: kw(config, :reasoning_effort),
+      model_payload: model_payload,
+      model: model_payload_value(model_payload, :resolved_model),
+      reasoning_effort: reasoning_atom(model_payload_value(model_payload, :reasoning)),
       codex_path_override: kw(config, :cli_path)
     ]
     |> drop_nil_values()
@@ -318,6 +343,16 @@ defmodule ASM.ProviderBackend.SDK do
   defp drop_nil_values(attrs) when is_list(attrs) do
     Enum.reject(attrs, fn {_key, value} -> is_nil(value) end)
   end
+
+  defp model_payload_value(payload, key) when is_map(payload) do
+    Map.get(payload, key, Map.get(payload, Atom.to_string(key)))
+  end
+
+  defp model_payload_value(_payload, _key), do: nil
+
+  defp reasoning_atom(nil), do: nil
+  defp reasoning_atom(value) when is_atom(value), do: value
+  defp reasoning_atom(value) when is_binary(value), do: String.to_atom(value)
 
   defp invalid_sdk_options(provider_name, reason) do
     Error.new(

@@ -636,3 +636,9 @@ mix dialyzer
 mix docs
 mix hex.build
 ```
+
+## Model Selection Contract
+
+`/home/home/p/g/n/agent_session_manager` centralizes provider model resolution through `/home/home/p/g/n/cli_subprocess_core` before delegating to provider backends or SDK adapters. The authoritative policy APIs are `CliSubprocessCore.ModelRegistry.resolve/3`, `CliSubprocessCore.ModelRegistry.validate/2`, and `CliSubprocessCore.ModelRegistry.default_model/2`.
+
+ASM option schemas are value carriers only. Backend lanes and provider extensions consume the resolved payload and do not own implicit provider/model fallback policy.

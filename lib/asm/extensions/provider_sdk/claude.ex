@@ -227,12 +227,15 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
   end
 
   defp base_sdk_option_attrs(validated) do
+    {:ok, model_payload} = Options.resolve_model_payload(:claude, validated)
+
     [
       cwd: Keyword.get(validated, :cwd),
       env: Keyword.get(validated, :env, %{}),
       path_to_claude_code_executable: Keyword.get(validated, :cli_path),
       permission_mode: Keyword.get(validated, :provider_permission_mode),
-      model: Keyword.get(validated, :model),
+      model_payload: model_payload,
+      model: model_payload_value(model_payload, :resolved_model),
       max_turns: Keyword.get(validated, :max_turns),
       timeout_ms: Keyword.get(validated, :transport_timeout_ms)
     ]
@@ -331,4 +334,10 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
        )}
     end
   end
+
+  defp model_payload_value(payload, key) when is_map(payload) do
+    Map.get(payload, key, Map.get(payload, Atom.to_string(key)))
+  end
+
+  defp model_payload_value(_payload, _key), do: nil
 end

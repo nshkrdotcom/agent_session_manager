@@ -4,6 +4,7 @@ defmodule ASM.Options do
   """
 
   alias ASM.{Error, Permission}
+  alias CliSubprocessCore.ModelRegistry
 
   @common_keys [
     :provider,
@@ -162,6 +163,46 @@ defmodule ASM.Options do
   def validate_passthrough_map(value, key) do
     {:error, "expected #{inspect(key)} to be a map, got: #{inspect(value)}"}
   end
+
+  @spec resolve_model_payload(atom(), keyword()) ::
+          {:ok, CliSubprocessCore.ModelRegistry.Selection.t()} | {:error, Error.t()}
+  def resolve_model_payload(provider, provider_opts)
+      when is_atom(provider) and is_list(provider_opts) do
+    requested_model = Keyword.get(provider_opts, :model)
+
+    registry_opts =
+      provider_opts
+      |> Keyword.take([:model_env, :env_model, :environment_model])
+      |> maybe_put_reasoning(
+        Keyword.get(provider_opts, :reasoning_effort, Keyword.get(provider_opts, :reasoning))
+      )
+
+    case ModelRegistry.build_arg_payload(provider, requested_model, registry_opts) do
+      {:ok, payload} ->
+        {:ok, payload}
+
+      {:error, reason} ->
+        {:error,
+         config_error(
+           "model resolution failed for #{inspect(provider)}: #{inspect(reason)}",
+           provider: provider,
+           reason: reason
+         )}
+    end
+  end
+
+  @spec attach_model_payload(keyword(), map()) :: keyword()
+  def attach_model_payload(provider_opts, model_payload)
+      when is_list(provider_opts) and is_map(model_payload) do
+    provider_opts
+    |> Keyword.put(:model_payload, model_payload)
+    |> Keyword.delete(:model)
+    |> Keyword.delete(:reasoning)
+    |> Keyword.delete(:reasoning_effort)
+  end
+
+  defp maybe_put_reasoning(opts, nil), do: opts
+  defp maybe_put_reasoning(opts, reasoning), do: Keyword.put(opts, :reasoning_effort, reasoning)
 
   defp config_error(message, details) do
     Error.new(:config_invalid, :config, message, cause: details)

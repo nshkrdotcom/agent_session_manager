@@ -5,7 +5,7 @@ defmodule ASM.ProviderBackend.Core do
 
   @behaviour ASM.ProviderBackend
 
-  alias ASM.{Error, Execution, Provider}
+  alias ASM.{Error, Execution, Options, Provider}
   alias ASM.ProviderBackend.Proxy
   alias ASM.Remote.NodeConnector
   alias CliSubprocessCore.Session
@@ -13,7 +13,7 @@ defmodule ASM.ProviderBackend.Core do
   @impl true
   def start_run(%{provider: %Provider{} = provider} = config) do
     with {:ok, execution_config} <- fetch_execution_config(config),
-         session_opts <- build_session_opts(provider, config) do
+         {:ok, session_opts} <- build_session_opts(provider, config) do
       Proxy.start_link(
         starter: fn subscriber ->
           do_start_run(execution_config, Keyword.put(session_opts, :subscriber, subscriber))
@@ -81,17 +81,22 @@ defmodule ASM.ProviderBackend.Core do
         Map.get(config, :metadata, %{})
       )
 
-    provider_opts =
-      config
-      |> Map.get(:provider_opts, [])
-      |> Keyword.put(:prompt, Map.fetch!(config, :prompt))
-      |> maybe_put_cli_path()
+    with {:ok, model_payload} <-
+           Options.resolve_model_payload(provider.name, Map.get(config, :provider_opts, [])) do
+      provider_opts =
+        config
+        |> Map.get(:provider_opts, [])
+        |> Options.attach_model_payload(model_payload)
+        |> Keyword.put(:prompt, Map.fetch!(config, :prompt))
+        |> maybe_put_cli_path()
 
-    [
-      provider: provider.name,
-      profile: provider.core_profile,
-      metadata: metadata
-    ] ++ provider_opts
+      {:ok,
+       [
+         provider: provider.name,
+         profile: provider.core_profile,
+         metadata: metadata
+       ] ++ provider_opts}
+    end
   end
 
   defp maybe_put_cli_path(provider_opts) do

@@ -1,6 +1,6 @@
 # Live Adapter Guide
 
-This guide covers running ASM against real provider CLIs and validating the full public runtime surface.
+This guide covers running ASM against real provider CLIs through the common public surface.
 
 ## Prerequisites
 
@@ -10,6 +10,7 @@ Install provider CLIs and authenticate each one:
 npm install -g @anthropic-ai/claude-code
 npm install -g @google/gemini-cli
 npm install -g @openai/codex
+npm install -g @sourcegraph/amp
 ```
 
 Optional explicit binary paths:
@@ -19,90 +20,42 @@ Optional explicit binary paths:
 - `CODEX_PATH`
 - `AMP_CLI_PATH`
 
-## Provider-specific stream checks
+## Example behavior
+
+The examples are provider-agnostic and require `--provider`. If you do not pass a provider, they print usage and exit without touching a live CLI.
+
+## Run one example
 
 ```bash
-mix run examples/live_claude_stream.exs -- "Reply with exactly: CLAUDE_OK"
-mix run examples/live_gemini_stream.exs -- "Reply with exactly: GEMINI_OK"
-mix run examples/live_codex_stream.exs -- "Reply with exactly: CODEX_OK"
-mix run examples/check_amp_provider.exs
+mix run --no-start examples/live_query.exs -- --provider claude
+mix run --no-start examples/live_stream.exs -- --provider gemini
+mix run --no-start examples/live_session_lifecycle.exs -- --provider codex
+mix run --no-start examples/live_stream.exs -- --provider amp --prompt "Reply with exactly: AMP_STREAM_OK"
 ```
 
-`check_amp_provider.exs` always runs provider wiring checks for the greenfield backend stack.
-It runs a live Amp stream only when `ASM_AMP_RUN_LIVE=1` and the Amp CLI resolves.
-
-Claude runs use a PTY wrapper (`script`) when available. If PTY setup is not usable in the current environment, ASM falls back to direct CLI execution.
-
-## Multi-provider smoke (stream + one-shot query)
+## Run every example for selected providers
 
 ```bash
-mix run examples/live_multi_provider_smoke.exs
+./examples/run_all.sh --provider claude
+./examples/run_all.sh --provider claude --provider gemini
+./examples/run_all.sh --provider codex --model gpt-5-codex
 ```
 
-## Full feature matrix on live adapters
+`run_all.sh` forwards extra flags to each example, so common overrides such as `--model`, `--cli-path`, `--permission-mode`, and `--cwd` can be applied once.
 
-```bash
-mix run examples/live_feature_matrix.exs
-mix run examples/live_main_compat_migration.exs
-```
-
-## Routing extension on live adapters
-
-```bash
-mix run examples/live_routing_round_robin.exs
-mix run examples/live_routing_failover.exs
-```
-
-The failover script intentionally makes the primary router candidate unavailable by
-setting an invalid CLI path and verifies fallback to a second live provider.
-
-## Rendering extension on live adapters
-
-```bash
-mix run examples/live_rendering_stream.exs -- "Reply with exactly: RENDER_OK"
-```
-
-The rendering script consumes live `%ASM.Event{}` output and demonstrates
-multi-sink composition:
-
-- terminal output via `ASM.Extensions.Rendering.Sinks.TTY`
-- file logging via `ASM.Extensions.Rendering.Sinks.File`
-
-## PubSub extension on live adapters
-
-```bash
-mix run examples/live_pub_sub_stream.exs -- "Reply with exactly: PUBSUB_OK"
-```
-
-The PubSub script wires `ASM.Extensions.PubSub.broadcaster_plug/2` into the
-run pipeline, subscribes to `asm:events` and `asm:session:<session_id>` topics,
-and prints consumed `{:asm_pubsub, topic, payload}` messages.
-
-The feature-matrix script validates:
+## What the examples cover
 
 - `ASM.start_session/1`
-- `ASM.stream/3` + stream event projection
-- `ASM.query/3` on an existing live session
+- `ASM.stream/3`
+- `ASM.Stream.final_result/1`
+- `ASM.query/3`
+- `ASM.session_info/1`
 - `ASM.health/1`
 - `ASM.cost/1`
 - `ASM.stop_session/1`
 
-`live_main_compat_migration.exs` validates:
-
-- `ASM.Migration.MainCompat` provider/input/option conversion from main-style shapes
-- legacy event callback bridging over live stream output
-- explicit unsupported migration errors for Amp/Shell adapter hints
-
 ## Useful environment knobs
 
 - `ASM_PERMISSION_MODE` (`default`, `auto`, `bypass`, `plan`)
-- `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL`
-- `ASM_GEMINI_EXTENSIONS` (comma-separated list)
-- `ASM_CODEX_REASONING` (`low`, `medium`, `high`)
-- `ASM_RENDER_PROVIDER` (`claude`, `gemini`, `codex`)
-- `ASM_RENDER_FORMAT` (`compact`, `verbose`)
-- `ASM_RENDER_FILE` (render output file path)
-- `ASM_RENDER_KEEP_FILE` (`1`/`true` to keep output file)
-- `ASM_PUBSUB_PROVIDER` (`claude`, `gemini`, `codex`)
-- `ASM_AMP_MODEL`, `ASM_AMP_MODE`, `ASM_AMP_TOOLS`, `ASM_AMP_THINKING`
-- `ASM_AMP_RUN_LIVE` (`1`/`true` enables live Amp stream check)
+- `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL`, `ASM_AMP_MODEL`
+- `CLAUDE_CLI_PATH`, `GEMINI_CLI_PATH`, `CODEX_PATH`, `AMP_CLI_PATH`

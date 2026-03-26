@@ -4,14 +4,16 @@ defmodule ASM.Provider do
   """
 
   alias ASM.Error
+  alias ASM.Provider.ExampleSupport
   alias ASM.Provider.Profile
 
-  @enforce_keys [:name, :display_name, :core_profile, :options_schema, :profile]
+  @enforce_keys [:name, :display_name, :core_profile, :example_support, :options_schema, :profile]
   defstruct [
     :name,
     :display_name,
     :core_profile,
     :sdk_runtime,
+    :example_support,
     :options_schema,
     :profile,
     aliases: [],
@@ -25,6 +27,7 @@ defmodule ASM.Provider do
           display_name: String.t(),
           core_profile: module(),
           sdk_runtime: module() | nil,
+          example_support: ExampleSupport.t(),
           options_schema: keyword(),
           profile: Profile.t(),
           aliases: [provider_name()],
@@ -33,6 +36,24 @@ defmodule ASM.Provider do
 
   @spec supported_providers() :: [provider_name()]
   def supported_providers, do: Map.keys(providers())
+
+  @spec example_support(t() | provider_name()) :: {:ok, ExampleSupport.t()} | {:error, Error.t()}
+  def example_support(provider_or_name) do
+    with {:ok, %__MODULE__{} = provider} <- resolve(provider_or_name) do
+      {:ok, provider.example_support}
+    end
+  end
+
+  @spec example_support!(t() | provider_name()) :: ExampleSupport.t()
+  def example_support!(provider_or_name) do
+    case example_support(provider_or_name) do
+      {:ok, %ExampleSupport{} = example_support} ->
+        example_support
+
+      {:error, %Error{} = error} ->
+        raise ArgumentError, Exception.message(error)
+    end
+  end
 
   @spec resolve(t() | provider_name()) :: {:ok, t()} | {:error, Error.t()}
   def resolve(%__MODULE__{} = provider), do: {:ok, provider}
@@ -98,6 +119,15 @@ defmodule ASM.Provider do
         display_name: "Claude CLI",
         core_profile: CliSubprocessCore.ProviderProfiles.Claude,
         sdk_runtime: Module.concat(["ClaudeAgentSDK", "Runtime", "CLI"]),
+        example_support: %ExampleSupport{
+          cli_command: "claude",
+          cli_path_env: "CLAUDE_CLI_PATH",
+          install_hint: "npm install -g @anthropic-ai/claude-code",
+          model_env: "ASM_CLAUDE_MODEL",
+          sdk_app: :claude_agent_sdk,
+          sdk_repo_dir: "claude_agent_sdk",
+          sdk_root_env: "CLAUDE_AGENT_SDK_ROOT"
+        },
         options_schema: ASM.Options.Claude.schema(),
         profile:
           Profile.new!(
@@ -110,6 +140,16 @@ defmodule ASM.Provider do
         display_name: "Codex CLI",
         core_profile: CliSubprocessCore.ProviderProfiles.Codex,
         sdk_runtime: Module.concat(["Codex", "Runtime", "Exec"]),
+        example_support: %ExampleSupport{
+          cli_command: "codex",
+          cli_path_env: "CODEX_PATH",
+          install_hint: "npm install -g @openai/codex",
+          model_env: "ASM_CODEX_MODEL",
+          sdk_app: :codex_sdk,
+          sdk_repo_dir: "codex_sdk",
+          sdk_root_env: "CODEX_SDK_ROOT",
+          sdk_cli_env: "CODEX_PATH"
+        },
         options_schema: ASM.Options.Codex.schema(),
         aliases: [:codex_exec],
         profile:
@@ -123,6 +163,16 @@ defmodule ASM.Provider do
         display_name: "Gemini CLI",
         core_profile: CliSubprocessCore.ProviderProfiles.Gemini,
         sdk_runtime: Module.concat(["GeminiCliSdk", "Runtime", "CLI"]),
+        example_support: %ExampleSupport{
+          cli_command: "gemini",
+          cli_path_env: "GEMINI_CLI_PATH",
+          install_hint: "npm install -g @google/gemini-cli",
+          model_env: "ASM_GEMINI_MODEL",
+          sdk_app: :gemini_cli_sdk,
+          sdk_repo_dir: "gemini_cli_sdk",
+          sdk_root_env: "GEMINI_CLI_SDK_ROOT",
+          sdk_cli_env: "GEMINI_CLI_PATH"
+        },
         options_schema: ASM.Options.Gemini.schema(),
         profile:
           Profile.new!(
@@ -135,6 +185,16 @@ defmodule ASM.Provider do
         display_name: "Amp CLI",
         core_profile: CliSubprocessCore.ProviderProfiles.Amp,
         sdk_runtime: Module.concat(["AmpSdk", "Runtime", "CLI"]),
+        example_support: %ExampleSupport{
+          cli_command: "amp",
+          cli_path_env: "AMP_CLI_PATH",
+          install_hint: "npm install -g @sourcegraph/amp",
+          model_env: "ASM_AMP_MODEL",
+          sdk_app: :amp_sdk,
+          sdk_repo_dir: "amp_sdk",
+          sdk_root_env: "AMP_SDK_ROOT",
+          sdk_cli_env: "AMP_CLI_PATH"
+        },
         options_schema: ASM.Options.Amp.schema(),
         profile:
           Profile.new!(

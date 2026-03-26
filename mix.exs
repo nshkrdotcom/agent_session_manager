@@ -7,10 +7,6 @@ defmodule AgentSessionManager.MixProject do
   @docs_url "https://hexdocs.pm/agent_session_manager"
   @cli_subprocess_core_requirement "~> 0.1.0"
   @cli_subprocess_core_repo "nshkrdotcom/cli_subprocess_core"
-  @claude_agent_sdk_requirement "~> 0.16.0"
-  @codex_sdk_requirement "~> 0.15.0"
-  @gemini_cli_sdk_requirement "~> 0.1.0"
-  @amp_sdk_requirement "~> 0.4.0"
 
   def project do
     [
@@ -57,14 +53,6 @@ defmodule AgentSessionManager.MixProject do
         @cli_subprocess_core_requirement,
         github: @cli_subprocess_core_repo
       ),
-      workspace_dep(:claude_agent_sdk, "../claude_agent_sdk", @claude_agent_sdk_requirement,
-        optional: true
-      ),
-      workspace_dep(:codex_sdk, "../codex_sdk", @codex_sdk_requirement, optional: true),
-      workspace_dep(:gemini_cli_sdk, "../gemini_cli_sdk", @gemini_cli_sdk_requirement,
-        optional: true
-      ),
-      workspace_dep(:amp_sdk, "../amp_sdk", @amp_sdk_requirement, optional: true),
       {:boundary, path: "vendor/boundary", only: [:dev, :test], runtime: false},
       {:jason, "~> 1.4"},
       {:nimble_options, "~> 1.1"},

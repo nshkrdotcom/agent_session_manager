@@ -4,6 +4,27 @@ defmodule ASM.Extensions.ProviderSDKTest do
   alias ASM.Extensions.ProviderSDK
   alias ASM.ProviderRegistry
 
+  setup do
+    original = Application.get_env(:agent_session_manager, ASM.ProviderRegistry)
+
+    Application.put_env(
+      :agent_session_manager,
+      ASM.ProviderRegistry,
+      runtime_loader:
+        ASM.TestSupport.OptionalSDK.loaded_runtime_loader([:amp, :claude, :codex, :gemini])
+    )
+
+    on_exit(fn ->
+      if is_nil(original) do
+        Application.delete_env(:agent_session_manager, ASM.ProviderRegistry)
+      else
+        Application.put_env(:agent_session_manager, ASM.ProviderRegistry, original)
+      end
+    end)
+
+    :ok
+  end
+
   test "extensions/0 exposes the built-in provider-native namespaces" do
     extensions = ProviderSDK.extensions()
 

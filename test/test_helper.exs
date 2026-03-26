@@ -76,3 +76,11 @@ ExUnit.start(
   exclude: ASM.TestSupport.Capabilities.default_excludes(),
   assert_receive_timeout: 500
 )
+
+provider_registry_env = Application.get_env(:agent_session_manager, ASM.ProviderRegistry, [])
+
+Application.put_env(
+  :agent_session_manager,
+  ASM.ProviderRegistry,
+  Keyword.put(provider_registry_env, :runtime_loader, fn _runtime -> false end)
+)

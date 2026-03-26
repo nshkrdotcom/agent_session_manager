@@ -645,25 +645,14 @@ Provider-specific examples:
 
 ## Live Examples
 
-Run real CLI smoke tests:
+The repo examples are provider-agnostic and stay on the common ASM surface.
+They only run when you explicitly choose a provider with `--provider`.
 
 ```bash
-mix run examples/live_claude_stream.exs -- "Reply with exactly: CLAUDE_OK"
-mix run examples/live_gemini_stream.exs -- "Reply with exactly: GEMINI_OK"
-mix run examples/live_codex_stream.exs -- "Reply with exactly: CODEX_OK"
-mix run examples/check_amp_provider.exs
-mix run examples/live_multi_provider_smoke.exs
-mix run examples/live_feature_matrix.exs
-mix run examples/live_main_compat_migration.exs
-mix run examples/live_persistence_stream.exs -- "Reply with exactly: PERSIST_OK"
-mix run examples/live_rendering_stream.exs -- "Reply with exactly: RENDER_OK"
-mix run examples/live_pub_sub_stream.exs -- "Reply with exactly: PUBSUB_OK"
-```
-
-Supplemental SDK-lane demo:
-
-```bash
-mix run examples/sdk_backend_demo.exs
+mix run --no-start examples/live_query.exs -- --provider claude
+mix run --no-start examples/live_stream.exs -- --provider gemini
+mix run --no-start examples/live_session_lifecycle.exs -- --provider codex
+./examples/run_all.sh --provider amp
 ```
 
 Environment knobs used by examples:
@@ -671,11 +660,8 @@ Environment knobs used by examples:
 - `CLAUDE_CLI_PATH`, `GEMINI_CLI_PATH`, `CODEX_PATH`, `AMP_CLI_PATH`
 - `ASM_PERMISSION_MODE` (`default`, `auto`, `bypass`, `plan`)
 - `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL`, `ASM_AMP_MODEL`
-- `ASM_GEMINI_EXTENSIONS`, `ASM_CODEX_REASONING`
-- `ASM_AMP_MODE`, `ASM_AMP_TOOLS`, `ASM_AMP_THINKING`, `ASM_AMP_RUN_LIVE`
-- `ASM_PERSIST_PROVIDER`, `ASM_PERSIST_FILE`, `ASM_PERSIST_KEEP_FILE`
-- `ASM_RENDER_PROVIDER`, `ASM_RENDER_FORMAT`, `ASM_RENDER_FILE`, `ASM_RENDER_KEEP_FILE`
-- `ASM_PUBSUB_PROVIDER`
+
+If you omit `--provider`, the example prints a usage note and exits without running a live provider. See [examples/README.md](examples/README.md) for the full example set.
 
 ## Guides
 

@@ -240,7 +240,9 @@ defmodule ASM.ProviderBackend.SDK do
       env: kw(config, :env, %{}),
       thinking: kw(config, :include_thinking, false),
       stream_timeout_ms: kw(config, :transport_timeout_ms),
-      max_stderr_buffer_bytes: kw(config, :max_stderr_buffer_bytes)
+      max_stderr_buffer_bytes: kw(config, :max_stderr_buffer_bytes),
+      no_ide: true,
+      no_notifications: true
     ]
     |> drop_nil_values()
   end

@@ -1,78 +1,77 @@
-# Live Examples
+# Examples
 
-These examples exercise real provider CLIs through the `ASM.stream/3` runtime path.
+These examples stay on the common `agent_session_manager` surface. They are intentionally provider-agnostic and only run when you explicitly choose a provider with `--provider`.
 
-## Run
+## Included examples
 
-```bash
-mix run examples/live_claude_stream.exs -- "Reply with exactly: CLAUDE_OK"
-mix run examples/live_gemini_stream.exs -- "Reply with exactly: GEMINI_OK"
-mix run examples/live_codex_stream.exs -- "Reply with exactly: CODEX_OK"
-mix run examples/check_amp_provider.exs
-mix run examples/live_multi_provider_smoke.exs
-mix run examples/live_feature_matrix.exs
-mix run examples/live_main_compat_migration.exs
-mix run examples/live_persistence_stream.exs -- "Reply with exactly: PERSIST_OK"
-mix run examples/live_routing_round_robin.exs
-mix run examples/live_routing_failover.exs
-mix run examples/live_policy_stream.exs
-mix run examples/live_rendering_stream.exs -- "Reply with exactly: RENDER_OK"
-mix run examples/live_pub_sub_stream.exs -- "Reply with exactly: PUBSUB_OK"
-mix run examples/live_workspace_snapshot.exs -- "Reply with exactly: WORKSPACE_OK"
-```
+- `live_query.exs`: one-off `ASM.query/3` against a selected provider.
+- `live_stream.exs`: `ASM.start_session/1`, `ASM.stream/3`, `ASM.Stream.final_result/1`, and `ASM.stop_session/1`.
+- `live_session_lifecycle.exs`: `ASM.start_session/1`, `ASM.session_info/1`, `ASM.health/1`, `ASM.stream/3`, `ASM.query/3`, `ASM.cost/1`, and `ASM.stop_session/1`.
+- `provider_amp_sdk_stream.exs`: direct `AmpSdk.execute/2` stream against the Amp-native SDK surface.
+- `provider_claude_control_client.exs`: `ASM.Extensions.ProviderSDK.Claude.start_client/3` and Claude control-client initialization.
+- `provider_codex_app_server.exs`: `ASM.Extensions.ProviderSDK.Codex.connect_app_server/3` and Codex app-server thread startup.
+- `provider_gemini_session_resume.exs`: direct `GeminiCliSdk.execute/2` plus `GeminiCliSdk.resume_session/3`.
+- `run_all.sh`: runs every example above for one or more selected providers.
 
-Supplemental SDK-lane example:
+## Default behavior
+
+No example runs by default. If you omit `--provider`, the script prints a usage note and exits without exercising any live provider.
+
+That behavior is deliberate so the examples do not accidentally hit a real CLI.
+
+## Run one example
 
 ```bash
-mix run examples/sdk_backend_demo.exs
-mix run examples/claude_control_extension_demo.exs
+mix run --no-start examples/live_query.exs -- --provider claude
+mix run --no-start examples/live_stream.exs -- --provider gemini
+mix run --no-start examples/live_session_lifecycle.exs -- --provider codex
+mix run --no-start examples/live_stream.exs -- --provider amp --prompt "Reply with exactly: AMP_STREAM_OK"
+mix run --no-start examples/live_query.exs -- --provider amp --lane sdk --sdk-root ../amp_sdk --permission-mode bypass
+mix run --no-start examples/provider_amp_sdk_stream.exs -- --provider amp --sdk-root ../amp_sdk
 ```
+
+Each example also accepts:
+
+- `--lane <core|auto|sdk>` to choose the ASM backend lane for common-surface examples
+- `--prompt <text>` to override the built-in prompt
+- `--model <name>` to override the provider model env var
+- `--cli-path <path>` to override the provider CLI path env var
+- `--permission-mode <mode>` to override `ASM_PERMISSION_MODE`
+- `--cwd <path>` to run the provider from a specific working directory
+- `--sdk-root <path>` to load a sibling provider SDK checkout for sdk-lane or provider-native examples
+
+## Common Versus Provider-Native
+
+The three `live_*` examples stay on the common `agent_session_manager` surface.
+
+- They can still target `--lane sdk`, because lane selection is part of ASM's common API.
+- If you want sdk-lane execution from this repo without adding dependencies to a host app, pass `--sdk-root` to load a sibling SDK checkout onto the code path first.
+
+The four `provider_*` examples intentionally cross into provider-native territory.
+
+- Claude and Codex go through `ASM.Extensions.ProviderSDK.*`.
+- Gemini and Amp call the provider SDK directly because ASM does not add a separate native namespace for them today.
+
+## Run all examples
+
+```bash
+./examples/run_all.sh --provider claude
+./examples/run_all.sh --provider claude --provider gemini
+./examples/run_all.sh --provider codex --model gpt-5-codex
+./examples/run_all.sh --provider amp --lane sdk --sdk-root ../amp_sdk --permission-mode bypass
+```
+
+`run_all.sh` forwards any extra flags to each example, so the same `--model`, `--cli-path`, `--permission-mode`, and `--cwd` overrides work there too.
+
+When a selected provider has a matching `provider_*` example, `run_all.sh` runs that provider-specific example after the three common-surface examples.
 
 ## Environment
 
-- `CLAUDE_CLI_PATH` (optional explicit path)
-- `GEMINI_CLI_PATH` (optional explicit path)
-- `CODEX_PATH` (optional explicit path)
-- `AMP_CLI_PATH` (optional explicit path)
-- `ASM_PERMISSION_MODE` (`default`, `auto`, `bypass`, `plan`; defaults to `auto`)
-- `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL` (optional)
-- `ASM_CODEX_REASONING` (`low`, `medium`, `high`; optional and auto-skipped when unsupported)
-- `ASM_PERSIST_PROVIDER` (`claude`, `gemini`, `codex`; optional, defaults to `claude`)
-- `ASM_PERSIST_FILE` (optional persistence file path override)
-- `ASM_PERSIST_KEEP_FILE` (`1`/`true` to retain file after run)
-- `ASM_POLICY_PROVIDER` (`claude`, `gemini`, `codex`; optional, defaults to `codex`)
-- `ASM_POLICY_BUDGET_PROMPT` (optional override for budget-limit scenario prompt)
-- `ASM_POLICY_TOOL_PROMPT` (optional override for denied-tool scenario prompt)
-- `ASM_RENDER_PROVIDER` (`claude`, `gemini`, `codex`; optional, defaults to `claude`)
-- `ASM_RENDER_FORMAT` (`compact`, `verbose`; optional, defaults to `compact`)
-- `ASM_RENDER_FILE` (optional output file path for rendering sink)
-- `ASM_RENDER_KEEP_FILE` (`1`/`true` to retain the render output file)
-- `ASM_PUBSUB_PROVIDER` (`claude`, `gemini`, `codex`; optional, defaults to `claude`)
-- `ASM_WORKSPACE_PROVIDER` (`claude`, `gemini`, `codex`; optional, defaults to `codex`)
-- `ASM_WORKSPACE_DIR` (optional workspace path override for the snapshot example)
-- `ASM_WORKSPACE_KEEP_DIR` (`1`/`true` to retain the temporary workspace directory)
-- `ASM_AMP_MODEL` (optional Amp model identifier)
-- `ASM_AMP_MODE` (optional Amp mode, default `smart`)
-- `ASM_AMP_THINKING` (`1`/`true` enables Amp thinking)
-- `ASM_AMP_TOOLS` (optional comma-separated Amp tool allow-list)
-- `ASM_AMP_RUN_LIVE` (`1`/`true` to run a live Amp stream after contract checks)
+- `CLAUDE_CLI_PATH`, `ASM_CLAUDE_MODEL`
+- `GEMINI_CLI_PATH`, `ASM_GEMINI_MODEL`
+- `CODEX_PATH`, `ASM_CODEX_MODEL`
+- `AMP_CLI_PATH`, `ASM_AMP_MODEL`
+- `ASM_PERMISSION_MODE` (`default`, `auto`, `bypass`, `plan`)
+- `CLAUDE_AGENT_SDK_ROOT`, `CODEX_SDK_ROOT`, `GEMINI_CLI_SDK_ROOT`, `AMP_SDK_ROOT`
 
-Each script checks CLI availability first and exits with actionable setup errors if missing.
-Claude streams automatically use the `script` PTY wrapper when available, and fall back to direct execution when PTY setup is unavailable.
-
-## Coverage
-
-- `live_claude_stream.exs`, `live_gemini_stream.exs`, `live_codex_stream.exs`: provider-specific stream flow.
-- `check_amp_provider.exs`: Amp provider registry/backend checks with optional live stream check when CLI is available.
-- `live_multi_provider_smoke.exs`: stream + one-shot `ASM.query/3` across all providers.
-- `live_feature_matrix.exs`: session lifecycle surface on live adapters (`start_session`, `stream`, `query`, `health`, `cost`, `stop_session`).
-- `live_main_compat_migration.exs`: main-shape migration helper flow (`input/messages` conversion, legacy event callback bridging, and explicit Amp/Shell unsupported checks) on live Claude/Gemini/Codex adapters.
-- `live_persistence_stream.exs`: file-backed persistence with async writer hook, replay/rebuild checks, controlled error path, and guaranteed cleanup.
-- `live_routing_round_robin.exs`: deterministic routing selection over live provider runs.
-- `live_routing_failover.exs`: health-aware failover where an intentionally unavailable primary candidate falls back to a live provider.
-- `live_policy_stream.exs`: policy enforcer behavior on live streams, including output-budget warning and denied-tool cancellation scenarios.
-- `live_rendering_stream.exs`: rendering extension on live adapters with compact/verbose output streamed to terminal and file sinks.
-- `live_pub_sub_stream.exs`: PubSub broadcaster wired through the run pipeline, with local topic subscription and realtime message consumption output.
-- `live_workspace_snapshot.exs`: pre/post workspace snapshots around a live query, diff verification, rollback, and temporary workspace cleanup.
-- `sdk_backend_demo.exs`: supplemental SDK-lane stream demonstration using `lane: :sdk`.
-- `claude_control_extension_demo.exs`: deterministic optional Claude extension bridge demo that derives `ClaudeAgentSDK.Options` from ASM config and starts the SDK-local client without widening the normalized ASM API.
+The examples check CLI availability before starting a session and print an install hint if the selected provider binary is missing.

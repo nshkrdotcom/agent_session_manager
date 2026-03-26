@@ -109,11 +109,6 @@ defmodule AgentSessionManager.MixProject do
   end
 
   defp docs do
-    guides =
-      ["guides/*.md", "guides/*.livemd"]
-      |> Enum.flat_map(&Path.wildcard/1)
-      |> Enum.sort()
-
     [
       main: "readme",
       logo: "assets/agent_session_manager.svg",
@@ -121,8 +116,8 @@ defmodule AgentSessionManager.MixProject do
       source_ref: "v#{@version}",
       source_url: @source_url,
       homepage_url: @homepage_url,
-      extras: ["README.md"] ++ guides ++ ["CHANGELOG.md", "LICENSE"],
-      groups_for_extras: groups_for_extras(guides),
+      extras: extras(),
+      groups_for_extras: groups_for_extras(),
       groups_for_modules: groups_for_modules(),
       nest_modules_by_prefix: [
         ASM,
@@ -143,13 +138,39 @@ defmodule AgentSessionManager.MixProject do
     ]
   end
 
-  defp groups_for_extras(guides) do
+  defp extras do
     [
-      "Getting Started": ["README.md"],
-      Guides: guides,
+      "README.md": [title: "Overview"],
+      "guides/lane-selection.md": [title: "Lane Selection"],
+      "guides/provider-backends.md": [title: "Provider Backends"],
+      "guides/provider-sdk-extensions.md": [title: "Provider SDK Extensions"],
+      "guides/event-model-and-result-projection.md": [title: "Event Model And Result Projection"],
+      "guides/approvals-and-interrupts.md": [title: "Approvals And Interrupts"],
+      "guides/remote-node-execution.md": [title: "Remote Node Execution"],
+      "guides/live-adapters.md": [title: "Live Adapters"],
+      "guides/boundary-enforcement.md": [title: "Boundary Enforcement"],
+      "CHANGELOG.md": [title: "Changelog"],
+      LICENSE: [title: "License"]
+    ]
+  end
+
+  defp groups_for_extras do
+    [
+      "Project Overview": ["README.md"],
+      Foundations: [
+        "guides/lane-selection.md",
+        "guides/provider-backends.md",
+        "guides/provider-sdk-extensions.md"
+      ],
+      Runtime: [
+        "guides/event-model-and-result-projection.md",
+        "guides/approvals-and-interrupts.md",
+        "guides/remote-node-execution.md",
+        "guides/live-adapters.md"
+      ],
+      Architecture: ["guides/boundary-enforcement.md"],
       Reference: ["CHANGELOG.md", "LICENSE"]
     ]
-    |> Enum.reject(fn {_group, entries} -> entries == [] end)
   end
 
   defp groups_for_modules do

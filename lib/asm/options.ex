@@ -172,7 +172,15 @@ defmodule ASM.Options do
 
     registry_opts =
       provider_opts
-      |> Keyword.take([:model_env, :env_model, :environment_model])
+      |> Keyword.take([
+        :model_env,
+        :env_model,
+        :environment_model,
+        :provider_backend,
+        :external_model_overrides,
+        :anthropic_base_url,
+        :anthropic_auth_token
+      ])
       |> maybe_put_reasoning(
         Keyword.get(provider_opts, :reasoning_effort, Keyword.get(provider_opts, :reasoning))
       )

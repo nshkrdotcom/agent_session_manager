@@ -178,6 +178,36 @@ ASM-side rules:
   input, and invalid reasoning effort remain hard failures
 - ASM does not implement a second provider-specific fallback path
 
+### Claude Ollama Backend Through ASM
+
+Because ASM resolves Claude model payloads in core first, the Claude Ollama
+path is configured through ASM provider opts and still flows through
+`CliSubprocessCore.ModelRegistry`.
+
+Relevant Claude provider opts:
+
+- `:provider_backend`
+- `:external_model_overrides`
+- `:anthropic_base_url`
+- `:anthropic_auth_token`
+- `:model`
+
+Example:
+
+```elixir
+{:ok, result} =
+  ASM.query(:claude, "Reply with exactly: OK",
+    provider_backend: :ollama,
+    anthropic_base_url: "http://localhost:11434",
+    external_model_overrides: %{"haiku" => "llama3.2"},
+    model: "haiku"
+  )
+```
+
+ASM does not build Ollama env itself. It forwards the Claude backend options to
+core, attaches the resolved payload, and the downstream Claude lane consumes
+that payload.
+
 ## Lane Selection
 
 Use `ASM.ProviderRegistry` to inspect lane availability and resolution:

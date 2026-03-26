@@ -107,3 +107,23 @@ the current catalog.
 For Claude specifically, `ASM.Extensions.ProviderSDK.Claude` can bridge ASM
 config into `ClaudeAgentSDK.Client`, but the resulting control calls still live
 on `ClaudeAgentSDK.Client.*` rather than the backend contract.
+
+## Claude Backend-Specific Model Inputs
+
+Claude is the first backend where ASM now forwards backend-specific model
+inputs into the shared core model registry.
+
+The relevant Claude provider fields are:
+
+- `:provider_backend`
+- `:external_model_overrides`
+- `:anthropic_base_url`
+- `:anthropic_auth_token`
+- `:model`
+
+Those values are still treated as value carriers only.
+
+ASM does not validate Ollama models itself and does not build Ollama CLI env
+itself. It forwards those values to
+`CliSubprocessCore.ModelRegistry.build_arg_payload/3`, then passes the resolved
+payload to either the core Claude profile or `ClaudeAgentSDK.Options`.

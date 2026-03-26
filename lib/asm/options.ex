@@ -177,6 +177,11 @@ defmodule ASM.Options do
         :env_model,
         :environment_model,
         :provider_backend,
+        :model_provider,
+        :oss_provider,
+        :ollama_base_url,
+        :ollama_http,
+        :ollama_timeout_ms,
         :external_model_overrides,
         :anthropic_base_url,
         :anthropic_auth_token
@@ -207,6 +212,12 @@ defmodule ASM.Options do
     |> Keyword.delete(:model)
     |> Keyword.delete(:reasoning)
     |> Keyword.delete(:reasoning_effort)
+    |> Keyword.delete(:provider_backend)
+    |> Keyword.delete(:model_provider)
+    |> Keyword.delete(:oss_provider)
+    |> Keyword.delete(:ollama_base_url)
+    |> Keyword.delete(:ollama_http)
+    |> Keyword.delete(:ollama_timeout_ms)
   end
 
   defp maybe_put_reasoning(opts, nil), do: opts

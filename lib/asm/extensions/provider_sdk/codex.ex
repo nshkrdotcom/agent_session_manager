@@ -129,7 +129,8 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
              @asm_derived_thread_option_keys,
              "Codex native_overrides"
            ),
-         attrs <- Keyword.merge(thread_option_attrs(validated), native_overrides) do
+         {:ok, model_payload} <- Options.resolve_model_payload(:codex, validated),
+         attrs <- Keyword.merge(thread_option_attrs(validated, model_payload), native_overrides) do
       new_sdk_struct(@thread_options_module, attrs, "codex")
     end
   end
@@ -257,10 +258,13 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
     |> drop_nil_values()
   end
 
-  defp thread_option_attrs(validated) do
+  defp thread_option_attrs(validated, model_payload) do
     [
       working_directory: Keyword.get(validated, :cwd),
       approval_timeout_ms: Keyword.get(validated, :approval_timeout_ms),
+      oss: codex_payload_oss?(model_payload),
+      local_provider: codex_payload_oss_provider(model_payload),
+      model_provider: codex_payload_model_provider(model_payload),
       full_auto: Keyword.get(validated, :provider_permission_mode) == :auto_edit,
       dangerously_bypass_approvals_and_sandbox:
         Keyword.get(validated, :provider_permission_mode) == :yolo,
@@ -332,6 +336,26 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
   defp reasoning_atom(nil), do: nil
   defp reasoning_atom(value) when is_atom(value), do: value
   defp reasoning_atom(value) when is_binary(value), do: String.to_atom(value)
+
+  defp codex_payload_oss?(payload) when is_map(payload) do
+    model_payload_value(payload, :provider_backend) in [:oss, "oss"]
+  end
+
+  defp codex_payload_oss_provider(payload) when is_map(payload) do
+    payload
+    |> codex_payload_backend_metadata()
+    |> Map.get("oss_provider")
+  end
+
+  defp codex_payload_model_provider(payload) when is_map(payload) do
+    payload
+    |> codex_payload_backend_metadata()
+    |> Map.get("model_provider")
+  end
+
+  defp codex_payload_backend_metadata(payload) when is_map(payload) do
+    Map.get(payload, :backend_metadata, Map.get(payload, "backend_metadata", %{}))
+  end
 
   defp invalid_sdk_options(provider_name, reason) do
     Error.new(

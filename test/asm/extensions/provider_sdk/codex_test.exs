@@ -60,6 +60,21 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
            }
   end
 
+  test "thread_options/2 propagates payload-derived model providers" do
+    asm_opts = [
+      provider: :codex,
+      provider_backend: :model_provider,
+      model_provider: "gateway",
+      model: "gpt-5-codex"
+    ]
+
+    assert {:ok, %ThreadOptions{} = options} = CodexExtension.thread_options(asm_opts)
+
+    assert options.model_provider == "gateway"
+    assert options.oss == false
+    assert options.local_provider == nil
+  end
+
   test "session-based helpers merge ASM session defaults with explicit overrides" do
     {:ok, session} =
       ASM.start_session(

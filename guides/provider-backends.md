@@ -127,3 +127,30 @@ ASM does not validate Ollama models itself and does not build Ollama CLI env
 itself. It forwards those values to
 `CliSubprocessCore.ModelRegistry.build_arg_payload/3`, then passes the resolved
 payload to either the core Claude profile or `ClaudeAgentSDK.Options`.
+
+## Codex Backend-Specific Model Inputs
+
+Codex now follows the same pattern for backend-aware model resolution.
+
+Relevant Codex provider fields:
+
+- `:provider_backend`
+- `:model_provider`
+- `:oss_provider`
+- `:ollama_base_url`
+- `:ollama_http`
+- `:ollama_timeout_ms`
+- `:model`
+- `:reasoning_effort`
+
+For the current local Ollama path, ASM callers should use:
+
+- `provider_backend: :oss`
+- `oss_provider: "ollama"`
+- `model: "<local model id>"`
+
+ASM still does not validate the local Ollama model itself and does not invent
+Codex backend flags locally. It forwards those inputs to
+`CliSubprocessCore.ModelRegistry.build_arg_payload/3`, then passes the
+resolved payload into either the core Codex profile or `Codex.Options` /
+`Codex.Thread.Options` on the SDK lane.

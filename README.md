@@ -85,6 +85,19 @@ npm install -g @sourcegraph/amp
 
 Authenticate each CLI with its native flow before using ASM.
 
+For Codex local OSS via Ollama, ASM forwards backend intent into the shared
+core model registry instead of selecting a local model itself. Example:
+
+```elixir
+{:ok, session} =
+  ASM.start_link(
+    provider: :codex,
+    provider_backend: :oss,
+    oss_provider: "ollama",
+    model: "llama3.2"
+  )
+```
+
 Optional explicit CLI paths:
 
 - `CLAUDE_CLI_PATH`

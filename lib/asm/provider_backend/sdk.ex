@@ -99,8 +99,10 @@ defmodule ASM.ProviderBackend.SDK do
   end
 
   defp build_start_opts(%Provider{name: :claude, sdk_runtime: runtime}, config) do
-    with {:ok, model_payload} <-
-           Options.resolve_model_payload(:claude, Map.get(config, :provider_opts, [])),
+    with {:ok, provider_opts} <-
+           Options.finalize_provider_opts(:claude, Map.get(config, :provider_opts, [])),
+         config = Map.put(config, :provider_opts, provider_opts),
+         model_payload = Keyword.fetch!(provider_opts, :model_payload),
          {:ok, options} <-
            new_sdk_struct(
              @claude_options_module,
@@ -117,8 +119,10 @@ defmodule ASM.ProviderBackend.SDK do
   end
 
   defp build_start_opts(%Provider{name: :gemini, sdk_runtime: runtime}, config) do
-    with {:ok, model_payload} <-
-           Options.resolve_model_payload(:gemini, Map.get(config, :provider_opts, [])),
+    with {:ok, provider_opts} <-
+           Options.finalize_provider_opts(:gemini, Map.get(config, :provider_opts, [])),
+         config = Map.put(config, :provider_opts, provider_opts),
+         model_payload = Keyword.fetch!(provider_opts, :model_payload),
          {:ok, options} <-
            build_sdk_struct(
              @gemini_options_module,
@@ -136,8 +140,10 @@ defmodule ASM.ProviderBackend.SDK do
   end
 
   defp build_start_opts(%Provider{name: :amp, sdk_runtime: runtime}, config) do
-    with {:ok, model_payload} <-
-           Options.resolve_model_payload(:amp, Map.get(config, :provider_opts, [])),
+    with {:ok, provider_opts} <-
+           Options.finalize_provider_opts(:amp, Map.get(config, :provider_opts, [])),
+         config = Map.put(config, :provider_opts, provider_opts),
+         model_payload = Keyword.fetch!(provider_opts, :model_payload),
          {:ok, options} <-
            build_sdk_struct(@amp_options_module, amp_option_attrs(config, model_payload), "amp") do
       {:ok,
@@ -150,8 +156,10 @@ defmodule ASM.ProviderBackend.SDK do
   end
 
   defp build_start_opts(%Provider{name: :codex, sdk_runtime: runtime}, config) do
-    with {:ok, model_payload} <-
-           Options.resolve_model_payload(:codex, Map.get(config, :provider_opts, [])),
+    with {:ok, provider_opts} <-
+           Options.finalize_provider_opts(:codex, Map.get(config, :provider_opts, [])),
+         config = Map.put(config, :provider_opts, provider_opts),
+         model_payload = Keyword.fetch!(provider_opts, :model_payload),
          {:ok, codex_opts} <-
            new_sdk_struct(
              @codex_options_module,

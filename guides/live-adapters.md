@@ -47,11 +47,18 @@ mix run --no-start examples/live_stream.exs -- --provider amp --prompt "Reply wi
 ./examples/run_all.sh --provider claude --provider gemini
 ./examples/run_all.sh --provider codex --model gpt-5.4
 ./examples/run_all.sh --provider claude --ollama --ollama-model llama3.2
+./examples/run_all.sh --provider codex --ollama --ollama-model llama3.2
 ```
 
 `run_all.sh` forwards extra flags to each example, so common overrides such as
 `--model`, `--cli-path`, `--permission-mode`, and `--cwd` can be applied once.
 The common `--ollama*` flags are valid only for Claude and Codex.
+
+For Codex, `gpt-oss:20b` remains the default validated Ollama example model,
+but the live adapters also allow other installed local models such as
+`llama3.2`. The common smoke examples assert exact sentinel output, so those
+broader local models should be treated as accepted routes rather than
+guaranteed green smoke targets.
 
 ## What the examples cover
 
@@ -63,6 +70,7 @@ The common `--ollama*` flags are valid only for Claude and Codex.
 - `ASM.health/1`
 - `ASM.cost/1`
 - `ASM.stop_session/1`
+- prompt-result exactness for the common live smoke prompts
 
 ## Useful environment knobs
 

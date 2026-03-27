@@ -26,6 +26,12 @@ defmodule ASM.ProviderFeaturesTest do
 
     assert codex.common_features.ollama.supported? == true
     assert codex.common_features.ollama.model_strategy == :direct_external
+    assert codex.common_features.ollama.compatibility.default_model == "gpt-oss:20b"
+
+    assert codex.common_features.ollama.compatibility.acceptance ==
+             :runtime_validated_external_model
+
+    assert codex.common_features.ollama.compatibility.validated_models == ["gpt-oss:20b"]
     assert codex.permission_modes.yolo.cli_excerpt == "--dangerously-bypass-approvals-and-sandbox"
 
     assert gemini.common_features.ollama.supported? == false
@@ -57,7 +63,7 @@ defmodule ASM.ProviderFeaturesTest do
     assert validated[:external_model_overrides] == %{"haiku" => "llama3.2"}
   end
 
-  test "common ollama surface maps to Codex backend configuration" do
+  test "common ollama surface maps to Codex backend configuration for arbitrary local models" do
     schema = Provider.resolve!(:codex).options_schema
 
     assert {:ok, validated} =

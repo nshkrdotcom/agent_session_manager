@@ -105,12 +105,25 @@ ASM normalizes that into:
 
 The selected model is the direct Ollama model id.
 
+`ASM.ProviderFeatures.common_feature!(:codex, :ollama).compatibility` exposes
+the default validated example model and the broader acceptance rule:
+
+- `default_model: "gpt-oss:20b"`
+- `acceptance: :runtime_validated_external_model`
+- `validated_models: ["gpt-oss:20b"]`
+
+That means ASM does not hard-block other installed local models such as
+`llama3.2`. It forwards them through the shared Codex/Ollama route and leaves
+the degraded-mode distinction to the upstream fallback-metadata behavior.
+
 ## Example Behavior
 
 The ASM examples use these surfaces directly.
 
 - common and provider-native examples default to `permission_mode: :bypass`
 - startup output prints the provider-native permission term and CLI flag
+- common prompt-based examples fail unless the provider returns the exact
+  sentinel text they request
 - `--ollama` and the related `--ollama-*` flags are only valid for Claude and Codex examples
 
 Use `ASM.ProviderFeatures` when you need to present or gate these features in a

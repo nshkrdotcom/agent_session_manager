@@ -4,7 +4,8 @@ defmodule ASM.Options do
   """
 
   alias ASM.{Error, Permission, ProviderFeatures}
-  alias CliSubprocessCore.ModelRegistry
+  alias CliSubprocessCore.ModelInput
+  alias CliSubprocessCore.ModelRegistry.Selection
 
   @common_keys [
     :provider,
@@ -19,6 +20,7 @@ defmodule ASM.Options do
     :ollama_base_url,
     :ollama_http,
     :ollama_timeout_ms,
+    :model_payload,
     :queue_limit,
     :overflow_policy,
     :subscriber_queue_warn,
@@ -50,6 +52,10 @@ defmodule ASM.Options do
       ollama_base_url: [type: {:or, [:string, nil]}, default: nil],
       ollama_http: [type: {:or, [:boolean, nil]}, default: nil],
       ollama_timeout_ms: [type: {:or, [:pos_integer, nil]}, default: nil],
+      model_payload: [
+        type: {:custom, __MODULE__, :validate_model_payload, [:model_payload]},
+        default: nil
+      ],
       queue_limit: [type: :pos_integer, default: app_default(:queue_limit, 1_000)],
       overflow_policy: [
         type: {:in, [:fail_run, :drop_oldest, :block]},
@@ -184,35 +190,20 @@ defmodule ASM.Options do
     {:error, "expected #{inspect(key)} to be a map, got: #{inspect(value)}"}
   end
 
-  @spec resolve_model_payload(atom(), keyword()) ::
-          {:ok, CliSubprocessCore.ModelRegistry.selection()} | {:error, Error.t()}
-  def resolve_model_payload(provider, provider_opts)
-      when is_atom(provider) and is_list(provider_opts) do
-    requested_model = Keyword.get(provider_opts, :model)
+  def validate_model_payload(nil, _key), do: {:ok, nil}
+  def validate_model_payload(value, _key) when is_map(value), do: {:ok, value}
 
-    registry_opts =
-      provider_opts
-      |> Keyword.take([
-        :model_env,
-        :env_model,
-        :environment_model,
-        :provider_backend,
-        :model_provider,
-        :oss_provider,
-        :ollama_base_url,
-        :ollama_http,
-        :ollama_timeout_ms,
-        :external_model_overrides,
-        :anthropic_base_url,
-        :anthropic_auth_token
-      ])
-      |> maybe_put_reasoning(
-        Keyword.get(provider_opts, :reasoning_effort, Keyword.get(provider_opts, :reasoning))
-      )
+  def validate_model_payload(value, key) do
+    {:error, "expected #{inspect(key)} to be a map/struct, got: #{inspect(value)}"}
+  end
 
-    case ModelRegistry.build_arg_payload(provider, requested_model, registry_opts) do
-      {:ok, payload} ->
-        {:ok, payload}
+  @spec finalize_provider_opts(atom(), keyword(), keyword()) ::
+          {:ok, keyword()} | {:error, Error.t()}
+  def finalize_provider_opts(provider, provider_opts, opts \\ [])
+      when is_atom(provider) and is_list(provider_opts) and is_list(opts) do
+    case normalize_model_input(provider, provider_opts, opts) do
+      {:ok, normalized} ->
+        {:ok, normalized.attrs}
 
       {:error, reason} ->
         {:error,
@@ -221,6 +212,19 @@ defmodule ASM.Options do
            provider: provider,
            reason: reason
          )}
+    end
+  end
+
+  @spec resolve_model_payload(atom(), keyword()) ::
+          {:ok, CliSubprocessCore.ModelRegistry.selection()} | {:error, Error.t()}
+  def resolve_model_payload(provider, provider_opts)
+      when is_atom(provider) and is_list(provider_opts) do
+    case finalize_provider_opts(provider, provider_opts) do
+      {:ok, finalized} ->
+        {:ok, normalize_model_payload(Keyword.fetch!(finalized, :model_payload))}
+
+      {:error, %Error{} = error} ->
+        {:error, error}
     end
   end
 
@@ -242,8 +246,18 @@ defmodule ASM.Options do
     |> Keyword.delete(:ollama_model)
   end
 
-  defp maybe_put_reasoning(opts, nil), do: opts
-  defp maybe_put_reasoning(opts, reasoning), do: Keyword.put(opts, :reasoning_effort, reasoning)
+  defp normalize_model_payload(%Selection{} = payload), do: payload
+  defp normalize_model_payload(payload) when is_map(payload), do: Selection.new(payload)
+
+  defp normalize_model_input(provider, provider_opts, opts)
+       when is_atom(provider) and is_list(provider_opts) and is_list(opts) do
+    strip_keys =
+      [:ollama, :ollama_model]
+      |> Kernel.++(Keyword.get(opts, :strip_keys, []))
+      |> Enum.uniq()
+
+    ModelInput.normalize(provider, provider_opts, strip_keys: strip_keys)
+  end
 
   defp normalize_ollama_surface(validated) when is_list(validated) do
     provider = Keyword.fetch!(validated, :provider)

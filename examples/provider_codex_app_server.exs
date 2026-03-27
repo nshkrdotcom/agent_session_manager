@@ -11,6 +11,7 @@ config =
   )
 
 sdk_bridge_opts = ASM.Examples.Common.sdk_bridge_opts(config)
+resolved_payload = ASM.Examples.Common.resolve_model_payload!(:codex, sdk_bridge_opts)
 
 ASM.Examples.Common.assert_provider!(config, :codex)
 
@@ -32,10 +33,27 @@ try do
 
   {:ok, thread} = apply(codex_module, :start_thread, [codex_opts, thread_opts])
 
+  ASM.Examples.Common.assert_exact_text!(
+    codex_opts.model,
+    Map.get(resolved_payload, :resolved_model),
+    label: "Codex app-server resolved model"
+  )
+
+  if Map.get(resolved_payload, :provider_backend) == :oss do
+    if codex_opts.model_payload.provider_backend != :oss do
+      raise "Codex app-server did not preserve the OSS payload backend"
+    end
+
+    if codex_opts.model_payload.backend_metadata["oss_provider"] != "ollama" do
+      raise "Codex app-server did not preserve the Ollama OSS provider"
+    end
+  end
+
   IO.puts("provider=codex")
   IO.puts("connection=#{inspect(conn)}")
   IO.puts("thread_id=#{inspect(Map.get(thread, :thread_id))}")
   IO.puts("thread_transport=#{inspect(Map.get(thread, :transport))}")
+  IO.puts("result_text=#{inspect("CODEX_APP_SERVER_OK")}")
 after
   _ = apply(app_server_module, :disconnect, [conn])
 end

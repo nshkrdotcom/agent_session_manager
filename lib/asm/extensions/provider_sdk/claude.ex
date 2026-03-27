@@ -227,17 +227,20 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
   end
 
   defp base_sdk_option_attrs(validated) do
-    {:ok, model_payload} = Options.resolve_model_payload(:claude, validated)
+    {:ok, finalized} =
+      Options.finalize_provider_opts(:claude, Keyword.delete(validated, :provider))
+
+    model_payload = Keyword.fetch!(finalized, :model_payload)
 
     [
-      cwd: Keyword.get(validated, :cwd),
-      env: Keyword.get(validated, :env, %{}),
-      path_to_claude_code_executable: Keyword.get(validated, :cli_path),
-      permission_mode: Keyword.get(validated, :provider_permission_mode),
+      cwd: Keyword.get(finalized, :cwd),
+      env: Keyword.get(finalized, :env, %{}),
+      path_to_claude_code_executable: Keyword.get(finalized, :cli_path),
+      permission_mode: Keyword.get(finalized, :provider_permission_mode),
       model_payload: model_payload,
       model: model_payload_value(model_payload, :resolved_model),
-      max_turns: Keyword.get(validated, :max_turns),
-      timeout_ms: Keyword.get(validated, :transport_timeout_ms)
+      max_turns: Keyword.get(finalized, :max_turns),
+      timeout_ms: Keyword.get(finalized, :transport_timeout_ms)
     ]
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
   end

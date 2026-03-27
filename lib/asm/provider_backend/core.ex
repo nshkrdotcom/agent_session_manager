@@ -81,12 +81,10 @@ defmodule ASM.ProviderBackend.Core do
         Map.get(config, :metadata, %{})
       )
 
-    with {:ok, model_payload} <-
-           Options.resolve_model_payload(provider.name, Map.get(config, :provider_opts, [])) do
+    with {:ok, provider_opts} <-
+           Options.finalize_provider_opts(provider.name, Map.get(config, :provider_opts, [])) do
       provider_opts =
-        config
-        |> Map.get(:provider_opts, [])
-        |> Options.attach_model_payload(model_payload)
+        provider_opts
         |> Keyword.put(:prompt, Map.fetch!(config, :prompt))
         |> maybe_put_cli_path()
 

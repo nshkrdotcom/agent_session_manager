@@ -156,7 +156,27 @@ defmodule ASM.TestSupport.FakeBackend do
   end
 
   defp default_text(state) do
-    Keyword.get(state.config.provider_opts, :model, state.config.prompt)
+    case Keyword.get(state.config.provider_opts, :model_payload) do
+      payload when is_map(payload) ->
+        requested_model =
+          Map.get(payload, :requested_model, Map.get(payload, "requested_model"))
+
+        resolved_model =
+          Map.get(
+            payload,
+            :resolved_model,
+            Map.get(payload, "resolved_model", state.config.prompt)
+          )
+
+        if is_binary(requested_model) and requested_model != "" do
+          resolved_model
+        else
+          state.config.prompt
+        end
+
+      _other ->
+        Keyword.get(state.config.provider_opts, :model, state.config.prompt)
+    end
   end
 
   defp emit_core_event(%__MODULE__{} = state, kind, payload) do

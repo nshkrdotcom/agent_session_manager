@@ -82,6 +82,14 @@ Provider semantics differ slightly:
 - Codex uses the direct Ollama model id. `--ollama-model` is the effective
   model selection knob for the common Ollama surface.
 
+For Codex, `gpt-oss:20b` remains the default validated Ollama example model,
+but the common surface also accepts other installed Ollama models such as
+`llama3.2`. Those non-default models may run with upstream fallback metadata
+and can behave less reliably under the full Codex agent prompt/tool stack.
+The common prompt-based smoke examples now fail unless the provider returns the
+exact sentinel text they ask for, so non-default Codex/Ollama models are
+accepted routes but not guaranteed smoke-test targets.
+
 ## Run One Example
 
 ```bash
@@ -116,6 +124,16 @@ Shared flags:
 ```
 
 `run_all.sh` forwards extra flags to every selected example.
+
+The three common examples are self-checking:
+
+- `live_query.exs` must return exactly `LIVE_QUERY_OK`
+- `live_stream.exs` must return exactly `LIVE_STREAM_OK`
+- `live_session_lifecycle.exs` must return exactly
+  `LIVE_SESSION_STREAM_OK` and `LIVE_SESSION_QUERY_OK`
+
+Provider-native examples validate their own provider-specific success
+conditions as well.
 
 ## Environment
 

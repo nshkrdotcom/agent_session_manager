@@ -49,14 +49,14 @@ defmodule ASM.APITest do
              ASM.start_session(
                session_id: session_id,
                provider: :claude,
-               model: "session-default-model"
+               model: "sonnet"
              )
 
     events =
       ASM.stream(session, "hello", backend_module: FakeBackend)
       |> Enum.to_list()
 
-    assert ASM.Stream.final_result(events).text == "session-default-model"
+    assert ASM.Stream.final_result(events).text == "sonnet"
 
     assert :ok = ASM.stop_session(session)
   end

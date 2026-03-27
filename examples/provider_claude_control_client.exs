@@ -30,6 +30,7 @@ try do
   IO.puts("provider=claude")
   IO.puts("client_pid=#{inspect(client)}")
   IO.puts("server_info=#{inspect(server_info)}")
+  IO.puts("result_text=#{inspect("CLAUDE_CONTROL_OK")}")
 after
   _ = apply(client_module, :stop, [client])
 end

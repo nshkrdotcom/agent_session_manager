@@ -21,6 +21,7 @@ defmodule ASM.ProviderFeatures do
           common_opts: [atom()],
           activation: map() | nil,
           model_strategy: atom() | nil,
+          compatibility: map() | nil,
           notes: [String.t()]
         }
 

@@ -129,8 +129,10 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
              @asm_derived_thread_option_keys,
              "Codex native_overrides"
            ),
-         {:ok, model_payload} <- Options.resolve_model_payload(:codex, validated),
-         attrs <- Keyword.merge(thread_option_attrs(validated, model_payload), native_overrides) do
+         {:ok, finalized} <-
+           Options.finalize_provider_opts(:codex, Keyword.delete(validated, :provider)),
+         model_payload = Keyword.fetch!(finalized, :model_payload),
+         attrs <- Keyword.merge(thread_option_attrs(finalized, model_payload), native_overrides) do
       new_sdk_struct(@thread_options_module, attrs, "codex")
     end
   end
@@ -261,13 +263,16 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
   end
 
   defp codex_option_attrs(validated) do
-    {:ok, model_payload} = Options.resolve_model_payload(:codex, validated)
+    {:ok, finalized} =
+      Options.finalize_provider_opts(:codex, Keyword.delete(validated, :provider))
+
+    model_payload = Keyword.fetch!(finalized, :model_payload)
 
     [
       model_payload: model_payload,
       model: model_payload_value(model_payload, :resolved_model),
       reasoning_effort: reasoning_atom(model_payload_value(model_payload, :reasoning)),
-      codex_path_override: Keyword.get(validated, :cli_path)
+      codex_path_override: Keyword.get(finalized, :cli_path)
     ]
     |> drop_nil_values()
   end

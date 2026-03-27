@@ -98,6 +98,12 @@ defmodule ASM.Examples.CommonTest do
     assert config.permission_source == :example_default_bypass
   end
 
+  test "exact_text_match?/2 trims surrounding whitespace but still enforces exact content" do
+    assert Common.exact_text_match?("  LIVE_QUERY_OK\n", "LIVE_QUERY_OK")
+    refute Common.exact_text_match?("LIVE_QUERY_OK extra", "LIVE_QUERY_OK")
+    refute Common.exact_text_match?(nil, "LIVE_QUERY_OK")
+  end
+
   test "examples record when permission mode comes from the CLI flag" do
     assert {:ok, config} =
              Common.build_example_config(
@@ -129,8 +135,34 @@ defmodule ASM.Examples.CommonTest do
                @default_prompt
              )
 
-    assert config.provider_opts[:provider_backend] == :ollama
-    assert config.provider_opts[:external_model_overrides] == %{"haiku" => "llama3.2"}
+    payload = Keyword.fetch!(config.provider_opts, :model_payload)
+
+    assert payload.provider_backend == :ollama
+    assert payload.requested_model == "haiku"
+    assert payload.resolved_model == "llama3.2"
+    assert payload.env_overrides["ANTHROPIC_AUTH_TOKEN"] == "ollama"
+  end
+
+  test "common example parser accepts the Codex Ollama surface for arbitrary local models" do
+    assert {:ok, config} =
+             Common.build_example_config(
+               [
+                 "--provider",
+                 "codex",
+                 "--ollama",
+                 "--ollama-model",
+                 "llama3.2"
+               ],
+               @script_name,
+               @description,
+               @default_prompt
+             )
+
+    payload = Keyword.fetch!(config.provider_opts, :model_payload)
+
+    assert payload.provider_backend == :oss
+    assert payload.backend_metadata["oss_provider"] == "ollama"
+    assert payload.resolved_model == "llama3.2"
   end
 
   test "sdk lane resolves SDK root from provider env" do

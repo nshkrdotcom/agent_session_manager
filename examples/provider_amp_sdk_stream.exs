@@ -46,6 +46,8 @@ if not is_binary(result_text) or result_text == "" do
   raise "AmpSdk.execute/2 did not yield a final result message"
 end
 
+ASM.Examples.Common.assert_exact_text!(result_text, "AMP_SDK_STREAM_OK", label: "Amp SDK result")
+
 IO.puts("provider=amp")
 IO.puts("message_count=#{length(messages)}")
 IO.puts("last_message_type=#{inspect(last_message && Map.get(last_message, :type))}")

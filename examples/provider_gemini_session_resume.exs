@@ -17,6 +17,8 @@ ASM.Examples.Common.ensure_provider_sdk_loaded!(:gemini,
 
 gemini_sdk = Module.concat(["GeminiCliSdk"])
 options_module = Module.concat(["GeminiCliSdk", "Options"])
+message_event_module = Module.concat(["GeminiCliSdk", "Types", "MessageEvent"])
+result_event_module = Module.concat(["GeminiCliSdk", "Types", "ResultEvent"])
 
 provider_permission_mode = Keyword.get(config.provider_opts, :provider_permission_mode)
 
@@ -55,10 +57,34 @@ resume_events =
   ])
   |> Enum.to_list()
 
+resume_text =
+  resume_events
+  |> Enum.flat_map(fn
+    %{__struct__: ^message_event_module, role: "assistant", content: text} when is_binary(text) ->
+      [text]
+
+    _other ->
+      []
+  end)
+  |> Enum.join()
+
 resume_result = List.last(resume_events)
+
+ASM.Examples.Common.assert_exact_text!(resume_text, "GEMINI_SDK_RESUME_OK",
+  label: "Gemini SDK resumed assistant output"
+)
+
+case resume_result do
+  %{__struct__: ^result_event_module, status: "success", error: nil} ->
+    :ok
+
+  other ->
+    raise "GeminiCliSdk.resume_session/3 did not finish successfully: #{inspect(other)}"
+end
 
 IO.puts("provider=gemini")
 IO.puts("session_id=#{session_id}")
 IO.puts("initial_event_count=#{length(events)}")
 IO.puts("resume_event_count=#{length(resume_events)}")
+IO.puts("resume_text=#{inspect(resume_text)}")
 IO.puts("resume_result=#{inspect(resume_result)}")

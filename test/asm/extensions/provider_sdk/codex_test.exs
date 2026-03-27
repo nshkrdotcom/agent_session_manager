@@ -2,6 +2,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
   use ASM.TestCase
 
   alias ASM.Extensions.ProviderSDK.Codex, as: CodexExtension
+  alias CliSubprocessCore.ModelRegistry.Selection
   alias Codex.{Options, Thread}
   alias Codex.Thread.Options, as: ThreadOptions
 
@@ -68,11 +69,37 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
   end
 
   test "Codex bridges accept the ASM common Ollama surface" do
+    model_payload =
+      Selection.new(%{
+        provider: :codex,
+        requested_model: "llama3.2",
+        resolved_model: "llama3.2",
+        resolution_source: :explicit,
+        reasoning: "high",
+        reasoning_effort: nil,
+        normalized_reasoning_effort: nil,
+        model_family: "llama",
+        catalog_version: nil,
+        visibility: :public,
+        provider_backend: :oss,
+        model_source: :external,
+        env_overrides: %{"CODEX_OSS_BASE_URL" => "http://127.0.0.1:11434"},
+        settings_patch: %{},
+        backend_metadata: %{
+          "provider_backend" => "oss",
+          "oss_provider" => "ollama",
+          "external_model" => "llama3.2",
+          "support_tier" => "runtime_validated_only"
+        },
+        errors: []
+      })
+
     asm_opts = [
       provider: :codex,
       ollama: true,
       ollama_model: "llama3.2",
       ollama_base_url: "http://127.0.0.1:11434",
+      model_payload: model_payload,
       permission_mode: :bypass
     ]
 
@@ -82,6 +109,9 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
     assert codex_options.model == "llama3.2"
     assert codex_options.model_payload.provider_backend == :oss
     assert codex_options.model_payload.backend_metadata["oss_provider"] == "ollama"
+
+    assert codex_options.model_payload.backend_metadata["support_tier"] ==
+             "runtime_validated_only"
 
     assert thread_options.oss == true
     assert thread_options.local_provider == "ollama"

@@ -99,6 +99,17 @@ core model registry instead of selecting a local model itself. Example:
   )
 ```
 
+`gpt-oss:20b` remains the default validated Codex/Ollama example model in the
+shared stack, but ASM also accepts other installed local models such as
+`llama3.2` and forwards them through the same route. In the example suite,
+those broader local models should be treated as accepted but potentially
+degraded upstream paths rather than guaranteed exact-output smoke targets.
+
+ASM does not keep a second model-resolution layer above the shared core. Run
+paths validate ASM/common-surface options first, then finalize provider opts
+through `CliSubprocessCore.ModelInput.normalize/3` so backends consume an
+attached `model_payload` instead of re-resolving model/backend intent locally.
+
 Optional explicit CLI paths:
 
 - `CLAUDE_CLI_PATH`

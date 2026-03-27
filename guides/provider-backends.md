@@ -149,8 +149,18 @@ For the current local Ollama path, ASM callers should use:
 - `oss_provider: "ollama"`
 - `model: "<local model id>"`
 
-ASM still does not validate the local Ollama model itself and does not invent
-Codex backend flags locally. It forwards those inputs to
-`CliSubprocessCore.ModelRegistry.build_arg_payload/3`, then passes the
-resolved payload into either the core Codex profile or `Codex.Options` /
-`Codex.Thread.Options` on the SDK lane.
+ASM still does not invent Codex backend flags locally. It forwards those inputs to
+`CliSubprocessCore.ModelInput.normalize/3`, which in turn resolves through
+`CliSubprocessCore.ModelRegistry.build_arg_payload/3` when the caller supplied
+raw knobs instead of a payload. ASM then passes the finalized payload into
+either the core Codex profile or `Codex.Options` / `Codex.Thread.Options` on
+the SDK lane.
+
+For Codex/Ollama, the shared core keeps `gpt-oss:20b` as the default validated
+example model, but it also accepts other installed local model ids such as
+`llama3.2`. The degraded-mode distinction for those non-default models is
+metadata-driven rather than a hard rejection in ASM.
+
+If a custom `ollama_base_url` is supplied, the finalized payload carries it in
+payload-owned runtime data (`CODEX_OSS_BASE_URL`) so downstream core and SDK
+transports can consume the payload alone after normalization.

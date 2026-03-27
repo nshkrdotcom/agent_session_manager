@@ -99,6 +99,44 @@ defmodule ASM.Examples.Common do
     Keyword.drop(session_opts, [:provider])
   end
 
+  @spec exact_text_match?(String.t() | nil, String.t()) :: boolean()
+  def exact_text_match?(actual, expected)
+      when (is_binary(actual) or is_nil(actual)) and is_binary(expected) do
+    normalize_exact_text(actual) == normalize_exact_text(expected)
+  end
+
+  @spec assert_exact_text!(String.t() | nil, String.t(), keyword()) :: :ok
+  def assert_exact_text!(actual, expected, opts \\ [])
+      when (is_binary(actual) or is_nil(actual)) and is_binary(expected) and is_list(opts) do
+    label = Keyword.get(opts, :label, "result text")
+
+    if exact_text_match?(actual, expected) do
+      :ok
+    else
+      fail!("#{label} mismatch: expected exactly #{inspect(expected)}, got #{inspect(actual)}")
+    end
+  end
+
+  @spec assert_result_text!(Result.t(), String.t(), keyword()) :: :ok
+  def assert_result_text!(%Result{text: text}, expected, opts \\ [])
+      when is_binary(expected) and is_list(opts) do
+    label = Keyword.get(opts, :label, "result text")
+    assert_exact_text!(text, expected, label: label)
+  end
+
+  @spec resolve_model_payload!(Provider.provider_name(), keyword()) ::
+          CliSubprocessCore.ModelRegistry.selection()
+  def resolve_model_payload!(provider, provider_opts)
+      when is_atom(provider) and is_list(provider_opts) do
+    case Options.resolve_model_payload(provider, provider_opts) do
+      {:ok, payload} ->
+        payload
+
+      {:error, %Error{} = error} ->
+        fail!("model resolution failed: #{Exception.message(error)}")
+    end
+  end
+
   @spec sdk_bridge_opts(t()) :: keyword()
   def sdk_bridge_opts(%__MODULE__{provider_opts: provider_opts}) do
     provider_opts
@@ -433,6 +471,13 @@ defmodule ASM.Examples.Common do
     session_opts
     |> Keyword.drop([:lane])
     |> Options.validate(provider_schema)
+    |> case do
+      {:ok, validated} ->
+        Options.finalize_provider_opts(provider, Keyword.delete(validated, :provider))
+
+      {:error, %Error{} = error} ->
+        {:error, error}
+    end
   end
 
   defp cli_check(provider, opts) do
@@ -665,13 +710,17 @@ defmodule ASM.Examples.Common do
     notice_native_permission_cli=#{inspect(permission.cli_excerpt)}
     """)
 
-    if Keyword.get(provider_opts, :ollama, false) do
+    if ollama_enabled?(provider_opts) do
       ollama = ProviderFeatures.common_feature!(provider, :ollama)
+      model_payload = resolve_model_payload!(provider, provider_opts)
+      support_tier = payload_support_tier(model_payload)
 
       IO.puts("""
       notice_ollama=true
       notice_ollama_activation=#{inspect(ollama.activation)}
       notice_ollama_model_strategy=#{inspect(ollama.model_strategy)}
+      notice_ollama_resolved_model=#{inspect(payload_value(model_payload, :resolved_model))}
+      notice_ollama_support_tier=#{inspect(support_tier)}
       """)
     end
   end
@@ -692,6 +741,39 @@ defmodule ASM.Examples.Common do
 
   defp finalize_stream_result!(_events, %Result{error: %Error{} = error}) do
     fail!("stream failed: #{Exception.message(error)}")
+  end
+
+  defp normalize_exact_text(text) when is_binary(text), do: String.trim(text)
+  defp normalize_exact_text(nil), do: nil
+
+  defp payload_support_tier(payload) when is_map(payload) do
+    payload
+    |> payload_backend_metadata()
+    |> Map.get("support_tier")
+  end
+
+  defp ollama_enabled?(provider_opts) when is_list(provider_opts) do
+    case Keyword.get(provider_opts, :model_payload) do
+      payload when is_map(payload) ->
+        payload_backend_metadata(payload)["oss_provider"] == "ollama" or
+          payload_value(payload, :provider_backend) in [:ollama, "ollama"]
+
+      _other ->
+        Keyword.get(provider_opts, :ollama, false)
+    end
+  end
+
+  defp payload_value(payload, key) when is_map(payload) and is_atom(key) do
+    Map.get(payload, key, Map.get(payload, Atom.to_string(key)))
+  end
+
+  defp payload_backend_metadata(payload) when is_map(payload) do
+    payload
+    |> Map.get(:backend_metadata, Map.get(payload, "backend_metadata", %{}))
+    |> case do
+      metadata when is_map(metadata) -> metadata
+      _other -> %{}
+    end
   end
 
   defp no_provider_selected_text(script_name, description, default_prompt) do
@@ -745,7 +827,8 @@ defmodule ASM.Examples.Common do
 
     Runtime defaults:
       These examples default to ASM permission_mode=:bypass and print the provider-native
-      permission term plus CLI flag before starting the run.
+      permission term plus CLI flag before starting the run. Common prompt-based examples
+      fail if the provider does not return the exact expected sentinel text.
 
     Provider environment:
       #{provider_env_lines}

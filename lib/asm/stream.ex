@@ -115,22 +115,13 @@ defmodule ASM.Stream do
 
     stream_opts = merge_opts(session_stream_opts, call_stream_opts)
     run_opts = merge_opts(session_run_opts, call_run_opts)
-    provider_opts = merge_opts(session_provider_opts, call_provider_opts)
-
-    execution_config =
-      case Config.resolve(session_stream_opts, call_stream_opts) do
-        {:ok, cfg} -> cfg
-        {:error, %Error{} = error} -> raise error
-      end
+    execution_config = resolve_execution_config!(session_stream_opts, call_stream_opts)
 
     provider_opts =
-      case ASM.Options.validate(
-             Keyword.put(provider_opts, :provider, session_state.provider.name),
-             session_state.provider.options_schema
-           ) do
-        {:ok, validated} -> Keyword.delete(validated, :provider)
-        {:error, %Error{} = error} -> raise error
-      end
+      resolve_provider_opts!(
+        session_state,
+        merge_opts(session_provider_opts, call_provider_opts)
+      )
 
     run_opts =
       run_opts
@@ -156,6 +147,29 @@ defmodule ASM.Stream do
 
       {:error, %Error{} = error} ->
         raise error
+    end
+  end
+
+  defp resolve_execution_config!(session_stream_opts, call_stream_opts) do
+    case Config.resolve(session_stream_opts, call_stream_opts) do
+      {:ok, cfg} -> cfg
+      {:error, %Error{} = error} -> raise error
+    end
+  end
+
+  defp resolve_provider_opts!(session_state, provider_opts) do
+    validated_opts =
+      case ASM.Options.validate(
+             Keyword.put(provider_opts, :provider, session_state.provider.name),
+             session_state.provider.options_schema
+           ) do
+        {:ok, validated} -> Keyword.delete(validated, :provider)
+        {:error, %Error{} = error} -> raise error
+      end
+
+    case ASM.Options.finalize_provider_opts(session_state.provider.name, validated_opts) do
+      {:ok, finalized} -> finalized
+      {:error, %Error{} = error} -> raise error
     end
   end
 

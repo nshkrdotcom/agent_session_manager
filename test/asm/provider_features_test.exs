@@ -3,6 +3,10 @@ defmodule ASM.ProviderFeaturesTest do
 
   alias ASM.{Options, Provider, ProviderFeatures}
 
+  defmodule LegacyTransportSelectorStub do
+    @moduledoc false
+  end
+
   test "provider manifest exposes ollama support as a common partial feature" do
     claude = ProviderFeatures.manifest!(:claude)
     codex = ProviderFeatures.manifest!(:codex)
@@ -121,7 +125,7 @@ defmodule ASM.ProviderFeaturesTest do
     assert {:error, error} =
              Options.finalize_provider_opts(:claude,
                model: "haiku",
-               transport_module: ClaudeAgentSDK.Transport
+               transport_module: LegacyTransportSelectorStub
              )
 
     assert error.message =~ "no longer accepts legacy transport-selector overrides"

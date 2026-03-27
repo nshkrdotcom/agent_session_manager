@@ -207,4 +207,26 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert metadata[:lane] == :sdk
     assert metadata[:asm_provider] == :amp
   end
+
+  test "sdk backends reject explicit approval_posture :none before runtime start" do
+    provider = %{Provider.resolve!(:claude) | sdk_runtime: ClaudeRuntimeStub}
+
+    config = %{
+      provider: provider,
+      prompt: "hello",
+      provider_opts: [model: "sonnet"],
+      execution_config:
+        %Execution.Config{
+          execution_mode: :local,
+          transport_call_timeout_ms: 5_000
+        }
+        |> Map.put(:approval_posture, :none)
+    }
+
+    assert {:error, error} = SDK.start_run(config)
+    assert error.kind == :config_invalid
+    assert error.domain == :config
+    assert error.message =~ "approval_posture"
+    assert error.message =~ ":none"
+  end
 end

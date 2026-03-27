@@ -175,9 +175,9 @@ Session defaults and per-run overrides can carry these generic fields:
 Session startup normalizes stored defaults so `ASM.session_info/1` reflects the
 generic surface contract. Run execution then merges per-run overrides, enforces
 non-empty `allowed_tools` in the ASM pipeline, and forwards generic surface
-data only to `ASM.ProviderBackend.Core`. `approval_posture: :none` stays
-explicit and is rejected at runtime start instead of being normalized away
-silently.
+data only to `ASM.ProviderBackend.Core` for core transport startup.
+`approval_posture: :none` stays explicit and runtime backends reject unresolved
+starts instead of normalizing it away silently.
 
 ## Runtime Architecture
 

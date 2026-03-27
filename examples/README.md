@@ -86,9 +86,10 @@ For Codex, `gpt-oss:20b` remains the default validated Ollama example model,
 but the common surface also accepts other installed Ollama models such as
 `llama3.2`. Those non-default models may run with upstream fallback metadata
 and can behave less reliably under the full Codex agent prompt/tool stack.
-The common prompt-based smoke examples now fail unless the provider returns the
-exact sentinel text they ask for, so non-default Codex/Ollama models are
-accepted routes but not guaranteed smoke-test targets.
+The common prompt-based smoke examples only enforce exact sentinel assertions
+for validated-default Codex/Ollama targets, so non-default Codex/Ollama models
+remain accepted routes but are reported as exploratory rather than guaranteed
+smoke-test targets.
 
 ## Run One Example
 
@@ -128,7 +129,8 @@ Shared flags:
 If `gpt-oss:20b` is installed locally in Ollama, the Codex examples above are
 the primary validated route. You can still substitute another installed model
 such as `llama3.2`, but that path is less tightly validated by the example
-smoke checks.
+smoke checks and now skips exact-output assertions on the Codex side by
+default.
 
 The three common examples are self-checking:
 

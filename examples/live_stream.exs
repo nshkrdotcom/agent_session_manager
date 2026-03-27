@@ -20,7 +20,10 @@ try do
 
   IO.puts("event_count=#{length(events)}")
   ASM.Examples.Common.print_result_summary(result)
-  ASM.Examples.Common.assert_result_text!(result, "LIVE_STREAM_OK", label: "live stream result")
+
+  ASM.Examples.Common.assert_result_text_for_smoke!(config, result, "LIVE_STREAM_OK",
+    label: "live stream result"
+  )
 after
   _ = ASM.stop_session(session)
 end

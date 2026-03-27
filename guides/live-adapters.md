@@ -56,9 +56,10 @@ The common `--ollama*` flags are valid only for Claude and Codex.
 
 For Codex, `gpt-oss:20b` remains the default validated Ollama example model,
 but the live adapters also allow other installed local models such as
-`llama3.2`. The common smoke examples assert exact sentinel output, so those
-broader local models should be treated as accepted routes rather than
-guaranteed green smoke targets.
+`llama3.2`. The common smoke examples only gate exact sentinel assertions for
+validated-default Codex/Ollama models, so those broader local models should be
+treated as accepted exploratory routes rather than guaranteed green smoke
+targets.
 
 ## What the examples cover
 

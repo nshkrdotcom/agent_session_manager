@@ -18,4 +18,7 @@ result =
   )
 
 ASM.Examples.Common.print_result_summary(result)
-ASM.Examples.Common.assert_result_text!(result, "LIVE_QUERY_OK", label: "live query result")
+
+ASM.Examples.Common.assert_result_text_for_smoke!(config, result, "LIVE_QUERY_OK",
+  label: "live query result"
+)

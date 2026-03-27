@@ -23,7 +23,10 @@ try do
   %{result: stream_result} = ASM.Examples.Common.stream_to_result!(session, config.prompt)
   ASM.Examples.Common.print_result_summary(stream_result, label: "stream")
 
-  ASM.Examples.Common.assert_result_text!(stream_result, "LIVE_SESSION_STREAM_OK",
+  ASM.Examples.Common.assert_result_text_for_smoke!(
+    config,
+    stream_result,
+    "LIVE_SESSION_STREAM_OK",
     label: "session lifecycle stream result"
   )
 
@@ -31,7 +34,10 @@ try do
   query_result = ASM.Examples.Common.query!(session, query_prompt)
   ASM.Examples.Common.print_result_summary(query_result, label: "query")
 
-  ASM.Examples.Common.assert_result_text!(query_result, "LIVE_SESSION_QUERY_OK",
+  ASM.Examples.Common.assert_result_text_for_smoke!(
+    config,
+    query_result,
+    "LIVE_SESSION_QUERY_OK",
     label: "session lifecycle query result"
   )
 

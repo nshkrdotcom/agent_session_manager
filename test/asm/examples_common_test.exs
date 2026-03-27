@@ -2,6 +2,7 @@ defmodule ASM.Examples.CommonTest do
   use ASM.SerialTestCase
 
   alias ASM.Examples.Common
+  alias CliSubprocessCore.ModelRegistry.Selection
 
   @script_name "live_query.exs"
   @description "Run a one-off ASM.query/3 call against the selected provider."
@@ -165,6 +166,39 @@ defmodule ASM.Examples.CommonTest do
     assert payload.resolved_model == "llama3.2"
   end
 
+  test "exact-output smoke targets stay strict for validated Codex Ollama models" do
+    config =
+      smoke_config(%{
+        requested_model: "gpt-oss:20b",
+        resolved_model: "gpt-oss:20b",
+        backend_metadata: %{
+          "oss_provider" => "ollama",
+          "support_tier" => "validated_default"
+        }
+      })
+
+    assert Common.exact_output_smoke_target?(config)
+    assert Common.exact_output_smoke_skip_reason(config) == nil
+  end
+
+  test "exact-output smoke targets skip runtime-validated Codex Ollama models" do
+    config =
+      smoke_config(%{
+        requested_model: "llama3.2",
+        resolved_model: "llama3.2",
+        model_family: "llama",
+        backend_metadata: %{
+          "oss_provider" => "ollama",
+          "support_tier" => "runtime_validated_only"
+        }
+      })
+
+    refute Common.exact_output_smoke_target?(config)
+
+    assert Common.exact_output_smoke_skip_reason(config) =~ "llama3.2"
+    assert Common.exact_output_smoke_skip_reason(config) =~ "runtime_validated_only"
+  end
+
   test "sdk lane resolves SDK root from provider env" do
     sdk_root = Path.expand("../../../codex_sdk", __DIR__)
     System.put_env("CODEX_SDK_ROOT", sdk_root)
@@ -257,5 +291,42 @@ defmodule ASM.Examples.CommonTest do
              permission_mode: :bypass,
              provider_permission_mode: :yolo
            ]
+  end
+
+  defp smoke_config(payload_attrs) when is_map(payload_attrs) do
+    payload =
+      Selection.new(
+        Map.merge(
+          %{
+            provider: :codex,
+            requested_model: "gpt-oss:20b",
+            resolved_model: "gpt-oss:20b",
+            resolution_source: :explicit,
+            reasoning: "high",
+            reasoning_effort: nil,
+            normalized_reasoning_effort: nil,
+            model_family: "gpt-oss",
+            catalog_version: nil,
+            visibility: :public,
+            provider_backend: :oss,
+            model_source: :external,
+            env_overrides: %{},
+            settings_patch: %{},
+            backend_metadata: %{"oss_provider" => "ollama", "support_tier" => "validated_default"},
+            errors: []
+          },
+          payload_attrs
+        )
+      )
+
+    %Common{
+      provider: :codex,
+      prompt: @default_prompt,
+      session_opts: [],
+      provider_opts: [model_payload: payload],
+      lane: :core,
+      sdk_root: nil,
+      permission_source: :example_default_bypass
+    }
   end
 end

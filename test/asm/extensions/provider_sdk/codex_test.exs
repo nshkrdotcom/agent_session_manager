@@ -83,7 +83,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
         visibility: :public,
         provider_backend: :oss,
         model_source: :external,
-        env_overrides: %{"CODEX_OSS_BASE_URL" => "http://127.0.0.1:11434"},
+        env_overrides: %{"CODEX_OSS_BASE_URL" => "http://127.0.0.1:11434/v1"},
         settings_patch: %{},
         backend_metadata: %{
           "provider_backend" => "oss",

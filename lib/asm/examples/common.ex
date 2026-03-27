@@ -124,6 +124,40 @@ defmodule ASM.Examples.Common do
     assert_exact_text!(text, expected, label: label)
   end
 
+  @doc false
+  @spec exact_output_smoke_target?(t()) :: boolean()
+  def exact_output_smoke_target?(%__MODULE__{} = config) do
+    is_nil(exact_output_smoke_skip_reason(config))
+  end
+
+  @doc false
+  @spec exact_output_smoke_skip_reason(t()) :: String.t() | nil
+  def exact_output_smoke_skip_reason(%__MODULE__{} = config) do
+    case exact_output_smoke_policy(config) do
+      :assert -> nil
+      {:skip, reason} -> reason
+    end
+  end
+
+  @spec assert_result_text_for_smoke!(t(), Result.t(), String.t(), keyword()) :: :ok
+  def assert_result_text_for_smoke!(
+        %__MODULE__{} = config,
+        %Result{text: text},
+        expected,
+        opts \\ []
+      )
+      when is_binary(expected) and is_list(opts) do
+    label = Keyword.get(opts, :label, "result text")
+
+    case exact_output_smoke_skip_reason(config) do
+      nil ->
+        assert_exact_text!(text, expected, label: label)
+
+      reason ->
+        print_smoke_skip_notice(label, reason)
+    end
+  end
+
   @spec resolve_model_payload!(Provider.provider_name(), keyword()) ::
           CliSubprocessCore.ModelRegistry.selection()
   def resolve_model_payload!(provider, provider_opts)
@@ -745,6 +779,51 @@ defmodule ASM.Examples.Common do
 
   defp normalize_exact_text(text) when is_binary(text), do: String.trim(text)
   defp normalize_exact_text(nil), do: nil
+
+  defp exact_output_smoke_policy(%__MODULE__{provider: :codex, provider_opts: provider_opts}) do
+    case Keyword.get(provider_opts, :model_payload) do
+      payload when is_map(payload) ->
+        support_tier = payload_support_tier(payload)
+        resolved_model = payload_value(payload, :resolved_model)
+
+        if payload_backend_metadata(payload)["oss_provider"] == "ollama" and
+             support_tier == "runtime_validated_only" do
+          {:skip,
+           "Codex/Ollama model #{inspect(resolved_model)} is support_tier=#{inspect(support_tier)}; " <>
+             "exact-output smoke assertions only gate validated_default models."}
+        else
+          :assert
+        end
+
+      _other ->
+        :assert
+    end
+  end
+
+  defp exact_output_smoke_policy(%__MODULE__{}), do: :assert
+
+  defp print_smoke_skip_notice(label, reason) when is_binary(label) and is_binary(reason) do
+    key = smoke_assertion_key(label)
+
+    IO.puts("""
+    #{key}_exact_assertion=:skipped
+    #{key}_exact_assertion_reason=#{inspect(reason)}
+    """)
+
+    :ok
+  end
+
+  defp smoke_assertion_key(label) when is_binary(label) do
+    label
+    |> String.trim()
+    |> String.downcase()
+    |> String.replace(~r/[^a-z0-9]+/u, "_")
+    |> String.trim("_")
+    |> case do
+      "" -> "result"
+      normalized -> normalized
+    end
+  end
 
   defp payload_support_tier(payload) when is_map(payload) do
     payload

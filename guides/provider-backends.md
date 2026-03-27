@@ -162,8 +162,9 @@ example model, but it also accepts other installed local model ids such as
 metadata-driven rather than a hard rejection in ASM.
 
 If a custom `ollama_base_url` is supplied, the finalized payload carries it in
-payload-owned runtime data (`CODEX_OSS_BASE_URL`) so downstream core and SDK
-transports can consume the payload alone after normalization.
+payload-owned runtime data (`CODEX_OSS_BASE_URL`). Raw Ollama roots are
+normalized to the OpenAI-compatible `/v1` base for Codex, so downstream core
+and SDK transports can consume the payload alone after normalization.
 
 ## Gemini Backend-Specific Model Inputs
 

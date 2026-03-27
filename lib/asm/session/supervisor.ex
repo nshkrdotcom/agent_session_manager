@@ -5,6 +5,8 @@ defmodule ASM.Session.Supervisor do
 
   use DynamicSupervisor
 
+  alias ASM.Execution.Config
+
   @registry :asm_sessions
 
   @spec start_link(keyword()) :: Supervisor.on_start()
@@ -25,13 +27,15 @@ defmodule ASM.Session.Supervisor do
       |> Keyword.drop([:session_id, :provider, :name, :options])
       |> Keyword.merge(Keyword.get(opts, :options, []))
 
-    subtree_opts =
-      opts
-      |> Keyword.put(:session_id, session_id)
-      |> Keyword.put(:provider, provider)
-      |> Keyword.put(:options, session_options)
+    with {:ok, session_options} <- normalize_session_options(provider, session_options) do
+      subtree_opts =
+        opts
+        |> Keyword.put(:session_id, session_id)
+        |> Keyword.put(:provider, provider)
+        |> Keyword.put(:options, session_options)
 
-    DynamicSupervisor.start_child(supervisor, {ASM.Session.Subtree, subtree_opts})
+      DynamicSupervisor.start_child(supervisor, {ASM.Session.Subtree, subtree_opts})
+    end
   end
 
   @spec stop_session(String.t() | pid()) :: :ok | {:error, :not_found}
@@ -61,4 +65,35 @@ defmodule ASM.Session.Supervisor do
   def init(_opts) do
     DynamicSupervisor.init(strategy: :one_for_one)
   end
+
+  defp normalize_session_options(provider, session_options) when is_list(session_options) do
+    case Config.resolve(session_options, [], provider: provider) do
+      {:ok, %Config{} = execution_config} ->
+        {:ok, merge_execution_config(session_options, execution_config)}
+
+      {:error, error} ->
+        {:error, error}
+    end
+  end
+
+  defp merge_execution_config(session_options, %Config{} = execution_config) do
+    session_options
+    |> Keyword.put(:execution_mode, execution_config.execution_mode)
+    |> Keyword.put(:transport_call_timeout_ms, execution_config.transport_call_timeout_ms)
+    |> Keyword.put(:surface_kind, execution_config.surface_kind)
+    |> Keyword.put(:transport_options, execution_config.transport_options)
+    |> Keyword.put(:allowed_tools, execution_config.allowed_tools)
+    |> Keyword.put(:observability, execution_config.observability)
+    |> maybe_put(:workspace_root, execution_config.workspace_root)
+    |> maybe_put(:approval_posture, execution_config.approval_posture)
+    |> maybe_put(:permission_mode, execution_config.permission_mode)
+    |> maybe_put(:provider_permission_mode, execution_config.provider_permission_mode)
+    |> maybe_put(:lease_ref, execution_config.lease_ref)
+    |> maybe_put(:surface_ref, execution_config.surface_ref)
+    |> maybe_put(:target_id, execution_config.target_id)
+    |> maybe_put(:boundary_class, execution_config.boundary_class)
+  end
+
+  defp maybe_put(opts, _key, nil), do: opts
+  defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
 end

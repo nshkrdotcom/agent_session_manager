@@ -11,6 +11,17 @@ defmodule ASM.Stream do
     :stream_timeout_ms,
     :queue_timeout_ms,
     :transport_call_timeout_ms,
+    :surface_kind,
+    :transport_options,
+    :workspace_root,
+    :allowed_tools,
+    :approval_posture,
+    :permission_mode,
+    :lease_ref,
+    :surface_ref,
+    :target_id,
+    :boundary_class,
+    :observability,
     :lane,
     :driver_opts,
     :remote_node,
@@ -115,12 +126,19 @@ defmodule ASM.Stream do
 
     stream_opts = merge_opts(session_stream_opts, call_stream_opts)
     run_opts = merge_opts(session_run_opts, call_run_opts)
-    execution_config = resolve_execution_config!(session_stream_opts, call_stream_opts)
+
+    execution_config =
+      resolve_execution_config!(
+        session_state.provider.name,
+        session_stream_opts,
+        call_stream_opts
+      )
 
     provider_opts =
       resolve_provider_opts!(
         session_state,
-        merge_opts(session_provider_opts, call_provider_opts)
+        merge_opts(session_provider_opts, call_provider_opts),
+        execution_config
       )
 
     run_opts =
@@ -150,14 +168,14 @@ defmodule ASM.Stream do
     end
   end
 
-  defp resolve_execution_config!(session_stream_opts, call_stream_opts) do
-    case Config.resolve(session_stream_opts, call_stream_opts) do
+  defp resolve_execution_config!(provider, session_stream_opts, call_stream_opts) do
+    case Config.resolve(session_stream_opts, call_stream_opts, provider: provider) do
       {:ok, cfg} -> cfg
       {:error, %Error{} = error} -> raise error
     end
   end
 
-  defp resolve_provider_opts!(session_state, provider_opts) do
+  defp resolve_provider_opts!(session_state, provider_opts, execution_config) do
     validated_opts =
       case ASM.Options.validate(
              Keyword.put(provider_opts, :provider, session_state.provider.name),
@@ -167,11 +185,42 @@ defmodule ASM.Stream do
         {:error, %Error{} = error} -> raise error
       end
 
-    case ASM.Options.finalize_provider_opts(session_state.provider.name, validated_opts) do
+    finalized_opts =
+      validated_opts
+      |> maybe_put_workspace_root(execution_config)
+      |> maybe_override_permission_modes(execution_config)
+
+    case ASM.Options.finalize_provider_opts(session_state.provider.name, finalized_opts) do
       {:ok, finalized} -> finalized
       {:error, %Error{} = error} -> raise error
     end
   end
+
+  defp maybe_put_workspace_root(provider_opts, execution_config)
+       when is_list(provider_opts) and is_map(execution_config) do
+    workspace_root = Map.get(execution_config, :workspace_root)
+
+    if is_binary(workspace_root) and workspace_root != "" do
+      Keyword.put_new(provider_opts, :cwd, workspace_root)
+    else
+      provider_opts
+    end
+  end
+
+  defp maybe_put_workspace_root(provider_opts, _execution_config), do: provider_opts
+
+  defp maybe_override_permission_modes(provider_opts, execution_config)
+       when is_list(provider_opts) and is_map(execution_config) do
+    permission_mode = Map.get(execution_config, :permission_mode)
+    provider_permission_mode = Map.get(execution_config, :provider_permission_mode)
+
+    provider_opts
+    |> maybe_put_override(:permission_mode, permission_mode)
+    |> maybe_put_override(:provider_permission_mode, provider_permission_mode)
+  end
+
+  defp maybe_put_override(provider_opts, _key, nil), do: provider_opts
+  defp maybe_put_override(provider_opts, key, value), do: Keyword.put(provider_opts, key, value)
 
   defp next_event(%{done?: true} = state), do: {:halt, state}
 

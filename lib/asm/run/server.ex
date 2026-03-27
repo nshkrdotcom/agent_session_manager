@@ -375,7 +375,11 @@ defmodule ASM.Run.Server do
   end
 
   defp apply_pipeline(state, event) do
-    case ASM.Pipeline.run(event, state.pipeline, state.pipeline_ctx) do
+    case ASM.Pipeline.run(
+           event,
+           execution_policy_pipeline(state) ++ state.pipeline,
+           state.pipeline_ctx
+         ) do
       {:ok, events, pipeline_ctx} ->
         {:ok, events, %{state | pipeline_ctx: pipeline_ctx}}
 
@@ -386,6 +390,15 @@ defmodule ASM.Run.Server do
     error ->
       {:error, Error.new(:runtime, :runtime, Exception.message(error), cause: error), state}
   end
+
+  defp execution_policy_pipeline(%Run.State{execution_config: %ASM.Execution.Config{} = config}) do
+    case Map.get(config, :allowed_tools, []) do
+      [] -> []
+      allowed_tools -> [{ASM.Execution.PolicyPlug, allowed_tools: allowed_tools}]
+    end
+  end
+
+  defp execution_policy_pipeline(_state), do: []
 
   defp process_events(state, events) when is_list(events) do
     Enum.reduce(events, state, fn event, acc ->

@@ -13,7 +13,8 @@ defmodule ASM.ProviderBackend.Core do
   @impl true
   def start_run(%{provider: %Provider{} = provider} = config) do
     with {:ok, execution_config} <- fetch_execution_config(config),
-         {:ok, session_opts} <- build_session_opts(provider, config) do
+         :ok <- validate_approval_posture(execution_config),
+         {:ok, session_opts} <- build_session_opts(provider, config, execution_config) do
       Proxy.start_link(
         starter: fn subscriber ->
           do_start_run(execution_config, Keyword.put(session_opts, :subscriber, subscriber))
@@ -74,7 +75,7 @@ defmodule ASM.ProviderBackend.Core do
     end
   end
 
-  defp build_session_opts(provider, config) do
+  defp build_session_opts(provider, config, execution_config) do
     metadata =
       Map.merge(
         %{lane: :core, asm_provider: provider.name},
@@ -82,7 +83,10 @@ defmodule ASM.ProviderBackend.Core do
       )
 
     with {:ok, provider_opts} <-
-           Options.finalize_provider_opts(provider.name, Map.get(config, :provider_opts, [])) do
+           Options.finalize_provider_opts(
+             provider.name,
+             effective_provider_opts(config, execution_config)
+           ) do
       provider_opts =
         provider_opts
         |> Keyword.put(:prompt, Map.fetch!(config, :prompt))
@@ -93,8 +97,32 @@ defmodule ASM.ProviderBackend.Core do
          provider: provider.name,
          profile: provider.core_profile,
          metadata: metadata
-       ] ++ provider_opts}
+       ] ++
+         execution_surface_opts(execution_config) ++
+         provider_opts}
     end
+  end
+
+  defp effective_provider_opts(config, execution_config) when is_map(execution_config) do
+    config
+    |> Map.get(:provider_opts, [])
+    |> maybe_put_new(:cwd, Map.get(execution_config, :workspace_root))
+    |> maybe_put(:permission_mode, Map.get(execution_config, :permission_mode))
+    |> maybe_put(
+      :provider_permission_mode,
+      Map.get(execution_config, :provider_permission_mode)
+    )
+  end
+
+  defp execution_surface_opts(execution_config) when is_map(execution_config) do
+    []
+    |> Keyword.put(:surface_kind, Map.get(execution_config, :surface_kind))
+    |> Keyword.put(:transport_options, Map.get(execution_config, :transport_options, []))
+    |> maybe_put(:target_id, Map.get(execution_config, :target_id))
+    |> maybe_put(:lease_ref, Map.get(execution_config, :lease_ref))
+    |> maybe_put(:surface_ref, Map.get(execution_config, :surface_ref))
+    |> maybe_put(:boundary_class, Map.get(execution_config, :boundary_class))
+    |> Keyword.put(:observability, Map.get(execution_config, :observability, %{}))
   end
 
   defp maybe_put_cli_path(provider_opts) do
@@ -108,6 +136,21 @@ defmodule ASM.ProviderBackend.Core do
         provider_opts
     end
   end
+
+  defp validate_approval_posture(execution_config) when is_map(execution_config) do
+    if Map.get(execution_config, :approval_posture) == :none do
+      {:error,
+       Error.new(
+         :config_invalid,
+         :config,
+         "approval_posture :none is not supported for runtime start"
+       )}
+    else
+      :ok
+    end
+  end
+
+  defp validate_approval_posture(_execution_config), do: :ok
 
   defp connect_remote(remote_cfg) do
     case NodeConnector.ensure_connected(remote_cfg) do
@@ -202,4 +245,10 @@ defmodule ASM.ProviderBackend.Core do
       _ -> %{}
     end
   end
+
+  defp maybe_put(provider_opts, _key, nil), do: provider_opts
+  defp maybe_put(provider_opts, key, value), do: Keyword.put(provider_opts, key, value)
+
+  defp maybe_put_new(provider_opts, _key, nil), do: provider_opts
+  defp maybe_put_new(provider_opts, key, value), do: Keyword.put_new(provider_opts, key, value)
 end

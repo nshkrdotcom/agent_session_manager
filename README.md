@@ -154,6 +154,31 @@ Provider atom form for one-off queries:
 
 Per-run options override session defaults. Session defaults are inherited automatically.
 
+## Generic Execution-Surface Carriage
+
+ASM keeps the bridge-to-core contract transport-neutral.
+
+Session defaults and per-run overrides can carry these generic fields:
+
+- `surface_kind`
+- `transport_options`
+- `workspace_root`
+- `allowed_tools`
+- `approval_posture`
+- `permission_mode`
+- `lease_ref`
+- `surface_ref`
+- `target_id`
+- `boundary_class`
+- `observability`
+
+Session startup normalizes stored defaults so `ASM.session_info/1` reflects the
+generic surface contract. Run execution then merges per-run overrides, enforces
+non-empty `allowed_tools` in the ASM pipeline, and forwards generic surface
+data only to `ASM.ProviderBackend.Core`. `approval_posture: :none` stays
+explicit and is rejected at runtime start instead of being normalized away
+silently.
+
 ## Runtime Architecture
 
 Runtime execution path:

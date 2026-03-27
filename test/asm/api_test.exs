@@ -2,7 +2,7 @@ defmodule ASM.APITest do
   use ASM.TestCase
 
   alias ASM.TestSupport.FakeBackend
-  alias CliSubprocessCore.Payload.{AssistantDelta, Error, Result, RunStarted}
+  alias CliSubprocessCore.Payload.{AssistantDelta, Error, Result, RunStarted, ToolUse}
 
   test "start_link/1 starts a session server for OTP-style usage" do
     session_id = "api-start-link-" <> Integer.to_string(System.unique_integer([:positive]))
@@ -135,6 +135,37 @@ defmodule ASM.APITest do
     assert cost == %{input_tokens: 2, output_tokens: 3, cost_usd: 0.8}
 
     assert :ok = ASM.stop_session(session)
+  end
+
+  test "query/3 blocks tool_use events outside a non-empty allowed_tools list" do
+    session_id = "api-allowlist-" <> Integer.to_string(System.unique_integer([:positive]))
+
+    assert {:ok, session} =
+             ASM.start_session(
+               session_id: session_id,
+               provider: :claude,
+               allowed_tools: ["search"]
+             )
+
+    on_exit(fn ->
+      _ = ASM.stop_session(session)
+    end)
+
+    script = [
+      {:core, :run_started, RunStarted.new(command: "fake")},
+      {:core, :tool_use,
+       ToolUse.new(tool_name: "bash", tool_id: "tool-1", input: %{"cmd" => "pwd"})}
+    ]
+
+    assert {:error, error} =
+             ASM.query(session, "hello",
+               backend_module: FakeBackend,
+               backend_opts: [script: script]
+             )
+
+    assert error.kind == :guardrail_blocked
+    assert error.domain == :guardrail
+    assert error.message =~ "bash"
   end
 
   test "health/1 and cost/1 reflect session process status" do

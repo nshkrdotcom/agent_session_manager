@@ -17,7 +17,9 @@ defmodule ASM.ProviderBackend.SDK do
 
   @impl true
   def start_run(%{provider: %Provider{} = provider} = config) do
-    with {:ok, %Execution.Config{execution_mode: :local}} <- fetch_execution_config(config),
+    with {:ok, execution_config = %Execution.Config{execution_mode: :local}} <-
+           fetch_execution_config(config),
+         :ok <- validate_approval_posture(execution_config),
          runtime when is_atom(runtime) <- provider.sdk_runtime,
          true <- Code.ensure_loaded?(runtime),
          {:ok, start_opts} <- build_start_opts(provider, config),
@@ -100,7 +102,10 @@ defmodule ASM.ProviderBackend.SDK do
 
   defp build_start_opts(%Provider{name: :claude, sdk_runtime: runtime}, config) do
     with {:ok, provider_opts} <-
-           Options.finalize_provider_opts(:claude, Map.get(config, :provider_opts, [])),
+           Options.finalize_provider_opts(
+             :claude,
+             effective_provider_opts(config, Map.get(config, :execution_config))
+           ),
          config = Map.put(config, :provider_opts, provider_opts),
          model_payload = Keyword.fetch!(provider_opts, :model_payload),
          {:ok, options} <-
@@ -120,7 +125,10 @@ defmodule ASM.ProviderBackend.SDK do
 
   defp build_start_opts(%Provider{name: :gemini, sdk_runtime: runtime}, config) do
     with {:ok, provider_opts} <-
-           Options.finalize_provider_opts(:gemini, Map.get(config, :provider_opts, [])),
+           Options.finalize_provider_opts(
+             :gemini,
+             effective_provider_opts(config, Map.get(config, :execution_config))
+           ),
          config = Map.put(config, :provider_opts, provider_opts),
          model_payload = Keyword.fetch!(provider_opts, :model_payload),
          {:ok, options} <-
@@ -141,7 +149,10 @@ defmodule ASM.ProviderBackend.SDK do
 
   defp build_start_opts(%Provider{name: :amp, sdk_runtime: runtime}, config) do
     with {:ok, provider_opts} <-
-           Options.finalize_provider_opts(:amp, Map.get(config, :provider_opts, [])),
+           Options.finalize_provider_opts(
+             :amp,
+             effective_provider_opts(config, Map.get(config, :execution_config))
+           ),
          config = Map.put(config, :provider_opts, provider_opts),
          model_payload = Keyword.fetch!(provider_opts, :model_payload),
          {:ok, options} <-
@@ -157,7 +168,10 @@ defmodule ASM.ProviderBackend.SDK do
 
   defp build_start_opts(%Provider{name: :codex, sdk_runtime: runtime}, config) do
     with {:ok, provider_opts} <-
-           Options.finalize_provider_opts(:codex, Map.get(config, :provider_opts, [])),
+           Options.finalize_provider_opts(
+             :codex,
+             effective_provider_opts(config, Map.get(config, :execution_config))
+           ),
          config = Map.put(config, :provider_opts, provider_opts),
          model_payload = Keyword.fetch!(provider_opts, :model_payload),
          {:ok, codex_opts} <-
@@ -200,6 +214,34 @@ defmodule ASM.ProviderBackend.SDK do
     extra
     |> Keyword.put(:metadata, metadata)
   end
+
+  defp validate_approval_posture(execution_config) when is_map(execution_config) do
+    if Map.get(execution_config, :approval_posture) == :none do
+      {:error,
+       Error.new(
+         :config_invalid,
+         :config,
+         "approval_posture :none is not supported for runtime start"
+       )}
+    else
+      :ok
+    end
+  end
+
+  defp validate_approval_posture(_execution_config), do: :ok
+
+  defp effective_provider_opts(config, execution_config) when is_map(execution_config) do
+    config
+    |> Map.get(:provider_opts, [])
+    |> maybe_put_new(:cwd, Map.get(execution_config, :workspace_root))
+    |> maybe_put(:permission_mode, Map.get(execution_config, :permission_mode))
+    |> maybe_put(
+      :provider_permission_mode,
+      Map.get(execution_config, :provider_permission_mode)
+    )
+  end
+
+  defp effective_provider_opts(config, _execution_config), do: Map.get(config, :provider_opts, [])
 
   defp gemini_approval_mode(nil), do: nil
   defp gemini_approval_mode(:default), do: nil
@@ -352,6 +394,12 @@ defmodule ASM.ProviderBackend.SDK do
     |> Map.get(:provider_opts, [])
     |> Keyword.get(key, default)
   end
+
+  defp maybe_put(provider_opts, _key, nil), do: provider_opts
+  defp maybe_put(provider_opts, key, value), do: Keyword.put(provider_opts, key, value)
+
+  defp maybe_put_new(provider_opts, _key, nil), do: provider_opts
+  defp maybe_put_new(provider_opts, key, value), do: Keyword.put_new(provider_opts, key, value)
 
   defp drop_nil_values(attrs) when is_list(attrs) do
     Enum.reject(attrs, fn {_key, value} -> is_nil(value) end)

@@ -1,17 +1,32 @@
 defmodule ASM.Execution.Config do
   @moduledoc """
-  Normalized execution-mode configuration with precedence-aware merging.
+  Normalized execution-mode and execution-surface configuration with
+  precedence-aware merging.
   """
 
-  alias ASM.Error
+  alias ASM.{Error, Permission}
 
   @valid_execution_modes [:local, :remote_node]
   @valid_bootstrap_modes [:require_prestarted, :ensure_started]
+  @valid_surface_kinds [:local_subprocess, :static_ssh, :leased_ssh, :guest_bridge]
+  @valid_approval_postures [:manual, :auto, :none]
 
   @enforce_keys [:execution_mode, :transport_call_timeout_ms]
   defstruct [
     :execution_mode,
     :transport_call_timeout_ms,
+    surface_kind: :local_subprocess,
+    transport_options: [],
+    workspace_root: nil,
+    allowed_tools: [],
+    approval_posture: nil,
+    permission_mode: nil,
+    provider_permission_mode: nil,
+    lease_ref: nil,
+    surface_ref: nil,
+    target_id: nil,
+    boundary_class: nil,
+    observability: %{},
     remote: nil
   ]
 
@@ -28,6 +43,18 @@ defmodule ASM.Execution.Config do
   @type t :: %__MODULE__{
           execution_mode: :local | :remote_node,
           transport_call_timeout_ms: pos_integer(),
+          surface_kind: :local_subprocess | :static_ssh | :leased_ssh | :guest_bridge,
+          transport_options: keyword(),
+          workspace_root: String.t() | nil,
+          allowed_tools: [String.t()],
+          approval_posture: :manual | :auto | :none | nil,
+          permission_mode: Permission.normalized_mode() | nil,
+          provider_permission_mode: atom() | nil,
+          lease_ref: String.t() | nil,
+          surface_ref: String.t() | nil,
+          target_id: String.t() | nil,
+          boundary_class: atom() | nil,
+          observability: map(),
           remote: remote_t() | nil
         }
 
@@ -50,6 +77,30 @@ defmodule ASM.Execution.Config do
              run_stream_opts,
              merged_driver_opts
            ),
+         {:ok, surface_kind} <- resolve_surface_kind(session_stream_opts, run_stream_opts),
+         {:ok, transport_options} <-
+           resolve_surface_transport_options(session_stream_opts, run_stream_opts),
+         {:ok, workspace_root} <-
+           resolve_optional_binary(session_stream_opts, run_stream_opts, :workspace_root),
+         {:ok, allowed_tools} <- resolve_allowed_tools(session_stream_opts, run_stream_opts),
+         {:ok, approval_posture} <-
+           resolve_approval_posture(session_stream_opts, run_stream_opts),
+         {:ok, permission_mode, provider_permission_mode} <-
+           resolve_permission_modes(
+             session_stream_opts,
+             run_stream_opts,
+             Keyword.get(opts, :provider)
+           ),
+         {:ok, lease_ref} <-
+           resolve_optional_binary(session_stream_opts, run_stream_opts, :lease_ref),
+         {:ok, surface_ref} <-
+           resolve_optional_binary(session_stream_opts, run_stream_opts, :surface_ref),
+         {:ok, target_id} <-
+           resolve_optional_binary(session_stream_opts, run_stream_opts, :target_id),
+         {:ok, boundary_class} <-
+           resolve_boundary_class(session_stream_opts, run_stream_opts),
+         {:ok, observability} <-
+           resolve_observability(session_stream_opts, run_stream_opts),
          {:ok, remote} <-
            resolve_remote_config(
              execution_mode,
@@ -62,6 +113,18 @@ defmodule ASM.Execution.Config do
        %__MODULE__{
          execution_mode: execution_mode,
          transport_call_timeout_ms: transport_call_timeout_ms,
+         surface_kind: surface_kind,
+         transport_options: transport_options,
+         workspace_root: workspace_root,
+         allowed_tools: allowed_tools,
+         approval_posture: approval_posture,
+         permission_mode: permission_mode,
+         provider_permission_mode: provider_permission_mode,
+         lease_ref: lease_ref,
+         surface_ref: surface_ref,
+         target_id: target_id,
+         boundary_class: boundary_class,
+         observability: observability,
          remote: remote
        }}
     end
@@ -236,6 +299,246 @@ defmodule ASM.Execution.Config do
 
   defp normalize_pos_integer(value) when is_integer(value) and value > 0, do: {:ok, value}
   defp normalize_pos_integer(_value), do: :error
+
+  defp resolve_surface_kind(session_stream_opts, run_stream_opts) do
+    session_surface_kind = Keyword.get(session_stream_opts, :surface_kind)
+    run_surface_kind = Keyword.get(run_stream_opts, :surface_kind, session_surface_kind)
+    normalize_surface_kind(run_surface_kind)
+  end
+
+  defp resolve_surface_transport_options(session_stream_opts, run_stream_opts) do
+    with {:ok, session_transport_options} <-
+           normalize_transport_options(Keyword.get(session_stream_opts, :transport_options)),
+         {:ok, run_transport_options} <-
+           normalize_transport_options(Keyword.get(run_stream_opts, :transport_options)) do
+      {:ok, Keyword.merge(session_transport_options, run_transport_options)}
+    end
+  end
+
+  defp resolve_allowed_tools(session_stream_opts, run_stream_opts) do
+    session_allowed_tools = Keyword.get(session_stream_opts, :allowed_tools, [])
+    allowed_tools = Keyword.get(run_stream_opts, :allowed_tools, session_allowed_tools)
+
+    allowed_tools
+    |> normalize_string_list()
+    |> case do
+      {:ok, values} -> {:ok, values}
+      {:error, reason} -> {:error, config_error(reason)}
+    end
+  end
+
+  defp resolve_approval_posture(session_stream_opts, run_stream_opts) do
+    approval_posture =
+      Keyword.get(
+        run_stream_opts,
+        :approval_posture,
+        Keyword.get(session_stream_opts, :approval_posture)
+      )
+
+    case normalize_approval_posture(approval_posture) do
+      {:ok, value} -> {:ok, value}
+      {:error, reason} -> {:error, config_error(reason)}
+    end
+  end
+
+  defp resolve_permission_modes(session_stream_opts, run_stream_opts, provider) do
+    permission_mode =
+      Keyword.get(
+        run_stream_opts,
+        :permission_mode,
+        Keyword.get(session_stream_opts, :permission_mode)
+      )
+
+    case normalize_permission_mode(permission_mode, provider) do
+      {:ok, normalized, native} ->
+        {:ok, normalized, native}
+
+      {:error, %Error{} = error} ->
+        {:error, error}
+
+      {:error, reason} ->
+        {:error, config_error(reason)}
+    end
+  end
+
+  defp resolve_optional_binary(session_stream_opts, run_stream_opts, key) do
+    value = Keyword.get(run_stream_opts, key, Keyword.get(session_stream_opts, key))
+
+    if is_nil(value) or (is_binary(value) and value != "") do
+      {:ok, value}
+    else
+      {:error, config_error("#{key} must be a non-empty string, got: #{inspect(value)}")}
+    end
+  end
+
+  defp resolve_boundary_class(session_stream_opts, run_stream_opts) do
+    boundary_class =
+      Keyword.get(
+        run_stream_opts,
+        :boundary_class,
+        Keyword.get(session_stream_opts, :boundary_class)
+      )
+
+    cond do
+      is_nil(boundary_class) ->
+        {:ok, nil}
+
+      is_atom(boundary_class) ->
+        {:ok, boundary_class}
+
+      true ->
+        {:error, config_error("boundary_class must be an atom, got: #{inspect(boundary_class)}")}
+    end
+  end
+
+  defp resolve_observability(session_stream_opts, run_stream_opts) do
+    session_observability = Keyword.get(session_stream_opts, :observability, %{})
+    run_observability = Keyword.get(run_stream_opts, :observability, %{})
+
+    cond do
+      not is_map(session_observability) ->
+        {:error,
+         config_error("observability must be a map, got: #{inspect(session_observability)}")}
+
+      not is_map(run_observability) ->
+        {:error, config_error("observability must be a map, got: #{inspect(run_observability)}")}
+
+      true ->
+        {:ok, Map.merge(session_observability, run_observability)}
+    end
+  end
+
+  defp normalize_approval_posture(nil), do: {:ok, nil}
+  defp normalize_approval_posture(value) when value in @valid_approval_postures, do: {:ok, value}
+
+  defp normalize_approval_posture(value) when is_binary(value) do
+    value
+    |> String.trim()
+    |> String.downcase()
+    |> case do
+      "manual" -> {:ok, :manual}
+      "auto" -> {:ok, :auto}
+      "none" -> {:ok, :none}
+      _other -> {:error, "approval_posture must be :manual, :auto, or :none"}
+    end
+  end
+
+  defp normalize_approval_posture(value) do
+    {:error, "approval_posture must be :manual, :auto, or :none, got: #{inspect(value)}"}
+  end
+
+  defp normalize_surface_kind(nil), do: {:ok, :local_subprocess}
+
+  defp normalize_surface_kind(surface_kind) when surface_kind in @valid_surface_kinds,
+    do: {:ok, surface_kind}
+
+  defp normalize_surface_kind(surface_kind) do
+    {:error,
+     config_error(
+       "surface_kind must be one of #{inspect(@valid_surface_kinds)}, got: #{inspect(surface_kind)}"
+     )}
+  end
+
+  defp normalize_transport_options(nil), do: {:ok, []}
+
+  defp normalize_transport_options(options) when is_list(options) do
+    if Keyword.keyword?(options) do
+      {:ok, options}
+    else
+      {:error,
+       config_error(
+         "transport_options must be a keyword list or atom-keyed map, got: #{inspect(options)}"
+       )}
+    end
+  end
+
+  defp normalize_transport_options(options) when is_map(options) do
+    if Enum.all?(Map.keys(options), &is_atom/1) do
+      {:ok, Enum.into(options, [])}
+    else
+      {:error, config_error("transport_options map keys must be atoms, got: #{inspect(options)}")}
+    end
+  end
+
+  defp normalize_transport_options(options) do
+    {:error,
+     config_error(
+       "transport_options must be a keyword list or atom-keyed map, got: #{inspect(options)}"
+     )}
+  end
+
+  defp normalize_permission_mode(nil, _provider), do: {:ok, nil, nil}
+
+  defp normalize_permission_mode(permission_mode, provider) when is_atom(provider) do
+    case Permission.normalize(provider, permission_mode) do
+      {:ok, %{normalized: normalized, native: native}} ->
+        {:ok, normalized, native}
+
+      {:error, %Error{} = error} ->
+        {:error, error}
+    end
+  end
+
+  defp normalize_permission_mode(permission_mode, _provider) do
+    normalized_modes = Permission.normalized_modes()
+
+    case normalize_permission_mode_atom(permission_mode) do
+      {:ok, normalized} ->
+        if normalized in normalized_modes do
+          {:ok, normalized, nil}
+        else
+          {:error,
+           "permission_mode must be one of #{inspect(normalized_modes)}, got: #{inspect(normalized)}"}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp normalize_permission_mode_atom(permission_mode) when is_atom(permission_mode),
+    do: {:ok, permission_mode}
+
+  defp normalize_permission_mode_atom(permission_mode) when is_binary(permission_mode) do
+    permission_mode
+    |> String.trim()
+    |> String.downcase()
+    |> case do
+      "default" -> {:ok, :default}
+      "auto" -> {:ok, :auto}
+      "bypass" -> {:ok, :bypass}
+      "plan" -> {:ok, :plan}
+      _other -> {:error, "permission_mode must be a supported normalized mode"}
+    end
+  end
+
+  defp normalize_permission_mode_atom(permission_mode) do
+    {:error, "permission_mode must be an atom or string, got: #{inspect(permission_mode)}"}
+  end
+
+  defp normalize_string_list(values) when is_list(values) do
+    Enum.reduce_while(values, {:ok, []}, fn
+      value, {:ok, acc} when is_binary(value) ->
+        trimmed = String.trim(value)
+
+        if trimmed == "" do
+          {:halt, {:error, "allowed_tools entries must be non-empty strings"}}
+        else
+          {:cont, {:ok, acc ++ [trimmed]}}
+        end
+
+      value, {:ok, acc} when is_atom(value) ->
+        {:cont, {:ok, acc ++ [Atom.to_string(value)]}}
+
+      value, _acc ->
+        {:halt,
+         {:error, "allowed_tools entries must be strings or atoms, got: #{inspect(value)}"}}
+    end)
+  end
+
+  defp normalize_string_list(values) do
+    {:error, "allowed_tools must be a list, got: #{inspect(values)}"}
+  end
 
   defp normalize_keyword(value) when is_list(value), do: value
   defp normalize_keyword(_value), do: []

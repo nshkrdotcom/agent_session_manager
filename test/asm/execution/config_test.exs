@@ -64,4 +64,31 @@ defmodule ASM.Execution.ConfigTest do
     assert error.domain == :config
     assert error.message =~ "execution_mode"
   end
+
+  test "resolve/2 preserves non-empty allowed_tools and explicit approval_posture :none" do
+    session_stream_opts = [
+      surface_kind: :leased_ssh,
+      transport_options: %{startup_mode: :lazy},
+      workspace_root: "/tmp/runtime",
+      allowed_tools: ["shell", "read"],
+      approval_posture: :none,
+      lease_ref: "lease-1",
+      surface_ref: "surface-1",
+      target_id: "target-1",
+      boundary_class: :isolated,
+      observability: %{suite: :phase_c}
+    ]
+
+    assert {:ok, cfg} = Config.resolve(session_stream_opts, [])
+    assert Map.get(cfg, :surface_kind) == :leased_ssh
+    assert Map.get(cfg, :transport_options) == [startup_mode: :lazy]
+    assert Map.get(cfg, :workspace_root) == "/tmp/runtime"
+    assert Map.get(cfg, :allowed_tools) == ["shell", "read"]
+    assert Map.get(cfg, :approval_posture) == :none
+    assert Map.get(cfg, :lease_ref) == "lease-1"
+    assert Map.get(cfg, :surface_ref) == "surface-1"
+    assert Map.get(cfg, :target_id) == "target-1"
+    assert Map.get(cfg, :boundary_class) == :isolated
+    assert Map.get(cfg, :observability) == %{suite: :phase_c}
+  end
 end

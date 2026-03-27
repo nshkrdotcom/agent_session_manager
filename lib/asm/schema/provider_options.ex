@@ -1,5 +1,8 @@
 defmodule ASM.Schema.ProviderOptions do
-  @moduledoc false
+  @moduledoc """
+  ASM-owned schema validation for provider option maps and provider profile
+  limits.
+  """
 
   alias ASM.Schema
   alias CliSubprocessCore.Schema.Conventions

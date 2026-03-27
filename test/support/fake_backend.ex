@@ -125,7 +125,7 @@ defmodule ASM.TestSupport.FakeBackend do
     emit_core_event(
       state,
       :run_started,
-      Payload.RunStarted.new(command: "fake", args: [state.config.prompt], cwd: "/tmp")
+      Payload.RunStarted.new(command: "fake", args: prompt_args(state), cwd: "/tmp")
     )
 
     emit_core_event(
@@ -169,15 +169,28 @@ defmodule ASM.TestSupport.FakeBackend do
           )
 
         if is_binary(requested_model) and requested_model != "" do
-          resolved_model
+          normalize_text(resolved_model)
         else
-          state.config.prompt
+          normalize_text(state.config.prompt)
         end
 
       _other ->
-        Keyword.get(state.config.provider_opts, :model, state.config.prompt)
+        state.config.provider_opts
+        |> Keyword.get(:model, state.config.prompt)
+        |> normalize_text()
     end
   end
+
+  defp prompt_args(state) do
+    case normalize_text(state.config.prompt) do
+      "" -> []
+      prompt -> [prompt]
+    end
+  end
+
+  defp normalize_text(value) when is_binary(value), do: value
+  defp normalize_text(value) when is_atom(value), do: Atom.to_string(value)
+  defp normalize_text(_value), do: ""
 
   defp emit_core_event(%__MODULE__{} = state, kind, payload) do
     if is_pid(state.subscriber) and is_reference(state.subscription_ref) do

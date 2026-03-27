@@ -1,5 +1,8 @@
 defmodule ASM.Schema.Event do
-  @moduledoc false
+  @moduledoc """
+  Schema-backed parser for ASM runtime event envelopes before projection into
+  `%ASM.Event{}`.
+  """
 
   alias ASM.Event
   alias ASM.Schema

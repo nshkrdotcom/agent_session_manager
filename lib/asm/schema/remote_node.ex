@@ -1,5 +1,7 @@
 defmodule ASM.Schema.RemoteNode do
-  @moduledoc false
+  @moduledoc """
+  Schema-backed parser for remote node execution configuration owned by ASM.
+  """
 
   alias ASM.Schema
   alias CliSubprocessCore.Schema.Conventions

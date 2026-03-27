@@ -231,18 +231,16 @@ defmodule ASM.Execution.Config do
                Keyword.get(run_stream_opts, :remote_bootstrap_mode) ||
                Keyword.get(session_stream_opts, :remote_bootstrap_mode) ||
                Keyword.get(app_cfg, :remote_bootstrap_mode, :require_prestarted)
-           ),
-         {:ok, remote} <-
-           build_remote_config(
-             remote_node,
-             Keyword.get(driver_opts, :remote_cookie),
-             remote_connect_timeout_ms,
-             remote_rpc_timeout_ms,
-             remote_boot_lease_timeout_ms,
-             remote_bootstrap_mode,
-             Keyword.get(driver_opts, :remote_cwd)
            ) do
-      {:ok, remote}
+      build_remote_config(
+        remote_node,
+        Keyword.get(driver_opts, :remote_cookie),
+        remote_connect_timeout_ms,
+        remote_rpc_timeout_ms,
+        remote_boot_lease_timeout_ms,
+        remote_bootstrap_mode,
+        Keyword.get(driver_opts, :remote_cwd)
+      )
     end
   end
 

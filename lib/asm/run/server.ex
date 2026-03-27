@@ -53,7 +53,7 @@ defmodule ASM.Run.Server do
         error_event =
           Event.new(
             :error,
-            Payload.Error.new(message: error.message, code: to_string(error.kind)),
+            error_payload(error),
             run_id: state.run_id,
             session_id: state.session_id,
             provider: state.provider,
@@ -363,7 +363,7 @@ defmodule ASM.Run.Server do
         error_event =
           Event.new(
             :error,
-            Payload.Error.new(message: error.message, code: to_string(error.kind)),
+            error_payload(error),
             run_id: next_state.run_id,
             session_id: next_state.session_id,
             provider: next_state.provider,
@@ -498,6 +498,14 @@ defmodule ASM.Run.Server do
     backend.close(pid)
   rescue
     _ -> :ok
+  end
+
+  defp error_payload(%Error{} = error) do
+    Payload.Error.new(
+      message: error.message,
+      code: to_string(error.kind),
+      metadata: %{asm_error_domain: error.domain}
+    )
   end
 
   defp merge_event_metadata(%Event{} = event, metadata) when is_map(metadata) do

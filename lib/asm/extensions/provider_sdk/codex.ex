@@ -19,7 +19,7 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
   """
 
   alias ASM.{Error, Options, Provider, ProviderRegistry}
-  alias ASM.Extensions.ProviderSDK.{Dispatch, Extension}
+  alias ASM.Extensions.ProviderSDK.{Dispatch, Extension, SessionOptions}
 
   @sdk_app :codex_sdk
   @sdk_module Module.concat(["Codex"])
@@ -196,7 +196,11 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
       {:ok, %{provider: provider, options: options}} when is_list(options) ->
         case resolve_codex_provider(provider) do
           {:ok, :codex} ->
-            {:ok, Keyword.merge(Keyword.put(options, :provider, :codex), asm_overrides)}
+            {:ok,
+             options
+             |> SessionOptions.provider_opts()
+             |> Keyword.put(:provider, :codex)
+             |> Keyword.merge(asm_overrides)}
 
           {:error, %Error{} = error} ->
             {:error, error}
@@ -209,6 +213,7 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
 
   defp validate_asm_options(asm_opts) do
     provider_schema = Provider.resolve!(:codex).options_schema
+    asm_opts = SessionOptions.provider_opts(asm_opts)
 
     case resolve_codex_provider(Keyword.get(asm_opts, :provider, :codex)) do
       {:ok, :codex} ->

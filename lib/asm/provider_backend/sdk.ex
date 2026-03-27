@@ -228,8 +228,6 @@ defmodule ASM.ProviderBackend.SDK do
     end
   end
 
-  defp validate_approval_posture(_execution_config), do: :ok
-
   defp effective_provider_opts(config, execution_config) when is_map(execution_config) do
     config
     |> Map.get(:provider_opts, [])
@@ -240,8 +238,6 @@ defmodule ASM.ProviderBackend.SDK do
       Map.get(execution_config, :provider_permission_mode)
     )
   end
-
-  defp effective_provider_opts(config, _execution_config), do: Map.get(config, :provider_opts, [])
 
   defp gemini_approval_mode(nil), do: nil
   defp gemini_approval_mode(:default), do: nil

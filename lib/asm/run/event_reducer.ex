@@ -4,6 +4,7 @@ defmodule ASM.Run.EventReducer do
   """
 
   alias ASM.{Error, Event, Metadata, Result, Run}
+  alias CliSubprocessCore.Payload
 
   @conversation_kinds [
     :assistant_message,
@@ -127,6 +128,19 @@ defmodule ASM.Run.EventReducer do
     %{next_state | result: result}
   end
 
+  defp apply_semantics(
+         state,
+         %Event{kind: :error, payload: %Payload.Error{} = payload, timestamp: finished_at} = event
+       ) do
+    legacy = Event.legacy_payload(event)
+
+    state
+    |> append_message(legacy)
+    |> Map.put(:status, :failed)
+    |> Map.put(:finished_at, finished_at)
+    |> Map.put(:error, error_from_payload(legacy, payload))
+  end
+
   defp apply_semantics(state, %Event{kind: :error, timestamp: finished_at} = event) do
     legacy = Event.legacy_payload(event)
 
@@ -181,6 +195,48 @@ defmodule ASM.Run.EventReducer do
   defp error_from_message(_payload) do
     Error.new(:unknown, :runtime, "Unknown runtime error")
   end
+
+  defp error_from_payload(%ASM.Message.Error{} = payload, %Payload.Error{} = raw_payload) do
+    Error.new(payload.kind, error_domain(raw_payload.metadata), payload.message)
+  end
+
+  defp error_from_payload(payload, _raw_payload) do
+    error_from_message(payload)
+  end
+
+  defp error_domain(metadata) when is_map(metadata) do
+    metadata
+    |> Map.get(:asm_error_domain, Map.get(metadata, "asm_error_domain"))
+    |> normalize_error_domain()
+  end
+
+  defp error_domain(_metadata), do: :runtime
+
+  defp normalize_error_domain(domain)
+       when domain in [
+              :transport,
+              :parser,
+              :provider,
+              :approval,
+              :guardrail,
+              :tool,
+              :runtime,
+              :config
+            ],
+       do: domain
+
+  defp normalize_error_domain(domain) when is_binary(domain) do
+    domain
+    |> String.trim()
+    |> String.downcase()
+    |> String.replace("-", "_")
+    |> String.to_existing_atom()
+    |> normalize_error_domain()
+  rescue
+    ArgumentError -> :runtime
+  end
+
+  defp normalize_error_domain(_domain), do: :runtime
 
   defp put_if_present(map, _key, nil), do: map
   defp put_if_present(map, key, value), do: Map.put(map, key, value)

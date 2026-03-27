@@ -61,14 +61,17 @@ defmodule ASM.Event do
   @ulid_chars 26
   @max_timestamp 281_474_976_710_655
   @normalized_error_kinds %{
+    "at_capacity" => :at_capacity,
     "approval_denied" => :approval_denied,
     "auth_error" => :auth_error,
     "buffer_overflow" => :buffer_overflow,
     "cli_not_found" => :cli_not_found,
     "config_invalid" => :config_invalid,
     "connection_failed" => :connection_failed,
+    "guardrail_blocked" => :guardrail_blocked,
     "json_decode_error" => :json_decode_error,
     "parse_error" => :parse_error,
+    "queue_full" => :queue_full,
     "rate_limit" => :rate_limit,
     "timeout" => :timeout,
     "tool_failed" => :tool_failed,

@@ -141,10 +141,14 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
     {:ok, session} =
       ASM.start_session(
         provider: :claude,
-        cwd: "/tmp/asm-session-defaults",
+        workspace_root: "/tmp/asm-session-defaults",
         permission_mode: :plan,
         model: "haiku",
-        max_turns: 2
+        max_turns: 2,
+        surface_kind: :leased_ssh,
+        transport_options: [destination: "claude.session.example"],
+        allowed_tools: ["search"],
+        observability: %{suite: :provider_sdk}
       )
 
     on_exit(fn -> safe_stop_session(session) end)

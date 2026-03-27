@@ -63,6 +63,7 @@ defmodule ASM.SSHExecIntegrationTest do
       end)
 
     assert_receive {:asm_event, %Event{kind: :run_started, run_id: run_id}}, 2_000
+    assert_eventually(fn -> File.exists?(manifest_path) end)
     assert :ok = ASM.interrupt(session, run_id)
 
     assert_receive {:asm_event, %Event{kind: :error} = event}, 2_000

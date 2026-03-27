@@ -150,8 +150,6 @@ defmodule ASM.ProviderBackend.Core do
     end
   end
 
-  defp validate_approval_posture(_execution_config), do: :ok
-
   defp connect_remote(remote_cfg) do
     case NodeConnector.ensure_connected(remote_cfg) do
       :ok ->

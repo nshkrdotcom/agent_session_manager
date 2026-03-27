@@ -87,4 +87,17 @@ defmodule ASM.EventTest do
     assert %Message.Result{stop_reason: :end_turn, usage: %{input_tokens: 2, output_tokens: 3}} =
              Event.legacy_payload(result)
   end
+
+  test "legacy_payload/1 preserves guardrail error kinds emitted by ASM" do
+    event =
+      Event.new(
+        :error,
+        Payload.Error.new(message: "blocked", code: "guardrail_blocked"),
+        run_id: "run-1",
+        session_id: "session-1"
+      )
+
+    assert %Message.Error{kind: :guardrail_blocked, message: "blocked"} =
+             Event.legacy_payload(event)
+  end
 end

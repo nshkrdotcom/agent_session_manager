@@ -138,11 +138,15 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
     {:ok, session} =
       ASM.start_session(
         provider: :codex,
-        cwd: "/tmp/asm-codex-session",
+        workspace_root: "/tmp/asm-codex-session",
         permission_mode: :bypass,
         approval_timeout_ms: 10_000,
         model: "gpt-5.4",
-        reasoning_effort: :medium
+        reasoning_effort: :medium,
+        surface_kind: :leased_ssh,
+        transport_options: [destination: "codex.session.example"],
+        allowed_tools: ["search"],
+        observability: %{suite: :provider_sdk}
       )
 
     on_exit(fn -> safe_stop_session(session) end)

@@ -16,7 +16,7 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
   """
 
   alias ASM.{Error, Options, Provider, ProviderRegistry}
-  alias ASM.Extensions.ProviderSDK.{Dispatch, Extension}
+  alias ASM.Extensions.ProviderSDK.{Dispatch, Extension, SessionOptions}
 
   @sdk_app :claude_agent_sdk
   @sdk_module Module.concat(["ClaudeAgentSDK"])
@@ -166,7 +166,11 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
   defp asm_options_from_session(session, asm_overrides) do
     case ASM.session_info(session) do
       {:ok, %{provider: :claude, options: options}} when is_list(options) ->
-        {:ok, Keyword.merge(Keyword.put(options, :provider, :claude), asm_overrides)}
+        {:ok,
+         options
+         |> SessionOptions.provider_opts()
+         |> Keyword.put(:provider, :claude)
+         |> Keyword.merge(asm_overrides)}
 
       {:ok, %{provider: provider}} ->
         {:error,
@@ -183,6 +187,7 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
 
   defp validate_asm_options(asm_opts) do
     provider_schema = Provider.resolve!(:claude).options_schema
+    asm_opts = SessionOptions.provider_opts(asm_opts)
 
     case Keyword.get(asm_opts, :provider, :claude) do
       :claude ->

@@ -84,6 +84,55 @@ defmodule ASM.Examples.CommonTest do
     assert config.session_opts[:model] == "gemini-2.5-flash"
   end
 
+  test "examples default to bypass mode with provider-native permission metadata" do
+    assert {:ok, config} =
+             Common.build_example_config(
+               ["--provider", "codex"],
+               @script_name,
+               @description,
+               @default_prompt
+             )
+
+    assert config.provider_opts[:permission_mode] == :bypass
+    assert config.provider_opts[:provider_permission_mode] == :yolo
+    assert config.permission_source == :example_default_bypass
+  end
+
+  test "examples record when permission mode comes from the CLI flag" do
+    assert {:ok, config} =
+             Common.build_example_config(
+               ["--provider", "amp", "--permission-mode", "plan"],
+               @script_name,
+               @description,
+               @default_prompt
+             )
+
+    assert config.provider_opts[:permission_mode] == :plan
+    assert config.provider_opts[:provider_permission_mode] == :plan
+    assert config.permission_source == :cli_flag
+  end
+
+  test "common example parser accepts the Ollama surface" do
+    assert {:ok, config} =
+             Common.build_example_config(
+               [
+                 "--provider",
+                 "claude",
+                 "--ollama",
+                 "--model",
+                 "haiku",
+                 "--ollama-model",
+                 "llama3.2"
+               ],
+               @script_name,
+               @description,
+               @default_prompt
+             )
+
+    assert config.provider_opts[:provider_backend] == :ollama
+    assert config.provider_opts[:external_model_overrides] == %{"haiku" => "llama3.2"}
+  end
+
   test "sdk lane resolves SDK root from provider env" do
     sdk_root = Path.expand("../../../codex_sdk", __DIR__)
     System.put_env("CODEX_SDK_ROOT", sdk_root)
@@ -158,13 +207,23 @@ defmodule ASM.Examples.CommonTest do
       prompt: @default_prompt,
       lane: :core,
       sdk_root: nil,
-      session_opts: [provider: :codex, lane: :core, cli_path: @cli_path, model: "gpt-5-codex"]
+      session_opts: [provider: :codex, lane: :core, cli_path: @cli_path, model: "gpt-5.4"],
+      provider_opts: [
+        provider: :codex,
+        cli_path: @cli_path,
+        model: "gpt-5.4",
+        permission_mode: :bypass,
+        provider_permission_mode: :yolo
+      ],
+      permission_source: :example_default_bypass
     }
 
     assert Common.sdk_bridge_opts(config) == [
              provider: :codex,
              cli_path: @cli_path,
-             model: "gpt-5-codex"
+             model: "gpt-5.4",
+             permission_mode: :bypass,
+             provider_permission_mode: :yolo
            ]
   end
 end

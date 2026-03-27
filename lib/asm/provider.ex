@@ -6,8 +6,17 @@ defmodule ASM.Provider do
   alias ASM.Error
   alias ASM.Provider.ExampleSupport
   alias ASM.Provider.Profile
+  alias CliSubprocessCore.ProviderFeatures, as: CoreProviderFeatures
 
-  @enforce_keys [:name, :display_name, :core_profile, :example_support, :options_schema, :profile]
+  @enforce_keys [
+    :name,
+    :display_name,
+    :core_profile,
+    :example_support,
+    :options_schema,
+    :profile,
+    :feature_manifest
+  ]
   defstruct [
     :name,
     :display_name,
@@ -16,6 +25,7 @@ defmodule ASM.Provider do
     :example_support,
     :options_schema,
     :profile,
+    :feature_manifest,
     aliases: [],
     metadata: %{}
   ]
@@ -30,6 +40,7 @@ defmodule ASM.Provider do
           example_support: ExampleSupport.t(),
           options_schema: keyword(),
           profile: Profile.t(),
+          feature_manifest: map(),
           aliases: [provider_name()],
           metadata: map()
         }
@@ -52,6 +63,35 @@ defmodule ASM.Provider do
 
       {:error, %Error{} = error} ->
         raise ArgumentError, Exception.message(error)
+    end
+  end
+
+  @spec feature_manifest(t() | provider_name()) :: {:ok, map()} | {:error, Error.t()}
+  def feature_manifest(provider_or_name) do
+    with {:ok, %__MODULE__{} = provider} <- resolve(provider_or_name) do
+      {:ok, provider.feature_manifest}
+    end
+  end
+
+  @spec feature_manifest!(t() | provider_name()) :: map()
+  def feature_manifest!(provider_or_name) do
+    case feature_manifest(provider_or_name) do
+      {:ok, manifest} ->
+        manifest
+
+      {:error, %Error{} = error} ->
+        raise ArgumentError, Exception.message(error)
+    end
+  end
+
+  @spec supports_feature?(t() | provider_name(), atom()) :: boolean()
+  def supports_feature?(provider_or_name, feature) when is_atom(feature) do
+    case feature_manifest(provider_or_name) do
+      {:ok, manifest} ->
+        get_in(manifest, [feature, :supported?]) == true
+
+      {:error, _error} ->
+        false
     end
   end
 
@@ -130,6 +170,7 @@ defmodule ASM.Provider do
           sdk_root_env: "CLAUDE_AGENT_SDK_ROOT"
         },
         options_schema: ASM.Options.Claude.schema(),
+        feature_manifest: feature_manifest_for(:claude),
         profile:
           Profile.new!(
             max_concurrent_runs: 1,
@@ -153,6 +194,7 @@ defmodule ASM.Provider do
           sdk_cli_env: "CODEX_PATH"
         },
         options_schema: ASM.Options.Codex.schema(),
+        feature_manifest: feature_manifest_for(:codex),
         aliases: [:codex_exec],
         profile:
           Profile.new!(
@@ -177,6 +219,7 @@ defmodule ASM.Provider do
           sdk_cli_env: "GEMINI_CLI_PATH"
         },
         options_schema: ASM.Options.Gemini.schema(),
+        feature_manifest: feature_manifest_for(:gemini),
         profile:
           Profile.new!(
             max_concurrent_runs: 1,
@@ -200,6 +243,7 @@ defmodule ASM.Provider do
           sdk_cli_env: "AMP_CLI_PATH"
         },
         options_schema: ASM.Options.Amp.schema(),
+        feature_manifest: feature_manifest_for(:amp),
         profile:
           Profile.new!(
             max_concurrent_runs: 1,
@@ -211,4 +255,16 @@ defmodule ASM.Provider do
 
   defp normalize_name(:codex_exec), do: :codex
   defp normalize_name(name), do: name
+
+  defp feature_manifest_for(provider) when is_atom(provider) do
+    ollama =
+      provider
+      |> CoreProviderFeatures.partial_feature!(:ollama)
+      |> Map.merge(%{
+        common_surface: true,
+        common_opts: [:ollama, :ollama_model, :ollama_base_url, :ollama_http, :ollama_timeout_ms]
+      })
+
+    %{ollama: ollama}
+  end
 end

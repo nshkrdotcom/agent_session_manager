@@ -1,11 +1,11 @@
 defmodule AgentSessionManager.MixProject do
   use Mix.Project
 
-  @version "0.10.0"
+  @version "0.10.1"
   @source_url "https://github.com/nshkrdotcom/agent_session_manager"
   @homepage_url "https://hex.pm/packages/agent_session_manager"
   @docs_url "https://hexdocs.pm/agent_session_manager"
-  @cli_subprocess_core_requirement "~> 0.1.0"
+  @cli_subprocess_core_requirement "~> 0.1.1"
   @cli_subprocess_core_repo "nshkrdotcom/cli_subprocess_core"
 
   def project do
@@ -76,8 +76,18 @@ defmodule AgentSessionManager.MixProject do
       plt_add_apps: [:mix, :ex_unit],
       plt_core_path: "priv/plts/core",
       plt_local_path: "priv/plts",
-      plt_file: {:no_warn, "priv/plts/project.plt"}
+      plt_file: {:no_warn, "priv/plts/#{dialyzer_plt_basename()}.plt"}
     ]
+  end
+
+  defp dialyzer_plt_basename do
+    "project-#{@version}-core-#{dialyzer_token(@cli_subprocess_core_requirement)}"
+  end
+
+  defp dialyzer_token(value) when is_binary(value) do
+    value
+    |> String.replace(~r/[^0-9A-Za-z]+/, "-")
+    |> String.trim("-")
   end
 
   defp package do
@@ -131,6 +141,9 @@ defmodule AgentSessionManager.MixProject do
       "README.md": [title: "Overview"],
       "guides/lane-selection.md": [title: "Lane Selection"],
       "guides/provider-backends.md": [title: "Provider Backends"],
+      "guides/common-and-partial-provider-features.md": [
+        title: "Common And Partial Provider Features"
+      ],
       "guides/provider-sdk-extensions.md": [title: "Provider SDK Extensions"],
       "guides/event-model-and-result-projection.md": [title: "Event Model And Result Projection"],
       "guides/approvals-and-interrupts.md": [title: "Approvals And Interrupts"],
@@ -148,6 +161,7 @@ defmodule AgentSessionManager.MixProject do
       Foundations: [
         "guides/lane-selection.md",
         "guides/provider-backends.md",
+        "guides/common-and-partial-provider-features.md",
         "guides/provider-sdk-extensions.md"
       ],
       Runtime: [

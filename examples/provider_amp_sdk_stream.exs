@@ -20,9 +20,10 @@ options_module = Module.concat(["AmpSdk", "Types", "Options"])
 
 options =
   struct!(options_module, %{
-    cwd: Keyword.get(config.session_opts, :cwd),
+    cwd: Keyword.get(config.provider_opts, :cwd),
     mode: "smart",
-    dangerously_allow_all: true,
+    dangerously_allow_all:
+      Keyword.get(config.provider_opts, :provider_permission_mode) == :dangerously_allow_all,
     thinking: false,
     no_ide: true,
     no_notifications: true

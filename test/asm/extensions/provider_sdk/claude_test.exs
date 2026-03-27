@@ -114,6 +114,27 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
     assert options.hooks == %{pre_tool_use: [Matcher.new("Bash", [hook])]}
   end
 
+  test "sdk_options/2 accepts the ASM common Ollama surface for Claude" do
+    asm_opts = [
+      provider: :claude,
+      model: "haiku",
+      ollama: true,
+      ollama_model: "llama3.2",
+      ollama_base_url: "http://127.0.0.1:11434",
+      permission_mode: :bypass
+    ]
+
+    assert {:ok, %Options{} = options} = Claude.sdk_options(asm_opts)
+
+    assert options.permission_mode == :bypass_permissions
+    assert options.model == "llama3.2"
+    assert options.model_payload.requested_model == "haiku"
+    assert options.model_payload.provider_backend == :ollama
+    assert options.model_payload.env_overrides["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:11434"
+    assert options.model_payload.env_overrides["ANTHROPIC_AUTH_TOKEN"] == "ollama"
+    assert options.model_payload.backend_metadata["external_model"] == "llama3.2"
+  end
+
   test "sdk_options_for_session/3 merges session defaults with ASM overrides" do
     {:ok, session} =
       ASM.start_session(

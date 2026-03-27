@@ -17,9 +17,6 @@ defmodule ASM.Options.Codex do
       ],
       model_provider: [type: {:or, [:string, nil]}, default: nil],
       oss_provider: [type: {:or, [:string, nil]}, default: nil],
-      ollama_base_url: [type: {:or, [:string, nil]}, default: nil],
-      ollama_http: [type: {:or, [:boolean, nil]}, default: nil],
-      ollama_timeout_ms: [type: {:or, [:pos_integer, nil]}, default: nil],
       output_schema: [
         type: {:custom, ASM.Options, :validate_passthrough_map, [:output_schema]},
         default: nil

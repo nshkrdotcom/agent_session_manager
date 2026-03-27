@@ -22,12 +22,15 @@ run_all.sh only runs when you explicitly choose one or more providers.
 Usage:
   ./examples/run_all.sh --provider claude
   ./examples/run_all.sh --provider claude --provider gemini
-  ./examples/run_all.sh --provider codex --model gpt-5-codex
+  ./examples/run_all.sh --provider codex --model gpt-5.4
 
 Notes:
   - Repeat --provider or pass a comma-separated list.
   - Any other flags are forwarded to each example.
   - Each example also requires --provider when run directly.
+  - Common and provider-native examples default to ASM permission_mode=:bypass.
+  - The examples print the provider-native permission term at startup.
+  - --ollama and the related --ollama-* flags are only valid for claude and codex.
   - Provider-specific examples may require the matching SDK checkout on the code path or via --sdk-root.
 EOF
 }
@@ -66,6 +69,16 @@ if [[ ${#providers[@]} -eq 0 ]]; then
   exit 0
 fi
 
+ollama_requested=0
+
+for arg in "${forward_args[@]}"; do
+  case "$arg" in
+    --ollama|--ollama=*|--ollama-model|--ollama-model=*|--ollama-base-url|--ollama-base-url=*|--ollama-http|--ollama-timeout-ms|--ollama-timeout-ms=*)
+      ollama_requested=1
+      ;;
+  esac
+done
+
 declare -A seen=()
 selected_providers=()
 
@@ -96,6 +109,17 @@ done
 cd "$ROOT_DIR"
 
 for provider in "${selected_providers[@]}"; do
+  if [[ $ollama_requested -eq 1 ]]; then
+    case "$provider" in
+      claude|codex)
+        ;;
+      *)
+        echo "provider $provider does not support the ASM common Ollama surface; --ollama* flags are only valid for claude and codex" >&2
+        exit 1
+        ;;
+    esac
+  fi
+
   for example in "${EXAMPLES[@]}"; do
     echo
     echo "== ${example} provider=${provider} =="

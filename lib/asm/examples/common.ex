@@ -1,20 +1,30 @@
 defmodule ASM.Examples.Common do
   @moduledoc false
 
-  alias ASM.{Error, Event, Message, Provider, Result}
+  alias ASM.{Error, Event, Message, Options, Provider, ProviderFeatures, Result}
   alias CliSubprocessCore.ProviderCLI.Error, as: CoreProviderCLIError
 
   @type lane :: :auto | :core | :sdk
 
-  @enforce_keys [:provider, :prompt, :session_opts, :lane]
-  defstruct [:provider, :prompt, :session_opts, :lane, :sdk_root]
+  @enforce_keys [:provider, :prompt, :session_opts, :provider_opts, :lane, :permission_source]
+  defstruct [
+    :provider,
+    :prompt,
+    :session_opts,
+    :provider_opts,
+    :lane,
+    :sdk_root,
+    :permission_source
+  ]
 
   @type t :: %__MODULE__{
           provider: Provider.provider_name(),
           prompt: String.t(),
           session_opts: keyword(),
+          provider_opts: keyword(),
           lane: lane(),
-          sdk_root: String.t() | nil
+          sdk_root: String.t() | nil,
+          permission_source: :cli_flag | :env | :example_default_bypass
         }
 
   @providers [:claude, :gemini, :codex, :amp]
@@ -50,6 +60,11 @@ defmodule ASM.Examples.Common do
           help: :boolean,
           lane: :string,
           model: :string,
+          ollama: :boolean,
+          ollama_base_url: :string,
+          ollama_http: :boolean,
+          ollama_model: :string,
+          ollama_timeout_ms: :integer,
           permission_mode: :string,
           prompt: :string,
           provider: :string,
@@ -85,8 +100,8 @@ defmodule ASM.Examples.Common do
   end
 
   @spec sdk_bridge_opts(t()) :: keyword()
-  def sdk_bridge_opts(%__MODULE__{session_opts: session_opts}) do
-    Keyword.drop(session_opts, [:lane])
+  def sdk_bridge_opts(%__MODULE__{provider_opts: provider_opts}) do
+    provider_opts
   end
 
   @spec start_session!(t()) :: pid()
@@ -224,27 +239,78 @@ defmodule ASM.Examples.Common do
       {:ok, provider} ->
         prompt = resolve_prompt(parsed_opts, positional, default_prompt)
 
-        case parse_lane(Keyword.get(parsed_opts, :lane)) do
-          {:ok, lane} ->
-            sdk_root = resolve_sdk_root(provider, parsed_opts, lane, provider_sdk?)
-            session_opts = build_session_opts(provider, lane, parsed_opts)
+        build_lane_resolved_config(
+          provider,
+          parsed_opts,
+          prompt,
+          script_name,
+          description,
+          default_prompt,
+          provider_sdk?
+        )
+    end
+  end
 
-            {:ok,
-             %__MODULE__{
-               provider: provider,
-               prompt: prompt,
-               session_opts: session_opts,
-               lane: lane,
-               sdk_root: sdk_root
-             }}
+  defp build_lane_resolved_config(
+         provider,
+         parsed_opts,
+         prompt,
+         script_name,
+         description,
+         default_prompt,
+         provider_sdk?
+       ) do
+    usage = usage_text(script_name, description, default_prompt)
 
-          {:error, message} ->
-            {:usage, 1, message <> "\n\n" <> usage_text(script_name, description, default_prompt)}
-        end
+    case parse_lane(Keyword.get(parsed_opts, :lane)) do
+      {:ok, lane} ->
+        sdk_root = resolve_sdk_root(provider, parsed_opts, lane, provider_sdk?)
+        {session_opts, permission_source} = build_session_opts(provider, lane, parsed_opts)
+
+        build_provider_config(
+          provider,
+          prompt,
+          lane,
+          sdk_root,
+          session_opts,
+          permission_source,
+          usage
+        )
+
+      {:error, message} ->
+        {:usage, 1, message <> "\n\n" <> usage}
+    end
+  end
+
+  defp build_provider_config(
+         provider,
+         prompt,
+         lane,
+         sdk_root,
+         session_opts,
+         permission_source,
+         usage
+       ) do
+    case build_provider_opts(provider, session_opts) do
+      {:ok, provider_opts} ->
+        {:ok,
+         %__MODULE__{
+           provider: provider,
+           prompt: prompt,
+           session_opts: session_opts,
+           provider_opts: provider_opts,
+           lane: lane,
+           sdk_root: sdk_root,
+           permission_source: permission_source
+         }}
+
+      {:error, %Error{} = error} ->
+        {:usage, 1, Exception.message(error) <> "\n\n" <> usage}
     end
   end
 
   defp prepare_example!(%__MODULE__{} = config) do
+    print_runtime_notice(config)
     ensure_cli!(config.provider, config.session_opts)
     maybe_boot_provider_sdk!(config.provider, config.lane, config.sdk_root, config.session_opts)
     ensure_started!()
@@ -301,23 +367,46 @@ defmodule ASM.Examples.Common do
   defp build_session_opts(provider, lane, opts) do
     example_support = Provider.example_support!(provider)
     cli_path = Keyword.get(opts, :cli_path)
+    {permission_mode, permission_source} = resolve_permission_mode(opts)
 
-    []
-    |> Keyword.put(:provider, provider)
-    |> Keyword.put(:lane, lane)
-    |> put_opt(:cli_path, cli_path)
-    |> put_opt(:cwd, Keyword.get(opts, :cwd))
-    |> put_opt(
-      :model,
-      Keyword.get(opts, :model) ||
-        System.get_env(example_support.model_env) ||
-        example_support.example_default_model
-    )
-    |> put_opt(
-      :permission_mode,
-      Keyword.get(opts, :permission_mode) || System.get_env("ASM_PERMISSION_MODE")
-    )
+    session_opts =
+      []
+      |> Keyword.put(:provider, provider)
+      |> Keyword.put(:lane, lane)
+      |> put_opt(:cli_path, cli_path)
+      |> put_opt(:cwd, Keyword.get(opts, :cwd))
+      |> put_opt(
+        :model,
+        Keyword.get(opts, :model) ||
+          System.get_env(example_support.model_env) ||
+          example_support.example_default_model
+      )
+      |> put_opt(:permission_mode, permission_mode)
+      |> put_opt(:ollama, Keyword.get(opts, :ollama))
+      |> put_opt(:ollama_model, Keyword.get(opts, :ollama_model))
+      |> put_opt(:ollama_base_url, Keyword.get(opts, :ollama_base_url))
+      |> put_opt(:ollama_http, Keyword.get(opts, :ollama_http))
+      |> put_opt(:ollama_timeout_ms, Keyword.get(opts, :ollama_timeout_ms))
+
+    {session_opts, permission_source}
   end
+
+  defp resolve_permission_mode(opts) when is_list(opts) do
+    cond do
+      present_option?(Keyword.get(opts, :permission_mode)) ->
+        {Keyword.get(opts, :permission_mode), :cli_flag}
+
+      present_option?(System.get_env("ASM_PERMISSION_MODE")) ->
+        {System.get_env("ASM_PERMISSION_MODE"), :env}
+
+      true ->
+        {:bypass, :example_default_bypass}
+    end
+  end
+
+  defp present_option?(value) when is_binary(value), do: String.trim(value) != ""
+  defp present_option?(nil), do: false
+  defp present_option?(_value), do: true
 
   defp put_opt(opts, _key, nil), do: opts
   defp put_opt(opts, _key, ""), do: opts
@@ -336,6 +425,14 @@ defmodule ASM.Examples.Common do
 
         System.halt(1)
     end
+  end
+
+  defp build_provider_opts(provider, session_opts) do
+    provider_schema = Provider.resolve!(provider).options_schema
+
+    session_opts
+    |> Keyword.drop([:lane])
+    |> Options.validate(provider_schema)
   end
 
   defp cli_check(provider, opts) do
@@ -550,6 +647,35 @@ defmodule ASM.Examples.Common do
     |> put_opt(:command, Keyword.get(opts, :cli_path))
   end
 
+  defp print_runtime_notice(%__MODULE__{
+         provider: provider,
+         provider_opts: provider_opts,
+         lane: lane,
+         permission_source: permission_source
+       }) do
+    permission =
+      ProviderFeatures.permission_mode!(provider, provider_opts[:provider_permission_mode])
+
+    IO.puts("""
+    notice_provider=#{provider}
+    notice_lane=#{lane}
+    notice_permission_mode=#{inspect(provider_opts[:permission_mode])}
+    notice_permission_source=#{permission_source}
+    notice_native_permission_mode=#{inspect(permission.native_mode)}
+    notice_native_permission_cli=#{inspect(permission.cli_excerpt)}
+    """)
+
+    if Keyword.get(provider_opts, :ollama, false) do
+      ollama = ProviderFeatures.common_feature!(provider, :ollama)
+
+      IO.puts("""
+      notice_ollama=true
+      notice_ollama_activation=#{inspect(ollama.activation)}
+      notice_ollama_model_strategy=#{inspect(ollama.model_strategy)}
+      """)
+    end
+  end
+
   defp maybe_print_stream_result(%Result{text: text}, printed_delta?) do
     if printed_delta? do
       IO.puts("")
@@ -604,13 +730,22 @@ defmodule ASM.Examples.Common do
       --prompt <text>           Optional. Defaults to the built-in prompt below.
       --model <name>            Optional. Overrides the provider model env var.
       --cli-path <path|command> Optional. Overrides the provider CLI env var and launcher.
-      --permission-mode <mode>  Optional. Defaults to ASM_PERMISSION_MODE when set.
+      --permission-mode <mode>  Optional. Defaults to ASM_PERMISSION_MODE when set, otherwise the examples force bypass mode.
+      --ollama                  Optional. Enables ASM's common Ollama surface when the provider supports it.
+      --ollama-model <name>     Optional. Sets the direct Ollama model id for the common Ollama surface.
+      --ollama-base-url <url>   Optional. Overrides the Ollama base URL for the common Ollama surface.
+      --ollama-http             Optional. Enables plain HTTP for the common Ollama surface when supported.
+      --ollama-timeout-ms <ms>  Optional. Sets the Ollama timeout when supported.
       --cwd <path>              Optional. Runs the provider from a specific working directory.
       --sdk-root <path>         Optional. Loads a sibling provider SDK checkout for sdk-lane or provider-native examples.
       --help                    Print this message.
 
     Default prompt:
       #{default_prompt}
+
+    Runtime defaults:
+      These examples default to ASM permission_mode=:bypass and print the provider-native
+      permission term plus CLI flag before starting the run.
 
     Provider environment:
       #{provider_env_lines}

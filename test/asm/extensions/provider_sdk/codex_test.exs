@@ -9,7 +9,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
     asm_opts = [
       provider: :codex,
       cli_path: "/usr/local/bin/codex",
-      model: "gpt-5-codex",
+      model: "gpt-5.4",
       reasoning_effort: :high
     ]
 
@@ -22,10 +22,17 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
              CodexExtension.codex_options(asm_opts, native_overrides)
 
     assert options.codex_path_override == "/usr/local/bin/codex"
-    assert options.model == "gpt-5-codex"
+    assert options.model == "gpt-5.4"
     assert options.reasoning_effort == :high
     assert options.model_personality == :pragmatic
     assert options.hide_agent_reasoning == true
+  end
+
+  test "codex bridge accepts ASM's canonicalized :codex_exec provider alias" do
+    assert {:ok, %Options{} = options} =
+             CodexExtension.codex_options(provider: :codex_exec, model: "gpt-5.4")
+
+    assert options.model == "gpt-5.4"
   end
 
   test "thread_options/2 maps ASM config and keeps Codex-native thread overrides explicit" do
@@ -60,12 +67,34 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
            }
   end
 
+  test "Codex bridges accept the ASM common Ollama surface" do
+    asm_opts = [
+      provider: :codex,
+      ollama: true,
+      ollama_model: "llama3.2",
+      ollama_base_url: "http://127.0.0.1:11434",
+      permission_mode: :bypass
+    ]
+
+    assert {:ok, %Options{} = codex_options} = CodexExtension.codex_options(asm_opts)
+    assert {:ok, %ThreadOptions{} = thread_options} = CodexExtension.thread_options(asm_opts)
+
+    assert codex_options.model == "llama3.2"
+    assert codex_options.model_payload.provider_backend == :oss
+    assert codex_options.model_payload.backend_metadata["oss_provider"] == "ollama"
+
+    assert thread_options.oss == true
+    assert thread_options.local_provider == "ollama"
+    assert thread_options.model_provider == nil
+    assert thread_options.dangerously_bypass_approvals_and_sandbox == true
+  end
+
   test "thread_options/2 propagates payload-derived model providers" do
     asm_opts = [
       provider: :codex,
       provider_backend: :model_provider,
       model_provider: "gateway",
-      model: "gpt-5-codex"
+      model: "gpt-5.4"
     ]
 
     assert {:ok, %ThreadOptions{} = options} = CodexExtension.thread_options(asm_opts)
@@ -82,7 +111,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
         cwd: "/tmp/asm-codex-session",
         permission_mode: :bypass,
         approval_timeout_ms: 10_000,
-        model: "gpt-5-codex",
+        model: "gpt-5.4",
         reasoning_effort: :medium
       )
 
@@ -139,7 +168,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
     assert {:error, error} =
              CodexExtension.codex_options(
                [provider: :codex, model: "gpt-5.4"],
-               model: "gpt-5-codex"
+               model: "gpt-5.4"
              )
 
     assert error.kind == :config_invalid

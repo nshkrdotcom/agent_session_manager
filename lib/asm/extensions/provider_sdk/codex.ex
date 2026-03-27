@@ -191,16 +191,14 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
 
   defp asm_options_from_session(session, asm_overrides) do
     case ASM.session_info(session) do
-      {:ok, %{provider: :codex, options: options}} when is_list(options) ->
-        {:ok, Keyword.merge(Keyword.put(options, :provider, :codex), asm_overrides)}
+      {:ok, %{provider: provider, options: options}} when is_list(options) ->
+        case resolve_codex_provider(provider) do
+          {:ok, :codex} ->
+            {:ok, Keyword.merge(Keyword.put(options, :provider, :codex), asm_overrides)}
 
-      {:ok, %{provider: provider}} ->
-        {:error,
-         Error.new(
-           :config_invalid,
-           :provider,
-           "Codex extension requires an ASM Codex session, got #{inspect(provider)}"
-         )}
+          {:error, %Error{} = error} ->
+            {:error, error}
+        end
 
       {:error, %Error{} = error} ->
         {:error, error}
@@ -210,18 +208,34 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
   defp validate_asm_options(asm_opts) do
     provider_schema = Provider.resolve!(:codex).options_schema
 
-    case Keyword.get(asm_opts, :provider, :codex) do
-      :codex ->
+    case resolve_codex_provider(Keyword.get(asm_opts, :provider, :codex)) do
+      {:ok, :codex} ->
         Options.validate(Keyword.put(asm_opts, :provider, :codex), provider_schema)
 
-      other ->
-        {:error,
-         Error.new(
-           :config_invalid,
-           :provider,
-           "Codex extension requires provider :codex, got #{inspect(other)}"
-         )}
+      {:error, %Error{} = error} ->
+        {:error, error}
     end
+  end
+
+  defp resolve_codex_provider(provider) do
+    case Provider.resolve(provider) do
+      {:ok, %Provider{name: :codex}} ->
+        {:ok, :codex}
+
+      {:ok, %Provider{name: other}} ->
+        {:error, invalid_provider_error(other)}
+
+      {:error, %Error{}} ->
+        {:error, invalid_provider_error(provider)}
+    end
+  end
+
+  defp invalid_provider_error(provider) do
+    Error.new(
+      :config_invalid,
+      :provider,
+      "Codex extension requires provider :codex, got #{inspect(provider)}"
+    )
   end
 
   defp ensure_native_override_boundary(native_overrides, asm_derived_keys, label)

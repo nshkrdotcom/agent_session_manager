@@ -42,4 +42,17 @@ defmodule ASM.RunAllTest do
     assert output =~
              "run --no-start examples/provider_amp_sdk_stream.exs -- --provider amp --foo bar"
   end
+
+  test "run_all.sh rejects the common Ollama surface for unsupported providers" do
+    assert {output, 1} =
+             System.cmd(
+               "bash",
+               ["examples/run_all.sh", "--provider", "amp", "--ollama"],
+               cd: @project_root,
+               stderr_to_stdout: true
+             )
+
+    assert output =~ "provider amp does not support the ASM common Ollama surface"
+    assert output =~ "only valid for claude and codex"
+  end
 end

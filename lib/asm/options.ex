@@ -3,7 +3,7 @@ defmodule ASM.Options do
   Shared runtime options validation and normalization.
   """
 
-  alias ASM.{Error, Permission}
+  alias ASM.{Error, Permission, ProviderFeatures}
   alias CliSubprocessCore.ModelRegistry
 
   @common_keys [
@@ -14,6 +14,11 @@ defmodule ASM.Options do
     :cwd,
     :env,
     :args,
+    :ollama,
+    :ollama_model,
+    :ollama_base_url,
+    :ollama_http,
+    :ollama_timeout_ms,
     :queue_limit,
     :overflow_policy,
     :subscriber_queue_warn,
@@ -40,6 +45,11 @@ defmodule ASM.Options do
       cwd: [type: {:or, [:string, nil]}, default: nil],
       env: [type: {:custom, __MODULE__, :validate_passthrough_map, [:env]}, default: %{}],
       args: [type: {:list, :string}, default: []],
+      ollama: [type: :boolean, default: false],
+      ollama_model: [type: {:or, [:string, nil]}, default: nil],
+      ollama_base_url: [type: {:or, [:string, nil]}, default: nil],
+      ollama_http: [type: {:or, [:boolean, nil]}, default: nil],
+      ollama_timeout_ms: [type: {:or, [:pos_integer, nil]}, default: nil],
       queue_limit: [type: :pos_integer, default: app_default(:queue_limit, 1_000)],
       overflow_policy: [
         type: {:in, [:fail_run, :drop_oldest, :block]},
@@ -80,8 +90,9 @@ defmodule ASM.Options do
   def validate(opts, provider_schema \\ [])
       when is_list(opts) and is_list(provider_schema) do
     with {:ok, merged_schema} <- merge_provider_schema(provider_schema),
-         {:ok, validated} <- validate_schema(opts, merged_schema) do
-      normalize_permission_modes(validated)
+         {:ok, validated} <- validate_schema(opts, merged_schema),
+         {:ok, validated} <- normalize_permission_modes(validated) do
+      normalize_common_features(validated)
     end
   end
 
@@ -147,6 +158,15 @@ defmodule ASM.Options do
 
   defp app_default(key, default) do
     Application.get_env(:agent_session_manager, key, default)
+  end
+
+  defp normalize_common_features(validated) do
+    validated
+    |> normalize_ollama_surface()
+    |> then(&{:ok, &1})
+  rescue
+    error in [ArgumentError] ->
+      {:error, config_error(Exception.message(error), normalized: validated, exception: error)}
   end
 
   @doc false
@@ -218,10 +238,142 @@ defmodule ASM.Options do
     |> Keyword.delete(:ollama_base_url)
     |> Keyword.delete(:ollama_http)
     |> Keyword.delete(:ollama_timeout_ms)
+    |> Keyword.delete(:ollama)
+    |> Keyword.delete(:ollama_model)
   end
 
   defp maybe_put_reasoning(opts, nil), do: opts
   defp maybe_put_reasoning(opts, reasoning), do: Keyword.put(opts, :reasoning_effort, reasoning)
+
+  defp normalize_ollama_surface(validated) when is_list(validated) do
+    provider = Keyword.fetch!(validated, :provider)
+    feature_provider = canonical_feature_provider(provider)
+
+    if ollama_requested?(validated) do
+      ensure_ollama_supported!(feature_provider)
+
+      case feature_provider do
+        :claude ->
+          normalize_claude_ollama_surface(validated)
+
+        :codex ->
+          normalize_codex_ollama_surface(validated)
+
+        _other ->
+          raise ArgumentError,
+                "provider #{inspect(provider)} does not support the common Ollama surface"
+      end
+    else
+      validated
+    end
+  end
+
+  defp ollama_requested?(validated) when is_list(validated) do
+    Keyword.get(validated, :ollama, false) or
+      Keyword.get(validated, :ollama_model) not in [nil, ""] or
+      Keyword.get(validated, :ollama_base_url) not in [nil, ""] or
+      not is_nil(Keyword.get(validated, :ollama_http)) or
+      not is_nil(Keyword.get(validated, :ollama_timeout_ms))
+  end
+
+  defp ensure_ollama_supported!(provider) when is_atom(provider) do
+    if ProviderFeatures.supports_common_feature?(provider, :ollama) do
+      :ok
+    else
+      raise ArgumentError,
+            "provider #{inspect(provider)} does not support the common Ollama surface"
+    end
+  end
+
+  defp normalize_claude_ollama_surface(validated) do
+    backend = Keyword.get(validated, :provider_backend)
+    ollama_model = present_binary(Keyword.get(validated, :ollama_model))
+    requested_model = present_binary(Keyword.get(validated, :model))
+    external_model_overrides = Keyword.get(validated, :external_model_overrides, %{}) || %{}
+
+    if backend not in [nil, :ollama, "ollama"] do
+      raise ArgumentError,
+            "common Ollama surface conflicts with :provider_backend=#{inspect(backend)} for :claude"
+    end
+
+    overrides =
+      if is_binary(requested_model) and is_binary(ollama_model) and
+           requested_model != ollama_model do
+        merge_claude_ollama_override!(external_model_overrides, requested_model, ollama_model)
+      else
+        external_model_overrides
+      end
+
+    validated
+    |> Keyword.put(:ollama, true)
+    |> Keyword.put(:provider_backend, :ollama)
+    |> maybe_put(:anthropic_base_url, Keyword.get(validated, :ollama_base_url))
+    |> maybe_put(:anthropic_auth_token, Keyword.get(validated, :anthropic_auth_token) || "ollama")
+    |> maybe_put(:model, requested_model || ollama_model)
+    |> Keyword.put(:external_model_overrides, overrides)
+  end
+
+  defp merge_claude_ollama_override!(overrides, requested_model, ollama_model)
+       when is_map(overrides) and is_binary(requested_model) and is_binary(ollama_model) do
+    normalized_overrides =
+      Map.new(overrides, fn {key, value} -> {to_string(key), to_string(value)} end)
+
+    case Map.get(normalized_overrides, requested_model) do
+      nil ->
+        Map.put(normalized_overrides, requested_model, ollama_model)
+
+      ^ollama_model ->
+        normalized_overrides
+
+      other ->
+        raise ArgumentError,
+              "common Ollama surface conflicts with external_model_overrides[#{inspect(requested_model)}]=#{inspect(other)}"
+    end
+  end
+
+  defp normalize_codex_ollama_surface(validated) do
+    backend = Keyword.get(validated, :provider_backend)
+    oss_provider = present_binary(Keyword.get(validated, :oss_provider))
+    ollama_model = present_binary(Keyword.get(validated, :ollama_model))
+    requested_model = present_binary(Keyword.get(validated, :model))
+
+    if backend not in [nil, :oss, "oss"] do
+      raise ArgumentError,
+            "common Ollama surface conflicts with :provider_backend=#{inspect(backend)} for :codex"
+    end
+
+    if oss_provider not in [nil, "ollama"] do
+      raise ArgumentError,
+            "common Ollama surface conflicts with :oss_provider=#{inspect(oss_provider)} for :codex"
+    end
+
+    if is_binary(requested_model) and is_binary(ollama_model) and requested_model != ollama_model do
+      raise ArgumentError,
+            "common Ollama surface :model=#{inspect(requested_model)} conflicts with :ollama_model=#{inspect(ollama_model)} for :codex"
+    end
+
+    validated
+    |> Keyword.put(:ollama, true)
+    |> Keyword.put(:provider_backend, :oss)
+    |> Keyword.put(:oss_provider, "ollama")
+    |> maybe_put(:model, requested_model || ollama_model)
+  end
+
+  defp present_binary(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp present_binary(_value), do: nil
+
+  defp maybe_put(opts, _key, nil), do: opts
+  defp maybe_put(opts, _key, ""), do: opts
+  defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
+
+  defp canonical_feature_provider(:codex_exec), do: :codex
+  defp canonical_feature_provider(provider), do: provider
 
   defp config_error(message, details) do
     Error.new(:config_invalid, :config, message, cause: details)

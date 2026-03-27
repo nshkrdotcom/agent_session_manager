@@ -18,8 +18,9 @@ Supported providers:
 - `README.md` - install, lanes, provider boundaries, and validation workflow
 - `guides/lane-selection.md` - lane discovery and execution fallback rules
 - `guides/provider-backends.md` - core vs SDK backend responsibilities
-- `guides/streaming.md` - stream projection and reducers
-- `guides/remote-nodes.md` - remote execution model
+- `guides/common-and-partial-provider-features.md` - normalized permission terms and partial common features such as Ollama
+- `guides/event-model-and-result-projection.md` - stream projection and reducers
+- `guides/remote-node-execution.md` - remote execution model
 
 ## Why ASM
 
@@ -34,7 +35,7 @@ Supported providers:
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.10.0"}
+    {:agent_session_manager, "~> 0.10.1"}
   ]
 end
 ```
@@ -468,6 +469,31 @@ That bridge is intentionally narrow:
 See [Provider SDK Extensions](guides/provider-sdk-extensions.md) for the
 kernel-versus-extension split and the discovery API.
 
+## Common And Partial Provider Features
+
+ASM keeps the public approval knob normalized as `:permission_mode`, but the
+provider-native terminology still matters for observability, examples, and host
+application UX. `ASM.ProviderFeatures` is the public discovery surface for that
+mapping and for ASM common features that are only supported by some providers.
+
+```elixir
+ASM.ProviderFeatures.permission_mode!(:codex, :yolo).cli_excerpt
+# => "--dangerously-bypass-approvals-and-sandbox"
+
+ASM.ProviderFeatures.common_feature!(:claude, :ollama)
+# => %{supported?: true, activation: %{provider_backend: :ollama}, ...}
+```
+
+The current partial common feature is the ASM Ollama surface:
+
+- Claude: supported
+- Codex: supported
+- Gemini: unsupported
+- Amp: unsupported
+
+See [Common And Partial Provider Features](guides/common-and-partial-provider-features.md)
+for the discovery API and the Claude-versus-Codex Ollama semantics.
+
 ## Event Model And Result Projection
 
 Backends emit core runtime events. `ASM.Run.Server` wraps them into `%ASM.Event{}` values that carry run/session scope plus stable observability metadata. Stream consumers therefore see the same lane and execution metadata that final results expose.
@@ -668,6 +694,7 @@ If you omit `--provider`, the example prints a usage note and exits without runn
 - [Boundary Enforcement](guides/boundary-enforcement.md)
 - [Lane Selection](guides/lane-selection.md)
 - [Provider Backends](guides/provider-backends.md)
+- [Common And Partial Provider Features](guides/common-and-partial-provider-features.md)
 - [Provider SDK Extensions](guides/provider-sdk-extensions.md)
 - [Event Model And Result Projection](guides/event-model-and-result-projection.md)
 - [Approvals And Interrupts](guides/approvals-and-interrupts.md)

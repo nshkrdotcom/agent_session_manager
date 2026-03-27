@@ -18,9 +18,17 @@ ASM.Examples.Common.ensure_provider_sdk_loaded!(:gemini,
 gemini_sdk = Module.concat(["GeminiCliSdk"])
 options_module = Module.concat(["GeminiCliSdk", "Options"])
 
+provider_permission_mode = Keyword.get(config.provider_opts, :provider_permission_mode)
+
 options =
   struct!(options_module, %{
-    model: Keyword.get(config.session_opts, :model),
+    model: Keyword.get(config.provider_opts, :model),
+    yolo: provider_permission_mode == :yolo,
+    approval_mode:
+      case provider_permission_mode do
+        mode when mode in [:auto_edit, :plan] -> mode
+        _other -> nil
+      end,
     timeout_ms: 120_000
   })
 

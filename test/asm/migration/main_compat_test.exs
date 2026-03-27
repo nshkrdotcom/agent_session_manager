@@ -74,7 +74,7 @@ defmodule ASM.Migration.MainCompatTest do
         permission_mode: :full_auto,
         adapter_opts: [
           working_directory: "/tmp/project",
-          model: "gpt-5-codex",
+          model: "gpt-5.4",
           reasoning_effort: :high
         ]
       ]
@@ -91,7 +91,7 @@ defmodule ASM.Migration.MainCompatTest do
       assert spec.session_opts[:tags] == ["migration"]
 
       assert spec.query_opts[:cwd] == "/tmp/project"
-      assert spec.query_opts[:model] == "gpt-5-codex"
+      assert spec.query_opts[:model] == "gpt-5.4"
       assert spec.query_opts[:reasoning_effort] == :high
       assert spec.query_opts[:permission_mode] == :auto
     end

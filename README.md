@@ -179,6 +179,14 @@ data only to `ASM.ProviderBackend.Core` for core transport startup.
 `approval_posture: :none` stays explicit and runtime backends reject unresolved
 starts instead of normalizing it away silently.
 
+Phase D now proves that unchanged execution config path over SSH as well:
+
+- `:static_ssh` and `:leased_ssh` both execute through the generic
+  `surface_kind` plus `transport_options` contract
+- start, stream, interrupt, close, and terminal-error handling stay on the
+  existing ASM surface
+- guest bridge remains deferred and is not exposed as a runtime adapter here
+
 ## Runtime Architecture
 
 Runtime execution path:

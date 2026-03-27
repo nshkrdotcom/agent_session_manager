@@ -164,3 +164,29 @@ metadata-driven rather than a hard rejection in ASM.
 If a custom `ollama_base_url` is supplied, the finalized payload carries it in
 payload-owned runtime data (`CODEX_OSS_BASE_URL`) so downstream core and SDK
 transports can consume the payload alone after normalization.
+
+## Gemini Backend-Specific Model Inputs
+
+Gemini has a narrower surface than Claude or Codex.
+
+Relevant Gemini provider fields:
+
+- `:model`
+
+When ASM bridges into `gemini_cli_sdk`, the Gemini SDK now consumes the shared
+normalized payload instead of re-resolving over an explicit payload. Repo-local
+`GEMINI_MODEL` defaults remain fallback inputs only when the caller did not
+supply a payload.
+
+## Amp Backend-Specific Model Inputs
+
+Amp is intentionally payload-only for model input in the current stack.
+
+Relevant Amp provider fields:
+
+- `:model_payload` only
+
+`amp_sdk` does not expose a second raw model/backend surface. ASM finalizes any
+shared-core model selection before the Amp SDK boundary, and `AmpSdk.Types.Options.validate!/1`
+only canonicalizes a supplied payload rather than inventing another resolution
+path inside the Amp repo.

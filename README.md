@@ -203,6 +203,15 @@ ASM-side rules:
   input, and invalid reasoning effort remain hard failures
 - ASM does not implement a second provider-specific fallback path
 
+Provider-side alignment in the current stack is:
+
+- Claude, Codex, and Gemini SDK repos consume the shared mixed-input normalizer
+  before backend execution
+- Amp exposes a payload-only model contract rather than a second raw model
+  surface
+- ASM always runs after that normalization boundary and passes finalized
+  payloads into both the common core lane and optional SDK lanes
+
 ### Claude Ollama Backend Through ASM
 
 Because ASM resolves Claude model payloads in core first, the Claude Ollama

@@ -201,9 +201,12 @@ defmodule ASM.Options do
           {:ok, keyword()} | {:error, Error.t()}
   def finalize_provider_opts(provider, provider_opts, opts \\ [])
       when is_atom(provider) and is_list(provider_opts) and is_list(opts) do
-    case normalize_model_input(provider, provider_opts, opts) do
-      {:ok, normalized} ->
-        {:ok, normalized.attrs}
+    with :ok <- reject_legacy_transport_surface(provider, provider_opts),
+         {:ok, normalized} <- normalize_model_input(provider, provider_opts, opts) do
+      {:ok, normalized.attrs}
+    else
+      {:error, %Error{} = error} ->
+        {:error, error}
 
       {:error, reason} ->
         {:error,
@@ -257,6 +260,19 @@ defmodule ASM.Options do
       |> Enum.uniq()
 
     ModelInput.normalize(provider, provider_opts, strip_keys: strip_keys)
+  end
+
+  defp reject_legacy_transport_surface(provider, provider_opts) do
+    if Keyword.has_key?(provider_opts, :transport_module) do
+      {:error,
+       config_error(
+         "#{inspect(provider)} no longer accepts :transport_module; transport selection is internal to cli_subprocess_core",
+         provider: provider,
+         option: :transport_module
+       )}
+    else
+      :ok
+    end
   end
 
   defp normalize_ollama_surface(validated) when is_list(validated) do

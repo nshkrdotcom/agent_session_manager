@@ -99,7 +99,7 @@ unless Code.ensure_loaded?(ClaudeAgentSDK.Client) do
 
     defstruct [
       :transport,
-      :transport_module,
+      :transport_api,
       :request_id,
       :server_info,
       initialized?: false,
@@ -126,18 +126,18 @@ unless Code.ensure_loaded?(ClaudeAgentSDK.Client) do
 
     @impl true
     def init({options, client_opts}) do
-      transport_module = Keyword.fetch!(client_opts, :transport)
+      transport_api = Keyword.fetch!(client_opts, :transport)
       transport_opts = [options: options] ++ Keyword.get(client_opts, :transport_opts, [])
 
-      with {:ok, transport} <- start_transport(transport_module, transport_opts),
-           :ok <- transport_module.subscribe(transport, self()),
+      with {:ok, transport} <- start_transport(transport_api, transport_opts),
+           :ok <- transport_api.subscribe(transport, self()),
            {:ok, request_id, init_payload} <- encode_initialize_request() do
-        :ok = transport_module.send(transport, init_payload)
+        :ok = transport_api.send(transport, init_payload)
 
         {:ok,
          %__MODULE__{
            transport: transport,
-           transport_module: transport_module,
+           transport_api: transport_api,
            request_id: request_id,
            server_info: %{}
          }}

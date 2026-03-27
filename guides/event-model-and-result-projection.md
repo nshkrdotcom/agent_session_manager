@@ -22,6 +22,11 @@ Backends emit `CliSubprocessCore.Event` values. `ASM.Run.Server` wraps them as
 
 The original normalized core event remains available in `event.core_event`.
 
+`%ASM.Event{}` remains the ergonomic public envelope. `ASM.Schema.Event`
+validates and normalizes rebuilt event maps, while forward-compatible unknown
+fields are preserved on `event.extra` instead of being silently dropped into
+runtime assumptions.
+
 ## Metadata Flow
 
 Authoritative run metadata comes from lane/backend resolution and is merged with

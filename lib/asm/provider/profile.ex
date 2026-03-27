@@ -4,6 +4,7 @@ defmodule ASM.Provider.Profile do
   """
 
   alias ASM.Error
+  alias ASM.Schema.ProviderOptions, as: ProviderOptionsSchema
 
   defstruct max_concurrent_runs: 1,
             max_queued_runs: 10
@@ -25,12 +26,12 @@ defmodule ASM.Provider.Profile do
   def new(attrs) when is_map(attrs), do: attrs |> Map.to_list() |> new()
 
   def new(attrs) when is_list(attrs) do
-    case NimbleOptions.validate(attrs, schema()) do
+    case ProviderOptionsSchema.parse_profile(attrs) do
       {:ok, validated} ->
         {:ok, struct!(__MODULE__, validated)}
 
-      {:error, %NimbleOptions.ValidationError{} = error} ->
-        {:error, Error.new(:config_invalid, :config, Exception.message(error), cause: error)}
+      {:error, {:invalid_provider_profile, details}} ->
+        {:error, Error.new(:config_invalid, :config, details.message, cause: details)}
     end
   end
 

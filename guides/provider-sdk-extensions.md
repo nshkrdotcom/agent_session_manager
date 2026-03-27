@@ -22,6 +22,14 @@ Those APIs continue to own:
 Provider-native extension discovery now lives under
 `ASM.Extensions.ProviderSDK`.
 
+Schema ownership follows the same split:
+
+- ASM owns orchestration, provider-option, event, and remote-node envelopes.
+- provider-native runtime and protocol schemas stay local to the owning SDK
+  repo.
+- `NimbleOptions` can still front the public ASM keyword API, but `Zoi` is the
+  canonical schema layer underneath new dynamic boundaries.
+
 ## Dependency Model
 
 ASM keeps `cli_subprocess_core` required and all provider SDK packages

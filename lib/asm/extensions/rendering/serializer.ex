@@ -5,18 +5,20 @@ defmodule ASM.Extensions.Rendering.Serializer do
 
   @spec event_to_map(Event.t()) :: map()
   def event_to_map(%Event{} = event) do
-    %{
-      "id" => event.id,
-      "kind" => atom_to_string(event.kind),
-      "run_id" => event.run_id,
-      "session_id" => event.session_id,
-      "provider" => atom_to_string(event.provider),
-      "payload" => to_json_term(event.payload),
-      "sequence" => event.sequence,
-      "timestamp" => datetime_to_iso8601(event.timestamp),
-      "correlation_id" => event.correlation_id,
-      "causation_id" => event.causation_id
-    }
+    event
+    |> Event.to_map()
+    |> Enum.map(fn {key, value} ->
+      serialized =
+        case key do
+          :kind -> atom_to_string(value)
+          :provider -> atom_to_string(value)
+          :timestamp -> datetime_to_iso8601(value)
+          _other -> to_json_term(value)
+        end
+
+      {map_key_to_string(key), serialized}
+    end)
+    |> Map.new()
     |> drop_nil_values()
   end
 

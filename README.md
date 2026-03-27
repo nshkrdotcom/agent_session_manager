@@ -152,6 +152,15 @@ Provider atom form for one-off queries:
 - Per-run overrides: passed to `ASM.stream/3` or `ASM.query/3`.
 - Provider options: validated against provider schemas and handed to the resolved backend lane.
 
+`Zoi` is now the canonical boundary-schema layer for new dynamic ASM boundary
+work. `NimbleOptions` remains at the public keyword ingress during the
+coexistence window, but schema-backed normalization now owns:
+
+- provider-option envelope conformance after keyword validation
+- `%ASM.Event{}` rebuild/serialization boundaries
+- resolved remote-node execution payloads
+- provider profile normalization
+
 Per-run options override session defaults. Session defaults are inherited automatically.
 
 ## Generic Execution-Surface Carriage
@@ -244,6 +253,9 @@ Provider-side alignment in the current stack is:
   surface
 - ASM always runs after that normalization boundary and passes finalized
   payloads into both the common core lane and optional SDK lanes
+
+ASM-local schema ownership stops at orchestration boundaries. Provider-native
+runtime schemas still stay in their owning SDK repos.
 
 ### Claude Ollama Backend Through ASM
 
@@ -550,6 +562,11 @@ for the discovery API and the Claude-versus-Codex Ollama semantics.
 ## Event Model And Result Projection
 
 Backends emit core runtime events. `ASM.Run.Server` wraps them into `%ASM.Event{}` values that carry run/session scope plus stable observability metadata. Stream consumers therefore see the same lane and execution metadata that final results expose.
+
+`%ASM.Event{}` remains the ergonomic runtime envelope, while `ASM.Schema.Event`
+owns parsing and projection for persisted or rebuilt event maps. Forward-
+compatible event maps preserve unknown keys on the struct's `:extra` field
+instead of pushing ad hoc map traversal into callers.
 
 Common metadata keys include:
 

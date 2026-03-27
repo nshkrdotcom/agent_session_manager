@@ -5,6 +5,7 @@ defmodule ASM.Execution.Config do
   """
 
   alias ASM.{Error, Permission}
+  alias ASM.Schema.RemoteNode, as: RemoteNodeSchema
 
   @valid_execution_modes [:local, :remote_node]
   @valid_bootstrap_modes [:require_prestarted, :ensure_started]
@@ -197,8 +198,7 @@ defmodule ASM.Execution.Config do
         Keyword.get(session_stream_opts, :remote_node) ||
         Keyword.get(app_cfg, :remote_node)
 
-    with {:ok, remote_node} <- validate_remote_node(remote_node),
-         {:ok, remote_connect_timeout_ms} <-
+    with {:ok, remote_connect_timeout_ms} <-
            normalize_timeout(
              driver_opts,
              run_stream_opts,
@@ -232,19 +232,17 @@ defmodule ASM.Execution.Config do
                Keyword.get(session_stream_opts, :remote_bootstrap_mode) ||
                Keyword.get(app_cfg, :remote_bootstrap_mode, :require_prestarted)
            ),
-         {:ok, remote_cookie} <-
-           normalize_remote_cookie(Keyword.get(driver_opts, :remote_cookie)),
-         {:ok, remote_cwd} <- normalize_remote_cwd(Keyword.get(driver_opts, :remote_cwd)) do
-      {:ok,
-       %{
-         remote_node: remote_node,
-         remote_cookie: remote_cookie,
-         remote_connect_timeout_ms: remote_connect_timeout_ms,
-         remote_rpc_timeout_ms: remote_rpc_timeout_ms,
-         remote_boot_lease_timeout_ms: remote_boot_lease_timeout_ms,
-         remote_bootstrap_mode: remote_bootstrap_mode,
-         remote_cwd: remote_cwd
-       }}
+         {:ok, remote} <-
+           build_remote_config(
+             remote_node,
+             Keyword.get(driver_opts, :remote_cookie),
+             remote_connect_timeout_ms,
+             remote_rpc_timeout_ms,
+             remote_boot_lease_timeout_ms,
+             remote_bootstrap_mode,
+             Keyword.get(driver_opts, :remote_cwd)
+           ) do
+      {:ok, remote}
     end
   end
 
@@ -264,16 +262,6 @@ defmodule ASM.Execution.Config do
     end
   end
 
-  defp validate_remote_node(remote_node) when is_atom(remote_node) and not is_nil(remote_node),
-    do: {:ok, remote_node}
-
-  defp validate_remote_node(value) do
-    {:error,
-     config_error(
-       "remote_node is required for :remote_node execution mode, got: #{inspect(value)}"
-     )}
-  end
-
   defp normalize_bootstrap_mode(mode) when mode in @valid_bootstrap_modes, do: {:ok, mode}
 
   defp normalize_bootstrap_mode(mode) do
@@ -283,22 +271,40 @@ defmodule ASM.Execution.Config do
      )}
   end
 
-  defp normalize_remote_cookie(nil), do: {:ok, nil}
-  defp normalize_remote_cookie(cookie) when is_atom(cookie), do: {:ok, cookie}
-
-  defp normalize_remote_cookie(cookie) do
-    {:error, config_error("remote_cookie must be an atom, got: #{inspect(cookie)}")}
-  end
-
-  defp normalize_remote_cwd(nil), do: {:ok, nil}
-  defp normalize_remote_cwd(value) when is_binary(value) and value != "", do: {:ok, value}
-
-  defp normalize_remote_cwd(value) do
-    {:error, config_error("remote_cwd must be a non-empty string, got: #{inspect(value)}")}
-  end
-
   defp normalize_pos_integer(value) when is_integer(value) and value > 0, do: {:ok, value}
   defp normalize_pos_integer(_value), do: :error
+
+  defp build_remote_config(
+         remote_node,
+         remote_cookie,
+         remote_connect_timeout_ms,
+         remote_rpc_timeout_ms,
+         remote_boot_lease_timeout_ms,
+         remote_bootstrap_mode,
+         remote_cwd
+       ) do
+    attrs =
+      %{
+        remote_connect_timeout_ms: remote_connect_timeout_ms,
+        remote_rpc_timeout_ms: remote_rpc_timeout_ms,
+        remote_boot_lease_timeout_ms: remote_boot_lease_timeout_ms,
+        remote_bootstrap_mode: remote_bootstrap_mode
+      }
+      |> maybe_put(:remote_node, remote_node)
+      |> maybe_put(:remote_cookie, remote_cookie)
+      |> maybe_put(:remote_cwd, remote_cwd)
+
+    case RemoteNodeSchema.parse(attrs) do
+      {:ok, remote} ->
+        {:ok, remote}
+
+      {:error, {:invalid_remote_node_config, details}} ->
+        {:error, config_error(details.message)}
+    end
+  end
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
   defp resolve_surface_kind(session_stream_opts, run_stream_opts) do
     session_surface_kind = Keyword.get(session_stream_opts, :surface_kind)

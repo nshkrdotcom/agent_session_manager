@@ -10,6 +10,7 @@ defmodule ASM.Event do
   import Bitwise
 
   alias ASM.{Content, Control, Message}
+  alias ASM.Schema.Event, as: EventSchema
   alias CliSubprocessCore.Event, as: CoreEvent
   alias CliSubprocessCore.Payload
 
@@ -31,7 +32,8 @@ defmodule ASM.Event do
     :correlation_id,
     :causation_id,
     :timestamp,
-    metadata: %{}
+    metadata: %{},
+    extra: %{}
   ]
 
   @type kind :: CoreEvent.kind() | :run_completed
@@ -54,7 +56,8 @@ defmodule ASM.Event do
           correlation_id: String.t() | nil,
           causation_id: String.t() | nil,
           timestamp: DateTime.t(),
-          metadata: map()
+          metadata: map(),
+          extra: map()
         }
 
   @crockford ~c"0123456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -86,23 +89,72 @@ defmodule ASM.Event do
 
   @spec new(kind(), payload(), keyword() | map()) :: t()
   def new(kind, payload, attrs \\ []) when is_list(attrs) or is_map(attrs) do
-    attrs = Enum.into(attrs, %{})
+    attrs =
+      attrs
+      |> Enum.into(%{})
+      |> Map.put(:kind, kind)
+      |> Map.put(:payload, payload)
 
-    %__MODULE__{
-      id: Map.get(attrs, :id, generate_id()),
-      run_id: Map.fetch!(attrs, :run_id),
-      session_id: Map.fetch!(attrs, :session_id),
-      provider: Map.get(attrs, :provider),
-      kind: kind,
-      payload: payload,
-      core_event: Map.get(attrs, :core_event),
-      sequence: Map.get(attrs, :sequence),
-      provider_session_id: Map.get(attrs, :provider_session_id),
-      correlation_id: Map.get(attrs, :correlation_id),
-      causation_id: Map.get(attrs, :causation_id),
-      timestamp: Map.get(attrs, :timestamp, DateTime.utc_now()),
-      metadata: normalize_metadata(Map.get(attrs, :metadata, %{}))
+    parse!(attrs)
+  end
+
+  @spec parse(keyword() | map()) ::
+          {:ok, t()} | {:error, {:invalid_asm_event, CliSubprocessCore.Schema.error_detail()}}
+  def parse(attrs) when is_list(attrs) or is_map(attrs) do
+    case EventSchema.parse(attrs) do
+      {:ok, projected} ->
+        {:ok,
+         %__MODULE__{
+           id: Map.fetch!(projected, :id),
+           run_id: Map.fetch!(projected, :run_id),
+           session_id: Map.fetch!(projected, :session_id),
+           provider: Map.get(projected, :provider),
+           kind: Map.fetch!(projected, :kind),
+           payload: Map.get(projected, :payload),
+           core_event: Map.get(projected, :core_event),
+           sequence: Map.get(projected, :sequence),
+           provider_session_id: Map.get(projected, :provider_session_id),
+           correlation_id: Map.get(projected, :correlation_id),
+           causation_id: Map.get(projected, :causation_id),
+           timestamp: Map.fetch!(projected, :timestamp),
+           metadata: normalize_metadata(Map.get(projected, :metadata, %{})),
+           extra: Map.get(projected, :extra, %{})
+         }}
+
+      {:error, {:invalid_asm_event, details}} ->
+        {:error, {:invalid_asm_event, details}}
+    end
+  end
+
+  @spec parse!(keyword() | map()) :: t()
+  def parse!(attrs) when is_list(attrs) or is_map(attrs) do
+    case parse(attrs) do
+      {:ok, event} ->
+        event
+
+      {:error, {:invalid_asm_event, details}} ->
+        raise ArgumentError, details.message
+    end
+  end
+
+  @spec to_map(t()) :: map()
+  def to_map(%__MODULE__{} = event) do
+    %{
+      id: event.id,
+      kind: event.kind,
+      run_id: event.run_id,
+      session_id: event.session_id,
+      provider: event.provider,
+      payload: event.payload,
+      core_event: event.core_event,
+      sequence: event.sequence,
+      provider_session_id: event.provider_session_id,
+      correlation_id: event.correlation_id,
+      causation_id: event.causation_id,
+      timestamp: event.timestamp,
+      metadata: event.metadata
     }
+    |> Map.merge(event.extra)
   end
 
   @spec wrap_core(map(), CoreEvent.t()) :: t()

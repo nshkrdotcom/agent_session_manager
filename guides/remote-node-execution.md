@@ -37,6 +37,11 @@ ASM.query(session, "run locally", execution_mode: :local)
 
 `ASM.ProviderBackend.Core` is the source of truth for remote execution. The optional SDK lane is local-only.
 
+`ASM.Schema.RemoteNode` now owns the resolved remote execution payload after ASM
+applies precedence rules. That keeps remote-node validation in one place and
+preserves forward-compatible fields on the resolved map rather than scattering
+manual checks across the backend path.
+
 ## Lane Behavior In Remote Mode
 
 Lane resolution remains discovery-driven even when the run executes remotely.

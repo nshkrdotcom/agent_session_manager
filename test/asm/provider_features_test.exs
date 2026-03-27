@@ -2,6 +2,7 @@ defmodule ASM.ProviderFeaturesTest do
   use ASM.TestCase
 
   alias ASM.{Options, Provider, ProviderFeatures}
+  alias ASM.Schema.ProviderOptions, as: ProviderOptionsSchema
 
   defmodule LegacyTransportSelectorStub do
     @moduledoc false
@@ -65,6 +66,7 @@ defmodule ASM.ProviderFeaturesTest do
     assert validated[:anthropic_base_url] == "http://127.0.0.1:11434"
     assert validated[:anthropic_auth_token] == "ollama"
     assert validated[:external_model_overrides] == %{"haiku" => "llama3.2"}
+    assert {:ok, ^validated} = ProviderOptionsSchema.validate(validated)
   end
 
   test "common ollama surface maps to Codex backend configuration for arbitrary local models" do
@@ -85,6 +87,7 @@ defmodule ASM.ProviderFeaturesTest do
     assert validated[:oss_provider] == "ollama"
     assert validated[:model] == "llama3.2"
     assert validated[:ollama_base_url] == "http://127.0.0.1:11434"
+    assert {:ok, ^validated} = ProviderOptionsSchema.validate(validated)
   end
 
   test "common ollama surface rejects unsupported providers" do
@@ -101,6 +104,47 @@ defmodule ASM.ProviderFeaturesTest do
              )
 
     assert error.message =~ "does not support the common Ollama surface"
+  end
+
+  test "ASM local provider-option schemas do not absorb foreign provider keys" do
+    assert {:error, {:invalid_provider_options, details}} =
+             ProviderOptionsSchema.validate(
+               provider: :claude,
+               permission_mode: :default,
+               provider_permission_mode: nil,
+               cli_path: nil,
+               cwd: nil,
+               env: %{},
+               args: [],
+               ollama: false,
+               ollama_model: nil,
+               ollama_base_url: nil,
+               ollama_http: nil,
+               ollama_timeout_ms: nil,
+               model_payload: nil,
+               queue_limit: 1_000,
+               overflow_policy: :fail_run,
+               subscriber_queue_warn: 100,
+               subscriber_queue_limit: 500,
+               approval_timeout_ms: 120_000,
+               transport_timeout_ms: 60_000,
+               transport_headless_timeout_ms: 5_000,
+               max_stdout_buffer_bytes: 1_048_576,
+               max_stderr_buffer_bytes: 65_536,
+               max_concurrent_runs: 1,
+               max_queued_runs: 10,
+               debug: false,
+               model: "haiku",
+               provider_backend: :anthropic,
+               external_model_overrides: %{},
+               anthropic_base_url: nil,
+               anthropic_auth_token: nil,
+               include_thinking: false,
+               max_turns: 1,
+               output_schema: %{"type" => "object"}
+             )
+
+    assert details.message =~ "output_schema"
   end
 
   test "codex rejects conflicting model and ollama_model values" do

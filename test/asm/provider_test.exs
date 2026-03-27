@@ -2,6 +2,7 @@ defmodule ASM.ProviderTest do
   use ASM.TestCase
 
   alias ASM.Provider
+  alias ASM.Provider.Profile
 
   test "example_support!/1 returns the canonical example metadata" do
     support = Provider.example_support!(:codex)
@@ -21,5 +22,13 @@ defmodule ASM.ProviderTest do
 
     assert support.cli_command == "amp"
     assert support.install_hint =~ "@sourcegraph/amp"
+  end
+
+  test "provider profiles use the schema-backed closed boundary" do
+    assert {:ok, %Profile{max_concurrent_runs: 2, max_queued_runs: 4}} =
+             Profile.new(max_concurrent_runs: 2, max_queued_runs: 4)
+
+    assert {:error, error} = Profile.new(max_concurrent_runs: 1, future_flag: true)
+    assert error.message =~ "future_flag"
   end
 end

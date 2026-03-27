@@ -100,4 +100,24 @@ defmodule ASM.EventTest do
     assert %Message.Error{kind: :guardrail_blocked, message: "blocked"} =
              Event.legacy_payload(event)
   end
+
+  test "parse/1 rebuilds persisted events and preserves unknown fields" do
+    timestamp = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    assert {:ok, event} =
+             Event.parse(%{
+               "kind" => "assistant_delta",
+               "run_id" => "run-1",
+               "session_id" => "session-1",
+               "provider" => "claude",
+               "payload" => %{"delta" => "hello"},
+               "timestamp" => DateTime.to_iso8601(timestamp),
+               "future_flag" => "kept"
+             })
+
+    assert event.kind == :assistant_delta
+    assert event.provider == :claude
+    assert event.extra == %{"future_flag" => "kept"}
+    assert Event.to_map(event)["future_flag"] == "kept"
+  end
 end

@@ -91,4 +91,15 @@ defmodule ASM.Execution.ConfigTest do
     assert Map.get(cfg, :boundary_class) == :isolated
     assert Map.get(cfg, :observability) == %{suite: :phase_c}
   end
+
+  test "resolve/2 validates remote-node schema-owned fields" do
+    assert {:error, error} =
+             Config.resolve(
+               [execution_mode: :remote_node, driver_opts: [remote_node: :asm@test]],
+               driver_opts: [remote_cookie: "not-an-atom"]
+             )
+
+    assert error.kind == :config_invalid
+    assert error.message =~ "remote_cookie"
+  end
 end

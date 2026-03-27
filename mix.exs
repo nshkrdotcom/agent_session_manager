@@ -52,6 +52,7 @@ defmodule AgentSessionManager.MixProject do
         {:boundary, path: "vendor/boundary", only: [:dev, :test], runtime: false},
         {:jason, "~> 1.4"},
         {:nimble_options, "~> 1.1"},
+        {:zoi, "~> 0.17"},
         {:telemetry, "~> 1.3"},
         {:ex_doc, "~> 0.40", only: :dev, runtime: false},
         {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

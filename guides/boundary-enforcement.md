@@ -2,6 +2,18 @@
 
 ASM uses compile-time boundary checks to keep core runtime modules isolated from optional extension domains.
 
+Compile-time `Boundary` rules are only one part of the contract. Runtime shape
+ownership is now explicit too:
+
+- `Zoi` is the canonical boundary-schema layer for new dynamic ASM boundary
+  work.
+- `ASM.Schema.ProviderOptions`, `ASM.Schema.Event`, and
+  `ASM.Schema.RemoteNode` own ASM-local runtime payloads.
+- provider-native CLI or protocol schemas stay in the provider repos instead of
+  being copied into ASM.
+- `NimbleOptions` remains at the public keyword ingress as a transitional
+  adapter while schema equivalence is proven.
+
 ## Compiler Setup
 
 `mix.exs` enables the boundary compiler before the default Mix compilers:

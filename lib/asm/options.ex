@@ -4,6 +4,7 @@ defmodule ASM.Options do
   """
 
   alias ASM.{Error, Permission, ProviderFeatures}
+  alias ASM.Schema.ProviderOptions, as: ProviderOptionsSchema
   alias CliSubprocessCore.ModelInput
   alias CliSubprocessCore.ModelRegistry.Selection
 
@@ -98,7 +99,16 @@ defmodule ASM.Options do
     with {:ok, merged_schema} <- merge_provider_schema(provider_schema),
          {:ok, validated} <- validate_schema(opts, merged_schema),
          {:ok, validated} <- normalize_permission_modes(validated) do
-      normalize_common_features(validated)
+      with {:ok, normalized} <- normalize_common_features(validated),
+           {:ok, _validated} <- ProviderOptionsSchema.validate(normalized) do
+        {:ok, normalized}
+      else
+        {:error, {:invalid_provider_options, details}} ->
+          {:error, config_error(details.message, validation: details)}
+
+        {:error, %Error{} = error} ->
+          {:error, error}
+      end
     end
   end
 

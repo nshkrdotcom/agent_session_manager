@@ -2,6 +2,7 @@ defmodule ASM.Examples.Common do
   @moduledoc false
 
   alias ASM.{Error, Event, Message, Provider, Result}
+  alias CliSubprocessCore.ProviderCLI.Error, as: CoreProviderCLIError
 
   @type lane :: :auto | :core | :sdk
 
@@ -17,6 +18,7 @@ defmodule ASM.Examples.Common do
         }
 
   @providers [:claude, :gemini, :codex, :amp]
+  @cli_probe_prompt "__ASM_EXAMPLE_CLI_PREFLIGHT__"
 
   @spec example_config!(String.t(), String.t(), String.t(), keyword()) :: t()
   def example_config!(script_name, description, default_prompt, opts \\ [])
@@ -130,31 +132,11 @@ defmodule ASM.Examples.Common do
         }
   def stream_to_result!(session, prompt, opts \\ [])
       when is_pid(session) and is_binary(prompt) and is_list(opts) do
-    {events, printed_delta?} =
-      session
-      |> ASM.stream(prompt, opts)
-      |> Enum.reduce({[], false}, fn %Event{} = event, {events, printed_delta?} ->
-        {[event | events], print_stream_event(event) or printed_delta?}
-      end)
-
-    events = Enum.reverse(events)
+    {events, printed_delta?} = collect_stream_events(session, prompt, opts)
     result = ASM.Stream.final_result(events)
 
-    if printed_delta? do
-      IO.puts("")
-    end
-
-    if not printed_delta? and is_binary(result.text) and result.text != "" do
-      IO.puts(result.text)
-    end
-
-    case result.error do
-      nil ->
-        %{events: events, result: result}
-
-      %Error{} = error ->
-        fail!("stream failed: #{Exception.message(error)}")
-    end
+    maybe_print_stream_result(result, printed_delta?)
+    finalize_stream_result!(events, result)
   end
 
   @spec print_result_summary(Result.t(), keyword()) :: :ok
@@ -318,14 +300,19 @@ defmodule ASM.Examples.Common do
 
   defp build_session_opts(provider, lane, opts) do
     example_support = Provider.example_support!(provider)
-    cli_path = Keyword.get(opts, :cli_path) || System.get_env(example_support.cli_path_env)
+    cli_path = Keyword.get(opts, :cli_path)
 
     []
     |> Keyword.put(:provider, provider)
     |> Keyword.put(:lane, lane)
-    |> put_opt(:cli_path, resolved_cli_path(provider, cli_path))
+    |> put_opt(:cli_path, cli_path)
     |> put_opt(:cwd, Keyword.get(opts, :cwd))
-    |> put_opt(:model, Keyword.get(opts, :model) || System.get_env(example_support.model_env))
+    |> put_opt(
+      :model,
+      Keyword.get(opts, :model) ||
+        System.get_env(example_support.model_env) ||
+        example_support.example_default_model
+    )
     |> put_opt(
       :permission_mode,
       Keyword.get(opts, :permission_mode) || System.get_env("ASM_PERMISSION_MODE")
@@ -336,27 +323,15 @@ defmodule ASM.Examples.Common do
   defp put_opt(opts, _key, ""), do: opts
   defp put_opt(opts, key, value), do: Keyword.put(opts, key, value)
 
-  defp resolved_cli_path(_provider, path) when is_binary(path) and path != "", do: path
-
-  defp resolved_cli_path(provider, _path) do
-    provider
-    |> Provider.example_support!()
-    |> Map.fetch!(:cli_command)
-    |> System.find_executable()
-  end
-
   defp ensure_cli!(provider, opts) do
     case cli_check(provider, opts) do
       :ok ->
         :ok
 
       {:error, %Error{} = error} ->
-        example_support = Provider.example_support!(provider)
-
         IO.puts("""
         CLI resolution failed for #{inspect(provider)}.
         #{Exception.message(error)}
-        Install hint: #{example_support.install_hint}
         """)
 
         System.halt(1)
@@ -364,35 +339,30 @@ defmodule ASM.Examples.Common do
   end
 
   defp cli_check(provider, opts) do
-    with {:ok, %Provider{name: resolved_provider}} <- Provider.resolve(provider),
-         :ok <- ensure_executable(resolved_provider, Keyword.get(opts, :cli_path)) do
-      :ok
-    end
-  end
-
-  defp ensure_executable(_provider, path) when is_binary(path) and path != "" do
-    if File.exists?(path) do
+    with {:ok, %Provider{} = resolved_provider} <- Provider.resolve(provider),
+         {:ok, _invocation} <-
+           resolved_provider.core_profile.build_invocation(cli_probe_opts(opts)) do
       :ok
     else
-      {:error, Error.new(:cli_not_found, :provider, "CLI executable not found at #{path}")}
-    end
-  end
+      {:error, %CoreProviderCLIError{} = error} ->
+        {:error,
+         Error.new(
+           :cli_not_found,
+           :provider,
+           Exception.message(error),
+           cause: error.cause,
+           provider: provider
+         )}
 
-  defp ensure_executable(provider, _path) do
-    command =
-      provider
-      |> Provider.example_support!()
-      |> Map.fetch!(:cli_command)
-
-    if System.find_executable(command) do
-      :ok
-    else
-      {:error,
-       Error.new(
-         :cli_not_found,
-         :provider,
-         "CLI executable #{inspect(command)} not found on PATH"
-       )}
+      {:error, reason} ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :provider,
+           "CLI preflight failed: #{inspect(reason)}",
+           cause: reason,
+           provider: provider
+         )}
     end
   end
 
@@ -564,6 +534,40 @@ defmodule ASM.Examples.Common do
     end
   end
 
+  defp collect_stream_events(session, prompt, opts) do
+    session
+    |> ASM.stream(prompt, opts)
+    |> Enum.reduce({[], false}, fn %Event{} = event, {events, printed_delta?} ->
+      next_printed_delta? = print_stream_event(event) or printed_delta?
+      {[event | events], next_printed_delta?}
+    end)
+    |> then(fn {events, printed_delta?} -> {Enum.reverse(events), printed_delta?} end)
+  end
+
+  defp cli_probe_opts(opts) do
+    []
+    |> Keyword.put(:prompt, @cli_probe_prompt)
+    |> put_opt(:command, Keyword.get(opts, :cli_path))
+  end
+
+  defp maybe_print_stream_result(%Result{text: text}, printed_delta?) do
+    if printed_delta? do
+      IO.puts("")
+    end
+
+    if not printed_delta? and is_binary(text) and text != "" do
+      IO.puts(text)
+    end
+  end
+
+  defp finalize_stream_result!(events, %Result{error: nil} = result) do
+    %{events: events, result: result}
+  end
+
+  defp finalize_stream_result!(_events, %Result{error: %Error{} = error}) do
+    fail!("stream failed: #{Exception.message(error)}")
+  end
+
   defp no_provider_selected_text(script_name, description, default_prompt) do
     """
     #{script_name} did not run because no provider was selected.
@@ -580,12 +584,10 @@ defmodule ASM.Examples.Common do
 
   defp usage_text(script_name, description, default_prompt) do
     provider_env_lines =
-      @providers
-      |> Enum.map(fn provider ->
+      Enum.map_join(@providers, "\n  ", fn provider ->
         example_support = Provider.example_support!(provider)
         "#{provider} -> #{example_support.cli_path_env}, #{example_support.model_env}"
       end)
-      |> Enum.join("\n  ")
 
     """
     #{script_name}
@@ -601,7 +603,7 @@ defmodule ASM.Examples.Common do
       --lane <name>             Optional. One of core, auto, sdk. Defaults to core.
       --prompt <text>           Optional. Defaults to the built-in prompt below.
       --model <name>            Optional. Overrides the provider model env var.
-      --cli-path <path>         Optional. Overrides the provider CLI path env var.
+      --cli-path <path|command> Optional. Overrides the provider CLI env var and launcher.
       --permission-mode <mode>  Optional. Defaults to ASM_PERMISSION_MODE when set.
       --cwd <path>              Optional. Runs the provider from a specific working directory.
       --sdk-root <path>         Optional. Loads a sibling provider SDK checkout for sdk-lane or provider-native examples.
@@ -615,6 +617,7 @@ defmodule ASM.Examples.Common do
     """
   end
 
+  @spec fail!(String.t()) :: no_return()
   defp fail!(message) do
     IO.puts(message)
     System.halt(1)

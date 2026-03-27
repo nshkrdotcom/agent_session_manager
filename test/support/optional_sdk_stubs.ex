@@ -221,8 +221,10 @@ unless Code.ensure_loaded?(ClaudeAgentSDK.Runtime.CLI) do
   defmodule ClaudeAgentSDK.Runtime.CLI do
     @moduledoc false
 
+    alias CliSubprocessCore.ProviderProfiles.Claude
+
     def capabilities do
-      CliSubprocessCore.ProviderProfiles.Claude.capabilities()
+      Claude.capabilities()
     end
   end
 end
@@ -264,6 +266,8 @@ unless Code.ensure_loaded?(Codex.Thread.Options) do
   defmodule Codex.Thread.Options do
     @moduledoc false
 
+    alias Codex.Protocol.CollaborationMode
+
     defstruct working_directory: nil,
               cd: nil,
               approval_timeout_ms: nil,
@@ -287,11 +291,11 @@ unless Code.ensure_loaded?(Codex.Thread.Options) do
     end
 
     defp normalize_collaboration_mode(%{"collaboration_mode" => %{} = mode} = attrs) do
-      Map.put(attrs, "collaboration_mode", Codex.Protocol.CollaborationMode.new(mode))
+      Map.put(attrs, "collaboration_mode", CollaborationMode.new(mode))
     end
 
     defp normalize_collaboration_mode(%{collaboration_mode: %{} = mode} = attrs) do
-      Map.put(attrs, :collaboration_mode, Codex.Protocol.CollaborationMode.new(mode))
+      Map.put(attrs, :collaboration_mode, CollaborationMode.new(mode))
     end
 
     defp normalize_collaboration_mode(attrs), do: attrs
@@ -445,8 +449,10 @@ unless Code.ensure_loaded?(GeminiCliSdk.Runtime.CLI) do
   defmodule GeminiCliSdk.Runtime.CLI do
     @moduledoc false
 
+    alias CliSubprocessCore.ProviderProfiles.Gemini
+
     def capabilities do
-      CliSubprocessCore.ProviderProfiles.Gemini.capabilities()
+      Gemini.capabilities()
     end
   end
 end
@@ -478,8 +484,10 @@ unless Code.ensure_loaded?(AmpSdk.Runtime.CLI) do
   defmodule AmpSdk.Runtime.CLI do
     @moduledoc false
 
+    alias CliSubprocessCore.ProviderProfiles.Amp
+
     def capabilities do
-      CliSubprocessCore.ProviderProfiles.Amp.capabilities()
+      Amp.capabilities()
     end
   end
 end

@@ -11,9 +11,17 @@ defmodule ASM.Examples.CommonTest do
   setup do
     env_vars = [
       "AMP_SDK_ROOT",
+      "AMP_CLI_PATH",
       "ASM_PERMISSION_MODE",
+      "ASM_AMP_MODEL",
+      "ASM_CLAUDE_MODEL",
+      "ASM_CODEX_MODEL",
+      "ASM_GEMINI_MODEL",
       "CLAUDE_AGENT_SDK_ROOT",
+      "CLAUDE_CLI_PATH",
       "CODEX_SDK_ROOT",
+      "CODEX_PATH",
+      "GEMINI_CLI_PATH",
       "GEMINI_CLI_SDK_ROOT"
     ]
 
@@ -48,6 +56,32 @@ defmodule ASM.Examples.CommonTest do
     assert config.lane == :core
     assert config.sdk_root == nil
     assert config.session_opts[:cli_path] == @cli_path
+  end
+
+  test "provider CLI env remains resolver-owned for common examples" do
+    System.put_env("GEMINI_CLI_PATH", "gemini")
+
+    assert {:ok, config} =
+             Common.build_example_config(
+               ["--provider", "gemini"],
+               @script_name,
+               @description,
+               @default_prompt
+             )
+
+    refute Keyword.has_key?(config.session_opts, :cli_path)
+  end
+
+  test "gemini examples default to flash when no explicit model is provided" do
+    assert {:ok, config} =
+             Common.build_example_config(
+               ["--provider", "gemini"],
+               @script_name,
+               @description,
+               @default_prompt
+             )
+
+    assert config.session_opts[:model] == "gemini-2.5-flash"
   end
 
   test "sdk lane resolves SDK root from provider env" do

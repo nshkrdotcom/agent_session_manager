@@ -3,6 +3,7 @@ defmodule ASM.Extensions.ProviderSDKTest do
 
   alias ASM.Extensions.ProviderSDK
   alias ASM.ProviderRegistry
+  alias ASM.TestSupport.OptionalSDK
 
   setup do
     original = Application.get_env(:agent_session_manager, ASM.ProviderRegistry)
@@ -10,8 +11,7 @@ defmodule ASM.Extensions.ProviderSDKTest do
     Application.put_env(
       :agent_session_manager,
       ASM.ProviderRegistry,
-      runtime_loader:
-        ASM.TestSupport.OptionalSDK.loaded_runtime_loader([:amp, :claude, :codex, :gemini])
+      runtime_loader: OptionalSDK.loaded_runtime_loader([:amp, :claude, :codex, :gemini])
     )
 
     on_exit(fn ->

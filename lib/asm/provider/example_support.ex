@@ -1,5 +1,7 @@
 defmodule ASM.Provider.ExampleSupport do
-  @moduledoc false
+  @moduledoc """
+  Provider-specific values used by examples and setup guidance.
+  """
 
   @enforce_keys [
     :cli_command,
@@ -15,6 +17,7 @@ defmodule ASM.Provider.ExampleSupport do
     :cli_path_env,
     :install_hint,
     :model_env,
+    :example_default_model,
     :sdk_app,
     :sdk_repo_dir,
     :sdk_root_env,
@@ -26,6 +29,7 @@ defmodule ASM.Provider.ExampleSupport do
           cli_path_env: String.t(),
           install_hint: String.t(),
           model_env: String.t(),
+          example_default_model: String.t() | nil,
           sdk_app: atom(),
           sdk_repo_dir: String.t(),
           sdk_root_env: String.t(),

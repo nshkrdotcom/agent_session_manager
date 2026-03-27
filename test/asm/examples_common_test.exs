@@ -2,6 +2,7 @@ defmodule ASM.Examples.CommonTest do
   use ASM.SerialTestCase
 
   alias ASM.Examples.Common
+  alias ASM.{Options, Provider}
   alias CliSubprocessCore.ModelRegistry.Selection
 
   @script_name "live_query.exs"
@@ -133,7 +134,10 @@ defmodule ASM.Examples.CommonTest do
                ],
                @script_name,
                @description,
-               @default_prompt
+               @default_prompt,
+               provider_opts_builder: fn provider, session_opts ->
+                 finalized_provider_opts(provider, session_opts, claude_ollama_payload())
+               end
              )
 
     payload = Keyword.fetch!(config.provider_opts, :model_payload)
@@ -156,7 +160,10 @@ defmodule ASM.Examples.CommonTest do
                ],
                @script_name,
                @description,
-               @default_prompt
+               @default_prompt,
+               provider_opts_builder: fn provider, session_opts ->
+                 finalized_provider_opts(provider, session_opts, codex_ollama_payload())
+               end
              )
 
     payload = Keyword.fetch!(config.provider_opts, :model_payload)
@@ -328,5 +335,70 @@ defmodule ASM.Examples.CommonTest do
       sdk_root: nil,
       permission_source: :example_default_bypass
     }
+  end
+
+  defp finalized_provider_opts(provider, session_opts, model_payload)
+       when is_atom(provider) and is_list(session_opts) do
+    provider_schema = Provider.resolve!(provider).options_schema
+
+    with {:ok, validated} <-
+           Options.validate(Keyword.drop(session_opts, [:lane]), provider_schema) do
+      provider
+      |> Options.finalize_provider_opts(
+        validated
+        |> Keyword.delete(:provider)
+        |> Keyword.put(:model_payload, model_payload)
+      )
+    end
+  end
+
+  defp claude_ollama_payload do
+    Selection.new(%{
+      provider: :claude,
+      requested_model: "haiku",
+      resolved_model: "llama3.2",
+      resolution_source: :explicit,
+      reasoning: nil,
+      reasoning_effort: nil,
+      normalized_reasoning_effort: nil,
+      model_family: "llama",
+      catalog_version: nil,
+      visibility: :public,
+      provider_backend: :ollama,
+      model_source: :external,
+      env_overrides: %{
+        "ANTHROPIC_AUTH_TOKEN" => "ollama",
+        "ANTHROPIC_API_KEY" => "",
+        "ANTHROPIC_BASE_URL" => "http://localhost:11434"
+      },
+      settings_patch: %{},
+      backend_metadata: %{"external_model" => "llama3.2"},
+      errors: []
+    })
+  end
+
+  defp codex_ollama_payload do
+    Selection.new(%{
+      provider: :codex,
+      requested_model: "llama3.2",
+      resolved_model: "llama3.2",
+      resolution_source: :explicit,
+      reasoning: "high",
+      reasoning_effort: nil,
+      normalized_reasoning_effort: nil,
+      model_family: "llama",
+      catalog_version: nil,
+      visibility: :public,
+      provider_backend: :oss,
+      model_source: :external,
+      env_overrides: %{"CODEX_OSS_BASE_URL" => "http://localhost:11434/v1"},
+      settings_patch: %{},
+      backend_metadata: %{
+        "oss_provider" => "ollama",
+        "external_model" => "llama3.2",
+        "support_tier" => "runtime_validated_only"
+      },
+      errors: []
+    })
   end
 end

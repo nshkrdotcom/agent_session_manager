@@ -4,6 +4,7 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
   alias ASM.Extensions.ProviderSDK.Claude
   alias ClaudeAgentSDK.{Client, Hooks, Options}
   alias ClaudeAgentSDK.Hooks.Matcher
+  alias CliSubprocessCore.ModelRegistry.Selection
 
   defmodule MockTransport do
     @moduledoc false
@@ -121,6 +122,7 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
       ollama: true,
       ollama_model: "llama3.2",
       ollama_base_url: "http://127.0.0.1:11434",
+      model_payload: claude_ollama_payload(),
       permission_mode: :bypass
     ]
 
@@ -251,5 +253,30 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
     :ok
   catch
     :exit, _ -> :ok
+  end
+
+  defp claude_ollama_payload do
+    Selection.new(%{
+      provider: :claude,
+      requested_model: "haiku",
+      resolved_model: "llama3.2",
+      resolution_source: :explicit,
+      reasoning: nil,
+      reasoning_effort: nil,
+      normalized_reasoning_effort: nil,
+      model_family: "llama",
+      catalog_version: nil,
+      visibility: :public,
+      provider_backend: :ollama,
+      model_source: :external,
+      env_overrides: %{
+        "ANTHROPIC_AUTH_TOKEN" => "ollama",
+        "ANTHROPIC_API_KEY" => "",
+        "ANTHROPIC_BASE_URL" => "http://127.0.0.1:11434"
+      },
+      settings_patch: %{},
+      backend_metadata: %{"external_model" => "llama3.2"},
+      errors: []
+    })
   end
 end

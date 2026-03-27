@@ -117,13 +117,13 @@ defmodule ASM.ProviderFeaturesTest do
     assert error.message =~ ":ollama_model"
   end
 
-  test "finalize_provider_opts rejects legacy transport_module overrides" do
+  test "finalize_provider_opts rejects legacy transport-selector overrides" do
     assert {:error, error} =
              Options.finalize_provider_opts(:claude,
                model: "haiku",
                transport_module: ClaudeAgentSDK.Transport
              )
 
-    assert error.message =~ "no longer accepts :transport_module"
+    assert error.message =~ "no longer accepts legacy transport-selector overrides"
   end
 end

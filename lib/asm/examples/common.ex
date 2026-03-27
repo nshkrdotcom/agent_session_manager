@@ -50,6 +50,7 @@ defmodule ASM.Examples.Common do
       when is_list(argv) and is_binary(script_name) and is_binary(description) and
              is_binary(default_prompt) and is_list(opts) do
     provider_sdk? = Keyword.get(opts, :provider_sdk?, false)
+    provider_opts_builder = Keyword.get(opts, :provider_opts_builder, &build_provider_opts/2)
 
     {parsed_opts, positional, invalid} =
       normalized_argv(argv)
@@ -89,7 +90,8 @@ defmodule ASM.Examples.Common do
           script_name,
           description,
           default_prompt,
-          provider_sdk?
+          provider_sdk?,
+          provider_opts_builder
         )
     end
   end
@@ -299,7 +301,8 @@ defmodule ASM.Examples.Common do
          script_name,
          description,
          default_prompt,
-         provider_sdk?
+         provider_sdk?,
+         provider_opts_builder
        ) do
     case parse_provider(Keyword.get(parsed_opts, :provider)) do
       :missing ->
@@ -318,7 +321,8 @@ defmodule ASM.Examples.Common do
           script_name,
           description,
           default_prompt,
-          provider_sdk?
+          provider_sdk?,
+          provider_opts_builder
         )
     end
   end
@@ -330,7 +334,8 @@ defmodule ASM.Examples.Common do
          script_name,
          description,
          default_prompt,
-         provider_sdk?
+         provider_sdk?,
+         provider_opts_builder
        ) do
     usage = usage_text(script_name, description, default_prompt)
 
@@ -346,7 +351,8 @@ defmodule ASM.Examples.Common do
           sdk_root,
           session_opts,
           permission_source,
-          usage
+          usage,
+          provider_opts_builder
         )
 
       {:error, message} ->
@@ -361,9 +367,10 @@ defmodule ASM.Examples.Common do
          sdk_root,
          session_opts,
          permission_source,
-         usage
+         usage,
+         provider_opts_builder
        ) do
-    case build_provider_opts(provider, session_opts) do
+    case provider_opts_builder.(provider, session_opts) do
       {:ok, provider_opts} ->
         {:ok,
          %__MODULE__{

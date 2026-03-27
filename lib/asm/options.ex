@@ -266,9 +266,9 @@ defmodule ASM.Options do
     if Keyword.has_key?(provider_opts, :transport_module) do
       {:error,
        config_error(
-         "#{inspect(provider)} no longer accepts :transport_module; transport selection is internal to cli_subprocess_core",
+         "#{inspect(provider)} no longer accepts legacy transport-selector overrides; transport selection is internal to cli_subprocess_core",
          provider: provider,
-         option: :transport_module
+         option: :transport_selector
        )}
     else
       :ok

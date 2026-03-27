@@ -74,12 +74,21 @@ Unsupported:
 
 `run_all.sh` rejects `--ollama*` flags immediately for unsupported providers.
 
+Provider semantics differ slightly:
+
+- Claude keeps the canonical Claude model slot. Use `--model` for the Claude
+  family name such as `haiku`, and `--ollama-model` for the actual Ollama
+  model id.
+- Codex uses the direct Ollama model id. `--ollama-model` is the effective
+  model selection knob for the common Ollama surface.
+
 ## Run One Example
 
 ```bash
 mix run --no-start examples/live_query.exs -- --provider claude
 mix run --no-start examples/live_stream.exs -- --provider gemini
 mix run --no-start examples/live_session_lifecycle.exs -- --provider codex --model gpt-5.4
+mix run --no-start examples/live_query.exs -- --provider claude --ollama --model haiku --ollama-model llama3.2
 mix run --no-start examples/live_query.exs -- --provider codex --ollama --ollama-model llama3.2
 mix run --no-start examples/live_query.exs -- --provider amp --lane sdk --sdk-root ../amp_sdk
 mix run --no-start examples/provider_codex_app_server.exs -- --provider codex --ollama --ollama-model llama3.2
@@ -100,6 +109,8 @@ Shared flags:
 ```bash
 ./examples/run_all.sh --provider claude
 ./examples/run_all.sh --provider codex --model gpt-5.4
+./examples/run_all.sh --provider claude --ollama --model haiku --ollama-model llama3.2
+./examples/run_all.sh --provider codex --ollama --ollama-model llama3.2
 ./examples/run_all.sh --provider claude --provider codex --ollama --ollama-model llama3.2
 ./examples/run_all.sh --provider amp --lane sdk --sdk-root ../amp_sdk
 ```

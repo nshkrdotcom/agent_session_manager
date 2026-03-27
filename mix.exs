@@ -1,6 +1,7 @@
 defmodule AgentSessionManager.MixProject do
   use Mix.Project
 
+  @app :agent_session_manager
   @version "0.10.1"
   @source_url "https://github.com/nshkrdotcom/agent_session_manager"
   @homepage_url "https://hex.pm/packages/agent_session_manager"
@@ -10,7 +11,7 @@ defmodule AgentSessionManager.MixProject do
 
   def project do
     [
-      app: :agent_session_manager,
+      app: @app,
       version: @version,
       elixir: "~> 1.18",
       compilers: project_compilers(),
@@ -46,25 +47,20 @@ defmodule AgentSessionManager.MixProject do
   end
 
   defp deps do
-    [
-      workspace_dep(
-        :cli_subprocess_core,
-        "../cli_subprocess_core",
-        @cli_subprocess_core_requirement,
-        github: @cli_subprocess_core_repo
-      ),
-      {:boundary, path: "vendor/boundary", only: [:dev, :test], runtime: false},
-      {:jason, "~> 1.4"},
-      {:nimble_options, "~> 1.1"},
-      {:telemetry, "~> 1.3"},
-      {:ex_doc, "~> 0.40", only: :dev, runtime: false},
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
-      {:nimble_ownership, "~> 1.0", only: :test},
-      {:stream_data, "~> 1.1", only: :test},
-      {:mox, "~> 1.1", only: :test},
-      {:supertester, "~> 0.6.0", only: :test}
-    ]
+    workspace_deps() ++
+      [
+        {:boundary, path: "vendor/boundary", only: [:dev, :test], runtime: false},
+        {:jason, "~> 1.4"},
+        {:nimble_options, "~> 1.1"},
+        {:telemetry, "~> 1.3"},
+        {:ex_doc, "~> 0.40", only: :dev, runtime: false},
+        {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+        {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
+        {:nimble_ownership, "~> 1.0", only: :test},
+        {:stream_data, "~> 1.1", only: :test},
+        {:mox, "~> 1.1", only: :test},
+        {:supertester, "~> 0.6.0", only: :test}
+      ]
   end
 
   defp description do
@@ -76,18 +72,40 @@ defmodule AgentSessionManager.MixProject do
       plt_add_apps: [:mix, :ex_unit],
       plt_core_path: "priv/plts/core",
       plt_local_path: "priv/plts",
-      plt_file: {:no_warn, "priv/plts/#{dialyzer_plt_basename()}.plt"}
+      plt_ignore_apps: workspace_apps(),
+      paths: [project_ebin_path() | workspace_dialyzer_paths()]
     ]
   end
 
-  defp dialyzer_plt_basename do
-    "project-#{@version}-core-#{dialyzer_token(@cli_subprocess_core_requirement)}"
+  defp workspace_deps do
+    Enum.map(workspace_dep_specs(), fn {app, path, requirement, opts} ->
+      workspace_dep(app, path, requirement, opts)
+    end)
   end
 
-  defp dialyzer_token(value) when is_binary(value) do
-    value
-    |> String.replace(~r/[^0-9A-Za-z]+/, "-")
-    |> String.trim("-")
+  defp workspace_dep_specs do
+    [
+      {:cli_subprocess_core, "../cli_subprocess_core", @cli_subprocess_core_requirement,
+       github: @cli_subprocess_core_repo}
+    ]
+  end
+
+  defp workspace_apps do
+    Enum.map(workspace_dep_specs(), &elem(&1, 0))
+  end
+
+  defp workspace_dialyzer_paths do
+    Enum.map(workspace_apps(), fn app ->
+      build_ebin_path(app)
+    end)
+  end
+
+  defp project_ebin_path do
+    build_ebin_path(@app)
+  end
+
+  defp build_ebin_path(app) when is_atom(app) do
+    Path.join(["_build", Atom.to_string(Mix.env()), "lib", Atom.to_string(app), "ebin"])
   end
 
   defp package do

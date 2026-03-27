@@ -23,7 +23,7 @@ Usage:
   ./examples/run_all.sh --provider claude
   ./examples/run_all.sh --provider codex --model gpt-5.4
   ./examples/run_all.sh --provider claude --ollama --model haiku --ollama-model llama3.2
-  ./examples/run_all.sh --provider codex --ollama --ollama-model llama3.2
+  ./examples/run_all.sh --provider codex --ollama --ollama-model gpt-oss:20b
   ./examples/run_all.sh --provider claude --provider codex --ollama --ollama-model llama3.2
   ./examples/run_all.sh --provider claude --provider gemini
   ./examples/run_all.sh --provider amp --lane sdk --sdk-root ../amp_sdk

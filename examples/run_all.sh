@@ -21,8 +21,12 @@ run_all.sh only runs when you explicitly choose one or more providers.
 
 Usage:
   ./examples/run_all.sh --provider claude
-  ./examples/run_all.sh --provider claude --provider gemini
   ./examples/run_all.sh --provider codex --model gpt-5.4
+  ./examples/run_all.sh --provider claude --ollama --model haiku --ollama-model llama3.2
+  ./examples/run_all.sh --provider codex --ollama --ollama-model llama3.2
+  ./examples/run_all.sh --provider claude --provider codex --ollama --ollama-model llama3.2
+  ./examples/run_all.sh --provider claude --provider gemini
+  ./examples/run_all.sh --provider amp --lane sdk --sdk-root ../amp_sdk
 
 Notes:
   - Repeat --provider or pass a comma-separated list.

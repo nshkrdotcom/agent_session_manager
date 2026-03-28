@@ -26,10 +26,9 @@ defmodule ASM.Extensions.ProviderSDK do
   use Boundary,
     deps: [ASM],
     exports: [
-      ASM.Extensions.ProviderSDK,
-      ASM.Extensions.ProviderSDK.Extension,
-      ASM.Extensions.ProviderSDK.Claude,
-      ASM.Extensions.ProviderSDK.Codex
+      Extension,
+      Claude,
+      Codex
     ]
 
   alias ASM.{Error, Provider, ProviderRegistry}

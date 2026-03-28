@@ -4,6 +4,7 @@ defmodule ASM.Extensions.ProviderSDKTest do
   alias ASM.Extensions.ProviderSDK
   alias ASM.ProviderRegistry
   alias ASM.TestSupport.OptionalSDK
+  alias Boundary.Mix.View
 
   setup do
     original = Application.get_env(:agent_session_manager, ASM.ProviderRegistry)
@@ -119,7 +120,8 @@ defmodule ASM.Extensions.ProviderSDKTest do
     assert is_boolean(ProviderSDK.available?(:claude))
     assert is_boolean(ProviderSDK.available?(ASM.Extensions.ProviderSDK.Codex))
 
-    refute ASM.Extensions.ProviderSDK in ASM.__boundary__(:exports)
+    asm_boundary = Boundary.fetch!(View.build(), ASM)
+    refute ASM.Extensions.ProviderSDK in asm_boundary.exports
   end
 
   test "extension/1 returns a config error for unknown providers" do

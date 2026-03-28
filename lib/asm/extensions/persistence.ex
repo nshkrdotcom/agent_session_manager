@@ -9,11 +9,10 @@ defmodule ASM.Extensions.Persistence do
   use Boundary,
     deps: [ASM],
     exports: [
-      ASM.Extensions.Persistence,
-      ASM.Extensions.Persistence.Adapter,
-      ASM.Extensions.Persistence.FileStore,
-      ASM.Extensions.Persistence.PipelinePlug,
-      ASM.Extensions.Persistence.Writer
+      Adapter,
+      FileStore,
+      PipelinePlug,
+      Writer
     ]
 
   alias ASM.{Error, Event, History, Store}

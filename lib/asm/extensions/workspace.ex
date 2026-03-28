@@ -9,12 +9,11 @@ defmodule ASM.Extensions.Workspace do
   use Boundary,
     deps: [ASM],
     exports: [
-      ASM.Extensions.Workspace,
-      ASM.Extensions.Workspace.Backend,
-      ASM.Extensions.Workspace.Diff,
-      ASM.Extensions.Workspace.GitBackend,
-      ASM.Extensions.Workspace.HashBackend,
-      ASM.Extensions.Workspace.Snapshot
+      Backend,
+      Diff,
+      GitBackend,
+      HashBackend,
+      Snapshot
     ]
 
   alias ASM.Error

@@ -18,14 +18,13 @@ defmodule ASM.Extensions.PubSub do
   use Boundary,
     deps: [ASM],
     exports: [
-      ASM.Extensions.PubSub,
-      ASM.Extensions.PubSub.Adapter,
-      ASM.Extensions.PubSub.Adapters.Local,
-      ASM.Extensions.PubSub.Adapters.Phoenix,
-      ASM.Extensions.PubSub.Broadcaster,
-      ASM.Extensions.PubSub.Payload,
-      ASM.Extensions.PubSub.PipelinePlug,
-      ASM.Extensions.PubSub.Topic
+      Adapter,
+      Adapters.Local,
+      Adapters.Phoenix,
+      Broadcaster,
+      Payload,
+      PipelinePlug,
+      Topic
     ]
 
   alias ASM.{Error, Event}

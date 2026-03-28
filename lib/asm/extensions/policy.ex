@@ -9,9 +9,8 @@ defmodule ASM.Extensions.Policy do
   use Boundary,
     deps: [ASM],
     exports: [
-      ASM.Extensions.Policy,
-      ASM.Extensions.Policy.Enforcer,
-      ASM.Extensions.Policy.Violation
+      Enforcer,
+      Violation
     ]
 
   alias ASM.{Error, Event}

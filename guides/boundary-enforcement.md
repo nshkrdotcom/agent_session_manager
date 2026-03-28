@@ -25,7 +25,7 @@ compilers: [:boundary | Mix.compilers()]
 Boundary support is added as a compile-time dependency:
 
 ```elixir
-{:boundary, path: "vendor/boundary", runtime: false}
+{:boundary, "~> 0.10.4", only: [:dev, :test], runtime: false}
 ```
 
 ## Declared Boundaries

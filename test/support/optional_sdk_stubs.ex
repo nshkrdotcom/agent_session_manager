@@ -14,9 +14,38 @@ defmodule ASM.TestSupport.OptionalSDK do
   end
 end
 
+workspace_build_glob = fn repo, env ->
+  Path.expand("../../../#{repo}/_build/#{env}/lib/*/ebin", __DIR__)
+end
+
+workspace_provider_ebins =
+  ["codex_sdk", "claude_agent_sdk", "gemini_cli_sdk", "amp_sdk"]
+  |> Enum.flat_map(fn repo ->
+    test_paths = workspace_build_glob.(repo, "test") |> Path.wildcard()
+
+    if test_paths == [] do
+      workspace_build_glob.(repo, "dev") |> Path.wildcard()
+    else
+      test_paths
+    end
+  end)
+  |> Enum.uniq()
+
+Code.prepend_paths(workspace_provider_ebins)
+
+unless Code.ensure_loaded?(ClaudeAgentSDK) do
+  defmodule ClaudeAgentSDK do
+    @moduledoc false
+
+    use Boundary, check: [in: false, out: false]
+  end
+end
+
 unless Code.ensure_loaded?(ClaudeAgentSDK.Transport) do
   defmodule ClaudeAgentSDK.Transport do
     @moduledoc false
+
+    use Boundary, check: [in: false, out: false]
 
     @callback start(keyword()) :: GenServer.on_start()
     @callback start_link(keyword()) :: GenServer.on_start()
@@ -35,6 +64,7 @@ unless Code.ensure_loaded?(ClaudeAgentSDK.Options) do
               env: %{},
               path_to_claude_code_executable: nil,
               permission_mode: nil,
+              execution_surface: nil,
               model_payload: nil,
               model: nil,
               max_turns: nil,
@@ -251,6 +281,7 @@ unless Code.ensure_loaded?(Codex.Options) do
     defstruct model_payload: nil,
               model: nil,
               reasoning_effort: nil,
+              execution_surface: nil,
               codex_path_override: nil,
               codex_path: nil,
               model_personality: nil,
@@ -307,6 +338,7 @@ unless Code.ensure_loaded?(Codex.Exec.Options) do
     @moduledoc false
 
     defstruct codex_opts: nil,
+              execution_surface: nil,
               thread: nil,
               timeout_ms: nil,
               max_stderr_buffer_bytes: nil
@@ -374,6 +406,8 @@ unless Code.ensure_loaded?(Codex) do
   defmodule Codex do
     @moduledoc false
 
+    use Boundary, check: [in: false, out: false]
+
     def start_thread(%Codex.Options{} = codex_opts, %Codex.Thread.Options{} = thread_opts) do
       {:ok,
        %Codex.Thread{
@@ -426,12 +460,21 @@ unless Code.ensure_loaded?(Codex.Runtime.Exec) do
   end
 end
 
+unless Code.ensure_loaded?(GeminiCliSdk) do
+  defmodule GeminiCliSdk do
+    @moduledoc false
+
+    use Boundary, check: [in: false, out: false]
+  end
+end
+
 unless Code.ensure_loaded?(GeminiCliSdk.Options) do
   defmodule GeminiCliSdk.Options do
     @moduledoc false
 
     defstruct model_payload: nil,
               model: nil,
+              execution_surface: nil,
               yolo: false,
               approval_mode: nil,
               sandbox: false,
@@ -457,6 +500,14 @@ unless Code.ensure_loaded?(GeminiCliSdk.Runtime.CLI) do
   end
 end
 
+unless Code.ensure_loaded?(AmpSdk) do
+  defmodule AmpSdk do
+    @moduledoc false
+
+    use Boundary, check: [in: false, out: false]
+  end
+end
+
 unless Code.ensure_loaded?(AmpSdk.Types) do
   defmodule AmpSdk.Types do
     @moduledoc false
@@ -469,6 +520,7 @@ unless Code.ensure_loaded?(AmpSdk.Types.Options) do
 
     defstruct model_payload: nil,
               cwd: nil,
+              execution_surface: nil,
               mode: "smart",
               dangerously_allow_all: false,
               env: %{},

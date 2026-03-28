@@ -9,13 +9,12 @@ defmodule ASM.Extensions.Routing do
   use Boundary,
     deps: [ASM],
     exports: [
-      ASM.Extensions.Routing,
-      ASM.Extensions.Routing.HealthTracker,
-      ASM.Extensions.Routing.Router,
-      ASM.Extensions.Routing.Strategy,
-      ASM.Extensions.Routing.Strategy.Priority,
-      ASM.Extensions.Routing.Strategy.RoundRobin,
-      ASM.Extensions.Routing.Strategy.Weighted
+      HealthTracker,
+      Router,
+      Strategy,
+      Strategy.Priority,
+      Strategy.RoundRobin,
+      Strategy.Weighted
     ]
 
   alias ASM.Extensions.Routing.Router

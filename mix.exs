@@ -49,7 +49,7 @@ defmodule AgentSessionManager.MixProject do
   defp deps do
     workspace_deps() ++
       [
-        {:boundary, path: "vendor/boundary", only: [:dev, :test], runtime: false},
+        {:boundary, "~> 0.10.4", only: [:dev, :test], runtime: false},
         {:jason, "~> 1.4"},
         {:nimble_options, "~> 1.1"},
         {:zoi, "~> 0.17"},

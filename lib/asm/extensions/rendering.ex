@@ -10,15 +10,14 @@ defmodule ASM.Extensions.Rendering do
   use Boundary,
     deps: [ASM],
     exports: [
-      ASM.Extensions.Rendering,
-      ASM.Extensions.Rendering.Renderer,
-      ASM.Extensions.Rendering.Sink,
-      ASM.Extensions.Rendering.Renderers.Compact,
-      ASM.Extensions.Rendering.Renderers.Verbose,
-      ASM.Extensions.Rendering.Sinks.TTY,
-      ASM.Extensions.Rendering.Sinks.File,
-      ASM.Extensions.Rendering.Sinks.JSONL,
-      ASM.Extensions.Rendering.Sinks.Callback
+      Renderer,
+      Sink,
+      Renderers.Compact,
+      Renderers.Verbose,
+      Sinks.TTY,
+      Sinks.File,
+      Sinks.JSONL,
+      Sinks.Callback
     ]
 
   alias ASM.Error

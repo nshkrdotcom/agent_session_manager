@@ -4,21 +4,25 @@ defmodule ASM.SSHExecIntegrationTest do
   alias ASM.Event
   alias ASM.Message.Error, as: ErrorMessage
   alias ASM.ProviderBackend.Core
+  alias CliSubprocessCore.TestSupport.FakeSSH
 
   test "query/3 runs over SSHExec through the unchanged ASM execution config" do
-    manifest_path = temp_path!("query_manifest.txt")
-    ssh_path = create_fake_ssh!(manifest_path)
+    fake_ssh = FakeSSH.new!()
     cli_path = write_script!(codex_success_script("SSH_QUERY_OK"))
+
+    on_exit(fn ->
+      FakeSSH.cleanup(fake_ssh)
+    end)
 
     session =
       start_session!(
         provider: :codex,
         surface_kind: :static_ssh,
-        transport_options: [
-          ssh_path: ssh_path,
-          destination: "asm.ssh.query.example",
-          port: 2222
-        ]
+        transport_options:
+          FakeSSH.transport_options(fake_ssh,
+            destination: "asm.ssh.query.example",
+            port: 2222
+          )
       )
 
     assert {:ok, info} = ASM.session_info(session)
@@ -32,25 +36,28 @@ defmodule ASM.SSHExecIntegrationTest do
     assert result.metadata.execution_mode == :local
     assert result.metadata.lane == :core
 
-    assert_eventually(fn -> File.exists?(manifest_path) end)
-    assert File.read!(manifest_path) =~ "destination=asm.ssh.query.example"
+    assert FakeSSH.wait_until_written(fake_ssh, 1_000) == :ok
+    assert FakeSSH.read_manifest!(fake_ssh) =~ "destination=asm.ssh.query.example"
 
     assert :ok = ASM.stop_session(session)
   end
 
   test "stream/3 plus interrupt/2 cancels the active SSHExec run through ASM" do
-    manifest_path = temp_path!("interrupt_manifest.txt")
-    ssh_path = create_fake_ssh!(manifest_path)
+    fake_ssh = FakeSSH.new!()
     cli_path = write_script!(interrupt_script())
+
+    on_exit(fn ->
+      FakeSSH.cleanup(fake_ssh)
+    end)
 
     session =
       start_session!(
         provider: :codex,
         surface_kind: :static_ssh,
-        transport_options: [
-          ssh_path: ssh_path,
-          destination: "asm.ssh.interrupt.example"
-        ]
+        transport_options:
+          FakeSSH.transport_options(fake_ssh,
+            destination: "asm.ssh.interrupt.example"
+          )
       )
 
     parent = self()
@@ -63,7 +70,7 @@ defmodule ASM.SSHExecIntegrationTest do
       end)
 
     assert_receive {:asm_event, %Event{kind: :run_started, run_id: run_id}}, 2_000
-    assert_eventually(fn -> File.exists?(manifest_path) end)
+    assert FakeSSH.wait_until_written(fake_ssh, 1_000) == :ok
     assert :ok = ASM.interrupt(session, run_id)
 
     assert_receive {:asm_event, %Event{kind: :error} = event}, 2_000
@@ -72,8 +79,8 @@ defmodule ASM.SSHExecIntegrationTest do
              Event.legacy_payload(event)
 
     assert :ok = Task.await(task, 2_000)
-    assert_eventually(fn -> File.exists?(manifest_path) end)
-    assert File.read!(manifest_path) =~ "destination=asm.ssh.interrupt.example"
+    assert FakeSSH.wait_until_written(fake_ssh, 1_000) == :ok
+    assert FakeSSH.read_manifest!(fake_ssh) =~ "destination=asm.ssh.interrupt.example"
 
     assert :ok = ASM.stop_session(session)
   end
@@ -82,56 +89,6 @@ defmodule ASM.SSHExecIntegrationTest do
     session_id = "asm-ssh-#{System.unique_integer([:positive])}"
     {:ok, session} = ASM.start_session(Keyword.put(opts, :session_id, session_id))
     session
-  end
-
-  defp create_fake_ssh!(manifest_path) do
-    dir = temp_dir!("fake_ssh")
-    path = Path.join(dir, "ssh")
-
-    File.write!(path, """
-    #!/usr/bin/env bash
-    set -euo pipefail
-
-    destination=""
-    port=""
-
-    while [ "$#" -gt 0 ]; do
-      case "$1" in
-        -p)
-          port="$2"
-          shift 2
-          ;;
-        -o)
-          shift 2
-          ;;
-        --)
-          shift
-          break
-          ;;
-        -*)
-          shift
-          ;;
-        *)
-          destination="$1"
-          shift
-          break
-          ;;
-      esac
-    done
-
-    remote_command="${1:-}"
-
-    cat > "#{manifest_path}" <<EOF
-    destination=${destination}
-    port=${port}
-    remote_command=${remote_command}
-    EOF
-
-    exec /bin/sh -lc "$remote_command"
-    """)
-
-    File.chmod!(path, 0o755)
-    path
   end
 
   defp codex_success_script(text) do
@@ -163,10 +120,6 @@ defmodule ASM.SSHExecIntegrationTest do
     path
   end
 
-  defp temp_path!(name) do
-    Path.join(temp_dir!("tmp"), name)
-  end
-
   defp temp_dir!(prefix) do
     dir =
       Path.join(System.tmp_dir!(), "asm_ssh_exec_#{prefix}_#{System.unique_integer([:positive])}")
@@ -178,20 +131,5 @@ defmodule ASM.SSHExecIntegrationTest do
     end)
 
     dir
-  end
-
-  defp assert_eventually(fun, attempts \\ 40)
-
-  defp assert_eventually(fun, attempts) when attempts > 0 do
-    if fun.() do
-      assert true
-    else
-      Process.sleep(25)
-      assert_eventually(fun, attempts - 1)
-    end
-  end
-
-  defp assert_eventually(_fun, 0) do
-    flunk("condition did not become true")
   end
 end

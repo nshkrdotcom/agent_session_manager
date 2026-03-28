@@ -7,6 +7,7 @@ defmodule ASM.ProviderBackend.SDK do
 
   alias ASM.{Error, Execution, Options, Provider}
   alias ASM.ProviderBackend.Proxy
+  alias CliSubprocessCore.ExecutionSurface
 
   @claude_options_module Module.concat(["ClaudeAgentSDK", "Options"])
   @gemini_options_module Module.concat(["GeminiCliSdk", "Options"])
@@ -19,6 +20,8 @@ defmodule ASM.ProviderBackend.SDK do
   def start_run(%{provider: %Provider{} = provider} = config) do
     with {:ok, execution_config = %Execution.Config{execution_mode: :local}} <-
            fetch_execution_config(config),
+         {:ok, execution_surface} <- execution_surface_from_config(execution_config),
+         config = Map.put(config, :execution_surface, execution_surface),
          :ok <- validate_approval_posture(execution_config),
          runtime when is_atom(runtime) <- provider.sdk_runtime,
          true <- Code.ensure_loaded?(runtime),
@@ -101,6 +104,8 @@ defmodule ASM.ProviderBackend.SDK do
   end
 
   defp build_start_opts(%Provider{name: :claude, sdk_runtime: runtime}, config) do
+    execution_surface = Map.fetch!(config, :execution_surface)
+
     with {:ok, provider_opts} <-
            Options.finalize_provider_opts(
              :claude,
@@ -111,7 +116,7 @@ defmodule ASM.ProviderBackend.SDK do
          {:ok, options} <-
            new_sdk_struct(
              @claude_options_module,
-             claude_option_attrs(config, model_payload),
+             claude_option_attrs(config, model_payload, execution_surface),
              "claude"
            ) do
       {:ok,
@@ -124,6 +129,8 @@ defmodule ASM.ProviderBackend.SDK do
   end
 
   defp build_start_opts(%Provider{name: :gemini, sdk_runtime: runtime}, config) do
+    execution_surface = Map.fetch!(config, :execution_surface)
+
     with {:ok, provider_opts} <-
            Options.finalize_provider_opts(
              :gemini,
@@ -134,7 +141,7 @@ defmodule ASM.ProviderBackend.SDK do
          {:ok, options} <-
            build_sdk_struct(
              @gemini_options_module,
-             gemini_option_attrs(config, model_payload),
+             gemini_option_attrs(config, model_payload, execution_surface),
              "gemini"
            ),
          {:ok, options} <- validate_sdk_struct(@gemini_options_module, options, "gemini") do
@@ -148,6 +155,8 @@ defmodule ASM.ProviderBackend.SDK do
   end
 
   defp build_start_opts(%Provider{name: :amp, sdk_runtime: runtime}, config) do
+    execution_surface = Map.fetch!(config, :execution_surface)
+
     with {:ok, provider_opts} <-
            Options.finalize_provider_opts(
              :amp,
@@ -156,7 +165,11 @@ defmodule ASM.ProviderBackend.SDK do
          config = Map.put(config, :provider_opts, provider_opts),
          model_payload = Keyword.fetch!(provider_opts, :model_payload),
          {:ok, options} <-
-           build_sdk_struct(@amp_options_module, amp_option_attrs(config, model_payload), "amp") do
+           build_sdk_struct(
+             @amp_options_module,
+             amp_option_attrs(config, model_payload, execution_surface),
+             "amp"
+           ) do
       {:ok,
        sdk_start_opts(runtime, config,
          input: Map.fetch!(config, :prompt),
@@ -167,6 +180,8 @@ defmodule ASM.ProviderBackend.SDK do
   end
 
   defp build_start_opts(%Provider{name: :codex, sdk_runtime: runtime}, config) do
+    execution_surface = Map.fetch!(config, :execution_surface)
+
     with {:ok, provider_opts} <-
            Options.finalize_provider_opts(
              :codex,
@@ -177,7 +192,7 @@ defmodule ASM.ProviderBackend.SDK do
          {:ok, codex_opts} <-
            new_sdk_struct(
              @codex_options_module,
-             codex_option_attrs(config, model_payload),
+             codex_option_attrs(config, model_payload, execution_surface),
              "codex"
            ),
          {:ok, thread_opts} <-
@@ -189,7 +204,7 @@ defmodule ASM.ProviderBackend.SDK do
          {:ok, exec_opts} <-
            new_sdk_struct(
              @codex_exec_options_module,
-             codex_exec_option_attrs(codex_opts, thread_opts, config),
+             codex_exec_option_attrs(codex_opts, thread_opts, config, execution_surface),
              "codex"
            ) do
       {:ok,
@@ -213,6 +228,7 @@ defmodule ASM.ProviderBackend.SDK do
 
     extra
     |> Keyword.put(:metadata, metadata)
+    |> Keyword.put(:execution_surface, Map.fetch!(config, :execution_surface))
   end
 
   defp validate_approval_posture(execution_config) when is_map(execution_config) do
@@ -243,11 +259,12 @@ defmodule ASM.ProviderBackend.SDK do
   defp gemini_approval_mode(:default), do: nil
   defp gemini_approval_mode(mode), do: mode
 
-  defp claude_option_attrs(config, model_payload) do
+  defp claude_option_attrs(config, model_payload, execution_surface) do
     [
       cwd: kw(config, :cwd),
       env: kw(config, :env, %{}),
       path_to_claude_code_executable: kw(config, :cli_path),
+      execution_surface: execution_surface,
       permission_mode: kw(config, :provider_permission_mode),
       model_payload: model_payload,
       model: model_payload_value(model_payload, :resolved_model),
@@ -261,8 +278,9 @@ defmodule ASM.ProviderBackend.SDK do
     |> drop_nil_values()
   end
 
-  defp gemini_option_attrs(config, model_payload) do
+  defp gemini_option_attrs(config, model_payload, execution_surface) do
     [
+      execution_surface: execution_surface,
       model_payload: model_payload,
       model: model_payload_value(model_payload, :resolved_model),
       yolo: kw(config, :provider_permission_mode) == :yolo,
@@ -277,8 +295,9 @@ defmodule ASM.ProviderBackend.SDK do
     |> drop_nil_values()
   end
 
-  defp amp_option_attrs(config, model_payload) do
+  defp amp_option_attrs(config, model_payload, execution_surface) do
     [
+      execution_surface: execution_surface,
       model_payload: model_payload,
       cwd: kw(config, :cwd),
       mode: kw(config, :mode, "smart"),
@@ -293,8 +312,9 @@ defmodule ASM.ProviderBackend.SDK do
     |> drop_nil_values()
   end
 
-  defp codex_option_attrs(config, model_payload) do
+  defp codex_option_attrs(config, model_payload, execution_surface) do
     [
+      execution_surface: execution_surface,
       model_payload: model_payload,
       model: model_payload_value(model_payload, :resolved_model),
       reasoning_effort: reasoning_atom(model_payload_value(model_payload, :reasoning)),
@@ -316,9 +336,10 @@ defmodule ASM.ProviderBackend.SDK do
     |> drop_nil_values()
   end
 
-  defp codex_exec_option_attrs(codex_opts, thread_opts, config) do
+  defp codex_exec_option_attrs(codex_opts, thread_opts, config, execution_surface) do
     [
       codex_opts: codex_opts,
+      execution_surface: execution_surface,
       thread: thread_opts,
       timeout_ms: kw(config, :transport_timeout_ms),
       max_stderr_buffer_bytes: kw(config, :max_stderr_buffer_bytes)
@@ -396,6 +417,30 @@ defmodule ASM.ProviderBackend.SDK do
 
   defp maybe_put_new(provider_opts, _key, nil), do: provider_opts
   defp maybe_put_new(provider_opts, key, value), do: Keyword.put_new(provider_opts, key, value)
+
+  defp execution_surface_from_config(%Execution.Config{} = execution_config) do
+    case ExecutionSurface.new(
+           surface_kind: Map.get(execution_config, :surface_kind),
+           transport_options: Map.get(execution_config, :transport_options, []),
+           target_id: Map.get(execution_config, :target_id),
+           lease_ref: Map.get(execution_config, :lease_ref),
+           surface_ref: Map.get(execution_config, :surface_ref),
+           boundary_class: Map.get(execution_config, :boundary_class),
+           observability: Map.get(execution_config, :observability, %{})
+         ) do
+      {:ok, %ExecutionSurface{} = execution_surface} ->
+        {:ok, execution_surface}
+
+      {:error, reason} ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :config,
+           "invalid execution_surface for sdk backend: #{inspect(reason)}",
+           cause: reason
+         )}
+    end
+  end
 
   defp drop_nil_values(attrs) when is_list(attrs) do
     Enum.reject(attrs, fn {_key, value} -> is_nil(value) end)

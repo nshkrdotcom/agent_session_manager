@@ -17,6 +17,8 @@ driver/parser stacks.
 - starts provider runtime kits when they are installed locally
 - works only in `execution_mode: :local`
 - preserves the same session/run/event model as the core backend
+- preserves the same normalized execution-surface contract as the core backend
+  for local subprocess and SSH lanes
 - never becomes a required dependency for ASM itself
 - may exist without any separate ASM provider-native namespace, as with Gemini
   and Amp today
@@ -66,6 +68,13 @@ data crosses into ASM kernel state.
 `execution_mode` is applied after lane discovery. In the landed Phase 3
 boundary, remote execution always uses the core backend even if `:auto`
 preferred `:sdk`.
+
+That split is intentional:
+
+- local `:core` and local `:sdk` both preserve `surface_kind`,
+  `transport_options`, and the rest of the `ExecutionSurface` metadata
+- `:remote_node` remains a separate ASM execution mode, not another execution
+  surface
 
 ## Observability
 

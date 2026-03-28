@@ -119,6 +119,7 @@ Claude now exposes an explicit bridge into the SDK-local control family:
 Those helpers do not redefine Claude control semantics. They only:
 
 - derive `ClaudeAgentSDK.Options` from ASM-style config or session defaults
+- preserve ASM execution-surface placement on the resulting SDK options
 - keep Claude-native options in a separate `native_overrides` bag
 - start `ClaudeAgentSDK.Client` when callers explicitly opt into the SDK-local
   control family
@@ -132,7 +133,9 @@ asm_opts = [
   provider: :claude,
   cwd: File.cwd!(),
   permission_mode: :plan,
-  model: "sonnet"
+  model: "sonnet",
+  surface_kind: :static_ssh,
+  transport_options: [destination: "buildbox-a", port: 2222]
 ]
 
 native_overrides = [
@@ -144,7 +147,7 @@ native_overrides = [
   Claude.start_client(
     asm_opts,
     native_overrides,
-    transport: MyApp.MockTransport
+    control_request_timeout_ms: 5_000
   )
 
 :ok = ClaudeAgentSDK.Client.set_permission_mode(client, :plan)
@@ -168,6 +171,7 @@ kernel APIs. They only:
 
 - derive `Codex.Options` from ASM-style config or session defaults
 - derive `Codex.Thread.Options` from ASM-style config or session defaults
+- preserve ASM execution-surface placement on `Codex.Options`
 - keep Codex-native global or thread-only fields in explicit override bags
 - start `Codex.AppServer` when callers explicitly opt into the SDK-local
   app-server family
@@ -180,7 +184,14 @@ alias Codex, as: CodexSDK
 
 {:ok, conn} =
   Codex.connect_app_server(
-    [provider: :codex, model: "gpt-5.4", reasoning_effort: :high],
+    [
+      provider: :codex,
+      model: "gpt-5.4",
+      reasoning_effort: :high,
+      surface_kind: :leased_ssh,
+      transport_options: [destination: "codex-host-1"],
+      lease_ref: "lease-42"
+    ],
     [model_personality: :pragmatic],
     experimental_api: true
   )
@@ -218,6 +229,9 @@ alias Codex, as: CodexSDK
 - ASM does not re-model those richer APIs in the kernel
 - the Claude bridge keeps ASM config and Claude-native config in separate
   arguments on purpose
+- local `:core` and local `:sdk` lanes preserve the same normalized
+  `surface_kind` / `transport_options` contract; `execution_mode: :remote_node`
+  remains a separate ASM-only rule
 - ASM-derived fields such as `:cwd`, `:permission_mode`, `:model`,
   `:max_turns`, and `:timeout_ms` must stay in ASM config and are rejected from
   `native_overrides`

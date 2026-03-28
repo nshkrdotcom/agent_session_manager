@@ -8,7 +8,8 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
   It does not implement Claude's richer control semantics itself. Instead it:
 
   - publishes discovery metadata for the optional Claude-native surface
-  - derives `ClaudeAgentSDK.Options` from ASM-style configuration
+  - derives `ClaudeAgentSDK.Options` from ASM-style configuration, including
+    normalized execution-surface data for CLI-backed families
   - starts `ClaudeAgentSDK.Client` when callers explicitly opt into the
     SDK-local control family
 
@@ -102,15 +103,16 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
 
   `native_overrides` remains the explicit home for Claude-native options such as
   hooks, permission callbacks, SDK MCP servers, file checkpointing, or thinking
-  configuration. Those fields are not normalized into ASM's kernel API.
+  configuration. Execution-surface placement stays on `asm_opts`.
   """
   @spec sdk_options(keyword(), keyword()) :: {:ok, struct()} | {:error, Error.t()}
   def sdk_options(asm_opts, native_overrides \\ [])
       when is_list(asm_opts) and is_list(native_overrides) do
     with :ok <- ensure_sdk_module(@sdk_options_module, "Claude SDK options"),
-         {:ok, validated} <- validate_asm_options(asm_opts),
+         {:ok, %{validated: validated, execution_surface: execution_surface}} <-
+           validate_asm_options(asm_opts),
          :ok <- ensure_native_override_boundary(native_overrides),
-         attrs <- sdk_option_attrs(validated, native_overrides) do
+         attrs <- sdk_option_attrs(validated, native_overrides, execution_surface) do
       build_sdk_options(attrs)
     end
   end
@@ -132,8 +134,8 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
   Starts `ClaudeAgentSDK.Client` from ASM-style Claude configuration.
 
   ASM configuration stays on the first argument. Claude-native options live in
-  `native_overrides`. Direct client startup knobs such as `:transport` live in
-  `client_opts`.
+  `native_overrides`. Direct runtime overrides such as `:execution_surface` or
+  `:control_request_timeout_ms` live in `client_opts`.
   """
   @spec start_client(keyword(), keyword(), keyword()) ::
           GenServer.on_start() | {:error, Error.t() | term()}
@@ -189,23 +191,32 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
     provider_schema = Provider.resolve!(:claude).options_schema
     asm_opts = SessionOptions.provider_opts(asm_opts)
 
-    case Keyword.get(asm_opts, :provider, :claude) do
-      :claude ->
-        Options.validate(Keyword.put(asm_opts, :provider, :claude), provider_schema)
+    with {:ok, execution_surface, stripped_opts} <-
+           SessionOptions.extract_execution_surface(asm_opts) do
+      case Keyword.get(stripped_opts, :provider, :claude) do
+        :claude ->
+          case Options.validate(Keyword.put(stripped_opts, :provider, :claude), provider_schema) do
+            {:ok, validated} ->
+              {:ok, %{validated: validated, execution_surface: execution_surface}}
 
-      other ->
-        {:error,
-         Error.new(
-           :config_invalid,
-           :provider,
-           "Claude extension requires provider :claude, got #{inspect(other)}"
-         )}
+            {:error, %Error{} = error} ->
+              {:error, error}
+          end
+
+        other ->
+          {:error,
+           Error.new(
+             :config_invalid,
+             :provider,
+             "Claude extension requires provider :claude, got #{inspect(other)}"
+           )}
+      end
     end
   end
 
-  defp sdk_option_attrs(validated, native_overrides) do
+  defp sdk_option_attrs(validated, native_overrides, execution_surface) do
     validated
-    |> base_sdk_option_attrs()
+    |> base_sdk_option_attrs(execution_surface)
     |> maybe_add_thinking(validated, native_overrides)
     |> Keyword.merge(native_overrides)
   end
@@ -231,7 +242,7 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
     end
   end
 
-  defp base_sdk_option_attrs(validated) do
+  defp base_sdk_option_attrs(validated, execution_surface) do
     {:ok, finalized} =
       Options.finalize_provider_opts(:claude, Keyword.delete(validated, :provider))
 
@@ -241,6 +252,7 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
       cwd: Keyword.get(finalized, :cwd),
       env: Keyword.get(finalized, :env, %{}),
       path_to_claude_code_executable: Keyword.get(finalized, :cli_path),
+      execution_surface: execution_surface,
       permission_mode: Keyword.get(finalized, :provider_permission_mode),
       model_payload: model_payload,
       model: model_payload_value(model_payload, :resolved_model),

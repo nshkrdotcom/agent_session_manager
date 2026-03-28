@@ -103,6 +103,39 @@ defmodule ASM.ProviderBackend.SDKTest do
     end
   end
 
+  defmodule GeminiRuntimeStub do
+    @moduledoc false
+
+    def start_session(opts) when is_list(opts) do
+      metadata = Keyword.get(opts, :metadata, %{})
+
+      if is_pid(metadata[:test_pid]) do
+        send(metadata[:test_pid], {:gemini_runtime_start_opts, opts})
+      end
+
+      session =
+        spawn_link(fn ->
+          receive do
+            :stop -> :ok
+          end
+        end)
+
+      {:ok, session, %{runtime: :gemini_stub}}
+    end
+
+    def send_input(_session, _input, _opts), do: :ok
+    def end_input(_session), do: :ok
+    def interrupt(_session), do: :ok
+    def subscribe(_session, _pid, _ref), do: :ok
+    def info(_session), do: %{runtime: :gemini_stub}
+    def capabilities, do: [:streaming]
+
+    def close(session) when is_pid(session) do
+      send(session, :stop)
+      :ok
+    end
+  end
+
   test "claude sdk backend forwards stderr buffer size as a runtime option" do
     provider = %{Provider.resolve!(:claude) | sdk_runtime: ClaudeRuntimeStub}
 
@@ -111,7 +144,11 @@ defmodule ASM.ProviderBackend.SDKTest do
       prompt: "hello",
       execution_config: %Execution.Config{
         execution_mode: :local,
-        transport_call_timeout_ms: 5_000
+        transport_call_timeout_ms: 5_000,
+        surface_kind: :static_ssh,
+        transport_options: [destination: "claude.sdk.example", port: 2222],
+        target_id: "claude-target-1",
+        observability: %{suite: :sdk}
       },
       provider_opts: [max_stderr_buffer_bytes: 2048],
       metadata: %{test_pid: self()}
@@ -128,6 +165,15 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert Keyword.get(start_opts, :max_stderr_buffer_size) == 2048
     assert %ClaudeAgentSDK.Options{} = Keyword.fetch!(start_opts, :options)
 
+    assert %CliSubprocessCore.ExecutionSurface{} =
+             execution_surface = Keyword.fetch!(start_opts, :execution_surface)
+
+    assert execution_surface.surface_kind == :static_ssh
+    assert execution_surface.transport_options[:destination] == "claude.sdk.example"
+    assert execution_surface.target_id == "claude-target-1"
+    assert execution_surface.observability == %{suite: :sdk}
+    assert Keyword.fetch!(start_opts, :options).execution_surface == execution_surface
+
     metadata = Keyword.fetch!(start_opts, :metadata)
     assert metadata[:lane] == :sdk
     assert metadata[:asm_provider] == :claude
@@ -141,7 +187,10 @@ defmodule ASM.ProviderBackend.SDKTest do
       prompt: "hello",
       execution_config: %Execution.Config{
         execution_mode: :local,
-        transport_call_timeout_ms: 5_000
+        transport_call_timeout_ms: 5_000,
+        surface_kind: :leased_ssh,
+        transport_options: [destination: "codex.sdk.example"],
+        lease_ref: "lease-123"
       },
       provider_opts: [
         model: "gpt-5.4",
@@ -163,6 +212,15 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert %Codex.Exec.Options{} = exec_opts = Keyword.fetch!(start_opts, :exec_opts)
     assert %Codex.Options{} = exec_opts.codex_opts
     assert %Codex.Thread.Options{} = exec_opts.thread
+
+    assert %CliSubprocessCore.ExecutionSurface{} =
+             execution_surface = Keyword.fetch!(start_opts, :execution_surface)
+
+    assert execution_surface.surface_kind == :leased_ssh
+    assert execution_surface.transport_options[:destination] == "codex.sdk.example"
+    assert execution_surface.lease_ref == "lease-123"
+    assert exec_opts.execution_surface == execution_surface
+    assert exec_opts.codex_opts.execution_surface == execution_surface
     assert exec_opts.thread.model_provider == "gateway"
     assert exec_opts.thread.oss == false
     assert exec_opts.thread.local_provider == nil
@@ -180,7 +238,10 @@ defmodule ASM.ProviderBackend.SDKTest do
       prompt: "hello",
       execution_config: %Execution.Config{
         execution_mode: :local,
-        transport_call_timeout_ms: 5_000
+        transport_call_timeout_ms: 5_000,
+        surface_kind: :static_ssh,
+        transport_options: [destination: "amp.sdk.example"],
+        boundary_class: :workspace
       },
       provider_opts: [
         model: "amp-1",
@@ -199,6 +260,14 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert_receive {:amp_runtime_start_opts, start_opts}
 
     assert %AmpSdk.Types.Options{} = options = Keyword.fetch!(start_opts, :options)
+
+    assert %CliSubprocessCore.ExecutionSurface{} =
+             execution_surface = Keyword.fetch!(start_opts, :execution_surface)
+
+    assert execution_surface.surface_kind == :static_ssh
+    assert execution_surface.transport_options[:destination] == "amp.sdk.example"
+    assert execution_surface.boundary_class == :workspace
+    assert options.execution_surface == execution_surface
     assert options.dangerously_allow_all == true
     assert options.no_ide == true
     assert options.no_notifications == true
@@ -206,6 +275,47 @@ defmodule ASM.ProviderBackend.SDKTest do
     metadata = Keyword.fetch!(start_opts, :metadata)
     assert metadata[:lane] == :sdk
     assert metadata[:asm_provider] == :amp
+  end
+
+  test "gemini sdk backend propagates execution surface into the runtime options" do
+    provider = %{Provider.resolve!(:gemini) | sdk_runtime: GeminiRuntimeStub}
+
+    config = %{
+      provider: provider,
+      prompt: "hello",
+      execution_config: %Execution.Config{
+        execution_mode: :local,
+        transport_call_timeout_ms: 5_000,
+        surface_kind: :leased_ssh,
+        transport_options: [destination: "gemini.sdk.example"],
+        surface_ref: "surface-9"
+      },
+      provider_opts: [model: "gemini-2.5-pro"],
+      metadata: %{test_pid: self()}
+    }
+
+    assert {:ok, proxy, info} = SDK.start_run(config)
+    on_exit(fn -> SDK.close(proxy) end)
+
+    assert info.lane == :sdk
+    assert info.provider == :gemini
+
+    assert_receive {:gemini_runtime_start_opts, start_opts}
+
+    assert %GeminiCliSdk.Options{} = options = Keyword.fetch!(start_opts, :options)
+
+    assert %CliSubprocessCore.ExecutionSurface{} =
+             execution_surface = Keyword.fetch!(start_opts, :execution_surface)
+
+    assert execution_surface.surface_kind == :leased_ssh
+    assert execution_surface.transport_options[:destination] == "gemini.sdk.example"
+    assert execution_surface.surface_ref == "surface-9"
+    assert options.execution_surface == execution_surface
+    assert Keyword.fetch!(start_opts, :prompt) == "hello"
+
+    metadata = Keyword.fetch!(start_opts, :metadata)
+    assert metadata[:lane] == :sdk
+    assert metadata[:asm_provider] == :gemini
   end
 
   test "sdk backends reject explicit approval_posture :none before runtime start" do

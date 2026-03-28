@@ -2,8 +2,12 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
   use ASM.TestCase
 
   alias ASM.Extensions.ProviderSDK.Codex, as: CodexExtension
+  alias CliSubprocessCore.TestSupport.FakeSSH
   alias CliSubprocessCore.ModelRegistry.Selection
+  alias Codex.AppServer.Connection
+  alias Codex.AppServer.Protocol
   alias Codex.{Options, Thread}
+  alias Codex.TestSupport.AppServerSubprocess
   alias Codex.Thread.Options, as: ThreadOptions
 
   test "codex_options/2 maps ASM config and keeps Codex-native overrides explicit" do
@@ -11,7 +15,9 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
       provider: :codex,
       cli_path: "/usr/local/bin/codex",
       model: "gpt-5.4",
-      reasoning_effort: :high
+      reasoning_effort: :high,
+      surface_kind: :static_ssh,
+      transport_options: [destination: "codex.options.example", port: 2222]
     ]
 
     native_overrides = [
@@ -25,6 +31,8 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
     assert options.codex_path_override == "/usr/local/bin/codex"
     assert options.model == "gpt-5.4"
     assert options.reasoning_effort == :high
+    assert options.execution_surface.surface_kind == :static_ssh
+    assert options.execution_surface.transport_options[:destination] == "codex.options.example"
     assert options.model_personality == :pragmatic
     assert options.hide_agent_reasoning == true
   end
@@ -167,6 +175,12 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
 
     assert codex_options.model == "gpt-5.4"
     assert codex_options.reasoning_effort == :medium
+    assert codex_options.execution_surface.surface_kind == :leased_ssh
+
+    assert codex_options.execution_surface.transport_options[:destination] ==
+             "codex.session.example"
+
+    assert codex_options.execution_surface.observability == %{suite: :provider_sdk}
     assert codex_options.model_personality == :friendly
 
     assert thread_options.working_directory == "/tmp/asm-codex-session-override"
@@ -174,6 +188,58 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
     assert thread_options.full_auto == false
     assert thread_options.dangerously_bypass_approvals_and_sandbox == true
     assert thread_options.personality == :none
+  end
+
+  test "codex_options/2 preserves execution-surface config for app-server connections over fake SSH" do
+    fake_ssh = FakeSSH.new!()
+    harness = AppServerSubprocess.new!(owner: self())
+
+    on_exit(fn ->
+      FakeSSH.cleanup(fake_ssh)
+      AppServerSubprocess.cleanup(harness)
+    end)
+
+    assert {:ok, %Options{} = codex_opts} =
+             CodexExtension.codex_options(
+               provider: :codex,
+               cli_path: AppServerSubprocess.command_path(harness),
+               model: "gpt-5.4",
+               surface_kind: :static_ssh,
+               transport_options:
+                 FakeSSH.transport_options(fake_ssh,
+                   destination: "codex.extension.example",
+                   port: 2222
+                 )
+             )
+
+    assert codex_opts.execution_surface.surface_kind == :static_ssh
+
+    assert codex_opts.execution_surface.transport_options[:destination] ==
+             "codex.extension.example"
+
+    assert {:ok, conn} =
+             Connection.start_link(
+               codex_opts,
+               AppServerSubprocess.connect_opts(harness, init_timeout_ms: 500)
+             )
+
+    on_exit(fn -> safe_stop_connection(conn) end)
+
+    :ok = AppServerSubprocess.attach(harness, conn)
+
+    assert_receive {:app_server_subprocess_started, ^conn, _os_pid}, 1_000
+    assert_receive {:app_server_subprocess_send, ^conn, init_line}, 1_000
+    assert {:ok, %{"id" => 0, "method" => "initialize"}} = Jason.decode(init_line)
+
+    :ok =
+      AppServerSubprocess.send_stdout(
+        harness,
+        Protocol.encode_response(0, %{"userAgent" => "codex/0.0.0"})
+      )
+
+    assert :ok == Connection.await_ready(conn, 1_000)
+    assert FakeSSH.wait_until_written(fake_ssh, 1_000) == :ok
+    assert FakeSSH.read_manifest!(fake_ssh) =~ "destination=codex.extension.example"
   end
 
   test "thread_options/2 accepts app-server transport as a Codex-native override" do
@@ -236,6 +302,12 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
   defp safe_stop_session(session) do
     _ = ASM.stop_session(session)
     :ok
+  catch
+    :exit, _ -> :ok
+  end
+
+  defp safe_stop_connection(conn) when is_pid(conn) do
+    if Process.alive?(conn), do: Process.exit(conn, :normal)
   catch
     :exit, _ -> :ok
   end

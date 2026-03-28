@@ -8,7 +8,8 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
   It does not implement Codex's richer APIs itself. Instead it:
 
   - publishes discovery metadata for the optional Codex-native surface
-  - derives `Codex.Options` from ASM-style configuration
+  - derives `Codex.Options` from ASM-style configuration, including normalized
+    execution-surface data for CLI-backed families
   - derives `Codex.Thread.Options` from ASM-style configuration or session
     defaults
   - starts `Codex.AppServer` connections when callers explicitly opt into the
@@ -79,20 +80,22 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
 
   `native_overrides` remains the explicit home for Codex-native global SDK
   settings such as config overrides, model personality, review model, or
-  history settings. Those fields are not normalized into ASM's kernel API.
+  history settings. Execution-surface placement stays on `asm_opts`.
   """
   @spec codex_options(keyword(), keyword()) :: {:ok, struct()} | {:error, Error.t()}
   def codex_options(asm_opts, native_overrides \\ [])
       when is_list(asm_opts) and is_list(native_overrides) do
     with :ok <- ensure_sdk_module(@sdk_options_module, "Codex SDK options"),
-         {:ok, validated} <- validate_asm_options(asm_opts),
+         {:ok, %{validated: validated, execution_surface: execution_surface}} <-
+           validate_asm_options(asm_opts),
          :ok <-
            ensure_native_override_boundary(
              native_overrides,
              @asm_derived_codex_option_keys,
              "Codex native_overrides"
            ),
-         attrs <- Keyword.merge(codex_option_attrs(validated), native_overrides) do
+         attrs <-
+           Keyword.merge(codex_option_attrs(validated, execution_surface), native_overrides) do
       new_sdk_struct(@sdk_options_module, attrs, "codex")
     end
   end
@@ -116,13 +119,13 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
   ASM-derived thread defaults such as working directory, approval timeout, exec
   permission mode, and output schema stay on the ASM argument. Richer
   Codex-native fields such as personality, collaboration mode, attachments, or
-  app-server transport selection belong in `native_overrides`.
+  app-server family selection belong in `native_overrides`.
   """
   @spec thread_options(keyword(), keyword()) :: {:ok, struct()} | {:error, Error.t()}
   def thread_options(asm_opts, native_overrides \\ [])
       when is_list(asm_opts) and is_list(native_overrides) do
     with :ok <- ensure_sdk_module(@thread_options_module, "Codex thread options"),
-         {:ok, validated} <- validate_asm_options(asm_opts),
+         {:ok, %{validated: validated}} <- validate_asm_options(asm_opts),
          :ok <-
            ensure_native_override_boundary(
              native_overrides,
@@ -155,7 +158,8 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
 
   ASM configuration stays on the first argument. Codex-native global overrides
   stay in `native_overrides`. App-server child launch overrides such as
-  `:experimental_api`, `:cwd`, or `:process_env` stay in `connect_opts`.
+  `:experimental_api`, `:cwd`, `:process_env`, or an explicit
+  `:execution_surface` override stay in `connect_opts`.
   """
   @spec connect_app_server(keyword(), keyword(), keyword()) ::
           {:ok, pid()} | {:error, Error.t() | term()}
@@ -215,10 +219,13 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
     provider_schema = Provider.resolve!(:codex).options_schema
     asm_opts = SessionOptions.provider_opts(asm_opts)
 
-    case resolve_codex_provider(Keyword.get(asm_opts, :provider, :codex)) do
-      {:ok, :codex} ->
-        Options.validate(Keyword.put(asm_opts, :provider, :codex), provider_schema)
-
+    with {:ok, execution_surface, stripped_opts} <-
+           SessionOptions.extract_execution_surface(asm_opts),
+         {:ok, :codex} <- resolve_codex_provider(Keyword.get(stripped_opts, :provider, :codex)),
+         {:ok, validated} <-
+           Options.validate(Keyword.put(stripped_opts, :provider, :codex), provider_schema) do
+      {:ok, %{validated: validated, execution_surface: execution_surface}}
+    else
       {:error, %Error{} = error} ->
         {:error, error}
     end
@@ -267,13 +274,14 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
     end
   end
 
-  defp codex_option_attrs(validated) do
+  defp codex_option_attrs(validated, execution_surface) do
     {:ok, finalized} =
       Options.finalize_provider_opts(:codex, Keyword.delete(validated, :provider))
 
     model_payload = Keyword.fetch!(finalized, :model_payload)
 
     [
+      execution_surface: execution_surface,
       model_payload: model_payload,
       model: model_payload_value(model_payload, :resolved_model),
       reasoning_effort: reasoning_atom(model_payload_value(model_payload, :reasoning)),

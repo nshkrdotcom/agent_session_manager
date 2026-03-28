@@ -1,6 +1,8 @@
 defmodule ASM.LaneIntegrationTest do
   use ASM.SerialTestCase
 
+  alias CliSubprocessCore.TestSupport.FakeSSH
+
   setup do
     original = Application.get_env(:agent_session_manager, ASM.ProviderRegistry)
 
@@ -103,9 +105,99 @@ defmodule ASM.LaneIntegrationTest do
     assert :ok = ASM.stop_session(session)
   end
 
-  defp start_session!(provider) when is_atom(provider) do
+  test "explicit sdk lane preserves :static_ssh execution-surface routing" do
+    put_runtime_loader(fn
+      Codex.Runtime.Exec -> true
+      runtime -> Code.ensure_loaded?(runtime)
+    end)
+
+    fake_ssh = FakeSSH.new!()
+    script = write_script!(codex_success_script("SDK_STATIC_SSH_OK"))
+
+    on_exit(fn ->
+      FakeSSH.cleanup(fake_ssh)
+    end)
+
+    session =
+      start_session!(
+        :codex,
+        surface_kind: :static_ssh,
+        transport_options:
+          FakeSSH.transport_options(fake_ssh,
+            destination: "sdk-static-ssh.example",
+            port: 2222
+          )
+      )
+
+    assert {:ok, result} =
+             ASM.query(session, "force sdk over ssh",
+               lane: :sdk,
+               cli_path: script
+             )
+
+    assert result.text == "SDK_STATIC_SSH_OK"
+    assert result.metadata.requested_lane == :sdk
+    assert result.metadata.preferred_lane == :sdk
+    assert result.metadata.lane == :sdk
+    assert result.metadata.execution_mode == :local
+    assert result.metadata.backend == ASM.ProviderBackend.SDK
+    assert FakeSSH.wait_until_written(fake_ssh, 1_000) == :ok
+    assert FakeSSH.read_manifest!(fake_ssh) =~ "destination=sdk-static-ssh.example"
+
+    assert :ok = ASM.stop_session(session)
+  end
+
+  test "explicit sdk lane preserves :leased_ssh execution-surface routing" do
+    put_runtime_loader(fn
+      Codex.Runtime.Exec -> true
+      runtime -> Code.ensure_loaded?(runtime)
+    end)
+
+    fake_ssh = FakeSSH.new!()
+    script = write_script!(codex_success_script("SDK_LEASED_SSH_OK"))
+
+    on_exit(fn ->
+      FakeSSH.cleanup(fake_ssh)
+    end)
+
+    session =
+      start_session!(
+        :codex,
+        surface_kind: :leased_ssh,
+        transport_options:
+          FakeSSH.transport_options(fake_ssh,
+            destination: "sdk-leased-ssh.example"
+          ),
+        lease_ref: "lease-42"
+      )
+
+    assert {:ok, result} =
+             ASM.query(session, "force sdk over leased ssh",
+               lane: :sdk,
+               cli_path: script
+             )
+
+    assert result.text == "SDK_LEASED_SSH_OK"
+    assert result.metadata.requested_lane == :sdk
+    assert result.metadata.preferred_lane == :sdk
+    assert result.metadata.lane == :sdk
+    assert result.metadata.execution_mode == :local
+    assert result.metadata.backend == ASM.ProviderBackend.SDK
+    assert FakeSSH.wait_until_written(fake_ssh, 1_000) == :ok
+    assert FakeSSH.read_manifest!(fake_ssh) =~ "destination=sdk-leased-ssh.example"
+
+    assert :ok = ASM.stop_session(session)
+  end
+
+  defp start_session!(provider, opts \\ []) when is_atom(provider) and is_list(opts) do
     session_id = "asm-lane-#{System.unique_integer([:positive])}"
-    {:ok, session} = ASM.start_session(session_id: session_id, provider: provider)
+
+    {:ok, session} =
+      ASM.start_session(
+        [session_id: session_id, provider: provider]
+        |> Keyword.merge(opts)
+      )
+
     session
   end
 

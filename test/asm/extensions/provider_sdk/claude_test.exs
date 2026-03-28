@@ -4,82 +4,9 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
   alias ASM.Extensions.ProviderSDK.Claude
   alias ClaudeAgentSDK.{Client, Hooks, Options}
   alias ClaudeAgentSDK.Hooks.Matcher
+  alias ClaudeAgentSDK.TestSupport.FakeCLI
   alias CliSubprocessCore.ModelRegistry.Selection
-
-  defmodule MockTransport do
-    @moduledoc false
-
-    use GenServer
-
-    import Kernel, except: [send: 2]
-
-    @behaviour ClaudeAgentSDK.Transport
-
-    @impl true
-    def start(opts), do: GenServer.start(__MODULE__, opts)
-
-    @impl true
-    def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
-
-    @impl true
-    def send(transport, message), do: GenServer.call(transport, {:send, message})
-
-    @impl true
-    def subscribe(transport, pid), do: GenServer.call(transport, {:subscribe, pid})
-
-    @impl true
-    def close(transport), do: GenServer.stop(transport, :normal)
-
-    @impl true
-    def status(transport), do: GenServer.call(transport, :status)
-
-    def push_message(transport, payload) do
-      GenServer.cast(transport, {:push_message, payload})
-    end
-
-    @impl GenServer
-    def init(opts) do
-      test_pid = Keyword.get(opts, :test_pid)
-
-      if is_pid(test_pid) do
-        Kernel.send(test_pid, {:mock_transport_started, self(), opts})
-      end
-
-      {:ok, %{messages: [], status: :connected, subscribers: MapSet.new(), test_pid: test_pid}}
-    end
-
-    @impl GenServer
-    def handle_call({:send, message}, _from, state) do
-      if is_pid(state.test_pid) do
-        Kernel.send(state.test_pid, {:mock_transport_send, message})
-      end
-
-      {:reply, :ok, %{state | messages: [message | state.messages]}}
-    end
-
-    def handle_call({:subscribe, pid}, _from, state) do
-      Process.monitor(pid)
-      {:reply, :ok, %{state | subscribers: MapSet.put(state.subscribers, pid)}}
-    end
-
-    def handle_call(:status, _from, state) do
-      {:reply, state.status, state}
-    end
-
-    @impl GenServer
-    def handle_cast({:push_message, payload}, state) do
-      Enum.each(state.subscribers, fn pid ->
-        Kernel.send(pid, {:transport_message, payload})
-      end)
-
-      {:noreply, state}
-    end
-
-    @impl GenServer
-    def handle_info({:DOWN, _ref, :process, pid, _reason}, state) do
-      {:noreply, %{state | subscribers: MapSet.delete(state.subscribers, pid)}}
-    end
-  end
+  alias CliSubprocessCore.TestSupport.FakeSSH
 
   test "sdk_options/2 maps ASM config and keeps Claude-native overrides explicit" do
     hook = fn _input, _tool_use_id, _context -> %{} end
@@ -93,7 +20,9 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
       model: "sonnet",
       max_turns: 3,
       include_thinking: true,
-      transport_timeout_ms: 12_000
+      transport_timeout_ms: 12_000,
+      surface_kind: :static_ssh,
+      transport_options: [destination: "claude.options.example", port: 2222]
     ]
 
     native_overrides = [
@@ -110,6 +39,8 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
     assert options.model == "sonnet"
     assert options.max_turns == 3
     assert options.timeout_ms == 12_000
+    assert options.execution_surface.surface_kind == :static_ssh
+    assert options.execution_surface.transport_options[:destination] == "claude.options.example"
     assert options.thinking == %{type: :adaptive}
     assert options.enable_file_checkpointing == true
     assert options.hooks == %{pre_tool_use: [Matcher.new("Bash", [hook])]}
@@ -164,19 +95,32 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
     assert options.permission_mode == :plan
     assert options.model == "sonnet"
     assert options.max_turns == 2
+    assert options.execution_surface.surface_kind == :leased_ssh
+    assert options.execution_surface.transport_options[:destination] == "claude.session.example"
+    assert options.execution_surface.observability == %{suite: :provider_sdk}
     assert options.enable_file_checkpointing == true
   end
 
-  test "start_client/3 starts the SDK-local Claude client without widening ASM APIs" do
+  test "start_client/3 preserves ASM execution-surface config over fake SSH" do
+    fake_cli = FakeCLI.new!()
+    fake_ssh = FakeSSH.new!()
     hook = fn _input, _tool_use_id, _context -> Hooks.Output.allow() end
+    cwd = fake_cli.root_dir
 
-    asm_opts = [
-      provider: :claude,
-      cwd: "/tmp/asm-client-start",
-      permission_mode: :plan,
-      model: "sonnet",
-      max_turns: 4
-    ]
+    on_exit(fn ->
+      FakeCLI.cleanup(fake_cli)
+      FakeSSH.cleanup(fake_ssh)
+    end)
+
+    asm_opts =
+      [
+        provider: :claude,
+        cwd: cwd,
+        cli_path: fake_cli.script_path,
+        permission_mode: :plan,
+        model: "sonnet",
+        max_turns: 4
+      ] ++ FakeCLI.static_ssh_surface(fake_cli, fake_ssh, destination: "claude.extension.example")
 
     native_overrides = [
       hooks: %{pre_tool_use: [Matcher.new("Bash", [hook])]},
@@ -184,46 +128,21 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
     ]
 
     assert {:ok, client} =
-             Claude.start_client(
-               asm_opts,
-               native_overrides,
-               transport: MockTransport,
-               transport_opts: [test_pid: self()]
-             )
+             Claude.start_client(asm_opts, native_overrides, control_request_timeout_ms: 1_000)
 
     on_exit(fn -> safe_stop_client(client) end)
 
-    assert_receive {:mock_transport_started, transport_pid, transport_opts}
+    assert FakeCLI.wait_until_started(fake_cli, 1_000) == :ok
+    assert {:ok, request} = FakeCLI.initialize_request(fake_cli, 1_000)
+    assert request["type"] == "control_request"
+    assert request["request"]["subtype"] == "initialize"
+    assert is_map(request["request"]["hooks"])
 
-    assert %Options{} = Keyword.fetch!(transport_opts, :options)
-
-    assert Keyword.fetch!(transport_opts, :options).cwd == "/tmp/asm-client-start"
-    assert Keyword.fetch!(transport_opts, :options).model == "sonnet"
-    assert Keyword.fetch!(transport_opts, :options).permission_mode == :plan
-    assert Keyword.fetch!(transport_opts, :options).enable_file_checkpointing == true
-
-    assert_receive {:mock_transport_send, init_json}, 1_000
-    assert {:ok, request_id} = Client.await_init_sent(client, 1_000)
-
-    decoded = Jason.decode!(init_json)
-    assert decoded["type"] == "control_request"
-    assert decoded["request_id"] == request_id
-    assert decoded["request"]["subtype"] == "initialize"
-    assert is_map(decoded["request"]["hooks"])
-
-    MockTransport.push_message(
-      transport_pid,
-      Jason.encode!(%{
-        "type" => "control_response",
-        "response" => %{
-          "subtype" => "success",
-          "request_id" => request_id,
-          "response" => %{}
-        }
-      })
-    )
-
+    request_id = FakeCLI.respond_initialize_success!(fake_cli, %{}, 1_000)
+    assert is_binary(request_id)
     assert :ok = Client.await_initialized(client, 1_000)
+    assert FakeSSH.wait_until_written(fake_ssh, 1_000) == :ok
+    assert FakeSSH.read_manifest!(fake_ssh) =~ "destination=claude.extension.example"
   end
 
   test "sdk_options/2 rejects non-Claude providers" do

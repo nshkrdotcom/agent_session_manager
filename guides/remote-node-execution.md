@@ -37,6 +37,10 @@ ASM.query(session, "run locally", execution_mode: :local)
 
 `ASM.ProviderBackend.Core` is the source of truth for remote execution. The optional SDK lane is local-only.
 
+Normalized execution-surface fields such as `surface_kind` and
+`transport_options` still describe local subprocess or SSH placement. They do
+not change the meaning of `execution_mode: :remote_node`.
+
 `ASM.Schema.RemoteNode` now owns the resolved remote execution payload after ASM
 applies precedence rules. That keeps remote-node validation in one place and
 preserves forward-compatible fields on the resolved map rather than scattering
@@ -47,7 +51,8 @@ manual checks across the backend path.
 Lane resolution remains discovery-driven even when the run executes remotely.
 
 - `lane: :core` executes remotely on `ASM.ProviderBackend.Core`
-- `lane: :auto` still prefers `:sdk` when a local runtime kit is installed, but the landed Phase 3 remote boundary falls back to `lane: :core`
+- `lane: :auto` still prefers `:sdk` when a local runtime kit is installed,
+  but the landed Phase 3 remote boundary falls back to `lane: :core`
 - `lane: :sdk` with `execution_mode: :remote_node` is rejected as a configuration error
 
 This means remote results and streamed events can show:

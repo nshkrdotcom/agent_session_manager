@@ -2,8 +2,8 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
   use ASM.TestCase
 
   alias ASM.Extensions.ProviderSDK.Codex, as: CodexExtension
-  alias CliSubprocessCore.TestSupport.FakeSSH
   alias CliSubprocessCore.ModelRegistry.Selection
+  alias CliSubprocessCore.TestSupport.FakeSSH
   alias Codex.AppServer.Connection
   alias Codex.AppServer.Protocol
   alias Codex.{Options, Thread}

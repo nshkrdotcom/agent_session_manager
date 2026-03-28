@@ -72,6 +72,25 @@ defmodule ASM.TestSupport.Capabilities do
   end
 end
 
+workspace_build_glob = fn repo, env ->
+  Path.expand("../../#{repo}/_build/#{env}/lib/*/ebin", __DIR__)
+end
+
+workspace_provider_ebins =
+  ["codex_sdk", "claude_agent_sdk", "gemini_cli_sdk", "amp_sdk"]
+  |> Enum.flat_map(fn repo ->
+    test_paths = workspace_build_glob.(repo, "test") |> Path.wildcard()
+
+    if test_paths == [] do
+      workspace_build_glob.(repo, "dev") |> Path.wildcard()
+    else
+      test_paths
+    end
+  end)
+  |> Enum.uniq()
+
+Code.prepend_paths(workspace_provider_ebins)
+
 ExUnit.start(
   exclude: ASM.TestSupport.Capabilities.default_excludes(),
   assert_receive_timeout: 500

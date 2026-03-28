@@ -193,24 +193,26 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
 
     with {:ok, execution_surface, stripped_opts} <-
            SessionOptions.extract_execution_surface(asm_opts) do
-      case Keyword.get(stripped_opts, :provider, :claude) do
-        :claude ->
-          case Options.validate(Keyword.put(stripped_opts, :provider, :claude), provider_schema) do
-            {:ok, validated} ->
-              {:ok, %{validated: validated, execution_surface: execution_surface}}
-
-            {:error, %Error{} = error} ->
-              {:error, error}
-          end
-
-        other ->
-          {:error,
-           Error.new(
-             :config_invalid,
-             :provider,
-             "Claude extension requires provider :claude, got #{inspect(other)}"
-           )}
+      with :ok <- ensure_claude_provider(stripped_opts),
+           {:ok, validated} <-
+             Options.validate(Keyword.put(stripped_opts, :provider, :claude), provider_schema) do
+        {:ok, %{validated: validated, execution_surface: execution_surface}}
       end
+    end
+  end
+
+  defp ensure_claude_provider(stripped_opts) when is_list(stripped_opts) do
+    case Keyword.get(stripped_opts, :provider, :claude) do
+      :claude ->
+        :ok
+
+      other ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :provider,
+           "Claude extension requires provider :claude, got #{inspect(other)}"
+         )}
     end
   end
 

@@ -87,12 +87,17 @@ shared core env vars:
 
 ```bash
 CLI_SUBPROCESS_CORE_LIVE_SSH=1 \
-CLI_SUBPROCESS_CORE_LIVE_SSH_DESTINATION=luhome \
+CLI_SUBPROCESS_CORE_LIVE_SSH_DESTINATION=<ssh-host> \
 mix test --only live_ssh --include live_ssh test/asm/live_ssh_test.exs
 ```
 
+Optional shared-harness provider command overrides are also supported when a
+remote CLI exists outside the target shell `PATH`, for example
+`CLI_SUBPROCESS_CORE_LIVE_SSH_CLAUDE_COMMAND=/path/to/claude`.
+
 That test file exercises `ASM.query/3` over both the explicit `:core` and
-explicit `:sdk` Codex lanes with a real remote `execution_surface`.
+explicit `:sdk` Codex lanes and also checks structured SDK-lane remote failure
+handling for Claude, Gemini, and Amp on a real remote `execution_surface`.
 
 ## Partial Common Features
 

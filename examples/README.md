@@ -100,6 +100,8 @@ mix run --no-start examples/live_session_lifecycle.exs -- --provider codex --mod
 mix run --no-start examples/live_query.exs -- --provider claude --ollama --model haiku --ollama-model llama3.2
 mix run --no-start examples/live_query.exs -- --provider codex --ollama --ollama-model gpt-oss:20b
 mix run --no-start examples/live_query.exs -- --provider amp --lane sdk --sdk-root ../amp_sdk
+mix run --no-start examples/live_query.exs -- --provider codex --ssh-host example.internal
+mix run --no-start examples/live_query.exs -- --provider claude --ssh-host builder@example.internal --ssh-port 2222
 mix run --no-start examples/provider_codex_app_server.exs -- --provider codex --ollama --ollama-model gpt-oss:20b
 ```
 
@@ -112,6 +114,10 @@ Shared flags:
 - `--permission-mode <mode>`
 - `--cwd <path>`
 - `--sdk-root <path>`
+- `--ssh-host <host>`
+- `--ssh-user <user>`
+- `--ssh-port <port>`
+- `--ssh-identity-file <path>`
 
 ## Run All Examples
 
@@ -122,9 +128,15 @@ Shared flags:
 ./examples/run_all.sh --provider codex --ollama --ollama-model gpt-oss:20b
 ./examples/run_all.sh --provider claude --provider codex --ollama --ollama-model llama3.2
 ./examples/run_all.sh --provider amp --lane sdk --sdk-root ../amp_sdk
+./examples/run_all.sh --provider codex --ssh-host example.internal
+./examples/run_all.sh --provider claude --provider codex --ssh-host builder@example.internal --ssh-port 2222
 ```
 
 `run_all.sh` forwards extra flags to every selected example.
+
+When you pass `--ssh-host`, the examples switch to `execution_surface: :ssh_exec`
+for the selected provider while keeping the default local subprocess route
+unchanged when you omit the SSH flags.
 
 If `gpt-oss:20b` is installed locally in Ollama, the Codex examples above are
 the primary validated route. You can still substitute another installed model

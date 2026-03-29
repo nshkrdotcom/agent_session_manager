@@ -27,6 +27,8 @@ Usage:
   ./examples/run_all.sh --provider claude --provider codex --ollama --ollama-model llama3.2
   ./examples/run_all.sh --provider claude --provider gemini
   ./examples/run_all.sh --provider amp --lane sdk --sdk-root ../amp_sdk
+  ./examples/run_all.sh --provider codex --ssh-host example.internal
+  ./examples/run_all.sh --provider claude --ssh-host builder@example.internal --ssh-port 2222
 
 Notes:
   - Repeat --provider or pass a comma-separated list.

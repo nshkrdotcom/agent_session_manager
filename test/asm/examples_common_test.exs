@@ -148,6 +148,45 @@ defmodule ASM.Examples.CommonTest do
     assert payload.env_overrides["ANTHROPIC_AUTH_TOKEN"] == "ollama"
   end
 
+  test "common example parser injects ssh execution_surface metadata" do
+    assert {:ok, config} =
+             Common.build_example_config(
+               [
+                 "--provider",
+                 "codex",
+                 "--ssh-host",
+                 "builder@example.internal",
+                 "--ssh-port",
+                 "2222",
+                 "--ssh-identity-file",
+                 "./tmp/id_ed25519"
+               ],
+               @script_name,
+               @description,
+               @default_prompt
+             )
+
+    execution_surface = Keyword.fetch!(config.session_opts, :execution_surface)
+
+    assert execution_surface.surface_kind == :ssh_exec
+    assert execution_surface.transport_options[:destination] == "example.internal"
+    assert execution_surface.transport_options[:ssh_user] == "builder"
+    assert execution_surface.transport_options[:port] == 2222
+    assert execution_surface.transport_options[:identity_file] =~ "/tmp/id_ed25519"
+  end
+
+  test "common example parser rejects orphan ssh flags without a host" do
+    assert {:usage, 1, output} =
+             Common.build_example_config(
+               ["--provider", "claude", "--ssh-user", "builder"],
+               @script_name,
+               @description,
+               @default_prompt
+             )
+
+    assert output =~ "SSH example flags require --ssh-host"
+  end
+
   test "common example parser accepts the Codex Ollama surface for arbitrary local models" do
     assert {:ok, config} =
              Common.build_example_config(

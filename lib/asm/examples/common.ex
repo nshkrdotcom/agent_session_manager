@@ -69,7 +69,11 @@ defmodule ASM.Examples.Common do
           permission_mode: :string,
           prompt: :string,
           provider: :string,
-          sdk_root: :string
+          sdk_root: :string,
+          ssh_host: :string,
+          ssh_identity_file: :string,
+          ssh_port: :integer,
+          ssh_user: :string
         ],
         aliases: [h: :help, p: :provider]
       )
@@ -342,18 +346,23 @@ defmodule ASM.Examples.Common do
     case parse_lane(Keyword.get(parsed_opts, :lane)) do
       {:ok, lane} ->
         sdk_root = resolve_sdk_root(provider, parsed_opts, lane, provider_sdk?)
-        {session_opts, permission_source} = build_session_opts(provider, lane, parsed_opts)
 
-        build_provider_config(
-          provider,
-          prompt,
-          lane,
-          sdk_root,
-          session_opts,
-          permission_source,
-          usage,
-          provider_opts_builder
-        )
+        case build_session_opts(provider, lane, parsed_opts) do
+          {:ok, {session_opts, permission_source}} ->
+            build_provider_config(
+              provider,
+              prompt,
+              lane,
+              sdk_root,
+              session_opts,
+              permission_source,
+              usage,
+              provider_opts_builder
+            )
+
+          {:error, message} ->
+            {:usage, 1, message <> "\n\n" <> usage}
+        end
 
       {:error, message} ->
         {:usage, 1, message <> "\n\n" <> usage}
@@ -448,26 +457,29 @@ defmodule ASM.Examples.Common do
     cli_path = Keyword.get(opts, :cli_path)
     {permission_mode, permission_source} = resolve_permission_mode(opts)
 
-    session_opts =
-      []
-      |> Keyword.put(:provider, provider)
-      |> Keyword.put(:lane, lane)
-      |> put_opt(:cli_path, cli_path)
-      |> put_opt(:cwd, Keyword.get(opts, :cwd))
-      |> put_opt(
-        :model,
-        Keyword.get(opts, :model) ||
-          System.get_env(example_support.model_env) ||
-          example_support.example_default_model
-      )
-      |> put_opt(:permission_mode, permission_mode)
-      |> put_opt(:ollama, Keyword.get(opts, :ollama))
-      |> put_opt(:ollama_model, Keyword.get(opts, :ollama_model))
-      |> put_opt(:ollama_base_url, Keyword.get(opts, :ollama_base_url))
-      |> put_opt(:ollama_http, Keyword.get(opts, :ollama_http))
-      |> put_opt(:ollama_timeout_ms, Keyword.get(opts, :ollama_timeout_ms))
+    with {:ok, execution_surface} <- build_execution_surface(opts) do
+      session_opts =
+        []
+        |> Keyword.put(:provider, provider)
+        |> Keyword.put(:lane, lane)
+        |> put_opt(:cli_path, cli_path)
+        |> put_opt(:cwd, Keyword.get(opts, :cwd))
+        |> put_opt(:execution_surface, execution_surface)
+        |> put_opt(
+          :model,
+          Keyword.get(opts, :model) ||
+            System.get_env(example_support.model_env) ||
+            example_support.example_default_model
+        )
+        |> put_opt(:permission_mode, permission_mode)
+        |> put_opt(:ollama, Keyword.get(opts, :ollama))
+        |> put_opt(:ollama_model, Keyword.get(opts, :ollama_model))
+        |> put_opt(:ollama_base_url, Keyword.get(opts, :ollama_base_url))
+        |> put_opt(:ollama_http, Keyword.get(opts, :ollama_http))
+        |> put_opt(:ollama_timeout_ms, Keyword.get(opts, :ollama_timeout_ms))
 
-    {session_opts, permission_source}
+      {:ok, {session_opts, permission_source}}
+    end
   end
 
   defp resolve_permission_mode(opts) when is_list(opts) do
@@ -486,6 +498,101 @@ defmodule ASM.Examples.Common do
   defp present_option?(value) when is_binary(value), do: String.trim(value) != ""
   defp present_option?(nil), do: false
   defp present_option?(_value), do: true
+
+  defp build_execution_surface(opts) when is_list(opts) do
+    ssh_host = Keyword.get(opts, :ssh_host)
+    ssh_user = Keyword.get(opts, :ssh_user)
+    ssh_port = Keyword.get(opts, :ssh_port)
+    ssh_identity_file = Keyword.get(opts, :ssh_identity_file)
+
+    cond do
+      not present_option?(ssh_host) and
+          Enum.any?([ssh_user, ssh_port, ssh_identity_file], &present_option?/1) ->
+        {:error, "SSH example flags require --ssh-host when any other --ssh-* flag is set."}
+
+      not present_option?(ssh_host) ->
+        {:ok, nil}
+
+      true ->
+        with {:ok, {destination, parsed_user}} <- split_ssh_host(ssh_host),
+             {:ok, effective_user} <- coalesce_ssh_user(parsed_user, ssh_user),
+             {:ok, identity_file} <- normalize_identity_file(ssh_identity_file),
+             transport_options <-
+               []
+               |> Keyword.put(:destination, destination)
+               |> put_opt(:ssh_user, effective_user)
+               |> put_opt(:port, ssh_port)
+               |> put_opt(:identity_file, identity_file),
+             {:ok, execution_surface} <-
+               CliSubprocessCore.ExecutionSurface.new(
+                 surface_kind: :ssh_exec,
+                 transport_options: transport_options
+               ) do
+          {:ok, execution_surface}
+        else
+          {:error, reason} when is_binary(reason) ->
+            {:error, reason}
+
+          {:error, reason} ->
+            {:error, "invalid SSH example flags: #{inspect(reason)}"}
+        end
+    end
+  end
+
+  defp split_ssh_host(ssh_host) when is_binary(ssh_host) do
+    case String.trim(ssh_host) do
+      "" ->
+        {:error, "--ssh-host must be a non-empty host name"}
+
+      trimmed ->
+        case String.split(trimmed, "@", parts: 2) do
+          [destination] ->
+            {:ok, {destination, nil}}
+
+          [inline_user, destination] when inline_user != "" and destination != "" ->
+            {:ok, {destination, inline_user}}
+
+          _other ->
+            {:error, "--ssh-host must be either <host> or <user>@<host>"}
+        end
+    end
+  end
+
+  defp coalesce_ssh_user(nil, nil), do: {:ok, nil}
+
+  defp coalesce_ssh_user(inline_user, nil), do: {:ok, inline_user}
+
+  defp coalesce_ssh_user(nil, ssh_user) when is_binary(ssh_user) do
+    case String.trim(ssh_user) do
+      "" -> {:error, "--ssh-user must be a non-empty string"}
+      trimmed -> {:ok, trimmed}
+    end
+  end
+
+  defp coalesce_ssh_user(inline_user, ssh_user) when is_binary(ssh_user) do
+    normalized = String.trim(ssh_user)
+
+    cond do
+      normalized == "" ->
+        {:error, "--ssh-user must be a non-empty string"}
+
+      normalized == inline_user ->
+        {:ok, inline_user}
+
+      true ->
+        {:error,
+         "--ssh-host already contains #{inspect(inline_user)}; omit --ssh-user or make it match"}
+    end
+  end
+
+  defp normalize_identity_file(nil), do: {:ok, nil}
+
+  defp normalize_identity_file(path) when is_binary(path) do
+    case String.trim(path) do
+      "" -> {:error, "--ssh-identity-file must be a non-empty path"}
+      trimmed -> {:ok, Path.expand(trimmed)}
+    end
+  end
 
   defp put_opt(opts, _key, nil), do: opts
   defp put_opt(opts, _key, ""), do: opts
@@ -510,7 +617,7 @@ defmodule ASM.Examples.Common do
     provider_schema = Provider.resolve!(provider).options_schema
 
     session_opts
-    |> Keyword.drop([:lane])
+    |> Keyword.drop([:lane, :execution_surface])
     |> Options.validate(provider_schema)
     |> case do
       {:ok, validated} ->
@@ -731,6 +838,7 @@ defmodule ASM.Examples.Common do
     []
     |> Keyword.put(:prompt, @cli_probe_prompt)
     |> put_opt(:command, Keyword.get(opts, :cli_path))
+    |> put_opt(:execution_surface, Keyword.get(opts, :execution_surface))
   end
 
   defp print_runtime_notice(%__MODULE__{
@@ -906,6 +1014,10 @@ defmodule ASM.Examples.Common do
       --ollama-timeout-ms <ms>  Optional. Sets the Ollama timeout when supported.
       --cwd <path>              Optional. Runs the provider from a specific working directory.
       --sdk-root <path>         Optional. Loads a sibling provider SDK checkout for sdk-lane or provider-native examples.
+      --ssh-host <host>         Optional. Runs the example over execution_surface=:ssh_exec.
+      --ssh-user <user>         Optional. SSH user override for --ssh-host.
+      --ssh-port <port>         Optional. SSH port override for --ssh-host.
+      --ssh-identity-file <p>   Optional. SSH identity file for --ssh-host.
       --help                    Print this message.
 
     Default prompt:

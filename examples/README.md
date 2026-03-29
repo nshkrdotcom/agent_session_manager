@@ -37,6 +37,11 @@ That is deliberate. The examples never silently pick a provider for you.
 All ASM examples in this directory default to `permission_mode: :bypass` unless
 you override it with `--permission-mode` or `ASM_PERMISSION_MODE`.
 
+`--danger-full-access` is the example-level alias for `--permission-mode bypass`.
+It keeps the public ASM contract normalized as `permission_mode` while exposing
+an obvious remote-tooling knob for hosts where provider-native sandboxed shell
+execution is not usable.
+
 At startup, each example prints:
 
 - the normalized ASM permission mode
@@ -101,6 +106,7 @@ mix run --no-start examples/live_query.exs -- --provider claude --ollama --model
 mix run --no-start examples/live_query.exs -- --provider codex --ollama --ollama-model gpt-oss:20b
 mix run --no-start examples/live_query.exs -- --provider amp --lane sdk --sdk-root ../amp_sdk
 mix run --no-start examples/live_query.exs -- --provider codex --ssh-host example.internal
+mix run --no-start examples/live_query.exs -- --provider codex --ssh-host example.internal --danger-full-access
 mix run --no-start examples/live_query.exs -- --provider claude --ssh-host builder@example.internal --ssh-port 2222
 mix run --no-start examples/provider_codex_app_server.exs -- --provider codex --ollama --ollama-model gpt-oss:20b
 ```
@@ -112,6 +118,7 @@ Shared flags:
 - `--model <name>`
 - `--cli-path <path|command>`
 - `--permission-mode <mode>`
+- `--danger-full-access`
 - `--cwd <path>`
 - `--sdk-root <path>`
 - `--ssh-host <host>`
@@ -129,6 +136,7 @@ Shared flags:
 ./examples/run_all.sh --provider claude --provider codex --ollama --ollama-model llama3.2
 ./examples/run_all.sh --provider amp --lane sdk --sdk-root ../amp_sdk
 ./examples/run_all.sh --provider codex --ssh-host example.internal
+./examples/run_all.sh --provider codex --ssh-host example.internal --danger-full-access
 ./examples/run_all.sh --provider claude --provider codex --ssh-host builder@example.internal --ssh-port 2222
 ```
 
@@ -137,6 +145,11 @@ Shared flags:
 When you pass `--ssh-host`, the examples switch to `execution_surface: :ssh_exec`
 for the selected provider while keeping the default local subprocess route
 unchanged when you omit the SSH flags.
+
+When you also pass `--danger-full-access`, the examples keep the same transport
+surface and switch only the normalized ASM permission mode to `:bypass`. ASM
+then projects the provider-native permissive runtime flag for the selected
+provider.
 
 If `gpt-oss:20b` is installed locally in Ollama, the Codex examples above are
 the primary validated route. You can still substitute another installed model

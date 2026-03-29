@@ -24,7 +24,7 @@ defmodule ASM.Examples.Common do
           provider_opts: keyword(),
           lane: lane(),
           sdk_root: String.t() | nil,
-          permission_source: :cli_flag | :env | :example_default_bypass
+          permission_source: :cli_flag | :danger_full_access_flag | :env | :example_default_bypass
         }
 
   @providers [:claude, :gemini, :codex, :amp]
@@ -58,6 +58,7 @@ defmodule ASM.Examples.Common do
         strict: [
           cli_path: :string,
           cwd: :string,
+          danger_full_access: :boolean,
           help: :boolean,
           lane: :string,
           model: :string,
@@ -455,9 +456,9 @@ defmodule ASM.Examples.Common do
   defp build_session_opts(provider, lane, opts) do
     example_support = Provider.example_support!(provider)
     cli_path = Keyword.get(opts, :cli_path)
-    {permission_mode, permission_source} = resolve_permission_mode(opts)
 
-    with {:ok, execution_surface} <- build_execution_surface(opts) do
+    with {:ok, {permission_mode, permission_source}} <- resolve_permission_mode(opts),
+         {:ok, execution_surface} <- build_execution_surface(opts) do
       session_opts =
         []
         |> Keyword.put(:provider, provider)
@@ -484,16 +485,36 @@ defmodule ASM.Examples.Common do
 
   defp resolve_permission_mode(opts) when is_list(opts) do
     cond do
+      Keyword.get(opts, :danger_full_access, false) and
+        present_option?(Keyword.get(opts, :permission_mode)) and
+          normalize_permission_mode_flag(Keyword.get(opts, :permission_mode)) != "bypass" ->
+        {:error,
+         "--danger-full-access is the example alias for --permission-mode bypass; omit --permission-mode or set it to bypass"}
+
       present_option?(Keyword.get(opts, :permission_mode)) ->
-        {Keyword.get(opts, :permission_mode), :cli_flag}
+        {:ok, {Keyword.get(opts, :permission_mode), :cli_flag}}
+
+      Keyword.get(opts, :danger_full_access, false) ->
+        {:ok, {:bypass, :danger_full_access_flag}}
 
       present_option?(System.get_env("ASM_PERMISSION_MODE")) ->
-        {System.get_env("ASM_PERMISSION_MODE"), :env}
+        {:ok, {System.get_env("ASM_PERMISSION_MODE"), :env}}
 
       true ->
-        {:bypass, :example_default_bypass}
+        {:ok, {:bypass, :example_default_bypass}}
     end
   end
+
+  defp normalize_permission_mode_flag(value) when is_binary(value) do
+    value
+    |> String.trim()
+    |> String.downcase()
+  end
+
+  defp normalize_permission_mode_flag(value) when is_atom(value),
+    do: value |> Atom.to_string() |> String.downcase()
+
+  defp normalize_permission_mode_flag(_value), do: nil
 
   defp present_option?(value) when is_binary(value), do: String.trim(value) != ""
   defp present_option?(nil), do: false
@@ -1007,6 +1028,7 @@ defmodule ASM.Examples.Common do
       --model <name>            Optional. Overrides the provider model env var.
       --cli-path <path|command> Optional. Overrides the provider CLI env var and launcher.
       --permission-mode <mode>  Optional. Defaults to ASM_PERMISSION_MODE when set, otherwise the examples force bypass mode.
+      --danger-full-access      Optional. Example alias for --permission-mode bypass.
       --ollama                  Optional. Enables ASM's common Ollama surface when the provider supports it.
       --ollama-model <name>     Optional. Sets the direct Ollama model id for the common Ollama surface.
       --ollama-base-url <url>   Optional. Overrides the Ollama base URL for the common Ollama surface.

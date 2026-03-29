@@ -120,6 +120,32 @@ defmodule ASM.Examples.CommonTest do
     assert config.permission_source == :cli_flag
   end
 
+  test "danger-full-access acts as the example alias for bypass mode" do
+    assert {:ok, config} =
+             Common.build_example_config(
+               ["--provider", "codex", "--danger-full-access"],
+               @script_name,
+               @description,
+               @default_prompt
+             )
+
+    assert config.provider_opts[:permission_mode] == :bypass
+    assert config.provider_opts[:provider_permission_mode] == :yolo
+    assert config.permission_source == :danger_full_access_flag
+  end
+
+  test "danger-full-access rejects conflicting non-bypass permission modes" do
+    assert {:usage, 1, output} =
+             Common.build_example_config(
+               ["--provider", "claude", "--danger-full-access", "--permission-mode", "plan"],
+               @script_name,
+               @description,
+               @default_prompt
+             )
+
+    assert output =~ "--danger-full-access is the example alias for --permission-mode bypass"
+  end
+
   test "common example parser accepts the Ollama surface" do
     assert {:ok, config} =
              Common.build_example_config(

@@ -28,6 +28,11 @@ a provider, they print usage and exit without touching a live CLI.
 They also default to `permission_mode: :bypass` unless you override it with
 `--permission-mode` or `ASM_PERMISSION_MODE`.
 
+`--danger-full-access` is the example alias for `--permission-mode bypass`.
+That keeps the common ASM contract normalized while still giving the live
+examples an obvious flag for remote hosts where provider-native sandboxed shell
+execution is blocked by the target system.
+
 At startup, the examples print the normalized ASM permission mode plus the
 provider-native permission term and CLI flag.
 
@@ -46,12 +51,14 @@ mix run --no-start examples/live_stream.exs -- --provider amp --prompt "Reply wi
 ./examples/run_all.sh --provider claude
 ./examples/run_all.sh --provider claude --provider gemini
 ./examples/run_all.sh --provider codex --model gpt-5.4
+./examples/run_all.sh --provider codex --ssh-host example.internal --danger-full-access
 ./examples/run_all.sh --provider claude --ollama --ollama-model llama3.2
 ./examples/run_all.sh --provider codex --ollama --ollama-model llama3.2
 ```
 
 `run_all.sh` forwards extra flags to each example, so common overrides such as
-`--model`, `--cli-path`, `--permission-mode`, and `--cwd` can be applied once.
+`--model`, `--cli-path`, `--permission-mode`, `--danger-full-access`, and
+`--cwd` can be applied once.
 The common `--ollama*` flags are valid only for Claude and Codex.
 
 For Codex, `gpt-oss:20b` remains the default validated Ollama example model,

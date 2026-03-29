@@ -19,6 +19,19 @@ defmodule ASM.BoundaryEnforcementTest do
     assert :boundary in compilers
   end
 
+  test "boundary dependency remains available to dependency-driven dev compiles" do
+    boundary_dep =
+      Mix.Project.config()[:deps]
+      |> Enum.find(fn
+        {:boundary, _requirement, _opts} -> true
+        _other -> false
+      end)
+
+    assert {:boundary, "~> 0.10.4", opts} = boundary_dep
+    assert opts[:runtime] == false
+    refute Keyword.has_key?(opts, :only)
+  end
+
   test "core and extension boundaries are declared" do
     view = View.build()
     asm_boundary = Boundary.fetch!(view, ASM)

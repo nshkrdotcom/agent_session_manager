@@ -132,10 +132,10 @@ alias ASM.Extensions.ProviderSDK.Claude
 asm_opts = [
   provider: :claude,
   cwd: File.cwd!(),
-  permission_mode: :plan,
+  execution_environment: [permission_mode: :plan],
   model: "sonnet",
   execution_surface: [
-    surface_kind: :static_ssh,
+    surface_kind: :ssh_exec,
     transport_options: [destination: "buildbox-a", port: 2222]
   ]
 ]
@@ -190,8 +190,9 @@ alias Codex, as: CodexSDK
       provider: :codex,
       model: "gpt-5.4",
       reasoning_effort: :high,
+      execution_environment: [permission_mode: :default],
       execution_surface: [
-        surface_kind: :leased_ssh,
+        surface_kind: :ssh_exec,
         transport_options: [destination: "codex-host-1"],
         lease_ref: "lease-42"
       ]
@@ -205,7 +206,7 @@ alias Codex, as: CodexSDK
     [
       provider: :codex,
       cwd: "/repo",
-      permission_mode: :auto,
+      execution_environment: [permission_mode: :auto],
       approval_timeout_ms: 45_000,
       output_schema: %{"type" => "object"}
     ],
@@ -236,9 +237,9 @@ alias Codex, as: CodexSDK
 - local `:core` and local `:sdk` lanes preserve the same normalized
   `execution_surface` contract; `execution_mode: :remote_node`
   remains a separate ASM-only rule
-- ASM-derived fields such as `:cwd`, `:permission_mode`, `:model`,
-  `:max_turns`, and `:timeout_ms` must stay in ASM config and are rejected from
-  `native_overrides`
+- ASM-derived fields such as `:cwd`, `:execution_environment`, `:model`,
+  `:max_turns`, and `:timeout_ms` must stay in ASM config and are rejected
+  from `native_overrides`
 - the Codex bridge follows the same rule for ASM-derived fields such as
   `:model`, `:reasoning_effort`, `:cwd`, `:approval_timeout_ms`, and
   `:output_schema`

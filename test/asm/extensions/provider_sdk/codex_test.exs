@@ -17,7 +17,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
       model: "gpt-5.4",
       reasoning_effort: :high,
       execution_surface: [
-        surface_kind: :static_ssh,
+        surface_kind: :ssh_exec,
         transport_options: [destination: "codex.options.example", port: 2222]
       ]
     ]
@@ -33,7 +33,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
     assert options.codex_path_override == "/usr/local/bin/codex"
     assert options.model == "gpt-5.4"
     assert options.reasoning_effort == :high
-    assert options.execution_surface.surface_kind == :static_ssh
+    assert options.execution_surface.surface_kind == :ssh_exec
     assert options.execution_surface.transport_options[:destination] == "codex.options.example"
     assert options.model_personality == :pragmatic
     assert options.hide_agent_reasoning == true
@@ -156,7 +156,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
         model: "gpt-5.4",
         reasoning_effort: :medium,
         execution_surface: [
-          surface_kind: :leased_ssh,
+          surface_kind: :ssh_exec,
           transport_options: [destination: "codex.session.example"],
           observability: %{suite: :provider_sdk}
         ],
@@ -182,7 +182,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
 
     assert codex_options.model == "gpt-5.4"
     assert codex_options.reasoning_effort == :medium
-    assert codex_options.execution_surface.surface_kind == :leased_ssh
+    assert codex_options.execution_surface.surface_kind == :ssh_exec
 
     assert codex_options.execution_surface.transport_options[:destination] ==
              "codex.session.example"
@@ -212,7 +212,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
                cli_path: AppServerSubprocess.command_path(harness),
                model: "gpt-5.4",
                execution_surface: [
-                 surface_kind: :static_ssh,
+                 surface_kind: :ssh_exec,
                  transport_options:
                    FakeSSH.transport_options(fake_ssh,
                      destination: "codex.extension.example",
@@ -221,7 +221,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
                ]
              )
 
-    assert codex_opts.execution_surface.surface_kind == :static_ssh
+    assert codex_opts.execution_surface.surface_kind == :ssh_exec
 
     assert codex_opts.execution_surface.transport_options[:destination] ==
              "codex.extension.example"

@@ -12,6 +12,7 @@ defmodule ASM.Stream do
     :queue_timeout_ms,
     :transport_call_timeout_ms,
     :execution_surface,
+    :execution_environment,
     :workspace_root,
     :allowed_tools,
     :approval_posture,
@@ -181,7 +182,6 @@ defmodule ASM.Stream do
 
     finalized_opts =
       validated_opts
-      |> maybe_put_workspace_root(execution_config)
       |> maybe_override_permission_modes(execution_config)
 
     case ASM.Options.finalize_provider_opts(session_state.provider.name, finalized_opts) do
@@ -190,22 +190,9 @@ defmodule ASM.Stream do
     end
   end
 
-  defp maybe_put_workspace_root(provider_opts, execution_config)
-       when is_list(provider_opts) and is_map(execution_config) do
-    workspace_root = Map.get(execution_config, :workspace_root)
-
-    if is_binary(workspace_root) and workspace_root != "" do
-      Keyword.put_new(provider_opts, :cwd, workspace_root)
-    else
-      provider_opts
-    end
-  end
-
-  defp maybe_put_workspace_root(provider_opts, _execution_config), do: provider_opts
-
   defp maybe_override_permission_modes(provider_opts, execution_config)
        when is_list(provider_opts) and is_map(execution_config) do
-    permission_mode = Map.get(execution_config, :permission_mode)
+    permission_mode = Config.to_execution_environment(execution_config).permission_mode
     provider_permission_mode = Map.get(execution_config, :provider_permission_mode)
 
     provider_opts

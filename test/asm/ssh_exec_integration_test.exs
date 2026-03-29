@@ -18,7 +18,7 @@ defmodule ASM.SSHExecIntegrationTest do
       start_session!(
         provider: :codex,
         execution_surface: [
-          surface_kind: :static_ssh,
+          surface_kind: :ssh_exec,
           transport_options:
             FakeSSH.transport_options(fake_ssh,
               destination: "asm.ssh.query.example",
@@ -28,7 +28,7 @@ defmodule ASM.SSHExecIntegrationTest do
       )
 
     assert {:ok, info} = ASM.session_info(session)
-    assert info.options[:execution_surface].surface_kind == :static_ssh
+    assert info.options[:execution_surface].surface_kind == :ssh_exec
 
     assert info.options[:execution_surface].transport_options[:destination] ==
              "asm.ssh.query.example"
@@ -59,7 +59,7 @@ defmodule ASM.SSHExecIntegrationTest do
       start_session!(
         provider: :codex,
         execution_surface: [
-          surface_kind: :static_ssh,
+          surface_kind: :ssh_exec,
           transport_options:
             FakeSSH.transport_options(fake_ssh,
               destination: "asm.ssh.interrupt.example"

@@ -2,7 +2,9 @@ defmodule ASM.ProviderBackend.SDKTest do
   use ASM.TestCase
 
   alias ASM.{Execution, Provider}
+  alias ASM.Execution.Environment
   alias ASM.ProviderBackend.SDK
+  alias CliSubprocessCore.ExecutionSurface
 
   defmodule ClaudeRuntimeStub do
     @moduledoc false
@@ -142,14 +144,13 @@ defmodule ASM.ProviderBackend.SDKTest do
     config = %{
       provider: provider,
       prompt: "hello",
-      execution_config: %Execution.Config{
-        execution_mode: :local,
-        transport_call_timeout_ms: 5_000,
-        surface_kind: :static_ssh,
-        transport_options: [destination: "claude.sdk.example", port: 2222],
-        target_id: "claude-target-1",
-        observability: %{suite: :sdk}
-      },
+      execution_config:
+        execution_config(
+          surface_kind: :ssh_exec,
+          transport_options: [destination: "claude.sdk.example", port: 2222],
+          target_id: "claude-target-1",
+          observability: %{suite: :sdk}
+        ),
       provider_opts: [max_stderr_buffer_bytes: 2048],
       metadata: %{test_pid: self()}
     }
@@ -168,7 +169,7 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert %CliSubprocessCore.ExecutionSurface{} =
              execution_surface = Keyword.fetch!(start_opts, :execution_surface)
 
-    assert execution_surface.surface_kind == :static_ssh
+    assert execution_surface.surface_kind == :ssh_exec
     assert execution_surface.transport_options[:destination] == "claude.sdk.example"
     assert execution_surface.target_id == "claude-target-1"
     assert execution_surface.observability == %{suite: :sdk}
@@ -185,13 +186,12 @@ defmodule ASM.ProviderBackend.SDKTest do
     config = %{
       provider: provider,
       prompt: "hello",
-      execution_config: %Execution.Config{
-        execution_mode: :local,
-        transport_call_timeout_ms: 5_000,
-        surface_kind: :leased_ssh,
-        transport_options: [destination: "codex.sdk.example"],
-        lease_ref: "lease-123"
-      },
+      execution_config:
+        execution_config(
+          surface_kind: :ssh_exec,
+          transport_options: [destination: "codex.sdk.example"],
+          lease_ref: "lease-123"
+        ),
       provider_opts: [
         model: "gpt-5.4",
         reasoning_effort: :high,
@@ -217,7 +217,7 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert %CliSubprocessCore.ExecutionSurface{} =
              execution_surface = Keyword.fetch!(start_opts, :execution_surface)
 
-    assert execution_surface.surface_kind == :leased_ssh
+    assert execution_surface.surface_kind == :ssh_exec
     assert execution_surface.transport_options[:destination] == "codex.sdk.example"
     assert execution_surface.lease_ref == "lease-123"
     assert exec_opts.execution_surface == execution_surface
@@ -237,13 +237,12 @@ defmodule ASM.ProviderBackend.SDKTest do
     config = %{
       provider: provider,
       prompt: "hello",
-      execution_config: %Execution.Config{
-        execution_mode: :local,
-        transport_call_timeout_ms: 5_000,
-        surface_kind: :static_ssh,
-        transport_options: [destination: "amp.sdk.example"],
-        boundary_class: :workspace
-      },
+      execution_config:
+        execution_config(
+          surface_kind: :ssh_exec,
+          transport_options: [destination: "amp.sdk.example"],
+          boundary_class: :workspace
+        ),
       provider_opts: [
         model: "amp-1",
         permission_mode: :bypass,
@@ -265,7 +264,7 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert %CliSubprocessCore.ExecutionSurface{} =
              execution_surface = Keyword.fetch!(start_opts, :execution_surface)
 
-    assert execution_surface.surface_kind == :static_ssh
+    assert execution_surface.surface_kind == :ssh_exec
     assert execution_surface.transport_options[:destination] == "amp.sdk.example"
     assert execution_surface.boundary_class == :workspace
     assert options.execution_surface == execution_surface
@@ -284,13 +283,12 @@ defmodule ASM.ProviderBackend.SDKTest do
     config = %{
       provider: provider,
       prompt: "hello",
-      execution_config: %Execution.Config{
-        execution_mode: :local,
-        transport_call_timeout_ms: 5_000,
-        surface_kind: :leased_ssh,
-        transport_options: [destination: "gemini.sdk.example"],
-        surface_ref: "surface-9"
-      },
+      execution_config:
+        execution_config(
+          surface_kind: :ssh_exec,
+          transport_options: [destination: "gemini.sdk.example"],
+          surface_ref: "surface-9"
+        ),
       provider_opts: [model: "gemini-2.5-pro"],
       metadata: %{test_pid: self()}
     }
@@ -308,7 +306,7 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert %CliSubprocessCore.ExecutionSurface{} =
              execution_surface = Keyword.fetch!(start_opts, :execution_surface)
 
-    assert execution_surface.surface_kind == :leased_ssh
+    assert execution_surface.surface_kind == :ssh_exec
     assert execution_surface.transport_options[:destination] == "gemini.sdk.example"
     assert execution_surface.surface_ref == "surface-9"
     assert options.execution_surface == execution_surface
@@ -326,12 +324,7 @@ defmodule ASM.ProviderBackend.SDKTest do
       provider: provider,
       prompt: "hello",
       provider_opts: [model: "sonnet"],
-      execution_config:
-        %Execution.Config{
-          execution_mode: :local,
-          transport_call_timeout_ms: 5_000
-        }
-        |> Map.put(:approval_posture, :none)
+      execution_config: execution_config([], approval_posture: :none)
     }
 
     assert {:error, error} = SDK.start_run(config)
@@ -339,5 +332,29 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert error.domain == :config
     assert error.message =~ "approval_posture"
     assert error.message =~ ":none"
+  end
+
+  defp execution_config(surface_attrs) when is_list(surface_attrs) do
+    execution_config(surface_attrs, [], [])
+  end
+
+  defp execution_config(surface_attrs, environment_attrs)
+       when is_list(surface_attrs) and is_list(environment_attrs) do
+    execution_config(surface_attrs, environment_attrs, [])
+  end
+
+  defp execution_config(surface_attrs, environment_attrs, attrs)
+       when is_list(surface_attrs) and is_list(environment_attrs) and is_list(attrs) do
+    {:ok, execution_surface} = ExecutionSurface.new(surface_attrs)
+    {:ok, execution_environment} = Environment.new(environment_attrs)
+
+    struct!(Execution.Config,
+      execution_mode: Keyword.get(attrs, :execution_mode, :local),
+      transport_call_timeout_ms: Keyword.get(attrs, :transport_call_timeout_ms, 5_000),
+      execution_surface: execution_surface,
+      execution_environment: execution_environment,
+      provider_permission_mode: Keyword.get(attrs, :provider_permission_mode),
+      remote: Keyword.get(attrs, :remote)
+    )
   end
 end

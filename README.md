@@ -167,48 +167,55 @@ Per-run options override session defaults. Session defaults are inherited automa
 
 ASM keeps the bridge-to-core contract transport-neutral.
 
-Session defaults and per-run overrides can carry a single canonical
-`execution_surface` plus the broader ASM run/session controls:
+Session defaults and per-run overrides carry transport placement separately
+from runtime environment and approval context:
 
 - `execution_surface`
-- `workspace_root`
-- `allowed_tools`
-- `approval_posture`
-- `permission_mode`
+- `execution_environment`
 
 ```elixir
 execution_surface = [
-  surface_kind: :static_ssh,
+  surface_kind: :ssh_exec,
   transport_options: [destination: "buildbox-a", port: 2222],
   target_id: "buildbox-a"
+]
+
+execution_environment = [
+  workspace_root: "/repo",
+  allowed_tools: ["git.status"],
+  approval_posture: :manual,
+  permission_mode: :default
 ]
 
 {:ok, session} =
   ASM.start_session(
     provider: :codex,
-    execution_surface: execution_surface
+    execution_surface: execution_surface,
+    execution_environment: execution_environment
   )
 ```
 
 Session startup normalizes stored defaults so `ASM.session_info/1` reflects the
 same `CliSubprocessCore.ExecutionSurface` contract the downstream SDK repos
-consume. Run execution then merges per-run overrides, enforces non-empty
-`allowed_tools` in the ASM pipeline, and forwards execution-surface data only
-to the backend/runtime startup path.
-`approval_posture: :none` stays explicit and runtime backends reject unresolved
-starts instead of normalizing it away silently.
+consume. `execution_environment` is normalized separately and carries
+`workspace_root`, `allowed_tools`, `approval_posture`, and `permission_mode`.
+Run execution then merges per-run overrides, enforces non-empty `allowed_tools`
+in the ASM pipeline, and forwards placement only to the backend/runtime startup
+path. `approval_posture: :none` stays explicit and runtime backends reject
+unresolved starts instead of normalizing it away silently.
 
-ASM does not expose a second split public surface for placement. `surface_kind`,
-`transport_options`, `lease_ref`, `surface_ref`, `target_id`,
-`boundary_class`, and `observability` belong inside `execution_surface`.
+ASM keeps one public placement surface. `surface_kind`, `transport_options`,
+`lease_ref`, `surface_ref`, `target_id`, `boundary_class`, and
+`observability` belong inside `execution_surface`. Workspace and approval
+policy do not.
 
 Phase D now proves that unchanged execution config path over SSH as well:
 
-- `:static_ssh` and `:leased_ssh` both execute through the generic
-  `execution_surface` contract
+- `:ssh_exec` executes through the generic `execution_surface` contract
 - start, stream, interrupt, close, and terminal-error handling stay on the
   existing ASM surface
-- guest bridge remains deferred and is not exposed as a runtime adapter here
+- guest bridge can remain transport-neutral at the ASM seam without turning ASM
+  into a transport registry
 
 ## Runtime Architecture
 
@@ -465,7 +472,7 @@ alias ASM.Extensions.ProviderSDK.Claude
 asm_opts = [
   provider: :claude,
   cwd: File.cwd!(),
-  permission_mode: :plan,
+  execution_environment: [permission_mode: :plan],
   model: "sonnet"
 ]
 
@@ -490,7 +497,7 @@ That bridge is intentionally separate from the normalized kernel:
 
 - ASM-style options stay in the first argument
 - Claude-native options stay in `native_overrides`
-- overlapping keys such as `:cwd`, `:permission_mode`, `:model`, and
+- overlapping keys such as `:cwd`, `:execution_environment`, `:model`, and
   `:max_turns` are rejected and must stay in `asm_opts`
 - control calls still use `ClaudeAgentSDK.Client.*`
 
@@ -518,7 +525,7 @@ alias Codex, as: CodexSDK
     [
       provider: :codex,
       cwd: "/workspaces/repo",
-      permission_mode: :auto,
+      execution_environment: [permission_mode: :auto],
       approval_timeout_ms: 45_000,
       output_schema: %{"type" => "object"}
     ],

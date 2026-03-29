@@ -232,7 +232,7 @@ defmodule ASM.ProviderBackend.SDK do
   end
 
   defp validate_approval_posture(execution_config) when is_map(execution_config) do
-    if Map.get(execution_config, :approval_posture) == :none do
+    if Execution.Config.to_execution_environment(execution_config).approval_posture == :none do
       {:error,
        Error.new(
          :config_invalid,
@@ -245,10 +245,11 @@ defmodule ASM.ProviderBackend.SDK do
   end
 
   defp effective_provider_opts(config, execution_config) when is_map(execution_config) do
+    execution_environment = Execution.Config.to_execution_environment(execution_config)
+
     config
     |> Map.get(:provider_opts, [])
-    |> maybe_put_new(:cwd, Map.get(execution_config, :workspace_root))
-    |> maybe_put(:permission_mode, Map.get(execution_config, :permission_mode))
+    |> maybe_put(:permission_mode, execution_environment.permission_mode)
     |> maybe_put(
       :provider_permission_mode,
       Map.get(execution_config, :provider_permission_mode)
@@ -445,9 +446,6 @@ defmodule ASM.ProviderBackend.SDK do
 
   defp maybe_put(provider_opts, _key, nil), do: provider_opts
   defp maybe_put(provider_opts, key, value), do: Keyword.put(provider_opts, key, value)
-
-  defp maybe_put_new(provider_opts, _key, nil), do: provider_opts
-  defp maybe_put_new(provider_opts, key, value), do: Keyword.put_new(provider_opts, key, value)
 
   defp execution_surface_from_config(%Execution.Config{} = execution_config) do
     {:ok, Execution.Config.to_execution_surface(execution_config)}

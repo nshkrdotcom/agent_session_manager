@@ -119,25 +119,19 @@ defmodule ASM.ProviderBackend.Core do
   end
 
   defp effective_provider_opts(config, execution_config) when is_map(execution_config) do
+    execution_environment = Execution.Config.to_execution_environment(execution_config)
+
     config
     |> Map.get(:provider_opts, [])
-    |> maybe_put_new(:cwd, Map.get(execution_config, :workspace_root))
-    |> maybe_put(:permission_mode, Map.get(execution_config, :permission_mode))
+    |> maybe_put(:permission_mode, execution_environment.permission_mode)
     |> maybe_put(
       :provider_permission_mode,
       Map.get(execution_config, :provider_permission_mode)
     )
   end
 
-  defp execution_surface_opts(execution_config) when is_map(execution_config) do
-    []
-    |> Keyword.put(:surface_kind, Map.get(execution_config, :surface_kind))
-    |> Keyword.put(:transport_options, Map.get(execution_config, :transport_options, []))
-    |> maybe_put(:target_id, Map.get(execution_config, :target_id))
-    |> maybe_put(:lease_ref, Map.get(execution_config, :lease_ref))
-    |> maybe_put(:surface_ref, Map.get(execution_config, :surface_ref))
-    |> maybe_put(:boundary_class, Map.get(execution_config, :boundary_class))
-    |> Keyword.put(:observability, Map.get(execution_config, :observability, %{}))
+  defp execution_surface_opts(%Execution.Config{} = execution_config) do
+    [execution_surface: Execution.Config.to_execution_surface(execution_config)]
   end
 
   defp maybe_put_cli_path(provider_opts) do
@@ -153,7 +147,7 @@ defmodule ASM.ProviderBackend.Core do
   end
 
   defp validate_approval_posture(execution_config) when is_map(execution_config) do
-    if Map.get(execution_config, :approval_posture) == :none do
+    if Execution.Config.to_execution_environment(execution_config).approval_posture == :none do
       {:error,
        Error.new(
          :config_invalid,
@@ -268,7 +262,4 @@ defmodule ASM.ProviderBackend.Core do
 
   defp maybe_put(provider_opts, _key, nil), do: provider_opts
   defp maybe_put(provider_opts, key, value), do: Keyword.put(provider_opts, key, value)
-
-  defp maybe_put_new(provider_opts, _key, nil), do: provider_opts
-  defp maybe_put_new(provider_opts, key, value), do: Keyword.put_new(provider_opts, key, value)
 end

@@ -77,14 +77,17 @@ defmodule ASM.Session.Supervisor do
   end
 
   defp merge_execution_config(session_options, %Config{} = execution_config) do
+    execution_environment = Config.to_execution_environment(execution_config)
+
     session_options
     |> Keyword.put(:execution_mode, execution_config.execution_mode)
     |> Keyword.put(:transport_call_timeout_ms, execution_config.transport_call_timeout_ms)
     |> Keyword.put(:execution_surface, Config.to_execution_surface(execution_config))
-    |> Keyword.put(:allowed_tools, execution_config.allowed_tools)
-    |> maybe_put(:workspace_root, execution_config.workspace_root)
-    |> maybe_put(:approval_posture, execution_config.approval_posture)
-    |> maybe_put(:permission_mode, execution_config.permission_mode)
+    |> Keyword.put(:execution_environment, execution_environment)
+    |> Keyword.put(:allowed_tools, execution_environment.allowed_tools)
+    |> maybe_put(:workspace_root, execution_environment.workspace_root)
+    |> maybe_put(:approval_posture, execution_environment.approval_posture)
+    |> maybe_put(:permission_mode, execution_environment.permission_mode)
     |> maybe_put(:provider_permission_mode, execution_config.provider_permission_mode)
   end
 

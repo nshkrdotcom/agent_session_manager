@@ -129,7 +129,7 @@ defmodule ASM.LaneIntegrationTest do
     end
   end
 
-  test "explicit sdk lane preserves :static_ssh execution-surface routing" do
+  test "explicit sdk lane preserves :ssh_exec execution-surface routing with lease metadata" do
     put_runtime_loader(fn
       Codex.Runtime.Exec -> true
       runtime -> Code.ensure_loaded?(runtime)
@@ -146,7 +146,7 @@ defmodule ASM.LaneIntegrationTest do
       start_session!(
         :codex,
         execution_surface: [
-          surface_kind: :static_ssh,
+          surface_kind: :ssh_exec,
           transport_options:
             FakeSSH.transport_options(fake_ssh,
               destination: "sdk-static-ssh.example",
@@ -173,7 +173,7 @@ defmodule ASM.LaneIntegrationTest do
     assert :ok = ASM.stop_session(session)
   end
 
-  test "explicit sdk lane preserves :leased_ssh execution-surface routing" do
+  test "explicit sdk lane preserves :ssh_exec execution-surface routing" do
     put_runtime_loader(fn
       Codex.Runtime.Exec -> true
       runtime -> Code.ensure_loaded?(runtime)
@@ -190,7 +190,7 @@ defmodule ASM.LaneIntegrationTest do
       start_session!(
         :codex,
         execution_surface: [
-          surface_kind: :leased_ssh,
+          surface_kind: :ssh_exec,
           transport_options:
             FakeSSH.transport_options(fake_ssh,
               destination: "sdk-leased-ssh.example"

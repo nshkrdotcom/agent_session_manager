@@ -68,8 +68,8 @@ defmodule ASM.Execution.ConfigTest do
   test "resolve/2 preserves non-empty allowed_tools and explicit approval_posture :none" do
     session_stream_opts = [
       execution_surface: [
-        surface_kind: :leased_ssh,
-        transport_options: %{startup_mode: :lazy},
+        surface_kind: :ssh_exec,
+        transport_options: %{destination: "runtime.example"},
         lease_ref: "lease-1",
         surface_ref: "surface-1",
         target_id: "target-1",
@@ -82,22 +82,23 @@ defmodule ASM.Execution.ConfigTest do
     ]
 
     assert {:ok, cfg} = Config.resolve(session_stream_opts, [])
-    assert Map.get(cfg, :surface_kind) == :leased_ssh
-    assert Map.get(cfg, :transport_options) == [startup_mode: :lazy]
-    assert Map.get(cfg, :workspace_root) == "/tmp/runtime"
-    assert Map.get(cfg, :allowed_tools) == ["shell", "read"]
-    assert Map.get(cfg, :approval_posture) == :none
-    assert Map.get(cfg, :lease_ref) == "lease-1"
-    assert Map.get(cfg, :surface_ref) == "surface-1"
-    assert Map.get(cfg, :target_id) == "target-1"
-    assert Map.get(cfg, :boundary_class) == :isolated
-    assert Map.get(cfg, :observability) == %{suite: :phase_c}
+    assert cfg.execution_surface.surface_kind == :ssh_exec
+    assert cfg.execution_surface.transport_options == [destination: "runtime.example"]
+    assert cfg.execution_surface.lease_ref == "lease-1"
+    assert cfg.execution_surface.surface_ref == "surface-1"
+    assert cfg.execution_surface.target_id == "target-1"
+    assert cfg.execution_surface.boundary_class == :isolated
+    assert cfg.execution_surface.observability == %{suite: :phase_c}
+    assert cfg.execution_environment.workspace_root == "/tmp/runtime"
+    assert cfg.execution_environment.allowed_tools == ["shell", "read"]
+    assert cfg.execution_environment.approval_posture == :none
+    assert cfg.execution_environment.permission_mode == :bypass
   end
 
   test "resolve/2 merges session and run execution_surface values canonically" do
     session_stream_opts = [
       execution_surface: %{
-        "surface_kind" => :static_ssh,
+        "surface_kind" => :ssh_exec,
         "transport_options" => [destination: "session.example"],
         "target_id" => "session-target",
         "observability" => %{scope: :session}
@@ -106,7 +107,7 @@ defmodule ASM.Execution.ConfigTest do
 
     run_stream_opts = [
       execution_surface: [
-        surface_kind: :leased_ssh,
+        surface_kind: :ssh_exec,
         transport_options: [port: 2222],
         lease_ref: "lease-42",
         observability: %{scope: :run}
@@ -114,12 +115,12 @@ defmodule ASM.Execution.ConfigTest do
     ]
 
     assert {:ok, cfg} = Config.resolve(session_stream_opts, run_stream_opts)
-    assert cfg.surface_kind == :leased_ssh
-    assert cfg.transport_options[:destination] == "session.example"
-    assert cfg.transport_options[:port] == 2222
-    assert cfg.target_id == nil
-    assert cfg.lease_ref == "lease-42"
-    assert cfg.observability == %{scope: :run}
+    assert cfg.execution_surface.surface_kind == :ssh_exec
+    assert cfg.execution_surface.transport_options[:destination] == "session.example"
+    assert cfg.execution_surface.transport_options[:port] == 2222
+    assert cfg.execution_surface.target_id == nil
+    assert cfg.execution_surface.lease_ref == "lease-42"
+    assert cfg.execution_surface.observability == %{scope: :run}
   end
 
   test "resolve/2 validates remote-node schema-owned fields" do
@@ -135,7 +136,7 @@ defmodule ASM.Execution.ConfigTest do
 
   test "resolve/2 rejects legacy execution-surface keys" do
     assert {:error, error} =
-             Config.resolve([surface_kind: :static_ssh], [])
+             Config.resolve([surface_kind: :ssh_exec], [])
 
     assert error.kind == :config_invalid
     assert error.message =~ "legacy execution-surface keys"

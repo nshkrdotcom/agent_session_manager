@@ -19,6 +19,7 @@ defmodule ASM.Extensions.ProviderSDK.SessionOptions do
     :stream_timeout_ms,
     :queue_timeout_ms,
     :transport_call_timeout_ms,
+    :execution_environment,
     :workspace_root,
     :allowed_tools,
     :approval_posture,
@@ -42,9 +43,7 @@ defmodule ASM.Extensions.ProviderSDK.SessionOptions do
 
   @spec provider_opts(keyword()) :: keyword()
   def provider_opts(options) when is_list(options) do
-    options
-    |> maybe_put_cwd_from_workspace_root()
-    |> Keyword.drop(@session_only_keys)
+    Keyword.drop(options, @session_only_keys)
   end
 
   @spec extract_execution_surface(keyword()) ::
@@ -68,16 +67,6 @@ defmodule ASM.Extensions.ProviderSDK.SessionOptions do
              normalize_execution_surface_input(Keyword.get(options, :execution_surface)) do
         {:ok, execution_surface, stripped_options}
       end
-    end
-  end
-
-  defp maybe_put_cwd_from_workspace_root(options) do
-    case Keyword.get(options, :workspace_root) do
-      value when is_binary(value) and value != "" ->
-        Keyword.put_new(options, :cwd, value)
-
-      _other ->
-        options
     end
   end
 

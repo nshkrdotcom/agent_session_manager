@@ -22,7 +22,7 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
       include_thinking: true,
       transport_timeout_ms: 12_000,
       execution_surface: [
-        surface_kind: :static_ssh,
+        surface_kind: :ssh_exec,
         transport_options: [destination: "claude.options.example", port: 2222]
       ]
     ]
@@ -41,7 +41,7 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
     assert options.model == "sonnet"
     assert options.max_turns == 3
     assert options.timeout_ms == 12_000
-    assert options.execution_surface.surface_kind == :static_ssh
+    assert options.execution_surface.surface_kind == :ssh_exec
     assert options.execution_surface.transport_options[:destination] == "claude.options.example"
     assert options.thinking == %{type: :adaptive}
     assert options.enable_file_checkpointing == true
@@ -79,7 +79,7 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
         model: "haiku",
         max_turns: 2,
         execution_surface: [
-          surface_kind: :leased_ssh,
+          surface_kind: :ssh_exec,
           transport_options: [destination: "claude.session.example"],
           observability: %{suite: :provider_sdk}
         ],
@@ -96,11 +96,11 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
                enable_file_checkpointing: true
              )
 
-    assert options.cwd == "/tmp/asm-session-defaults"
+    assert options.cwd == nil
     assert options.permission_mode == :plan
     assert options.model == "sonnet"
     assert options.max_turns == 2
-    assert options.execution_surface.surface_kind == :leased_ssh
+    assert options.execution_surface.surface_kind == :ssh_exec
     assert options.execution_surface.transport_options[:destination] == "claude.session.example"
     assert options.execution_surface.observability == %{suite: :provider_sdk}
     assert options.enable_file_checkpointing == true
@@ -125,8 +125,11 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
         permission_mode: :plan,
         model: "sonnet",
         max_turns: 4,
-        execution_surface:
-          FakeCLI.static_ssh_surface(fake_cli, fake_ssh, destination: "claude.extension.example")
+        execution_surface: [
+          surface_kind: :ssh_exec,
+          transport_options:
+            FakeSSH.transport_options(fake_ssh, destination: "claude.extension.example")
+        ]
       ]
 
     native_overrides = [

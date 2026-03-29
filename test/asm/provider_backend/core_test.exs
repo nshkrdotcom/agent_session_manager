@@ -2,15 +2,16 @@ defmodule ASM.ProviderBackend.CoreTest do
   use ASM.TestCase
 
   alias ASM.{Execution, Provider}
+  alias ASM.Execution.Environment
   alias ASM.ProviderBackend.Core
 
   test "start_run/1 rejects explicit approval_posture :none before runtime start" do
     execution_config =
       %Execution.Config{
         execution_mode: :local,
-        transport_call_timeout_ms: 5_000
+        transport_call_timeout_ms: 5_000,
+        execution_environment: %Environment{approval_posture: :none}
       }
-      |> Map.put(:approval_posture, :none)
 
     config = %{
       provider: Provider.resolve!(:claude),

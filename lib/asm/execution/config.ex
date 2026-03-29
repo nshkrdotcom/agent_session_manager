@@ -1,17 +1,15 @@
 defmodule ASM.Execution.Config do
   @moduledoc """
-  Normalized execution-mode and execution-surface configuration with
-  precedence-aware merging.
+  Normalized execution-mode, execution-surface, and execution-environment
+  configuration with precedence-aware merging.
   """
 
-  alias ASM.{Error, Permission}
+  alias ASM.{Error, Execution.Environment, Permission}
   alias ASM.Schema.RemoteNode, as: RemoteNodeSchema
   alias CliSubprocessCore.ExecutionSurface
 
   @valid_execution_modes [:local, :remote_node]
   @valid_bootstrap_modes [:require_prestarted, :ensure_started]
-  @valid_surface_kinds [:local_subprocess, :static_ssh, :leased_ssh, :guest_bridge]
-  @valid_approval_postures [:manual, :auto, :none]
   @legacy_execution_surface_keys [
     :surface_kind,
     :transport_options,
@@ -23,23 +21,12 @@ defmodule ASM.Execution.Config do
   ]
 
   @enforce_keys [:execution_mode, :transport_call_timeout_ms]
-  defstruct [
-    :execution_mode,
-    :transport_call_timeout_ms,
-    surface_kind: :local_subprocess,
-    transport_options: [],
-    workspace_root: nil,
-    allowed_tools: [],
-    approval_posture: nil,
-    permission_mode: nil,
-    provider_permission_mode: nil,
-    lease_ref: nil,
-    surface_ref: nil,
-    target_id: nil,
-    boundary_class: nil,
-    observability: %{},
-    remote: nil
-  ]
+  defstruct execution_mode: :local,
+            transport_call_timeout_ms: 5_000,
+            execution_surface: %ExecutionSurface{},
+            execution_environment: %Environment{},
+            provider_permission_mode: nil,
+            remote: nil
 
   @type remote_t :: %{
           required(:remote_node) => atom(),
@@ -54,18 +41,9 @@ defmodule ASM.Execution.Config do
   @type t :: %__MODULE__{
           execution_mode: :local | :remote_node,
           transport_call_timeout_ms: pos_integer(),
-          surface_kind: :local_subprocess | :static_ssh | :leased_ssh | :guest_bridge,
-          transport_options: keyword(),
-          workspace_root: String.t() | nil,
-          allowed_tools: [String.t()],
-          approval_posture: :manual | :auto | :none | nil,
-          permission_mode: Permission.normalized_mode() | nil,
+          execution_surface: ExecutionSurface.t(),
+          execution_environment: Environment.t(),
           provider_permission_mode: atom() | nil,
-          lease_ref: String.t() | nil,
-          surface_ref: String.t() | nil,
-          target_id: String.t() | nil,
-          boundary_class: atom() | nil,
-          observability: map(),
           remote: remote_t() | nil
         }
 
@@ -93,24 +71,20 @@ defmodule ASM.Execution.Config do
          {:ok, run_execution_surface} <- resolve_execution_surface(run_stream_opts),
          {:ok, execution_surface} <-
            merge_execution_surfaces(session_execution_surface, run_execution_surface),
-         {:ok, surface_kind} <- resolve_surface_kind(execution_surface),
-         {:ok, transport_options} <- resolve_surface_transport_options(execution_surface),
-         {:ok, workspace_root} <-
-           resolve_optional_binary(session_stream_opts, run_stream_opts, :workspace_root),
-         {:ok, allowed_tools} <- resolve_allowed_tools(session_stream_opts, run_stream_opts),
-         {:ok, approval_posture} <-
-           resolve_approval_posture(session_stream_opts, run_stream_opts),
-         {:ok, permission_mode, provider_permission_mode} <-
-           resolve_permission_modes(
-             session_stream_opts,
-             run_stream_opts,
+         {:ok, session_execution_environment_attrs} <-
+           resolve_execution_environment_attrs(session_stream_opts),
+         {:ok, run_execution_environment_attrs} <-
+           resolve_execution_environment_attrs(run_stream_opts),
+         {:ok, execution_environment} <-
+           merge_execution_environments(
+             session_execution_environment_attrs,
+             run_execution_environment_attrs
+           ),
+         {:ok, provider_permission_mode} <-
+           resolve_provider_permission_mode(
+             execution_environment.permission_mode,
              Keyword.get(opts, :provider)
            ),
-         {:ok, lease_ref} <- resolve_execution_surface_binary(execution_surface, :lease_ref),
-         {:ok, surface_ref} <- resolve_execution_surface_binary(execution_surface, :surface_ref),
-         {:ok, target_id} <- resolve_execution_surface_binary(execution_surface, :target_id),
-         {:ok, boundary_class} <- resolve_boundary_class(execution_surface),
-         {:ok, observability} <- resolve_observability(execution_surface),
          {:ok, remote} <-
            resolve_remote_config(
              execution_mode,
@@ -123,40 +97,26 @@ defmodule ASM.Execution.Config do
        %__MODULE__{
          execution_mode: execution_mode,
          transport_call_timeout_ms: transport_call_timeout_ms,
-         surface_kind: surface_kind,
-         transport_options: transport_options,
-         workspace_root: workspace_root,
-         allowed_tools: allowed_tools,
-         approval_posture: approval_posture,
-         permission_mode: permission_mode,
+         execution_surface: execution_surface,
+         execution_environment: execution_environment,
          provider_permission_mode: provider_permission_mode,
-         lease_ref: lease_ref,
-         surface_ref: surface_ref,
-         target_id: target_id,
-         boundary_class: boundary_class,
-         observability: observability,
          remote: remote
        }}
     end
   end
 
   @spec to_execution_surface(t()) :: ExecutionSurface.t()
-  def to_execution_surface(%__MODULE__{} = config) do
-    case ExecutionSurface.new(
-           surface_kind: config.surface_kind,
-           transport_options: config.transport_options,
-           target_id: config.target_id,
-           lease_ref: config.lease_ref,
-           surface_ref: config.surface_ref,
-           boundary_class: config.boundary_class,
-           observability: config.observability
-         ) do
-      {:ok, %ExecutionSurface{} = execution_surface} ->
-        execution_surface
+  def to_execution_surface(%__MODULE__{
+        execution_surface: %ExecutionSurface{} = execution_surface
+      }) do
+    execution_surface
+  end
 
-      {:error, reason} ->
-        raise ArgumentError, "invalid execution_surface derived from config: #{inspect(reason)}"
-    end
+  @spec to_execution_environment(t()) :: Environment.t()
+  def to_execution_environment(%__MODULE__{
+        execution_environment: %Environment{} = execution_environment
+      }) do
+    execution_environment
   end
 
   defp resolve_execution_mode(_app_cfg, _session_stream_opts, _run_stream_opts, true) do
@@ -332,98 +292,6 @@ defmodule ASM.Execution.Config do
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
-  defp resolve_surface_kind(nil), do: normalize_surface_kind(nil)
-
-  defp resolve_surface_kind(%ExecutionSurface{} = execution_surface) do
-    normalize_surface_kind(execution_surface.surface_kind)
-  end
-
-  defp resolve_surface_transport_options(nil), do: normalize_transport_options(nil)
-
-  defp resolve_surface_transport_options(%ExecutionSurface{} = execution_surface) do
-    normalize_transport_options(execution_surface.transport_options)
-  end
-
-  defp resolve_allowed_tools(session_stream_opts, run_stream_opts) do
-    session_allowed_tools = Keyword.get(session_stream_opts, :allowed_tools, [])
-    allowed_tools = Keyword.get(run_stream_opts, :allowed_tools, session_allowed_tools)
-
-    allowed_tools
-    |> normalize_string_list()
-    |> case do
-      {:ok, values} -> {:ok, values}
-      {:error, reason} -> {:error, config_error(reason)}
-    end
-  end
-
-  defp resolve_approval_posture(session_stream_opts, run_stream_opts) do
-    approval_posture =
-      Keyword.get(
-        run_stream_opts,
-        :approval_posture,
-        Keyword.get(session_stream_opts, :approval_posture)
-      )
-
-    case normalize_approval_posture(approval_posture) do
-      {:ok, value} -> {:ok, value}
-      {:error, reason} -> {:error, config_error(reason)}
-    end
-  end
-
-  defp resolve_permission_modes(session_stream_opts, run_stream_opts, provider) do
-    permission_mode =
-      Keyword.get(
-        run_stream_opts,
-        :permission_mode,
-        Keyword.get(session_stream_opts, :permission_mode)
-      )
-
-    case normalize_permission_mode(permission_mode, provider) do
-      {:ok, normalized, native} ->
-        {:ok, normalized, native}
-
-      {:error, %Error{} = error} ->
-        {:error, error}
-
-      {:error, reason} ->
-        {:error, config_error(reason)}
-    end
-  end
-
-  defp resolve_optional_binary(session_stream_opts, run_stream_opts, key) do
-    value = Keyword.get(run_stream_opts, key, Keyword.get(session_stream_opts, key))
-
-    if is_nil(value) or (is_binary(value) and value != "") do
-      {:ok, value}
-    else
-      {:error, config_error("#{key} must be a non-empty string, got: #{inspect(value)}")}
-    end
-  end
-
-  defp resolve_boundary_class(nil), do: {:ok, nil}
-
-  defp resolve_boundary_class(%ExecutionSurface{boundary_class: boundary_class}) do
-    {:ok, boundary_class}
-  end
-
-  defp resolve_observability(nil), do: {:ok, %{}}
-
-  defp resolve_observability(%ExecutionSurface{observability: observability}),
-    do: {:ok, observability}
-
-  defp resolve_execution_surface_binary(nil, _key), do: {:ok, nil}
-
-  defp resolve_execution_surface_binary(%ExecutionSurface{} = execution_surface, key)
-       when key in [:lease_ref, :surface_ref, :target_id] do
-    value = Map.get(execution_surface, key)
-
-    if is_nil(value) or (is_binary(value) and value != "") do
-      {:ok, value}
-    else
-      {:error, config_error("#{key} must be a non-empty string, got: #{inspect(value)}")}
-    end
-  end
-
   defp reject_legacy_execution_surface_keys(session_stream_opts, run_stream_opts) do
     legacy_keys =
       @legacy_execution_surface_keys
@@ -474,7 +342,7 @@ defmodule ASM.Execution.Config do
     end
   end
 
-  defp merge_execution_surfaces(nil, nil), do: {:ok, nil}
+  defp merge_execution_surfaces(nil, nil), do: normalize_execution_surface_attrs([])
   defp merge_execution_surfaces(%ExecutionSurface{} = surface, nil), do: {:ok, surface}
   defp merge_execution_surfaces(nil, %ExecutionSurface{} = surface), do: {:ok, surface}
 
@@ -541,122 +409,86 @@ defmodule ASM.Execution.Config do
     ]
   end
 
-  defp normalize_approval_posture(nil), do: {:ok, nil}
-  defp normalize_approval_posture(value) when value in @valid_approval_postures, do: {:ok, value}
-
-  defp normalize_approval_posture(value) when is_binary(value) do
-    value
-    |> String.trim()
-    |> String.downcase()
-    |> case do
-      "manual" -> {:ok, :manual}
-      "auto" -> {:ok, :auto}
-      "none" -> {:ok, :none}
-      _other -> {:error, "approval_posture must be :manual, :auto, or :none"}
+  defp resolve_execution_environment_attrs(opts) when is_list(opts) do
+    with {:ok, nested_attrs} <-
+           normalize_execution_environment_input(Keyword.get(opts, :execution_environment)),
+         {:ok, top_level_attrs} <- normalize_top_level_execution_environment_attrs(opts) do
+      {:ok, merge_present_attrs(nested_attrs, top_level_attrs, Environment.keys())}
     end
   end
 
-  defp normalize_approval_posture(value) do
-    {:error, "approval_posture must be :manual, :auto, or :none, got: #{inspect(value)}"}
+  defp normalize_execution_environment_input(nil), do: {:ok, []}
+
+  defp normalize_execution_environment_input(input),
+    do: normalize_execution_environment_attrs(input)
+
+  defp normalize_top_level_execution_environment_attrs(opts) when is_list(opts) do
+    attrs =
+      Enum.reduce(Environment.keys(), [], fn key, acc ->
+        if Keyword.has_key?(opts, key) do
+          [{key, Keyword.get(opts, key)} | acc]
+        else
+          acc
+        end
+      end)
+      |> Enum.reverse()
+
+    normalize_execution_environment_attrs(attrs)
   end
 
-  defp normalize_surface_kind(nil), do: {:ok, :local_subprocess}
+  defp normalize_execution_environment_attrs(attrs) do
+    case Environment.normalize_attrs(attrs) do
+      {:ok, normalized_attrs} ->
+        {:ok, normalized_attrs}
 
-  defp normalize_surface_kind(surface_kind) when surface_kind in @valid_surface_kinds,
-    do: {:ok, surface_kind}
-
-  defp normalize_surface_kind(surface_kind) do
-    {:error,
-     config_error(
-       "surface_kind must be one of #{inspect(@valid_surface_kinds)}, got: #{inspect(surface_kind)}"
-     )}
-  end
-
-  defp normalize_transport_options(nil), do: {:ok, []}
-
-  defp normalize_transport_options(options) when is_list(options) do
-    if Keyword.keyword?(options) do
-      {:ok, options}
-    else
-      {:error,
-       config_error(
-         "transport_options must be a keyword list or atom-keyed map, got: #{inspect(options)}"
-       )}
+      {:error, reason} ->
+        {:error, config_error("execution_environment is invalid: #{inspect(reason)}")}
     end
   end
 
-  defp normalize_permission_mode(nil, _provider), do: {:ok, nil, nil}
+  defp merge_execution_environments(session_attrs, run_attrs)
+       when is_list(session_attrs) and is_list(run_attrs) do
+    merged_attrs = merge_present_attrs(session_attrs, run_attrs, Environment.keys())
 
-  defp normalize_permission_mode(permission_mode, provider) when is_atom(provider) do
+    case Environment.new(merged_attrs) do
+      {:ok, %Environment{} = environment} ->
+        {:ok, environment}
+
+      {:error, reason} ->
+        {:error, config_error("execution_environment is invalid: #{inspect(reason)}")}
+    end
+  end
+
+  defp merge_present_attrs(left_attrs, right_attrs, keys)
+       when is_list(left_attrs) and is_list(right_attrs) and is_list(keys) do
+    Enum.reduce(keys, [], fn key, acc ->
+      cond do
+        Keyword.has_key?(right_attrs, key) ->
+          [{key, Keyword.get(right_attrs, key)} | acc]
+
+        Keyword.has_key?(left_attrs, key) ->
+          [{key, Keyword.get(left_attrs, key)} | acc]
+
+        true ->
+          acc
+      end
+    end)
+    |> Enum.reverse()
+  end
+
+  defp resolve_provider_permission_mode(nil, _provider), do: {:ok, nil}
+
+  defp resolve_provider_permission_mode(permission_mode, provider) when is_atom(provider) do
     case Permission.normalize(provider, permission_mode) do
-      {:ok, %{normalized: normalized, native: native}} ->
-        {:ok, normalized, native}
+      {:ok, %{native: native}} ->
+        {:ok, native}
 
       {:error, %Error{} = error} ->
         {:error, error}
     end
   end
 
-  defp normalize_permission_mode(permission_mode, _provider) do
-    normalized_modes = Permission.normalized_modes()
-
-    case normalize_permission_mode_atom(permission_mode) do
-      {:ok, normalized} ->
-        if normalized in normalized_modes do
-          {:ok, normalized, nil}
-        else
-          {:error,
-           "permission_mode must be one of #{inspect(normalized_modes)}, got: #{inspect(normalized)}"}
-        end
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  defp normalize_permission_mode_atom(permission_mode) when is_atom(permission_mode),
-    do: {:ok, permission_mode}
-
-  defp normalize_permission_mode_atom(permission_mode) when is_binary(permission_mode) do
-    permission_mode
-    |> String.trim()
-    |> String.downcase()
-    |> case do
-      "default" -> {:ok, :default}
-      "auto" -> {:ok, :auto}
-      "bypass" -> {:ok, :bypass}
-      "plan" -> {:ok, :plan}
-      _other -> {:error, "permission_mode must be a supported normalized mode"}
-    end
-  end
-
-  defp normalize_permission_mode_atom(permission_mode) do
-    {:error, "permission_mode must be an atom or string, got: #{inspect(permission_mode)}"}
-  end
-
-  defp normalize_string_list(values) when is_list(values) do
-    Enum.reduce_while(values, {:ok, []}, fn
-      value, {:ok, acc} when is_binary(value) ->
-        trimmed = String.trim(value)
-
-        if trimmed == "" do
-          {:halt, {:error, "allowed_tools entries must be non-empty strings"}}
-        else
-          {:cont, {:ok, acc ++ [trimmed]}}
-        end
-
-      value, {:ok, acc} when is_atom(value) ->
-        {:cont, {:ok, acc ++ [Atom.to_string(value)]}}
-
-      value, _acc ->
-        {:halt,
-         {:error, "allowed_tools entries must be strings or atoms, got: #{inspect(value)}"}}
-    end)
-  end
-
-  defp normalize_string_list(values) do
-    {:error, "allowed_tools must be a list, got: #{inspect(values)}"}
-  end
+  defp resolve_provider_permission_mode(_permission_mode, _provider), do: {:ok, nil}
 
   defp normalize_keyword(value) when is_list(value), do: value
   defp normalize_keyword(_value), do: []

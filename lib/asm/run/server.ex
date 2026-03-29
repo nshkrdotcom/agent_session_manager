@@ -6,6 +6,7 @@ defmodule ASM.Run.Server do
   use GenServer, restart: :temporary
 
   alias ASM.{Error, Event, Metadata, Provider, ProviderRegistry, Run}
+  alias ASM.Execution.{Config, PolicyPlug}
   alias ASM.ProviderBackend.Event, as: BackendEvent
   alias ASM.ProviderBackend.Info, as: BackendInfo
   alias CliSubprocessCore.Payload
@@ -391,10 +392,10 @@ defmodule ASM.Run.Server do
       {:error, Error.new(:runtime, :runtime, Exception.message(error), cause: error), state}
   end
 
-  defp execution_policy_pipeline(%Run.State{execution_config: %ASM.Execution.Config{} = config}) do
-    case Map.get(config, :allowed_tools, []) do
+  defp execution_policy_pipeline(%Run.State{execution_config: %Config{} = config}) do
+    case Config.to_execution_environment(config).allowed_tools do
       [] -> []
-      allowed_tools -> [{ASM.Execution.PolicyPlug, allowed_tools: allowed_tools}]
+      allowed_tools -> [{PolicyPlug, allowed_tools: allowed_tools}]
     end
   end
 

@@ -105,6 +105,30 @@ defmodule ASM.LaneIntegrationTest do
     assert :ok = ASM.stop_session(session)
   end
 
+  test "core lane surfaces launcher resolution failures instead of timing out" do
+    {root, cli_path, node_shim_dir} = build_broken_codex_launcher()
+    session = start_session!(:codex)
+
+    try do
+      with_env(%{"HOME" => root, "PATH" => node_shim_dir, "ASDF_DIR" => nil}, fn ->
+        assert {:error, error} =
+                 ASM.query(session, "say broken",
+                   lane: :core,
+                   cli_path: cli_path,
+                   stream_timeout_ms: 50
+                 )
+
+        assert error.kind == :cli_not_found
+        assert error.domain == :provider
+        assert error.message =~ "Codex CLI launcher"
+        assert error.message =~ "stable executable"
+      end)
+    after
+      assert :ok = ASM.stop_session(session)
+      File.rm_rf(root)
+    end
+  end
+
   test "explicit sdk lane preserves :static_ssh execution-surface routing" do
     put_runtime_loader(fn
       Codex.Runtime.Exec -> true
@@ -221,5 +245,63 @@ defmodule ASM.LaneIntegrationTest do
     File.write!(path, contents)
     File.chmod!(path, 0o755)
     path
+  end
+
+  defp build_broken_codex_launcher do
+    root = tmp_dir!("asm_codex_broken_launcher")
+    launcher_dir = Path.join(root, "bin")
+    shim_dir = Path.join(root, ".asdf/shims")
+
+    File.mkdir_p!(launcher_dir)
+    File.mkdir_p!(shim_dir)
+
+    cli_path =
+      write_executable!(
+        launcher_dir,
+        "codex",
+        "#!/usr/bin/env node\nconsole.log('codex');\n"
+      )
+
+    write_executable!(
+      shim_dir,
+      "node",
+      """
+      #!/bin/sh
+      exec asdf exec "node" "$@"
+      """
+    )
+
+    {root, cli_path, shim_dir}
+  end
+
+  defp tmp_dir!(prefix) do
+    dir = Path.join(System.tmp_dir!(), "#{prefix}_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(dir)
+    dir
+  end
+
+  defp write_executable!(dir, name, contents) do
+    path = Path.join(dir, name)
+    File.write!(path, contents)
+    File.chmod!(path, 0o755)
+    path
+  end
+
+  defp with_env(env, fun) when is_map(env) and is_function(fun, 0) do
+    saved = Enum.map(env, fn {key, _value} -> {key, System.get_env(key)} end)
+
+    Enum.each(env, fn
+      {key, nil} -> System.delete_env(key)
+      {key, value} -> System.put_env(key, value)
+    end)
+
+    try do
+      fun.()
+    after
+      Enum.each(saved, fn
+        {key, nil} -> System.delete_env(key)
+        {key, value} -> System.put_env(key, value)
+      end)
+    end
   end
 end

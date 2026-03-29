@@ -6,6 +6,8 @@ defmodule ASM.ProviderBackend.Proxy do
   alias ASM.ProviderBackend.{Event, Info}
   alias CliSubprocessCore.Event, as: CoreEvent
 
+  @proxy_start_timeout_ms 5_000
+
   defstruct [
     :runtime_api,
     :runtime,
@@ -41,17 +43,15 @@ defmodule ASM.ProviderBackend.Proxy do
     caller = self()
     reply_ref = make_ref()
 
-    case GenServer.start_link(__MODULE__, {caller, reply_ref, opts}) do
-      {:ok, pid} ->
-        receive do
-          {:asm_backend_proxy_started, ^reply_ref, info} -> {:ok, pid, info}
-        after
-          5_000 -> {:error, :backend_proxy_start_timeout}
-        end
+    with_trap_exit(fn ->
+      case GenServer.start_link(__MODULE__, {caller, reply_ref, opts}) do
+        {:ok, pid} ->
+          await_started_proxy(pid, reply_ref)
 
-      {:error, reason} ->
-        {:error, reason}
-    end
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end)
   end
 
   @spec send_input(pid(), iodata(), keyword()) :: :ok | {:error, term()}
@@ -251,4 +251,34 @@ defmodule ASM.ProviderBackend.Proxy do
   end
 
   defp normalize_subscribers(_subscribers), do: %{}
+
+  defp await_started_proxy(pid, reply_ref, timeout_ms \\ @proxy_start_timeout_ms) do
+    receive do
+      {:asm_backend_proxy_started, ^reply_ref, info} ->
+        {:ok, pid, info}
+
+      {:EXIT, ^pid, reason} ->
+        {:error, reason}
+    after
+      timeout_ms ->
+        safe_stop_proxy(pid)
+        {:error, :backend_proxy_start_timeout}
+    end
+  end
+
+  defp safe_stop_proxy(pid) when is_pid(pid) do
+    GenServer.stop(pid, :normal)
+  catch
+    :exit, _reason -> :ok
+  end
+
+  defp with_trap_exit(fun) when is_function(fun, 0) do
+    previous_trap_exit? = Process.flag(:trap_exit, true)
+
+    try do
+      fun.()
+    after
+      Process.flag(:trap_exit, previous_trap_exit?)
+    end
+  end
 end

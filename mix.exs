@@ -39,7 +39,7 @@ defmodule AgentSessionManager.MixProject do
   end
 
   defp project_compilers do
-    if Mix.env() in [:dev, :test] do
+    if boundary_checks_enabled?() do
       [:boundary | Mix.compilers()]
     else
       Mix.compilers()
@@ -56,12 +56,16 @@ defmodule AgentSessionManager.MixProject do
         {:telemetry, "~> 1.3"},
         {:ex_doc, "~> 0.40", only: :dev, runtime: false},
         {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-        {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
+        {:dialyxir, "~> 1.4", only: :dev, runtime: false},
         {:nimble_ownership, "~> 1.0", only: :test},
         {:stream_data, "~> 1.1", only: :test},
         {:mox, "~> 1.2", only: :test},
         {:supertester, "~> 0.6.0", only: :test}
       ]
+  end
+
+  defp boundary_checks_enabled? do
+    Mix.env() in [:dev, :test] and is_nil(Mix.ProjectStack.peek())
   end
 
   defp description do

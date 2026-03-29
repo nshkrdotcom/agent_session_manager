@@ -8,25 +8,40 @@ defmodule ASM.ProviderBackend.Core do
   alias ASM.{Error, Execution, Options, Provider}
   alias ASM.ProviderBackend.Proxy
   alias ASM.Remote.NodeConnector
+  alias CliSubprocessCore.ProviderCLI.Error, as: ProviderCLIError
   alias CliSubprocessCore.Session
 
   @impl true
   def start_run(%{provider: %Provider{} = provider} = config) do
     with {:ok, execution_config} <- fetch_execution_config(config),
          :ok <- validate_approval_posture(execution_config),
-         {:ok, session_opts} <- build_session_opts(provider, config, execution_config) do
-      Proxy.start_link(
-        starter: fn subscriber ->
-          do_start_run(execution_config, Keyword.put(session_opts, :subscriber, subscriber))
-        end,
-        runtime_api: Session,
-        runtime: Session,
-        provider: provider.name,
-        lane: :core,
-        backend: __MODULE__,
-        capabilities: core_capabilities(provider),
-        initial_subscribers: initial_subscribers(config)
-      )
+         {:ok, session_opts} <- build_session_opts(provider, config, execution_config),
+         {:ok, proxy, info} <-
+           Proxy.start_link(
+             starter: fn subscriber ->
+               do_start_run(execution_config, Keyword.put(session_opts, :subscriber, subscriber))
+             end,
+             runtime_api: Session,
+             runtime: Session,
+             provider: provider.name,
+             lane: :core,
+             backend: __MODULE__,
+             capabilities: core_capabilities(provider),
+             initial_subscribers: initial_subscribers(config)
+           ) do
+      {:ok, proxy, info}
+    else
+      {:error, %ProviderCLIError{} = error} ->
+        {:error, provider_cli_error(provider.name, error)}
+
+      {:error, %Error{} = error} ->
+        {:error, error}
+
+      {:error, reason} ->
+        {:error,
+         Error.new(:runtime, :runtime, "core backend start failed: #{inspect(reason)}",
+           cause: reason
+         )}
     end
   end
 
@@ -227,6 +242,13 @@ defmodule ASM.ProviderBackend.Core do
 
   defp remote_error(message, cause) do
     Error.new(:connection_failed, :runtime, message, cause: cause)
+  end
+
+  defp provider_cli_error(provider, %ProviderCLIError{} = error) do
+    Error.new(:cli_not_found, :provider, Exception.message(error),
+      cause: error,
+      provider: provider
+    )
   end
 
   defp core_capabilities(%Provider{core_profile: profile}) when is_atom(profile) do

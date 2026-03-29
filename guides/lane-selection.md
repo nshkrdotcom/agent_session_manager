@@ -28,7 +28,7 @@ Lane selection remains discovery-driven in both modes:
 
 - local runs can execute either `:core` or `:sdk`
 - local `:core` and local `:sdk` preserve the same normalized
-  `surface_kind` / `transport_options` execution-surface contract
+  `execution_surface` contract
 - remote runs execute only the core lane in the landed Phase 3 boundary
 - `lane: :sdk` with `execution_mode: :remote_node` is a configuration error
 - `lane: :auto` may still report `preferred_lane: :sdk` but execute with `lane: :core`

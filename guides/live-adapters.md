@@ -79,6 +79,21 @@ targets.
 - `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL`, `ASM_AMP_MODEL`
 - `CLAUDE_CLI_PATH`, `GEMINI_CLI_PATH`, `CODEX_PATH`, `AMP_CLI_PATH`
 
+## Remote SSH Smoke Tests
+
+ASM’s public transport control is the same canonical `execution_surface`
+contract used by the downstream SDK repos. The live SSH smoke tests use the
+shared core env vars:
+
+```bash
+CLI_SUBPROCESS_CORE_LIVE_SSH=1 \
+CLI_SUBPROCESS_CORE_LIVE_SSH_DESTINATION=luhome \
+mix test --only live_ssh --include live_ssh test/asm/live_ssh_test.exs
+```
+
+That test file exercises `ASM.query/3` over both the explicit `:core` and
+explicit `:sdk` Codex lanes with a real remote `execution_surface`.
+
 ## Partial Common Features
 
 ASM exposes the common Ollama surface through the live adapters, but only for

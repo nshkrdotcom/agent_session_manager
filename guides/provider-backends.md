@@ -71,8 +71,8 @@ preferred `:sdk`.
 
 That split is intentional:
 
-- local `:core` and local `:sdk` both preserve `surface_kind`,
-  `transport_options`, and the rest of the `ExecutionSurface` metadata
+- local `:core` and local `:sdk` both preserve the same normalized
+  `execution_surface` contract and its `ExecutionSurface` metadata
 - `:remote_node` remains a separate ASM execution mode, not another execution
   surface
 

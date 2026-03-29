@@ -430,7 +430,12 @@ unless Code.ensure_loaded?(Codex.Runtime.Exec) do
     def start_session(opts) when is_list(opts) do
       exec_opts = Keyword.fetch!(opts, :exec_opts)
       codex_opts = Map.fetch!(exec_opts, :codex_opts)
-      thread_opts = Map.fetch!(exec_opts, :thread)
+
+      thread_opts =
+        case Map.fetch!(exec_opts, :thread) do
+          %{thread_opts: %Codex.Thread.Options{} = opts} -> opts
+          %Codex.Thread.Options{} = opts -> opts
+        end
 
       Session.start_session(
         provider: :codex,

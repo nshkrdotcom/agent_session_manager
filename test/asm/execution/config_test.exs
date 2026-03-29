@@ -67,16 +67,18 @@ defmodule ASM.Execution.ConfigTest do
 
   test "resolve/2 preserves non-empty allowed_tools and explicit approval_posture :none" do
     session_stream_opts = [
-      surface_kind: :leased_ssh,
-      transport_options: %{startup_mode: :lazy},
+      execution_surface: [
+        surface_kind: :leased_ssh,
+        transport_options: %{startup_mode: :lazy},
+        lease_ref: "lease-1",
+        surface_ref: "surface-1",
+        target_id: "target-1",
+        boundary_class: :isolated,
+        observability: %{suite: :phase_c}
+      ],
       workspace_root: "/tmp/runtime",
       allowed_tools: ["shell", "read"],
-      approval_posture: :none,
-      lease_ref: "lease-1",
-      surface_ref: "surface-1",
-      target_id: "target-1",
-      boundary_class: :isolated,
-      observability: %{suite: :phase_c}
+      approval_posture: :none
     ]
 
     assert {:ok, cfg} = Config.resolve(session_stream_opts, [])
@@ -92,6 +94,34 @@ defmodule ASM.Execution.ConfigTest do
     assert Map.get(cfg, :observability) == %{suite: :phase_c}
   end
 
+  test "resolve/2 merges session and run execution_surface values canonically" do
+    session_stream_opts = [
+      execution_surface: %{
+        "surface_kind" => :static_ssh,
+        "transport_options" => [destination: "session.example"],
+        "target_id" => "session-target",
+        "observability" => %{scope: :session}
+      }
+    ]
+
+    run_stream_opts = [
+      execution_surface: [
+        surface_kind: :leased_ssh,
+        transport_options: [port: 2222],
+        lease_ref: "lease-42",
+        observability: %{scope: :run}
+      ]
+    ]
+
+    assert {:ok, cfg} = Config.resolve(session_stream_opts, run_stream_opts)
+    assert cfg.surface_kind == :leased_ssh
+    assert cfg.transport_options[:destination] == "session.example"
+    assert cfg.transport_options[:port] == 2222
+    assert cfg.target_id == nil
+    assert cfg.lease_ref == "lease-42"
+    assert cfg.observability == %{scope: :run}
+  end
+
   test "resolve/2 validates remote-node schema-owned fields" do
     assert {:error, error} =
              Config.resolve(
@@ -101,5 +131,14 @@ defmodule ASM.Execution.ConfigTest do
 
     assert error.kind == :config_invalid
     assert error.message =~ "remote_cookie"
+  end
+
+  test "resolve/2 rejects legacy execution-surface keys" do
+    assert {:error, error} =
+             Config.resolve([surface_kind: :static_ssh], [])
+
+    assert error.kind == :config_invalid
+    assert error.message =~ "legacy execution-surface keys"
+    assert error.message =~ ":execution_surface"
   end
 end

@@ -211,7 +211,8 @@ defmodule ASM.ProviderBackend.SDKTest do
 
     assert %Codex.Exec.Options{} = exec_opts = Keyword.fetch!(start_opts, :exec_opts)
     assert %Codex.Options{} = exec_opts.codex_opts
-    assert %Codex.Thread.Options{} = exec_opts.thread
+    assert %Codex.Thread{} = exec_opts.thread
+    assert %Codex.Thread.Options{} = exec_opts.thread.thread_opts
 
     assert %CliSubprocessCore.ExecutionSurface{} =
              execution_surface = Keyword.fetch!(start_opts, :execution_surface)
@@ -221,9 +222,9 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert execution_surface.lease_ref == "lease-123"
     assert exec_opts.execution_surface == execution_surface
     assert exec_opts.codex_opts.execution_surface == execution_surface
-    assert exec_opts.thread.model_provider == "gateway"
-    assert exec_opts.thread.oss == false
-    assert exec_opts.thread.local_provider == nil
+    assert exec_opts.thread.thread_opts.model_provider == "gateway"
+    assert exec_opts.thread.thread_opts.oss == false
+    assert exec_opts.thread.thread_opts.local_provider == nil
 
     metadata = Keyword.fetch!(start_opts, :metadata)
     assert metadata[:lane] == :sdk

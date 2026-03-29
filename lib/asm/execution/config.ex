@@ -6,11 +6,21 @@ defmodule ASM.Execution.Config do
 
   alias ASM.{Error, Permission}
   alias ASM.Schema.RemoteNode, as: RemoteNodeSchema
+  alias CliSubprocessCore.ExecutionSurface
 
   @valid_execution_modes [:local, :remote_node]
   @valid_bootstrap_modes [:require_prestarted, :ensure_started]
   @valid_surface_kinds [:local_subprocess, :static_ssh, :leased_ssh, :guest_bridge]
   @valid_approval_postures [:manual, :auto, :none]
+  @legacy_execution_surface_keys [
+    :surface_kind,
+    :transport_options,
+    :lease_ref,
+    :surface_ref,
+    :target_id,
+    :boundary_class,
+    :observability
+  ]
 
   @enforce_keys [:execution_mode, :transport_call_timeout_ms]
   defstruct [
@@ -69,7 +79,8 @@ defmodule ASM.Execution.Config do
 
     explicit_driver? = Keyword.get(opts, :explicit_driver?, false)
 
-    with {:ok, execution_mode} <-
+    with :ok <- reject_legacy_execution_surface_keys(session_stream_opts, run_stream_opts),
+         {:ok, execution_mode} <-
            resolve_execution_mode(app_cfg, session_stream_opts, run_stream_opts, explicit_driver?),
          {:ok, transport_call_timeout_ms} <-
            resolve_transport_call_timeout(
@@ -78,9 +89,12 @@ defmodule ASM.Execution.Config do
              run_stream_opts,
              merged_driver_opts
            ),
-         {:ok, surface_kind} <- resolve_surface_kind(session_stream_opts, run_stream_opts),
-         {:ok, transport_options} <-
-           resolve_surface_transport_options(session_stream_opts, run_stream_opts),
+         {:ok, session_execution_surface} <- resolve_execution_surface(session_stream_opts),
+         {:ok, run_execution_surface} <- resolve_execution_surface(run_stream_opts),
+         {:ok, execution_surface} <-
+           merge_execution_surfaces(session_execution_surface, run_execution_surface),
+         {:ok, surface_kind} <- resolve_surface_kind(execution_surface),
+         {:ok, transport_options} <- resolve_surface_transport_options(execution_surface),
          {:ok, workspace_root} <-
            resolve_optional_binary(session_stream_opts, run_stream_opts, :workspace_root),
          {:ok, allowed_tools} <- resolve_allowed_tools(session_stream_opts, run_stream_opts),
@@ -92,16 +106,11 @@ defmodule ASM.Execution.Config do
              run_stream_opts,
              Keyword.get(opts, :provider)
            ),
-         {:ok, lease_ref} <-
-           resolve_optional_binary(session_stream_opts, run_stream_opts, :lease_ref),
-         {:ok, surface_ref} <-
-           resolve_optional_binary(session_stream_opts, run_stream_opts, :surface_ref),
-         {:ok, target_id} <-
-           resolve_optional_binary(session_stream_opts, run_stream_opts, :target_id),
-         {:ok, boundary_class} <-
-           resolve_boundary_class(session_stream_opts, run_stream_opts),
-         {:ok, observability} <-
-           resolve_observability(session_stream_opts, run_stream_opts),
+         {:ok, lease_ref} <- resolve_execution_surface_binary(execution_surface, :lease_ref),
+         {:ok, surface_ref} <- resolve_execution_surface_binary(execution_surface, :surface_ref),
+         {:ok, target_id} <- resolve_execution_surface_binary(execution_surface, :target_id),
+         {:ok, boundary_class} <- resolve_boundary_class(execution_surface),
+         {:ok, observability} <- resolve_observability(execution_surface),
          {:ok, remote} <-
            resolve_remote_config(
              execution_mode,
@@ -128,6 +137,25 @@ defmodule ASM.Execution.Config do
          observability: observability,
          remote: remote
        }}
+    end
+  end
+
+  @spec to_execution_surface(t()) :: ExecutionSurface.t()
+  def to_execution_surface(%__MODULE__{} = config) do
+    case ExecutionSurface.new(
+           surface_kind: config.surface_kind,
+           transport_options: config.transport_options,
+           target_id: config.target_id,
+           lease_ref: config.lease_ref,
+           surface_ref: config.surface_ref,
+           boundary_class: config.boundary_class,
+           observability: config.observability
+         ) do
+      {:ok, %ExecutionSurface{} = execution_surface} ->
+        execution_surface
+
+      {:error, reason} ->
+        raise ArgumentError, "invalid execution_surface derived from config: #{inspect(reason)}"
     end
   end
 
@@ -304,19 +332,16 @@ defmodule ASM.Execution.Config do
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
-  defp resolve_surface_kind(session_stream_opts, run_stream_opts) do
-    session_surface_kind = Keyword.get(session_stream_opts, :surface_kind)
-    run_surface_kind = Keyword.get(run_stream_opts, :surface_kind, session_surface_kind)
-    normalize_surface_kind(run_surface_kind)
+  defp resolve_surface_kind(nil), do: normalize_surface_kind(nil)
+
+  defp resolve_surface_kind(%ExecutionSurface{} = execution_surface) do
+    normalize_surface_kind(execution_surface.surface_kind)
   end
 
-  defp resolve_surface_transport_options(session_stream_opts, run_stream_opts) do
-    with {:ok, session_transport_options} <-
-           normalize_transport_options(Keyword.get(session_stream_opts, :transport_options)),
-         {:ok, run_transport_options} <-
-           normalize_transport_options(Keyword.get(run_stream_opts, :transport_options)) do
-      {:ok, Keyword.merge(session_transport_options, run_transport_options)}
-    end
+  defp resolve_surface_transport_options(nil), do: normalize_transport_options(nil)
+
+  defp resolve_surface_transport_options(%ExecutionSurface{} = execution_surface) do
+    normalize_transport_options(execution_surface.transport_options)
   end
 
   defp resolve_allowed_tools(session_stream_opts, run_stream_opts) do
@@ -375,41 +400,145 @@ defmodule ASM.Execution.Config do
     end
   end
 
-  defp resolve_boundary_class(session_stream_opts, run_stream_opts) do
-    boundary_class =
-      Keyword.get(
-        run_stream_opts,
-        :boundary_class,
-        Keyword.get(session_stream_opts, :boundary_class)
-      )
+  defp resolve_boundary_class(nil), do: {:ok, nil}
 
-    cond do
-      is_nil(boundary_class) ->
-        {:ok, nil}
+  defp resolve_boundary_class(%ExecutionSurface{boundary_class: boundary_class}) do
+    {:ok, boundary_class}
+  end
 
-      is_atom(boundary_class) ->
-        {:ok, boundary_class}
+  defp resolve_observability(nil), do: {:ok, %{}}
 
-      true ->
-        {:error, config_error("boundary_class must be an atom, got: #{inspect(boundary_class)}")}
+  defp resolve_observability(%ExecutionSurface{observability: observability}),
+    do: {:ok, observability}
+
+  defp resolve_execution_surface_binary(nil, _key), do: {:ok, nil}
+
+  defp resolve_execution_surface_binary(%ExecutionSurface{} = execution_surface, key)
+       when key in [:lease_ref, :surface_ref, :target_id] do
+    value = Map.get(execution_surface, key)
+
+    if is_nil(value) or (is_binary(value) and value != "") do
+      {:ok, value}
+    else
+      {:error, config_error("#{key} must be a non-empty string, got: #{inspect(value)}")}
     end
   end
 
-  defp resolve_observability(session_stream_opts, run_stream_opts) do
-    session_observability = Keyword.get(session_stream_opts, :observability, %{})
-    run_observability = Keyword.get(run_stream_opts, :observability, %{})
+  defp reject_legacy_execution_surface_keys(session_stream_opts, run_stream_opts) do
+    legacy_keys =
+      @legacy_execution_surface_keys
+      |> Enum.filter(
+        &(Keyword.has_key?(session_stream_opts, &1) or Keyword.has_key?(run_stream_opts, &1))
+      )
 
-    cond do
-      not is_map(session_observability) ->
-        {:error,
-         config_error("observability must be a map, got: #{inspect(session_observability)}")}
-
-      not is_map(run_observability) ->
-        {:error, config_error("observability must be a map, got: #{inspect(run_observability)}")}
-
-      true ->
-        {:ok, Map.merge(session_observability, run_observability)}
+    if legacy_keys == [] do
+      :ok
+    else
+      {:error,
+       config_error(
+         "legacy execution-surface keys are not supported: " <>
+           Enum.map_join(legacy_keys, ", ", &inspect/1) <>
+           ". Use :execution_surface instead."
+       )}
     end
+  end
+
+  defp resolve_execution_surface(opts) when is_list(opts) do
+    case Keyword.get(opts, :execution_surface) do
+      nil ->
+        {:ok, nil}
+
+      %ExecutionSurface{} = execution_surface ->
+        normalize_execution_surface_struct(execution_surface)
+
+      execution_surface when is_list(execution_surface) ->
+        if Keyword.keyword?(execution_surface) do
+          normalize_execution_surface_attrs(execution_surface)
+        else
+          {:error,
+           config_error(
+             "execution_surface must be a CliSubprocessCore.ExecutionSurface, keyword list, or map, got: #{inspect(execution_surface)}"
+           )}
+        end
+
+      %{} = execution_surface ->
+        execution_surface
+        |> execution_surface_attrs()
+        |> normalize_execution_surface_attrs()
+
+      execution_surface ->
+        {:error,
+         config_error(
+           "execution_surface must be a CliSubprocessCore.ExecutionSurface, keyword list, or map, got: #{inspect(execution_surface)}"
+         )}
+    end
+  end
+
+  defp merge_execution_surfaces(nil, nil), do: {:ok, nil}
+  defp merge_execution_surfaces(%ExecutionSurface{} = surface, nil), do: {:ok, surface}
+  defp merge_execution_surfaces(nil, %ExecutionSurface{} = surface), do: {:ok, surface}
+
+  defp merge_execution_surfaces(
+         %ExecutionSurface{} = session_execution_surface,
+         %ExecutionSurface{} = run_execution_surface
+       ) do
+    normalize_execution_surface_attrs(
+      surface_kind: run_execution_surface.surface_kind,
+      transport_options:
+        Keyword.merge(
+          session_execution_surface.transport_options,
+          run_execution_surface.transport_options
+        ),
+      target_id: run_execution_surface.target_id,
+      lease_ref: run_execution_surface.lease_ref,
+      surface_ref: run_execution_surface.surface_ref,
+      boundary_class: run_execution_surface.boundary_class,
+      observability:
+        Map.merge(
+          session_execution_surface.observability,
+          run_execution_surface.observability
+        )
+    )
+  end
+
+  defp normalize_execution_surface_struct(%ExecutionSurface{} = execution_surface) do
+    execution_surface
+    |> execution_surface_attrs()
+    |> normalize_execution_surface_attrs()
+  end
+
+  defp normalize_execution_surface_attrs(attrs) when is_list(attrs) do
+    case ExecutionSurface.new(attrs) do
+      {:ok, %ExecutionSurface{} = execution_surface} ->
+        {:ok, execution_surface}
+
+      {:error, reason} ->
+        {:error, config_error("execution_surface is invalid: #{inspect(reason)}")}
+    end
+  end
+
+  defp execution_surface_attrs(%ExecutionSurface{} = execution_surface) do
+    [
+      surface_kind: execution_surface.surface_kind,
+      transport_options: execution_surface.transport_options,
+      target_id: execution_surface.target_id,
+      lease_ref: execution_surface.lease_ref,
+      surface_ref: execution_surface.surface_ref,
+      boundary_class: execution_surface.boundary_class,
+      observability: execution_surface.observability
+    ]
+  end
+
+  defp execution_surface_attrs(attrs) when is_map(attrs) do
+    [
+      surface_kind: Map.get(attrs, :surface_kind, Map.get(attrs, "surface_kind")),
+      transport_options: Map.get(attrs, :transport_options, Map.get(attrs, "transport_options")),
+      target_id: Map.get(attrs, :target_id, Map.get(attrs, "target_id")),
+      lease_ref: Map.get(attrs, :lease_ref, Map.get(attrs, "lease_ref")),
+      surface_ref: Map.get(attrs, :surface_ref, Map.get(attrs, "surface_ref")),
+      boundary_class: Map.get(attrs, :boundary_class, Map.get(attrs, "boundary_class")),
+      observability: Map.get(attrs, :observability, Map.get(attrs, "observability", %{}))
+    ]
   end
 
   defp normalize_approval_posture(nil), do: {:ok, nil}
@@ -454,21 +583,6 @@ defmodule ASM.Execution.Config do
          "transport_options must be a keyword list or atom-keyed map, got: #{inspect(options)}"
        )}
     end
-  end
-
-  defp normalize_transport_options(options) when is_map(options) do
-    if Enum.all?(Map.keys(options), &is_atom/1) do
-      {:ok, Enum.into(options, [])}
-    else
-      {:error, config_error("transport_options map keys must be atoms, got: #{inspect(options)}")}
-    end
-  end
-
-  defp normalize_transport_options(options) do
-    {:error,
-     config_error(
-       "transport_options must be a keyword list or atom-keyed map, got: #{inspect(options)}"
-     )}
   end
 
   defp normalize_permission_mode(nil, _provider), do: {:ok, nil, nil}

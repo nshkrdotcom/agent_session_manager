@@ -7,11 +7,10 @@ defmodule ASM.ProviderBackend.SDK do
 
   alias ASM.{Error, Execution, Options, Provider}
   alias ASM.ProviderBackend.Proxy
-  alias CliSubprocessCore.ExecutionSurface
-
   @claude_options_module Module.concat(["ClaudeAgentSDK", "Options"])
   @gemini_options_module Module.concat(["GeminiCliSdk", "Options"])
   @amp_options_module Module.concat(["AmpSdk", "Types", "Options"])
+  @codex_module Module.concat(["Codex"])
   @codex_options_module Module.concat(["Codex", "Options"])
   @codex_thread_options_module Module.concat(["Codex", "Thread", "Options"])
   @codex_exec_options_module Module.concat(["Codex", "Exec", "Options"])
@@ -201,10 +200,11 @@ defmodule ASM.ProviderBackend.SDK do
              codex_thread_option_attrs(config, model_payload),
              "codex"
            ),
+         {:ok, thread} <- build_codex_thread(codex_opts, thread_opts),
          {:ok, exec_opts} <-
            new_sdk_struct(
              @codex_exec_options_module,
-             codex_exec_option_attrs(codex_opts, thread_opts, config, execution_surface),
+             codex_exec_option_attrs(codex_opts, thread, config, execution_surface),
              "codex"
            ) do
       {:ok,
@@ -331,20 +331,51 @@ defmodule ASM.ProviderBackend.SDK do
       model_provider: codex_payload_model_provider(model_payload),
       full_auto: kw(config, :provider_permission_mode) == :auto_edit,
       dangerously_bypass_approvals_and_sandbox: kw(config, :provider_permission_mode) == :yolo,
+      skip_git_repo_check: kw(config, :skip_git_repo_check, false),
       output_schema: kw(config, :output_schema)
     ]
     |> drop_nil_values()
   end
 
-  defp codex_exec_option_attrs(codex_opts, thread_opts, config, execution_surface) do
+  defp codex_exec_option_attrs(codex_opts, thread, config, execution_surface) do
     [
       codex_opts: codex_opts,
       execution_surface: execution_surface,
-      thread: thread_opts,
+      thread: thread,
       timeout_ms: kw(config, :transport_timeout_ms),
       max_stderr_buffer_bytes: kw(config, :max_stderr_buffer_bytes)
     ]
     |> drop_nil_values()
+  end
+
+  defp build_codex_thread(codex_opts, thread_opts) do
+    with :ok <- ensure_sdk_module(@codex_module, "codex"),
+         true <- function_exported?(@codex_module, :start_thread, 2) do
+      # credo:disable-for-next-line Credo.Check.Refactor.Apply
+      case apply(@codex_module, :start_thread, [codex_opts, thread_opts]) do
+        {:ok, thread} ->
+          {:ok, thread}
+
+        {:error, reason} ->
+          {:error, invalid_sdk_options("codex", reason)}
+
+        thread ->
+          {:ok, thread}
+      end
+    else
+      false ->
+        {:error,
+         invalid_sdk_options(
+           "codex",
+           ArgumentError.exception("Codex.start_thread/2 is unavailable")
+         )}
+
+      {:error, %Error{} = error} ->
+        {:error, error}
+    end
+  rescue
+    error ->
+      {:error, invalid_sdk_options("codex", error)}
   end
 
   defp new_sdk_struct(module, attrs, provider_name) when is_atom(module) do
@@ -419,27 +450,7 @@ defmodule ASM.ProviderBackend.SDK do
   defp maybe_put_new(provider_opts, key, value), do: Keyword.put_new(provider_opts, key, value)
 
   defp execution_surface_from_config(%Execution.Config{} = execution_config) do
-    case ExecutionSurface.new(
-           surface_kind: Map.get(execution_config, :surface_kind),
-           transport_options: Map.get(execution_config, :transport_options, []),
-           target_id: Map.get(execution_config, :target_id),
-           lease_ref: Map.get(execution_config, :lease_ref),
-           surface_ref: Map.get(execution_config, :surface_ref),
-           boundary_class: Map.get(execution_config, :boundary_class),
-           observability: Map.get(execution_config, :observability, %{})
-         ) do
-      {:ok, %ExecutionSurface{} = execution_surface} ->
-        {:ok, execution_surface}
-
-      {:error, reason} ->
-        {:error,
-         Error.new(
-           :config_invalid,
-           :config,
-           "invalid execution_surface for sdk backend: #{inspect(reason)}",
-           cause: reason
-         )}
-    end
+    {:ok, Execution.Config.to_execution_surface(execution_config)}
   end
 
   defp drop_nil_values(attrs) when is_list(attrs) do

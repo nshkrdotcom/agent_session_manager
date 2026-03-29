@@ -21,8 +21,10 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
       max_turns: 3,
       include_thinking: true,
       transport_timeout_ms: 12_000,
-      surface_kind: :static_ssh,
-      transport_options: [destination: "claude.options.example", port: 2222]
+      execution_surface: [
+        surface_kind: :static_ssh,
+        transport_options: [destination: "claude.options.example", port: 2222]
+      ]
     ]
 
     native_overrides = [
@@ -76,10 +78,13 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
         permission_mode: :plan,
         model: "haiku",
         max_turns: 2,
-        surface_kind: :leased_ssh,
-        transport_options: [destination: "claude.session.example"],
+        execution_surface: [
+          surface_kind: :leased_ssh,
+          transport_options: [destination: "claude.session.example"],
+          observability: %{suite: :provider_sdk}
+        ],
         allowed_tools: ["search"],
-        observability: %{suite: :provider_sdk}
+        session_id: "asm-claude-session-defaults"
       )
 
     on_exit(fn -> safe_stop_session(session) end)
@@ -119,8 +124,10 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
         cli_path: fake_cli.script_path,
         permission_mode: :plan,
         model: "sonnet",
-        max_turns: 4
-      ] ++ FakeCLI.static_ssh_surface(fake_cli, fake_ssh, destination: "claude.extension.example")
+        max_turns: 4,
+        execution_surface:
+          FakeCLI.static_ssh_surface(fake_cli, fake_ssh, destination: "claude.extension.example")
+      ]
 
     native_overrides = [
       hooks: %{pre_tool_use: [Matcher.new("Bash", [hook])]},

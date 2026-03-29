@@ -92,7 +92,7 @@ workspace_provider_ebins =
 Code.prepend_paths(workspace_provider_ebins)
 
 ExUnit.start(
-  exclude: ASM.TestSupport.Capabilities.default_excludes(),
+  exclude: [:live_ssh | ASM.TestSupport.Capabilities.default_excludes()],
   assert_receive_timeout: 500
 )
 

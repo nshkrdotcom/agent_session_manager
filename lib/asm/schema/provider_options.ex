@@ -72,6 +72,7 @@ defmodule ASM.Schema.ProviderOptions do
     provider_backend: Conventions.optional_any(),
     model_provider: Conventions.optional_trimmed_string(),
     oss_provider: Conventions.optional_trimmed_string(),
+    skip_git_repo_check: Zoi.boolean(),
     output_schema: Zoi.optional(Zoi.nullish(Conventions.any_map()))
   }
 

@@ -17,6 +17,7 @@ defmodule ASM.Options.Codex do
       ],
       model_provider: [type: {:or, [:string, nil]}, default: nil],
       oss_provider: [type: {:or, [:string, nil]}, default: nil],
+      skip_git_repo_check: [type: :boolean, default: false],
       output_schema: [
         type: {:custom, ASM.Options, :validate_passthrough_map, [:output_schema]},
         default: nil

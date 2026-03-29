@@ -17,18 +17,23 @@ defmodule ASM.SSHExecIntegrationTest do
     session =
       start_session!(
         provider: :codex,
-        surface_kind: :static_ssh,
-        transport_options:
-          FakeSSH.transport_options(fake_ssh,
-            destination: "asm.ssh.query.example",
-            port: 2222
-          )
+        execution_surface: [
+          surface_kind: :static_ssh,
+          transport_options:
+            FakeSSH.transport_options(fake_ssh,
+              destination: "asm.ssh.query.example",
+              port: 2222
+            )
+        ]
       )
 
     assert {:ok, info} = ASM.session_info(session)
-    assert info.options[:surface_kind] == :static_ssh
-    assert info.options[:transport_options][:destination] == "asm.ssh.query.example"
-    assert info.options[:transport_options][:port] == 2222
+    assert info.options[:execution_surface].surface_kind == :static_ssh
+
+    assert info.options[:execution_surface].transport_options[:destination] ==
+             "asm.ssh.query.example"
+
+    assert info.options[:execution_surface].transport_options[:port] == 2222
 
     assert {:ok, result} = ASM.query(session, "say hello", cli_path: cli_path)
     assert result.text == "SSH_QUERY_OK"
@@ -53,11 +58,13 @@ defmodule ASM.SSHExecIntegrationTest do
     session =
       start_session!(
         provider: :codex,
-        surface_kind: :static_ssh,
-        transport_options:
-          FakeSSH.transport_options(fake_ssh,
-            destination: "asm.ssh.interrupt.example"
-          )
+        execution_surface: [
+          surface_kind: :static_ssh,
+          transport_options:
+            FakeSSH.transport_options(fake_ssh,
+              destination: "asm.ssh.interrupt.example"
+            )
+        ]
       )
 
     parent = self()

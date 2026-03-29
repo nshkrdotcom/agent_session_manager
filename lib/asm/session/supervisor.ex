@@ -80,18 +80,12 @@ defmodule ASM.Session.Supervisor do
     session_options
     |> Keyword.put(:execution_mode, execution_config.execution_mode)
     |> Keyword.put(:transport_call_timeout_ms, execution_config.transport_call_timeout_ms)
-    |> Keyword.put(:surface_kind, execution_config.surface_kind)
-    |> Keyword.put(:transport_options, execution_config.transport_options)
+    |> Keyword.put(:execution_surface, Config.to_execution_surface(execution_config))
     |> Keyword.put(:allowed_tools, execution_config.allowed_tools)
-    |> Keyword.put(:observability, execution_config.observability)
     |> maybe_put(:workspace_root, execution_config.workspace_root)
     |> maybe_put(:approval_posture, execution_config.approval_posture)
     |> maybe_put(:permission_mode, execution_config.permission_mode)
     |> maybe_put(:provider_permission_mode, execution_config.provider_permission_mode)
-    |> maybe_put(:lease_ref, execution_config.lease_ref)
-    |> maybe_put(:surface_ref, execution_config.surface_ref)
-    |> maybe_put(:target_id, execution_config.target_id)
-    |> maybe_put(:boundary_class, execution_config.boundary_class)
   end
 
   defp maybe_put(opts, _key, nil), do: opts

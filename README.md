@@ -167,31 +167,45 @@ Per-run options override session defaults. Session defaults are inherited automa
 
 ASM keeps the bridge-to-core contract transport-neutral.
 
-Session defaults and per-run overrides can carry these generic fields:
+Session defaults and per-run overrides can carry a single canonical
+`execution_surface` plus the broader ASM run/session controls:
 
-- `surface_kind`
-- `transport_options`
+- `execution_surface`
 - `workspace_root`
 - `allowed_tools`
 - `approval_posture`
 - `permission_mode`
-- `lease_ref`
-- `surface_ref`
-- `target_id`
-- `boundary_class`
-- `observability`
+
+```elixir
+execution_surface = [
+  surface_kind: :static_ssh,
+  transport_options: [destination: "buildbox-a", port: 2222],
+  target_id: "buildbox-a"
+]
+
+{:ok, session} =
+  ASM.start_session(
+    provider: :codex,
+    execution_surface: execution_surface
+  )
+```
 
 Session startup normalizes stored defaults so `ASM.session_info/1` reflects the
-generic surface contract. Run execution then merges per-run overrides, enforces
-non-empty `allowed_tools` in the ASM pipeline, and forwards generic surface
-data only to `ASM.ProviderBackend.Core` for core transport startup.
+same `CliSubprocessCore.ExecutionSurface` contract the downstream SDK repos
+consume. Run execution then merges per-run overrides, enforces non-empty
+`allowed_tools` in the ASM pipeline, and forwards execution-surface data only
+to the backend/runtime startup path.
 `approval_posture: :none` stays explicit and runtime backends reject unresolved
 starts instead of normalizing it away silently.
+
+ASM does not expose a second split public surface for placement. `surface_kind`,
+`transport_options`, `lease_ref`, `surface_ref`, `target_id`,
+`boundary_class`, and `observability` belong inside `execution_surface`.
 
 Phase D now proves that unchanged execution config path over SSH as well:
 
 - `:static_ssh` and `:leased_ssh` both execute through the generic
-  `surface_kind` plus `transport_options` contract
+  `execution_surface` contract
 - start, stream, interrupt, close, and terminal-error handling stay on the
   existing ASM surface
 - guest bridge remains deferred and is not exposed as a runtime adapter here

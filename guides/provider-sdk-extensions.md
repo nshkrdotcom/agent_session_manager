@@ -134,8 +134,10 @@ asm_opts = [
   cwd: File.cwd!(),
   permission_mode: :plan,
   model: "sonnet",
-  surface_kind: :static_ssh,
-  transport_options: [destination: "buildbox-a", port: 2222]
+  execution_surface: [
+    surface_kind: :static_ssh,
+    transport_options: [destination: "buildbox-a", port: 2222]
+  ]
 ]
 
 native_overrides = [
@@ -188,9 +190,11 @@ alias Codex, as: CodexSDK
       provider: :codex,
       model: "gpt-5.4",
       reasoning_effort: :high,
-      surface_kind: :leased_ssh,
-      transport_options: [destination: "codex-host-1"],
-      lease_ref: "lease-42"
+      execution_surface: [
+        surface_kind: :leased_ssh,
+        transport_options: [destination: "codex-host-1"],
+        lease_ref: "lease-42"
+      ]
     ],
     [model_personality: :pragmatic],
     experimental_api: true
@@ -230,7 +234,7 @@ alias Codex, as: CodexSDK
 - the Claude bridge keeps ASM config and Claude-native config in separate
   arguments on purpose
 - local `:core` and local `:sdk` lanes preserve the same normalized
-  `surface_kind` / `transport_options` contract; `execution_mode: :remote_node`
+  `execution_surface` contract; `execution_mode: :remote_node`
   remains a separate ASM-only rule
 - ASM-derived fields such as `:cwd`, `:permission_mode`, `:model`,
   `:max_turns`, and `:timeout_ms` must stay in ASM config and are rejected from

@@ -145,12 +145,14 @@ defmodule ASM.LaneIntegrationTest do
     session =
       start_session!(
         :codex,
-        surface_kind: :static_ssh,
-        transport_options:
-          FakeSSH.transport_options(fake_ssh,
-            destination: "sdk-static-ssh.example",
-            port: 2222
-          )
+        execution_surface: [
+          surface_kind: :static_ssh,
+          transport_options:
+            FakeSSH.transport_options(fake_ssh,
+              destination: "sdk-static-ssh.example",
+              port: 2222
+            )
+        ]
       )
 
     assert {:ok, result} =
@@ -187,12 +189,14 @@ defmodule ASM.LaneIntegrationTest do
     session =
       start_session!(
         :codex,
-        surface_kind: :leased_ssh,
-        transport_options:
-          FakeSSH.transport_options(fake_ssh,
-            destination: "sdk-leased-ssh.example"
-          ),
-        lease_ref: "lease-42"
+        execution_surface: [
+          surface_kind: :leased_ssh,
+          transport_options:
+            FakeSSH.transport_options(fake_ssh,
+              destination: "sdk-leased-ssh.example"
+            ),
+          lease_ref: "lease-42"
+        ]
       )
 
     assert {:ok, result} =

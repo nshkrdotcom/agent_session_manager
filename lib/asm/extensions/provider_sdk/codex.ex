@@ -40,6 +40,7 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
     :cd,
     :full_auto,
     :dangerously_bypass_approvals_and_sandbox,
+    :skip_git_repo_check,
     :output_schema,
     :approval_timeout_ms
   ]
@@ -300,6 +301,7 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
       full_auto: Keyword.get(validated, :provider_permission_mode) == :auto_edit,
       dangerously_bypass_approvals_and_sandbox:
         Keyword.get(validated, :provider_permission_mode) == :yolo,
+      skip_git_repo_check: Keyword.get(validated, :skip_git_repo_check, false),
       output_schema: Keyword.get(validated, :output_schema)
     ]
     |> drop_nil_values()

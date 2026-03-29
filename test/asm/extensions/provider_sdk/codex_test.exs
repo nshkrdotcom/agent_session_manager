@@ -16,8 +16,10 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
       cli_path: "/usr/local/bin/codex",
       model: "gpt-5.4",
       reasoning_effort: :high,
-      surface_kind: :static_ssh,
-      transport_options: [destination: "codex.options.example", port: 2222]
+      execution_surface: [
+        surface_kind: :static_ssh,
+        transport_options: [destination: "codex.options.example", port: 2222]
+      ]
     ]
 
     native_overrides = [
@@ -49,6 +51,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
       provider: :codex,
       cwd: "/tmp/asm-codex-thread",
       permission_mode: :auto,
+      skip_git_repo_check: true,
       approval_timeout_ms: 45_000,
       output_schema: %{"type" => "object"}
     ]
@@ -65,6 +68,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
     assert options.approval_timeout_ms == 45_000
     assert options.full_auto == true
     assert options.dangerously_bypass_approvals_and_sandbox == false
+    assert options.skip_git_repo_check == true
     assert options.output_schema == %{"type" => "object"}
     assert options.personality == :pragmatic
 
@@ -151,10 +155,13 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
         approval_timeout_ms: 10_000,
         model: "gpt-5.4",
         reasoning_effort: :medium,
-        surface_kind: :leased_ssh,
-        transport_options: [destination: "codex.session.example"],
+        execution_surface: [
+          surface_kind: :leased_ssh,
+          transport_options: [destination: "codex.session.example"],
+          observability: %{suite: :provider_sdk}
+        ],
         allowed_tools: ["search"],
-        observability: %{suite: :provider_sdk}
+        session_id: "asm-codex-session-defaults"
       )
 
     on_exit(fn -> safe_stop_session(session) end)
@@ -204,12 +211,14 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
                provider: :codex,
                cli_path: AppServerSubprocess.command_path(harness),
                model: "gpt-5.4",
-               surface_kind: :static_ssh,
-               transport_options:
-                 FakeSSH.transport_options(fake_ssh,
-                   destination: "codex.extension.example",
-                   port: 2222
-                 )
+               execution_surface: [
+                 surface_kind: :static_ssh,
+                 transport_options:
+                   FakeSSH.transport_options(fake_ssh,
+                     destination: "codex.extension.example",
+                     port: 2222
+                   )
+               ]
              )
 
     assert codex_opts.execution_surface.surface_kind == :static_ssh

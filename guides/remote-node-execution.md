@@ -37,8 +37,10 @@ ASM.query(session, "run locally", execution_mode: :local)
 
 `ASM.ProviderBackend.Core` is the source of truth for remote execution. The optional SDK lane is local-only.
 
-The normalized `execution_surface` still describes local subprocess or SSH
-placement. It does not change the meaning of `execution_mode: :remote_node`.
+The normalized `execution_surface` still describes process placement. It may be
+local subprocess, SSH, or another landed surface such as `:guest_bridge`
+authored above ASM. It does not change the meaning of
+`execution_mode: :remote_node`.
 
 `ASM.Schema.RemoteNode` now owns the resolved remote execution payload after ASM
 applies precedence rules. That keeps remote-node validation in one place and

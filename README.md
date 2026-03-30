@@ -212,6 +212,10 @@ policy do not.
 Transport expansion stays core-owned. ASM carries the opaque placement contract
 without branching on adapter modules or transport-family-specific path rules,
 so future built-in surfaces should not require another ASM contract rewrite.
+Boundary-backed external sessions can now arrive through that unchanged
+transport-neutral surface as attach-ready `:guest_bridge` placement authored
+above ASM. ASM does not inspect lower-boundary backend details; it only
+consumes the normalized `execution_surface` contract.
 
 Phase D now proves that unchanged execution config path over SSH as well:
 
@@ -220,6 +224,9 @@ Phase D now proves that unchanged execution config path over SSH as well:
   existing ASM surface
 - guest bridge can remain transport-neutral at the ASM seam without turning ASM
   into a transport registry
+- boundary-backed `:guest_bridge` sessions follow the same rule: descriptor
+  validation and lower-boundary claim happen above ASM, while ASM only consumes
+  the final `execution_surface`
 
 ## Runtime Architecture
 

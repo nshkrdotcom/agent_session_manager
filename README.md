@@ -209,6 +209,10 @@ ASM keeps one public placement surface. `surface_kind`, `transport_options`,
 `observability` belong inside `execution_surface`. Workspace and approval
 policy do not.
 
+Transport expansion stays core-owned. ASM carries the opaque placement contract
+without branching on adapter modules or transport-family-specific path rules,
+so future built-in surfaces should not require another ASM contract rewrite.
+
 Phase D now proves that unchanged execution config path over SSH as well:
 
 - `:ssh_exec` executes through the generic `execution_surface` contract

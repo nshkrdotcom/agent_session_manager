@@ -11,7 +11,9 @@ defmodule ASM.Application do
       {Registry, keys: :unique, name: :asm_sessions},
       {Task.Supervisor, name: ASM.TaskSupervisor},
       {ASM.Remote.BackendSupervisor, []},
-      {ASM.Session.Supervisor, []}
+      {ASM.Session.Supervisor, []},
+      {ASM.InferenceEndpoint.LeaseStore, []},
+      {ASM.InferenceEndpoint.Server, []}
     ]
 
     Supervisor.start_link(children, strategy: :one_for_one, name: ASM.ApplicationSupervisor)

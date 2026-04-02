@@ -18,9 +18,11 @@ Supported providers:
 - `README.md` - install, lanes, provider boundaries, and validation workflow
 - `guides/lane-selection.md` - lane discovery and execution fallback rules
 - `guides/provider-backends.md` - core vs SDK backend responsibilities
+- `guides/inference-endpoints.md` - `ASM.InferenceEndpoint` publication and endpoint contracts
 - `guides/common-and-partial-provider-features.md` - normalized permission terms and partial common features such as Ollama
 - `guides/event-model-and-result-projection.md` - stream projection and reducers
 - `guides/remote-node-execution.md` - remote execution model
+- `examples/README.md` - live and offline proof entrypoints
 
 ## Why ASM
 
@@ -143,6 +145,37 @@ Provider atom form for one-off queries:
 ```elixir
 {:ok, result} = ASM.query(:gemini, "Say hello")
 ```
+
+## CLI Inference Endpoint Publication
+
+`ASM.InferenceEndpoint` publishes CLI-backed providers as endpoint-shaped
+targets for northbound inference consumers.
+
+The stable northbound API is:
+
+- `ASM.InferenceEndpoint.consumer_manifest/0`
+- `ASM.InferenceEndpoint.ensure_endpoint/3`
+- `ASM.InferenceEndpoint.release_endpoint/1`
+
+The built-in CLI provider set is published honestly from the landed provider
+profiles:
+
+- Codex
+- Claude
+- Gemini
+- Amp
+
+ASM derives `cli_completion_v1`, `cli_streaming_v1`, and `cli_agent_v2` from
+those profiles, but the endpoint path only exposes completion and streaming.
+Tool-bearing or agent-loop-shaped requests are rejected on that endpoint seam.
+
+Gemini and Amp remain common-surface-only providers. Their capability
+publication can make them valid endpoint targets without introducing a second
+ASM-native extension namespace.
+
+See `guides/inference-endpoints.md` and
+`examples/inference_endpoint_http.exs` for the published descriptor contract
+and an offline endpoint proof.
 
 ## Session Model
 

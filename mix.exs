@@ -117,7 +117,7 @@ defmodule AgentSessionManager.MixProject do
     [
       name: "agent_session_manager",
       description: description(),
-      files: ~w(lib guides assets mix.exs README.md CHANGELOG.md LICENSE .formatter.exs),
+      files: ~w(lib guides examples assets mix.exs README.md CHANGELOG.md LICENSE .formatter.exs),
       licenses: ["Apache-2.0"],
       maintainers: ["nshkrdotcom"],
       links: %{
@@ -131,7 +131,7 @@ defmodule AgentSessionManager.MixProject do
 
   defp docs do
     [
-      main: "readme",
+      main: "overview",
       logo: "assets/agent_session_manager.svg",
       assets: %{"assets" => "assets"},
       source_ref: "v#{@version}",
@@ -161,9 +161,10 @@ defmodule AgentSessionManager.MixProject do
 
   defp extras do
     [
-      "README.md": [title: "Overview"],
+      "README.md": [title: "Overview", filename: "overview"],
       "guides/lane-selection.md": [title: "Lane Selection"],
       "guides/provider-backends.md": [title: "Provider Backends"],
+      "guides/inference-endpoints.md": [title: "Inference Endpoints"],
       "guides/common-and-partial-provider-features.md": [
         title: "Common And Partial Provider Features"
       ],
@@ -173,6 +174,7 @@ defmodule AgentSessionManager.MixProject do
       "guides/remote-node-execution.md": [title: "Remote Node Execution"],
       "guides/live-adapters.md": [title: "Live Adapters"],
       "guides/boundary-enforcement.md": [title: "Boundary Enforcement"],
+      "examples/README.md": [title: "Examples", filename: "examples"],
       "CHANGELOG.md": [title: "Changelog"],
       LICENSE: [title: "License"]
     ]
@@ -184,6 +186,7 @@ defmodule AgentSessionManager.MixProject do
       Foundations: [
         "guides/lane-selection.md",
         "guides/provider-backends.md",
+        "guides/inference-endpoints.md",
         "guides/common-and-partial-provider-features.md",
         "guides/provider-sdk-extensions.md"
       ],
@@ -193,6 +196,7 @@ defmodule AgentSessionManager.MixProject do
         "guides/remote-node-execution.md",
         "guides/live-adapters.md"
       ],
+      Examples: ["examples/README.md"],
       Architecture: ["guides/boundary-enforcement.md"],
       Reference: ["CHANGELOG.md", "LICENSE"]
     ]
@@ -205,11 +209,13 @@ defmodule AgentSessionManager.MixProject do
         ASM.Error,
         ASM.Event,
         ASM.History,
+        ASM.InferenceEndpoint,
         ASM.Permission,
         ASM.ProviderRegistry,
         ASM.Result,
         ASM.Stream
       ],
+      "Inference Endpoint Contracts": ~r/^ASM\.InferenceEndpoint/,
       Backends: [ASM.ProviderBackend, ASM.ProviderBackend.Core, ASM.ProviderBackend.SDK],
       Providers: ~r/^ASM\.(Provider|Options)/,
       Runtime: ~r/^ASM\.(Session|Run)/,

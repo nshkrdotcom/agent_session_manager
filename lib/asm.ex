@@ -13,6 +13,7 @@ defmodule ASM do
       Error,
       Event,
       History,
+      InferenceEndpoint,
       Message,
       {Message, []},
       Migration.MainCompat,

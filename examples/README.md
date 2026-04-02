@@ -3,10 +3,11 @@
 These examples cover two surfaces:
 
 - three provider-agnostic live examples on ASM's common API
+- one offline inference-endpoint publication proof
 - four provider-specific examples that intentionally cross into one provider's
   SDK-native surface
 
-Nothing runs by default. Every example requires `--provider`.
+Nothing runs by default. The live CLI examples require `--provider`.
 
 ## Included Examples
 
@@ -16,6 +17,9 @@ Nothing runs by default. Every example requires `--provider`.
 - `live_session_lifecycle.exs`: `ASM.start_session/1`, `ASM.session_info/1`,
   `ASM.health/1`, `ASM.stream/3`, `ASM.query/3`, `ASM.cost/1`,
   `ASM.stop_session/1`
+- `inference_endpoint_http.exs`: offline `ASM.InferenceEndpoint.ensure_endpoint/3`
+  publication, OpenAI-compatible HTTP completion/streaming call, and lease
+  release
 - `provider_amp_sdk_stream.exs`: direct `AmpSdk.execute/2`
 - `provider_claude_control_client.exs`: `ASM.Extensions.ProviderSDK.Claude`
   control-client bridge
@@ -27,10 +31,14 @@ Nothing runs by default. Every example requires `--provider`.
 
 ## Default Behavior
 
-If you omit `--provider`, the example prints usage and exits without touching a
-live CLI.
+If you omit `--provider`, the live CLI examples print usage and exit without
+touching a live CLI.
 
-That is deliberate. The examples never silently pick a provider for you.
+That is deliberate. The live examples never silently pick a provider for you.
+
+`inference_endpoint_http.exs` is the exception. It defaults to the Gemini
+provider profile and runs against a local fake backend so the publication seam
+stays deterministic and offline.
 
 ## Permission Defaults
 
@@ -102,6 +110,7 @@ smoke-test targets.
 mix run --no-start examples/live_query.exs -- --provider claude
 mix run --no-start examples/live_stream.exs -- --provider gemini
 mix run --no-start examples/live_session_lifecycle.exs -- --provider codex --model gpt-5.4
+mix run --no-start examples/inference_endpoint_http.exs -- --provider gemini --stream
 mix run --no-start examples/live_query.exs -- --provider claude --ollama --model haiku --ollama-model llama3.2
 mix run --no-start examples/live_query.exs -- --provider codex --ollama --ollama-model gpt-oss:20b
 mix run --no-start examples/live_query.exs -- --provider amp --lane sdk --sdk-root ../amp_sdk
@@ -116,6 +125,7 @@ Shared flags:
 - `--lane <core|auto|sdk>` for common-surface examples
 - `--prompt <text>`
 - `--model <name>`
+- `--stream` for `inference_endpoint_http.exs`
 - `--cli-path <path|command>`
 - `--permission-mode <mode>`
 - `--danger-full-access`

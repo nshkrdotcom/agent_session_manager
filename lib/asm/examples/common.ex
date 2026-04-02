@@ -3,6 +3,7 @@ defmodule ASM.Examples.Common do
 
   alias ASM.{Error, Event, Message, Options, Provider, ProviderFeatures, Result}
   alias CliSubprocessCore.ProviderCLI.Error, as: CoreProviderCLIError
+  alias ExternalRuntimeTransport.ExecutionSurface
 
   @type lane :: :auto | :core | :sdk
 
@@ -545,7 +546,7 @@ defmodule ASM.Examples.Common do
                |> put_opt(:port, ssh_port)
                |> put_opt(:identity_file, identity_file),
              {:ok, execution_surface} <-
-               CliSubprocessCore.ExecutionSurface.new(
+               ExecutionSurface.new(
                  surface_kind: :ssh_exec,
                  transport_options: transport_options
                ) do

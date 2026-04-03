@@ -123,12 +123,12 @@ defmodule ASM.InferenceEndpoint do
       provider: provider,
       cli_completion_v1: completion_capable?(capabilities),
       cli_streaming_v1: :streaming in capabilities,
-      cli_agent_v2: Enum.all?([:streaming, :tools], &(&1 in capabilities)),
-      common_surface_only?: provider in [:amp, :gemini],
+      cli_agent_v2: agent_capable?(provider, capabilities),
+      common_surface_only?: common_surface_only?(provider),
       derivation: %{
         cli_completion_v1: :prompt_driven_cli_profile,
         cli_streaming_v1: :streaming_profile_capability,
-        cli_agent_v2: :tool_capable_common_cli_surface
+        cli_agent_v2: agent_capability_derivation(provider)
       },
       profile_capabilities: capabilities
     }
@@ -140,6 +140,20 @@ defmodule ASM.InferenceEndpoint do
       &(&1 in [:streaming, :reasoning, :thinking, :tools, :extensions, :mcp])
     )
   end
+
+  defp agent_capable?(provider, capabilities)
+       when provider in [:claude, :codex] and is_list(capabilities) do
+    Enum.all?([:streaming, :tools], &(&1 in capabilities))
+  end
+
+  defp agent_capable?(_provider, _capabilities), do: false
+
+  defp common_surface_only?(provider), do: provider in [:amp, :gemini]
+
+  defp agent_capability_derivation(provider) when provider in [:claude, :codex],
+    do: :provider_native_extension_surface
+
+  defp agent_capability_derivation(_provider), do: :common_surface_only_provider
 
   defp backend_manifest(provider, publication) do
     BackendManifest.new!(

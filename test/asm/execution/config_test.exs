@@ -3,6 +3,8 @@ defmodule ASM.Execution.ConfigTest do
 
   alias ASM.Execution.Config
 
+  @execution_surface_contract_version CliSubprocessCore.ExecutionSurface.__struct__().contract_version
+
   setup do
     original = Application.get_env(:agent_session_manager, Config)
 
@@ -68,6 +70,7 @@ defmodule ASM.Execution.ConfigTest do
   test "resolve/2 preserves non-empty allowed_tools and explicit approval_posture :none" do
     session_stream_opts = [
       execution_surface: [
+        contract_version: @execution_surface_contract_version,
         surface_kind: :ssh_exec,
         transport_options: %{destination: "runtime.example"},
         lease_ref: "lease-1",
@@ -82,6 +85,7 @@ defmodule ASM.Execution.ConfigTest do
     ]
 
     assert {:ok, cfg} = Config.resolve(session_stream_opts, [])
+    assert cfg.execution_surface.contract_version == @execution_surface_contract_version
     assert cfg.execution_surface.surface_kind == :ssh_exec
     assert cfg.execution_surface.transport_options == [destination: "runtime.example"]
     assert cfg.execution_surface.lease_ref == "lease-1"
@@ -98,6 +102,7 @@ defmodule ASM.Execution.ConfigTest do
   test "resolve/2 merges session and run execution_surface values canonically" do
     session_stream_opts = [
       execution_surface: %{
+        "contract_version" => @execution_surface_contract_version,
         "surface_kind" => :ssh_exec,
         "transport_options" => [destination: "session.example"],
         "target_id" => "session-target",
@@ -107,7 +112,6 @@ defmodule ASM.Execution.ConfigTest do
 
     run_stream_opts = [
       execution_surface: [
-        surface_kind: :ssh_exec,
         transport_options: [port: 2222],
         lease_ref: "lease-42",
         observability: %{scope: :run}
@@ -115,10 +119,11 @@ defmodule ASM.Execution.ConfigTest do
     ]
 
     assert {:ok, cfg} = Config.resolve(session_stream_opts, run_stream_opts)
+    assert cfg.execution_surface.contract_version == @execution_surface_contract_version
     assert cfg.execution_surface.surface_kind == :ssh_exec
     assert cfg.execution_surface.transport_options[:destination] == "session.example"
     assert cfg.execution_surface.transport_options[:port] == 2222
-    assert cfg.execution_surface.target_id == nil
+    assert cfg.execution_surface.target_id == "session-target"
     assert cfg.execution_surface.lease_ref == "lease-42"
     assert cfg.execution_surface.observability == %{scope: :run}
   end

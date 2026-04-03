@@ -8,6 +8,16 @@ defmodule ASM.Execution.Config do
   alias ASM.Schema.RemoteNode, as: RemoteNodeSchema
   alias CliSubprocessCore.ExecutionSurface
 
+  @execution_surface_keys [
+    :contract_version,
+    :surface_kind,
+    :transport_options,
+    :target_id,
+    :lease_ref,
+    :surface_ref,
+    :boundary_class,
+    :observability
+  ]
   @valid_execution_modes [:local, :remote_node]
   @valid_bootstrap_modes [:require_prestarted, :ensure_started]
   @legacy_execution_surface_keys [
@@ -317,11 +327,11 @@ defmodule ASM.Execution.Config do
         {:ok, nil}
 
       %ExecutionSurface{} = execution_surface ->
-        normalize_execution_surface_struct(execution_surface)
+        normalize_execution_surface_input(execution_surface)
 
       execution_surface when is_list(execution_surface) ->
         if Keyword.keyword?(execution_surface) do
-          normalize_execution_surface_attrs(execution_surface)
+          normalize_execution_surface_input(execution_surface)
         else
           {:error,
            config_error(
@@ -330,9 +340,7 @@ defmodule ASM.Execution.Config do
         end
 
       %{} = execution_surface ->
-        execution_surface
-        |> execution_surface_attrs()
-        |> normalize_execution_surface_attrs()
+        normalize_execution_surface_input(execution_surface)
 
       execution_surface ->
         {:error,
@@ -343,29 +351,32 @@ defmodule ASM.Execution.Config do
   end
 
   defp merge_execution_surfaces(nil, nil), do: normalize_execution_surface_attrs([])
-  defp merge_execution_surfaces(%ExecutionSurface{} = surface, nil), do: {:ok, surface}
-  defp merge_execution_surfaces(nil, %ExecutionSurface{} = surface), do: {:ok, surface}
+
+  defp merge_execution_surfaces(attrs, nil) when is_list(attrs),
+    do: normalize_execution_surface_attrs(attrs)
+
+  defp merge_execution_surfaces(nil, attrs) when is_list(attrs),
+    do: normalize_execution_surface_attrs(attrs)
 
   defp merge_execution_surfaces(
-         %ExecutionSurface{} = session_execution_surface,
-         %ExecutionSurface{} = run_execution_surface
+         session_execution_surface_attrs,
+         run_execution_surface_attrs
        ) do
+    session_transport_options =
+      Keyword.get(session_execution_surface_attrs, :transport_options, [])
+
+    run_transport_options = Keyword.get(run_execution_surface_attrs, :transport_options, [])
+    session_observability = Keyword.get(session_execution_surface_attrs, :observability, %{})
+    run_observability = Keyword.get(run_execution_surface_attrs, :observability, %{})
+
     normalize_execution_surface_attrs(
-      surface_kind: run_execution_surface.surface_kind,
-      transport_options:
-        Keyword.merge(
-          session_execution_surface.transport_options,
-          run_execution_surface.transport_options
-        ),
-      target_id: run_execution_surface.target_id,
-      lease_ref: run_execution_surface.lease_ref,
-      surface_ref: run_execution_surface.surface_ref,
-      boundary_class: run_execution_surface.boundary_class,
-      observability:
-        Map.merge(
-          session_execution_surface.observability,
-          run_execution_surface.observability
-        )
+      session_execution_surface_attrs
+      |> Keyword.merge(run_execution_surface_attrs)
+      |> Keyword.put(
+        :transport_options,
+        Keyword.merge(session_transport_options, run_transport_options)
+      )
+      |> Keyword.put(:observability, Map.merge(session_observability, run_observability))
     )
   end
 
@@ -385,20 +396,38 @@ defmodule ASM.Execution.Config do
     end
   end
 
+  defp normalize_execution_surface_input(%ExecutionSurface{} = execution_surface) do
+    with {:ok, normalized} <- normalize_execution_surface_struct(execution_surface) do
+      {:ok, execution_surface_attrs(normalized)}
+    end
+  end
+
+  defp normalize_execution_surface_input(execution_surface) when is_list(execution_surface) do
+    normalized_keys = Keyword.keys(execution_surface)
+
+    with {:ok, normalized} <- normalize_execution_surface_attrs(execution_surface) do
+      {:ok, execution_surface_attrs(normalized, normalized_keys)}
+    end
+  end
+
+  defp normalize_execution_surface_input(execution_surface) when is_map(execution_surface) do
+    normalized_keys = execution_surface_present_keys(execution_surface)
+
+    with {:ok, normalized} <-
+           execution_surface
+           |> execution_surface_attrs()
+           |> normalize_execution_surface_attrs() do
+      {:ok, execution_surface_attrs(normalized, normalized_keys)}
+    end
+  end
+
   defp execution_surface_attrs(%ExecutionSurface{} = execution_surface) do
-    [
-      surface_kind: execution_surface.surface_kind,
-      transport_options: execution_surface.transport_options,
-      target_id: execution_surface.target_id,
-      lease_ref: execution_surface.lease_ref,
-      surface_ref: execution_surface.surface_ref,
-      boundary_class: execution_surface.boundary_class,
-      observability: execution_surface.observability
-    ]
+    execution_surface_attrs(execution_surface, @execution_surface_keys)
   end
 
   defp execution_surface_attrs(attrs) when is_map(attrs) do
     [
+      contract_version: Map.get(attrs, :contract_version, Map.get(attrs, "contract_version")),
       surface_kind: Map.get(attrs, :surface_kind, Map.get(attrs, "surface_kind")),
       transport_options: Map.get(attrs, :transport_options, Map.get(attrs, "transport_options")),
       target_id: Map.get(attrs, :target_id, Map.get(attrs, "target_id")),
@@ -407,6 +436,26 @@ defmodule ASM.Execution.Config do
       boundary_class: Map.get(attrs, :boundary_class, Map.get(attrs, "boundary_class")),
       observability: Map.get(attrs, :observability, Map.get(attrs, "observability", %{}))
     ]
+  end
+
+  defp execution_surface_attrs(%ExecutionSurface{} = execution_surface, keys) do
+    [
+      contract_version: execution_surface.contract_version,
+      surface_kind: execution_surface.surface_kind,
+      transport_options: execution_surface.transport_options,
+      target_id: execution_surface.target_id,
+      lease_ref: execution_surface.lease_ref,
+      surface_ref: execution_surface.surface_ref,
+      boundary_class: execution_surface.boundary_class,
+      observability: execution_surface.observability
+    ]
+    |> Keyword.take(keys)
+  end
+
+  defp execution_surface_present_keys(attrs) when is_map(attrs) do
+    Enum.filter(@execution_surface_keys, fn key ->
+      Map.has_key?(attrs, key) or Map.has_key?(attrs, Atom.to_string(key))
+    end)
   end
 
   defp resolve_execution_environment_attrs(opts) when is_list(opts) do

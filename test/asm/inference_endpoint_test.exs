@@ -60,7 +60,7 @@ defmodule ASM.InferenceEndpointTest do
       assert compatibility.metadata.provider == provider
       assert publication.cli_completion_v1 == true
       assert publication.cli_streaming_v1 == true
-      assert publication.cli_agent_v2 == true
+      assert publication.cli_agent_v2 == provider in [:codex, :claude]
       assert compatibility.metadata.common_surface_only? == provider in [:gemini, :amp]
       refute compatibility.compatible?
     end
@@ -222,14 +222,13 @@ defmodule ASM.InferenceEndpointTest do
   end
 
   defp context(overrides \\ []) do
-    overrides
-    |> Enum.into(%{})
-    |> Map.merge(%{
+    %{
       run_id: "run-cli-endpoint-1",
       attempt_id: "run-cli-endpoint-1:1",
       boundary_ref: nil,
       metadata: %{phase: "phase_5"}
-    })
+    }
+    |> Map.merge(Enum.into(overrides, %{}))
   end
 
   defp http_get_json(url, headers) do
@@ -254,7 +253,11 @@ defmodule ASM.InferenceEndpointTest do
   end
 
   defp http_post_raw(url, headers, payload) do
-    request_headers = [{"content-type", "application/json"} | headers] |> to_httpc_headers()
+    request_headers =
+      headers
+      |> Enum.into(%{"content-type" => "application/json"})
+      |> to_httpc_headers()
+
     body = Jason.encode!(payload)
 
     case :httpc.request(

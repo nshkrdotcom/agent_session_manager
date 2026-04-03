@@ -166,8 +166,9 @@ profiles:
 - Amp
 
 ASM derives `cli_completion_v1`, `cli_streaming_v1`, and `cli_agent_v2` from
-those profiles, but the endpoint path only exposes completion and streaming.
-Tool-bearing or agent-loop-shaped requests are rejected on that endpoint seam.
+the landed provider profiles and runtime tiers, but the endpoint path only
+exposes completion and streaming. Tool-bearing or agent-loop-shaped requests
+are rejected on that endpoint seam.
 
 Gemini and Amp remain common-surface-only providers. Their capability
 publication can make them valid endpoint targets without introducing a second

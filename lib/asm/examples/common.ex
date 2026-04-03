@@ -2,8 +2,8 @@ defmodule ASM.Examples.Common do
   @moduledoc false
 
   alias ASM.{Error, Event, Message, Options, Provider, ProviderFeatures, Result}
+  alias CliSubprocessCore.ExecutionSurface
   alias CliSubprocessCore.ProviderCLI.Error, as: CoreProviderCLIError
-  alias ExternalRuntimeTransport.ExecutionSurface
 
   @type lane :: :auto | :core | :sdk
 

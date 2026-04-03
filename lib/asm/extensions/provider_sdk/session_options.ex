@@ -128,6 +128,7 @@ defmodule ASM.Extensions.ProviderSDK.SessionOptions do
 
   defp execution_surface_attrs(%ExecutionSurface{} = execution_surface) do
     [
+      contract_version: execution_surface.contract_version,
       surface_kind: execution_surface.surface_kind,
       transport_options: execution_surface.transport_options,
       target_id: execution_surface.target_id,
@@ -140,6 +141,7 @@ defmodule ASM.Extensions.ProviderSDK.SessionOptions do
 
   defp execution_surface_attrs(attrs) when is_map(attrs) do
     [
+      contract_version: Map.get(attrs, :contract_version, Map.get(attrs, "contract_version")),
       surface_kind: Map.get(attrs, :surface_kind, Map.get(attrs, "surface_kind")),
       transport_options: Map.get(attrs, :transport_options, Map.get(attrs, "transport_options")),
       target_id: Map.get(attrs, :target_id, Map.get(attrs, "target_id")),

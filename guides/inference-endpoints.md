@@ -97,11 +97,10 @@ They can publish:
 
 - `cli_completion_v1`
 - `cli_streaming_v1`
-- `cli_agent_v2`
 
-without gaining a separate ASM-native extension namespace. Claude and Codex
-may still expose additional provider-native surfaces above this seam through
-`ASM.Extensions.ProviderSDK`.
+They do not publish `cli_agent_v2` through this seam. Claude and Codex may
+still expose richer provider-native agent surfaces above the common CLI
+endpoint path through `ASM.Extensions.ProviderSDK`.
 
 ## Proof Surface
 

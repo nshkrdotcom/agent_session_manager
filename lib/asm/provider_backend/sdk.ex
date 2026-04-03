@@ -142,8 +142,7 @@ defmodule ASM.ProviderBackend.SDK do
              @gemini_options_module,
              gemini_option_attrs(config, model_payload, execution_surface),
              "gemini"
-           ),
-         {:ok, options} <- validate_sdk_struct(@gemini_options_module, options, "gemini") do
+           ) do
       {:ok,
        sdk_start_opts(runtime, config,
          prompt: Map.fetch!(config, :prompt),
@@ -200,7 +199,8 @@ defmodule ASM.ProviderBackend.SDK do
              codex_thread_option_attrs(config, model_payload),
              "codex"
            ),
-         {:ok, thread} <- build_codex_thread(codex_opts, thread_opts),
+         {:ok, thread} <-
+           build_codex_thread(codex_opts, thread_opts, Map.get(config, :continuation)),
          {:ok, exec_opts} <-
            new_sdk_struct(
              @codex_exec_options_module,
@@ -272,6 +272,9 @@ defmodule ASM.ProviderBackend.SDK do
       max_turns: kw(config, :max_turns),
       system_prompt: kw(config, :system_prompt),
       append_system_prompt: kw(config, :append_system_prompt),
+      continue_conversation:
+        kw(config, :continue_conversation, continuation_continue_conversation(config)),
+      resume: kw(config, :resume, continuation_resume_id(config)),
       include_partial_messages: true,
       output_format: :stream_json,
       timeout_ms: kw(config, :transport_timeout_ms)
@@ -284,9 +287,11 @@ defmodule ASM.ProviderBackend.SDK do
       execution_surface: execution_surface,
       model_payload: model_payload,
       model: model_payload_value(model_payload, :resolved_model),
+      system_prompt: kw(config, :system_prompt),
       yolo: kw(config, :provider_permission_mode) == :yolo,
       approval_mode: gemini_approval_mode(kw(config, :provider_permission_mode)),
       sandbox: kw(config, :sandbox, false),
+      resume: kw(config, :resume, gemini_resume_value(config)),
       extensions: kw(config, :extensions, []),
       cwd: kw(config, :cwd),
       env: kw(config, :env, %{}),
@@ -302,6 +307,7 @@ defmodule ASM.ProviderBackend.SDK do
       model_payload: model_payload,
       cwd: kw(config, :cwd),
       mode: kw(config, :mode, "smart"),
+      continue_thread: kw(config, :continue_thread, amp_continue_thread(config)),
       dangerously_allow_all: kw(config, :provider_permission_mode) == :dangerously_allow_all,
       env: kw(config, :env, %{}),
       thinking: kw(config, :include_thinking, false),
@@ -327,6 +333,8 @@ defmodule ASM.ProviderBackend.SDK do
   defp codex_thread_option_attrs(config, model_payload) do
     [
       working_directory: kw(config, :cwd),
+      additional_directories: kw(config, :additional_directories, []),
+      base_instructions: kw(config, :system_prompt),
       oss: codex_payload_oss?(model_payload),
       local_provider: codex_payload_oss_provider(model_payload),
       model_provider: codex_payload_model_provider(model_payload),
@@ -349,11 +357,10 @@ defmodule ASM.ProviderBackend.SDK do
     |> drop_nil_values()
   end
 
-  defp build_codex_thread(codex_opts, thread_opts) do
+  defp build_codex_thread(codex_opts, thread_opts, continuation) do
     with :ok <- ensure_sdk_module(@codex_module, "codex"),
-         true <- function_exported?(@codex_module, :start_thread, 2) do
-      # credo:disable-for-next-line Credo.Check.Refactor.Apply
-      case apply(@codex_module, :start_thread, [codex_opts, thread_opts]) do
+         {:ok, build_fun} <- codex_thread_builder(continuation) do
+      case build_fun.(codex_opts, thread_opts) do
         {:ok, thread} ->
           {:ok, thread}
 
@@ -364,19 +371,63 @@ defmodule ASM.ProviderBackend.SDK do
           {:ok, thread}
       end
     else
-      false ->
-        {:error,
-         invalid_sdk_options(
-           "codex",
-           ArgumentError.exception("Codex.start_thread/2 is unavailable")
-         )}
-
       {:error, %Error{} = error} ->
         {:error, error}
     end
   rescue
     error ->
       {:error, invalid_sdk_options("codex", error)}
+  end
+
+  defp codex_thread_builder(%{strategy: :latest}) do
+    if function_exported?(@codex_module, :resume_thread, 3) do
+      {:ok,
+       fn codex_opts, thread_opts ->
+         invoke_codex_resume_thread(:last, codex_opts, thread_opts)
+       end}
+    else
+      {:error,
+       invalid_sdk_options(
+         "codex",
+         ArgumentError.exception("Codex.resume_thread/3 is unavailable")
+       )}
+    end
+  end
+
+  defp codex_thread_builder(%{strategy: :exact, provider_session_id: provider_session_id})
+       when is_binary(provider_session_id) and provider_session_id != "" do
+    if function_exported?(@codex_module, :resume_thread, 3) do
+      {:ok,
+       fn codex_opts, thread_opts ->
+         invoke_codex_resume_thread(provider_session_id, codex_opts, thread_opts)
+       end}
+    else
+      {:error,
+       invalid_sdk_options(
+         "codex",
+         ArgumentError.exception("Codex.resume_thread/3 is unavailable")
+       )}
+    end
+  end
+
+  defp codex_thread_builder(_continuation) do
+    if function_exported?(@codex_module, :start_thread, 2) do
+      {:ok, fn codex_opts, thread_opts -> invoke_codex_start_thread(codex_opts, thread_opts) end}
+    else
+      {:error,
+       invalid_sdk_options(
+         "codex",
+         ArgumentError.exception("Codex.start_thread/2 is unavailable")
+       )}
+    end
+  end
+
+  defp invoke_codex_resume_thread(target, codex_opts, thread_opts) do
+    :erlang.apply(@codex_module, :resume_thread, [target, codex_opts, thread_opts])
+  end
+
+  defp invoke_codex_start_thread(codex_opts, thread_opts) do
+    :erlang.apply(@codex_module, :start_thread, [codex_opts, thread_opts])
   end
 
   defp new_sdk_struct(module, attrs, provider_name) when is_atom(module) do
@@ -413,17 +464,6 @@ defmodule ASM.ProviderBackend.SDK do
       {:error, invalid_sdk_options(provider_name, error)}
   end
 
-  defp validate_sdk_struct(module, options, provider_name) when is_atom(module) do
-    if Code.ensure_loaded?(module) and function_exported?(module, :validate!, 1) do
-      {:ok, module.validate!(options)}
-    else
-      {:ok, options}
-    end
-  rescue
-    error in [ArgumentError] ->
-      {:error, invalid_sdk_options(provider_name, error)}
-  end
-
   defp ensure_sdk_module(module, provider_name) when is_atom(module) do
     if Code.ensure_loaded?(module) do
       :ok
@@ -443,6 +483,23 @@ defmodule ASM.ProviderBackend.SDK do
     |> Map.get(:provider_opts, [])
     |> Keyword.get(key, default)
   end
+
+  defp continuation_resume_id(%{
+         continuation: %{strategy: :exact, provider_session_id: provider_session_id}
+       })
+       when is_binary(provider_session_id) and provider_session_id != "",
+       do: provider_session_id
+
+  defp continuation_resume_id(_config), do: nil
+
+  defp continuation_continue_conversation(%{continuation: %{strategy: :latest}}), do: true
+  defp continuation_continue_conversation(_config), do: nil
+
+  defp gemini_resume_value(%{continuation: %{strategy: :latest}}), do: "latest"
+  defp gemini_resume_value(config), do: continuation_resume_id(config)
+
+  defp amp_continue_thread(%{continuation: %{strategy: :latest}}), do: true
+  defp amp_continue_thread(config), do: continuation_resume_id(config)
 
   defp maybe_put(provider_opts, _key, nil), do: provider_opts
   defp maybe_put(provider_opts, key, value), do: Keyword.put(provider_opts, key, value)

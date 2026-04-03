@@ -58,6 +58,8 @@ defmodule ASM.Schema.ProviderOptions do
 
   @claude_fields %{
     model: Conventions.optional_trimmed_string(),
+    system_prompt: Conventions.optional_any(),
+    append_system_prompt: Conventions.optional_trimmed_string(),
     provider_backend: Conventions.optional_any(),
     external_model_overrides: Zoi.optional(Zoi.nullish(Conventions.any_map())),
     anthropic_base_url: Conventions.optional_trimmed_string(),
@@ -68,16 +70,19 @@ defmodule ASM.Schema.ProviderOptions do
 
   @codex_fields %{
     model: Conventions.optional_trimmed_string(),
+    system_prompt: Conventions.optional_trimmed_string(),
     reasoning_effort: Conventions.optional_any(),
     provider_backend: Conventions.optional_any(),
     model_provider: Conventions.optional_trimmed_string(),
     oss_provider: Conventions.optional_trimmed_string(),
     skip_git_repo_check: Zoi.boolean(),
-    output_schema: Zoi.optional(Zoi.nullish(Conventions.any_map()))
+    output_schema: Zoi.optional(Zoi.nullish(Conventions.any_map())),
+    additional_directories: Zoi.array(Conventions.trimmed_string() |> Zoi.min(1))
   }
 
   @gemini_fields %{
     model: Conventions.optional_trimmed_string(),
+    system_prompt: Conventions.optional_trimmed_string(),
     sandbox: Zoi.boolean(),
     extensions: Zoi.array(Conventions.trimmed_string() |> Zoi.min(1))
   }
@@ -87,7 +92,6 @@ defmodule ASM.Schema.ProviderOptions do
     mode: Conventions.trimmed_string() |> Zoi.min(1),
     include_thinking: Zoi.boolean(),
     max_turns: Zoi.integer() |> Zoi.min(1),
-    system_prompt: Conventions.optional_trimmed_string(),
     permissions: Zoi.optional(Zoi.nullish(Conventions.any_map())),
     mcp_config: Zoi.optional(Zoi.nullish(Conventions.any_map())),
     tools: Zoi.array(Conventions.trimmed_string() |> Zoi.min(1))

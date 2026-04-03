@@ -8,7 +8,9 @@ defmodule ASM.Session.Server do
   alias ASM.{Control, Error}
   alias ASM.Provider
   alias ASM.Run.ApprovalCoordinator
+  alias ASM.Session.Continuation
   alias ASM.Session.State
+  alias ASM.SessionControl
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
@@ -37,6 +39,29 @@ defmodule ASM.Session.Server do
     GenServer.call(server, {:resolve_approval, approval_id, decision})
   end
 
+  @spec pause_run(GenServer.server(), String.t()) :: :ok | {:error, Error.t()}
+  def pause_run(server, run_id) when is_binary(run_id) do
+    GenServer.call(server, {:pause_run, run_id})
+  end
+
+  @spec checkpoint(GenServer.server()) :: {:ok, map() | nil} | {:error, Error.t()}
+  def checkpoint(server) do
+    GenServer.call(server, :checkpoint)
+  end
+
+  @spec resume_run(GenServer.server(), String.t(), keyword()) ::
+          {:ok, String.t(), pid() | :queued} | {:error, Error.t()}
+  def resume_run(server, prompt, opts \\ []) when is_binary(prompt) and is_list(opts) do
+    GenServer.call(server, {:resume_run, prompt, opts})
+  end
+
+  @spec intervene(GenServer.server(), String.t(), String.t(), keyword()) ::
+          {:ok, String.t(), pid() | :queued} | {:error, Error.t()}
+  def intervene(server, run_id, prompt, opts \\ [])
+      when is_binary(run_id) and is_binary(prompt) and is_list(opts) do
+    GenServer.call(server, {:intervene, run_id, prompt, opts})
+  end
+
   @impl true
   def init(opts) do
     session_id = Keyword.fetch!(opts, :session_id)
@@ -49,6 +74,10 @@ defmodule ASM.Session.Server do
   @impl true
   def handle_call(:get_state, _from, state) do
     {:reply, state, state}
+  end
+
+  def handle_call(:checkpoint, _from, state) do
+    {:reply, {:ok, state.checkpoint}, state}
   end
 
   @impl true
@@ -85,6 +114,70 @@ defmodule ASM.Session.Server do
     end
   end
 
+  def handle_call({:pause_run, run_id}, _from, state) do
+    case Map.fetch(state.active_runs, run_id) do
+      {:ok, run_pid} ->
+        GenServer.cast(run_pid, :interrupt)
+        {:reply, :ok, state}
+
+      :error ->
+        {:reply, {:error, runtime_error(:unknown, "Unknown active run id: #{run_id}")}, state}
+    end
+  end
+
+  def handle_call({:resume_run, prompt, opts}, _from, state) do
+    case build_continuation(state, opts) do
+      {:ok, continuation} ->
+        run_id = Keyword.get_lazy(opts, :run_id, &ASM.Event.generate_id/0)
+
+        run_opts =
+          opts
+          |> Keyword.drop([:run_id, :target, :continuation])
+          |> Keyword.put(:continuation, continuation)
+
+        case maybe_start_or_queue_run(state, run_id, prompt, run_opts) do
+          {:ok, pid, next_state} ->
+            {:reply, {:ok, run_id, pid}, next_state}
+
+          {:queued, next_state} ->
+            {:reply, {:ok, run_id, :queued}, next_state}
+
+          {:error, %Error{} = error} ->
+            {:reply, {:error, error}, state}
+        end
+
+      {:error, %Error{} = error} ->
+        {:reply, {:error, error}, state}
+    end
+  end
+
+  def handle_call({:intervene, run_id, prompt, opts}, _from, state) do
+    with :ok <- pause_active_run(state, run_id),
+         {:ok, continuation} <- build_continuation(state, opts) do
+      resumed_run_id = Keyword.get_lazy(opts, :run_id, &ASM.Event.generate_id/0)
+
+      run_opts =
+        opts
+        |> Keyword.drop([:run_id, :target, :continuation])
+        |> Keyword.put(:continuation, continuation)
+        |> Keyword.put_new(:intervention_for_run_id, run_id)
+
+      case maybe_start_or_queue_run(state, resumed_run_id, prompt, run_opts) do
+        {:ok, pid, next_state} ->
+          {:reply, {:ok, resumed_run_id, pid}, next_state}
+
+        {:queued, next_state} ->
+          {:reply, {:ok, resumed_run_id, :queued}, next_state}
+
+        {:error, %Error{} = error} ->
+          {:reply, {:error, error}, state}
+      end
+    else
+      {:error, %Error{} = error} ->
+        {:reply, {:error, error}, state}
+    end
+  end
+
   def handle_call({:resolve_approval, approval_id, decision}, _from, state) do
     case ApprovalCoordinator.resolve(state.pending_approval_index, approval_id) do
       {:error, :unknown_approval, _remaining} ->
@@ -115,6 +208,18 @@ defmodule ASM.Session.Server do
 
   def handle_info({:cost_update, %Control.CostUpdate{} = payload}, state) do
     {:noreply, %{state | cost: add_cost(state.cost, payload)}}
+  end
+
+  def handle_info({:capture_checkpoint, run_id, provider_session_id, metadata}, state)
+      when is_binary(run_id) and is_binary(provider_session_id) and provider_session_id != "" do
+    checkpoint =
+      Continuation.capture(state, %{
+        run_id: run_id,
+        provider_session_id: provider_session_id,
+        metadata: normalize_checkpoint_metadata(metadata)
+      })
+
+    {:noreply, Continuation.restore(state, checkpoint)}
   end
 
   def handle_info({:DOWN, ref, :process, run_pid, _reason}, state) do
@@ -260,6 +365,40 @@ defmodule ASM.Session.Server do
       {false, queue}
     end
   end
+
+  defp build_continuation(%State{} = state, opts) when is_list(opts) do
+    case Keyword.get(opts, :continuation) do
+      nil ->
+        SessionControl.continuation_from_checkpoint(
+          state.checkpoint,
+          Keyword.take(opts, [:target])
+        )
+
+      continuation when is_map(continuation) ->
+        {:ok, continuation}
+
+      other ->
+        {:error,
+         runtime_error(
+           :config_invalid,
+           "invalid continuation #{inspect(other)}; expected a continuation map or nil"
+         )}
+    end
+  end
+
+  defp pause_active_run(%State{active_runs: active_runs}, run_id) when is_binary(run_id) do
+    case Map.fetch(active_runs, run_id) do
+      {:ok, run_pid} ->
+        GenServer.cast(run_pid, :interrupt)
+        :ok
+
+      :error ->
+        {:error, runtime_error(:unknown, "Unknown active run id: #{run_id}")}
+    end
+  end
+
+  defp normalize_checkpoint_metadata(metadata) when is_map(metadata), do: metadata
+  defp normalize_checkpoint_metadata(_metadata), do: %{}
 
   defp runtime_error(kind, message) do
     Error.new(kind, :runtime, message)

@@ -50,6 +50,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
     asm_opts = [
       provider: :codex,
       cwd: "/tmp/asm-codex-thread",
+      additional_directories: ["/tmp/asm-codex-thread/docs", "/tmp/asm-codex-thread/test"],
       permission_mode: :auto,
       skip_git_repo_check: true,
       approval_timeout_ms: 45_000,
@@ -65,6 +66,12 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
              CodexExtension.thread_options(asm_opts, native_overrides)
 
     assert options.working_directory == "/tmp/asm-codex-thread"
+
+    assert options.additional_directories == [
+             "/tmp/asm-codex-thread/docs",
+             "/tmp/asm-codex-thread/test"
+           ]
+
     assert options.approval_timeout_ms == 45_000
     assert options.full_auto == true
     assert options.dangerously_bypass_approvals_and_sandbox == false

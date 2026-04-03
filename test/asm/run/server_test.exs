@@ -224,6 +224,109 @@ defmodule ASM.Run.ServerTest do
     end
   end
 
+  defmodule ContinuationProbeBackend do
+    @moduledoc false
+
+    use GenServer
+
+    @behaviour ASM.ProviderBackend
+
+    alias ASM.ProviderBackend.Event, as: BackendEvent
+    alias ASM.ProviderBackend.Info, as: BackendInfo
+    alias CliSubprocessCore.Event, as: CoreEvent
+    alias CliSubprocessCore.Payload
+
+    @impl true
+    def start_run(config) do
+      with {:ok, pid} <- GenServer.start_link(__MODULE__, config) do
+        {:ok, pid,
+         BackendInfo.new(
+           provider: config.provider.name,
+           lane: Map.get(config, :lane, :sdk),
+           backend: __MODULE__,
+           runtime: __MODULE__,
+           capabilities: [:resume, :session_history],
+           session_pid: pid,
+           raw_info: %{backend: :continuation_probe, provider: config.provider.name}
+         )}
+      end
+    end
+
+    @impl true
+    def send_input(_server, _input, _opts \\ []), do: :ok
+
+    @impl true
+    def end_input(_server), do: :ok
+
+    @impl true
+    def interrupt(_server), do: :ok
+
+    @impl true
+    def close(server) do
+      GenServer.stop(server, :normal)
+    catch
+      :exit, _ -> :ok
+    end
+
+    @impl true
+    def subscribe(server, pid, ref) do
+      GenServer.call(server, {:subscribe, pid, ref})
+    end
+
+    @impl true
+    def info(server) do
+      GenServer.call(server, :info)
+    end
+
+    @impl true
+    def init(config) do
+      state = %{
+        provider: config.provider.name,
+        subscriber: config.subscriber_pid,
+        subscription_ref: config.subscription_ref,
+        continuation: Map.get(config, :continuation),
+        test_pid: Keyword.get(config.backend_opts, :test_pid)
+      }
+
+      if is_pid(state.test_pid) do
+        send(state.test_pid, {:backend_started_with_continuation, state.continuation})
+      end
+
+      {:ok, state, {:continue, :emit_run_started}}
+    end
+
+    @impl true
+    def handle_continue(:emit_run_started, state) do
+      emit_core_event(state, :run_started, Payload.RunStarted.new(command: "continuation-probe"))
+      {:noreply, state}
+    end
+
+    @impl true
+    def handle_call({:subscribe, pid, ref}, _from, state) do
+      {:reply, :ok, %{state | subscriber: pid, subscription_ref: ref}}
+    end
+
+    def handle_call(:info, _from, state) do
+      {:reply,
+       BackendInfo.new(
+         provider: state.provider,
+         lane: :sdk,
+         backend: __MODULE__,
+         runtime: __MODULE__,
+         capabilities: [:resume, :session_history],
+         session_pid: self(),
+         raw_info: %{backend: :continuation_probe, provider: state.provider}
+       ), state}
+    end
+
+    defp emit_core_event(state, kind, payload) do
+      if is_pid(state.subscriber) and is_reference(state.subscription_ref) do
+        event = CoreEvent.new(kind, provider: state.provider, payload: payload)
+        send(state.subscriber, BackendEvent.new(state.subscription_ref, event))
+      end
+    end
+  end
+
   defmodule SubscribeProbeBackend do
     @moduledoc false
 
@@ -554,6 +657,103 @@ defmodule ASM.Run.ServerTest do
     assert_receive {:asm_run_event, "run-int", %Event{kind: :error} = event}
     assert Event.legacy_payload(event).kind == :user_cancelled
     assert_receive {:asm_run_done, "run-int"}
+    assert_receive {:DOWN, ^ref, :process, ^run_pid, :normal}
+  end
+
+  test "continuation reaches backend start config" do
+    continuation = %{strategy: :exact, provider_session_id: "thread-123"}
+
+    assert {:ok, run_pid} =
+             Run.Server.start_link(
+               run_id: "run-continuation",
+               session_id: "session-continuation",
+               provider: :claude,
+               lane: :sdk,
+               subscriber: self(),
+               session_pid: self(),
+               continuation: continuation,
+               backend_module: ContinuationProbeBackend,
+               backend_opts: [test_pid: self()],
+               execution_config: local_execution_config()
+             )
+
+    assert_receive {:backend_started_with_continuation, ^continuation}
+    assert_receive {:asm_run_event, "run-continuation", %Event{kind: :run_started}}
+
+    state = Run.Server.get_state(run_pid)
+    assert state.continuation == continuation
+
+    ref = Process.monitor(run_pid)
+
+    assert :ok =
+             Run.Server.ingest_event(
+               run_pid,
+               Event.new(
+                 :result,
+                 Payload.Result.new(status: :completed, stop_reason: :end_turn),
+                 run_id: "run-continuation",
+                 session_id: "session-continuation",
+                 provider: :claude,
+                 timestamp: DateTime.utc_now()
+               )
+             )
+
+    assert_receive {:asm_run_event, "run-continuation", %Event{kind: :result}}
+    assert_receive {:asm_run_done, "run-continuation"}
+    assert_receive {:DOWN, ^ref, :process, ^run_pid, :normal}
+  end
+
+  test "provider session ids are checkpointed back to the session server" do
+    assert {:ok, run_pid} =
+             Run.Server.start_link(
+               run_id: "run-checkpoint",
+               session_id: "session-checkpoint",
+               provider: :claude,
+               subscriber: self(),
+               session_pid: self(),
+               backend_module: FakeBackend,
+               backend_opts: [
+                 script: [{:core, :run_started, Payload.RunStarted.new(command: "checkpoint")}]
+               ],
+               execution_config: local_execution_config()
+             )
+
+    assert_receive {:asm_run_event, "run-checkpoint", %Event{kind: :run_started}}
+
+    event =
+      Event.new(
+        :assistant_message,
+        Payload.AssistantMessage.new(content: [%{"type" => "text", "text" => "checkpoint me"}]),
+        run_id: "run-checkpoint",
+        session_id: "session-checkpoint",
+        provider: :claude,
+        provider_session_id: "provider-session-123",
+        timestamp: DateTime.utc_now()
+      )
+
+    assert :ok = Run.Server.ingest_event(run_pid, event)
+
+    assert_receive {:capture_checkpoint, "run-checkpoint", "provider-session-123", metadata}
+    assert metadata.provider == :claude
+    assert metadata.lane == :core
+
+    ref = Process.monitor(run_pid)
+
+    assert :ok =
+             Run.Server.ingest_event(
+               run_pid,
+               Event.new(
+                 :result,
+                 Payload.Result.new(status: :completed, stop_reason: :end_turn),
+                 run_id: "run-checkpoint",
+                 session_id: "session-checkpoint",
+                 provider: :claude,
+                 timestamp: DateTime.utc_now()
+               )
+             )
+
+    assert_receive {:asm_run_event, "run-checkpoint", %Event{kind: :result}}
+    assert_receive {:asm_run_done, "run-checkpoint"}
     assert_receive {:DOWN, ^ref, :process, ^run_pid, :normal}
   end
 

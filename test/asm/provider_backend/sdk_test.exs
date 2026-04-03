@@ -151,7 +151,12 @@ defmodule ASM.ProviderBackend.SDKTest do
           target_id: "claude-target-1",
           observability: %{suite: :sdk}
         ),
-      provider_opts: [max_stderr_buffer_bytes: 2048],
+      continuation: %{strategy: :latest},
+      provider_opts: [
+        max_stderr_buffer_bytes: 2048,
+        system_prompt: %{type: :preset, preset: :claude_code, append: "Stay concise."},
+        append_system_prompt: "Include exact file paths."
+      ],
       metadata: %{test_pid: self()}
     }
 
@@ -174,6 +179,17 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert execution_surface.target_id == "claude-target-1"
     assert execution_surface.observability == %{suite: :sdk}
     assert Keyword.fetch!(start_opts, :options).execution_surface == execution_surface
+    assert Keyword.fetch!(start_opts, :options).continue_conversation == true
+    assert Keyword.fetch!(start_opts, :options).resume == nil
+
+    assert Keyword.fetch!(start_opts, :options).system_prompt == %{
+             type: :preset,
+             preset: :claude_code,
+             append: "Stay concise."
+           }
+
+    assert Keyword.fetch!(start_opts, :options).append_system_prompt ==
+             "Include exact file paths."
 
     metadata = Keyword.fetch!(start_opts, :metadata)
     assert metadata[:lane] == :sdk
@@ -192,8 +208,10 @@ defmodule ASM.ProviderBackend.SDKTest do
           transport_options: [destination: "codex.sdk.example"],
           lease_ref: "lease-123"
         ),
+      continuation: %{strategy: :exact, provider_session_id: "codex-thread-123"},
       provider_opts: [
         model: "gpt-5.4",
+        system_prompt: "Stay inside the repo instructions.",
         reasoning_effort: :high,
         provider_backend: :model_provider,
         model_provider: "gateway"
@@ -222,9 +240,12 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert execution_surface.lease_ref == "lease-123"
     assert exec_opts.execution_surface == execution_surface
     assert exec_opts.codex_opts.execution_surface == execution_surface
+    assert exec_opts.thread.thread_id == "codex-thread-123"
+    assert exec_opts.thread.resume == nil
     assert exec_opts.thread.thread_opts.model_provider == "gateway"
     assert exec_opts.thread.thread_opts.oss == false
     assert exec_opts.thread.thread_opts.local_provider == nil
+    assert exec_opts.thread.thread_opts.base_instructions == "Stay inside the repo instructions."
 
     metadata = Keyword.fetch!(start_opts, :metadata)
     assert metadata[:lane] == :sdk
@@ -243,6 +264,7 @@ defmodule ASM.ProviderBackend.SDKTest do
           transport_options: [destination: "amp.sdk.example"],
           boundary_class: :workspace
         ),
+      continuation: %{strategy: :latest},
       provider_opts: [
         model: "amp-1",
         permission_mode: :bypass,
@@ -268,6 +290,7 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert execution_surface.transport_options[:destination] == "amp.sdk.example"
     assert execution_surface.boundary_class == :workspace
     assert options.execution_surface == execution_surface
+    assert options.continue_thread == true
     assert options.dangerously_allow_all == true
     assert options.no_ide == true
     assert options.no_notifications == true
@@ -289,7 +312,8 @@ defmodule ASM.ProviderBackend.SDKTest do
           transport_options: [destination: "gemini.sdk.example"],
           surface_ref: "surface-9"
         ),
-      provider_opts: [model: "gemini-2.5-pro"],
+      continuation: %{strategy: :exact, provider_session_id: "gemini-session-123"},
+      provider_opts: [model: "gemini-2.5-pro", system_prompt: "Be brief."],
       metadata: %{test_pid: self()}
     }
 
@@ -309,7 +333,9 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert execution_surface.surface_kind == :ssh_exec
     assert execution_surface.transport_options[:destination] == "gemini.sdk.example"
     assert execution_surface.surface_ref == "surface-9"
+    assert options.system_prompt == "Be brief."
     assert options.execution_surface == execution_surface
+    assert options.resume == "gemini-session-123"
     assert Keyword.fetch!(start_opts, :prompt) == "hello"
 
     metadata = Keyword.fetch!(start_opts, :metadata)

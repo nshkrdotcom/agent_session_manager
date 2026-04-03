@@ -21,6 +21,12 @@ defmodule ASM.Session.ServerTest do
       test_pid = Keyword.fetch!(opts, :test_pid)
       run_id = Keyword.fetch!(opts, :run_id)
       send(test_pid, {:run_started, run_id, self()})
+
+      send(
+        test_pid,
+        {:run_boot_opts, run_id, Keyword.take(opts, [:continuation, :intervention_for_run_id])}
+      )
+
       {:ok, %{test_pid: test_pid, run_id: run_id}}
     end
 
@@ -136,6 +142,120 @@ defmodule ASM.Session.ServerTest do
 
     state = Server.get_state(server)
     refute Map.has_key?(state.pending_approval_index, "approval-1")
+
+    assert :ok = SessionSupervisor.stop_session(session_id)
+  end
+
+  test "pause_run/2 interrupts the active run" do
+    %{server: server, session_id: session_id} = start_session!(provider: :claude)
+
+    assert {:ok, run_id, run_pid} =
+             Server.submit_run(server, "pause-me",
+               run_module: RunProbe,
+               run_module_opts: [test_pid: self()]
+             )
+
+    assert_receive {:run_started, ^run_id, ^run_pid}
+    assert_receive {:run_boot_opts, ^run_id, _opts}
+
+    assert :ok = Server.pause_run(server, run_id)
+    assert_receive {:run_interrupted, ^run_id}
+
+    assert :ok = SessionSupervisor.stop_session(session_id)
+  end
+
+  test "checkpoint/1 returns the latest captured provider session checkpoint" do
+    %{server: server, session_id: session_id} = start_session!(provider: :claude)
+
+    send(
+      server,
+      {:capture_checkpoint, "run-checkpoint", "claude-session-123",
+       %{phase: :resume_ready, provider_session_id: "claude-session-123"}}
+    )
+
+    assert_eventually(fn ->
+      assert {:ok, checkpoint} = Server.checkpoint(server)
+      checkpoint != nil
+    end)
+
+    assert {:ok, checkpoint} = Server.checkpoint(server)
+    assert checkpoint.run_id == "run-checkpoint"
+    assert checkpoint.provider_session_id == "claude-session-123"
+    assert checkpoint.metadata.phase == :resume_ready
+
+    assert :ok = SessionSupervisor.stop_session(session_id)
+  end
+
+  test "resume_run/3 starts a continuation-backed run from the stored checkpoint" do
+    %{server: server, session_id: session_id} = start_session!(provider: :claude)
+
+    send(
+      server,
+      {:capture_checkpoint, "run-checkpoint", "claude-session-continue", %{phase: :resume_ready}}
+    )
+
+    assert_eventually(fn ->
+      match?({:ok, %{provider_session_id: "claude-session-continue"}}, Server.checkpoint(server))
+    end)
+
+    assert {:ok, run_id, run_pid} =
+             Server.resume_run(server, "Continue",
+               run_module: RunProbe,
+               run_module_opts: [test_pid: self()]
+             )
+
+    assert_receive {:run_started, ^run_id, ^run_pid}
+
+    assert_receive {:run_boot_opts, ^run_id,
+                    [
+                      continuation: %{
+                        strategy: :exact,
+                        provider_session_id: "claude-session-continue"
+                      }
+                    ]}
+
+    assert :ok = SessionSupervisor.stop_session(session_id)
+  end
+
+  test "intervene/4 interrupts the active run and queues the resumed continuation" do
+    %{server: server, session_id: session_id} = start_session!(provider: :claude)
+
+    assert {:ok, run_id, run_pid} =
+             Server.submit_run(server, "draft",
+               run_module: RunProbe,
+               run_module_opts: [test_pid: self()]
+             )
+
+    assert_receive {:run_started, ^run_id, ^run_pid}
+    assert_receive {:run_boot_opts, ^run_id, _opts}
+
+    send(
+      server,
+      {:capture_checkpoint, run_id, "claude-session-intervene", %{phase: :intervention_ready}}
+    )
+
+    assert_eventually(fn ->
+      match?({:ok, %{provider_session_id: "claude-session-intervene"}}, Server.checkpoint(server))
+    end)
+
+    assert {:ok, resumed_run_id, :queued} =
+             Server.intervene(server, run_id, "Continue",
+               run_module: RunProbe,
+               run_module_opts: [test_pid: self()]
+             )
+
+    assert_receive {:run_interrupted, ^run_id}
+    assert_receive {:run_started, ^resumed_run_id, resumed_run_pid}
+    assert is_pid(resumed_run_pid)
+
+    assert_receive {:run_boot_opts, ^resumed_run_id, boot_opts}
+
+    assert boot_opts[:continuation] == %{
+             strategy: :exact,
+             provider_session_id: "claude-session-intervene"
+           }
+
+    assert boot_opts[:intervention_for_run_id] == run_id
 
     assert :ok = SessionSupervisor.stop_session(session_id)
   end

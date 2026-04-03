@@ -193,3 +193,13 @@ conditions as well.
 
 The examples preflight the selected CLI before they start a session and print an
 install hint if it is missing.
+## Recovery-Oriented Examples
+
+The standard example runner already includes the session-focused paths relevant to the emergency
+hardening work:
+
+- `examples/live_session_lifecycle.exs`
+- `examples/provider_gemini_session_resume.exs`
+
+Those examples exercise the same provider-session history and resume seams now exposed through
+`ASM.SessionControl`.

@@ -7,6 +7,7 @@ defmodule ASM.Options.Gemini do
   def schema do
     [
       model: [type: :string],
+      system_prompt: [type: {:or, [:string, nil]}, default: nil],
       sandbox: [type: :boolean, default: false],
       extensions: [type: {:list, :string}, default: []]
     ]

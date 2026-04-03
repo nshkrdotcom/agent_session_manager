@@ -275,6 +275,7 @@ defmodule ASM.Run.Server do
       lane: resolution.lane,
       backend: resolution.backend,
       prompt: state.prompt,
+      continuation: state.continuation,
       provider_opts: state.provider_opts,
       backend_opts: state.backend_opts,
       execution_config: state.execution_config,
@@ -405,6 +406,7 @@ defmodule ASM.Run.Server do
     Enum.reduce(events, state, fn event, acc ->
       event = merge_event_metadata(event, acc.metadata)
       next_state = Run.EventReducer.apply_event!(acc, event)
+      maybe_capture_checkpoint(next_state, event)
       fanout(next_state, event)
       maybe_track_approval(next_state, event)
     end)
@@ -460,6 +462,20 @@ defmodule ASM.Run.Server do
 
   defp notify_session(_state, _message), do: :ok
 
+  defp maybe_capture_checkpoint(
+         %Run.State{} = state,
+         %Event{provider_session_id: provider_session_id} = event
+       )
+       when is_binary(provider_session_id) and provider_session_id != "" do
+    notify_session(
+      state,
+      {:capture_checkpoint, event.run_id, provider_session_id,
+       normalize_checkpoint_metadata(event.metadata)}
+    )
+  end
+
+  defp maybe_capture_checkpoint(_state, _event), do: :ok
+
   defp clear_approval_timer(state, approval_id) do
     case Map.pop(state.approval_timers, approval_id) do
       {nil, timers} ->
@@ -512,6 +528,8 @@ defmodule ASM.Run.Server do
   defp merge_event_metadata(%Event{} = event, metadata) when is_map(metadata) do
     %{event | metadata: Metadata.merge_run_metadata(metadata, event.metadata)}
   end
+
+  defp normalize_checkpoint_metadata(metadata), do: metadata
 
   defp resolved_backend_info(info, resolution, pid) do
     fallback =

@@ -7,6 +7,7 @@ defmodule ASM.Options.Codex do
   def schema do
     [
       model: [type: :string],
+      system_prompt: [type: {:or, [:string, nil]}, default: nil],
       reasoning_effort: [
         type: {:or, [{:in, [:none, :minimal, :low, :medium, :high, :xhigh]}, :string, nil]},
         default: nil
@@ -21,7 +22,8 @@ defmodule ASM.Options.Codex do
       output_schema: [
         type: {:custom, ASM.Options, :validate_passthrough_map, [:output_schema]},
         default: nil
-      ]
+      ],
+      additional_directories: [type: {:list, :string}, default: []]
     ]
   end
 end

@@ -147,6 +147,60 @@ defmodule ASM.ProviderFeaturesTest do
     assert details.message =~ "output_schema"
   end
 
+  test "provider schemas allow system prompt only where the runtime surface supports it" do
+    claude_schema = Provider.resolve!(:claude).options_schema
+    codex_schema = Provider.resolve!(:codex).options_schema
+    gemini_schema = Provider.resolve!(:gemini).options_schema
+    amp_schema = Provider.resolve!(:amp).options_schema
+
+    assert {:ok, claude_validated} =
+             Options.validate(
+               [
+                 provider: :claude,
+                 model: "haiku",
+                 system_prompt: %{type: :preset, preset: :claude_code, append: "Stay concise."},
+                 append_system_prompt: "Prefer exact file paths."
+               ],
+               claude_schema
+             )
+
+    assert claude_validated[:system_prompt] == %{
+             type: :preset,
+             preset: :claude_code,
+             append: "Stay concise."
+           }
+
+    assert claude_validated[:append_system_prompt] == "Prefer exact file paths."
+
+    assert {:ok, codex_validated} =
+             Options.validate(
+               [
+                 provider: :codex,
+                 model: "gpt-5.4",
+                 system_prompt: "Respect repository instructions."
+               ],
+               codex_schema
+             )
+
+    assert codex_validated[:system_prompt] == "Respect repository instructions."
+
+    assert {:ok, gemini_validated} =
+             Options.validate(
+               [provider: :gemini, model: "gemini-2.5-pro", system_prompt: "Be concise."],
+               gemini_schema
+             )
+
+    assert gemini_validated[:system_prompt] == "Be concise."
+
+    assert {:error, amp_error} =
+             Options.validate(
+               [provider: :amp, model: "amp-1", system_prompt: "Unsupported"],
+               amp_schema
+             )
+
+    assert amp_error.message =~ "unknown options [:system_prompt]"
+  end
+
   test "codex rejects conflicting model and ollama_model values" do
     schema = Provider.resolve!(:codex).options_schema
 

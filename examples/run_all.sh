@@ -40,6 +40,8 @@ Notes:
   - The examples print the provider-native permission term at startup.
   - --ollama and the related --ollama-* flags are only valid for claude and codex.
   - Provider-specific examples may require the matching SDK checkout on the code path or via --sdk-root.
+  - `live_session_lifecycle.exs` and `provider_gemini_session_resume.exs` are the session-recovery
+    examples for this hardening lane.
 EOF
 }
 

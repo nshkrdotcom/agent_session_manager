@@ -890,3 +890,18 @@ mix hex.build
 `/home/home/p/g/n/agent_session_manager` centralizes provider model resolution through `/home/home/p/g/n/cli_subprocess_core` before delegating to provider backends or SDK adapters. The authoritative policy APIs are `CliSubprocessCore.ModelRegistry.resolve/3`, `CliSubprocessCore.ModelRegistry.validate/2`, and `CliSubprocessCore.ModelRegistry.default_model/2`.
 
 ASM option schemas are value carriers only. Backend lanes and provider extensions consume the resolved payload and do not own implicit provider/model fallback policy.
+## Session Control And Recovery Handles
+
+`agent_session_manager` now owns a first-class session-control seam instead of relying on provider-
+specific escape hatches.
+
+- `ASM.SessionControl` exposes shared list/resume/pause/intervene operations where the provider
+  really supports them
+- ASM session/run state now retains provider-native checkpoint data so upper callers can attempt an
+  exact session resume before replaying work
+- provider option validation now honestly reflects runtime support for recovery-related prompt
+  controls: Claude, Codex, and Gemini accept supported prompt surfaces, while Amp rejects
+  unsupported `system_prompt` input instead of silently dropping it
+
+This is the orchestration boundary that lets `prompt_runner_sdk` resume the same provider
+conversation with `Continue` after a recoverable runtime failure.

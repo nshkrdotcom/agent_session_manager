@@ -5,6 +5,45 @@ defmodule ASM.StreamTest do
   alias ASM.TestSupport.FakeBackend
   alias CliSubprocessCore.Payload
 
+  defmodule ContinuationRunProbe do
+    @moduledoc false
+    use GenServer
+
+    def start_link(opts) do
+      GenServer.start_link(__MODULE__, opts)
+    end
+
+    @impl true
+    def init(opts) do
+      test_pid = Keyword.fetch!(opts, :test_pid)
+      run_id = Keyword.fetch!(opts, :run_id)
+      session_id = Keyword.fetch!(opts, :session_id)
+      subscriber = Keyword.fetch!(opts, :subscriber)
+
+      send(test_pid, {:run_started, run_id, self()})
+      send(test_pid, {:run_boot_opts, run_id, Keyword.take(opts, [:continuation])})
+
+      send(
+        subscriber,
+        {:asm_run_event, run_id,
+         Event.new(
+           :run_started,
+           Payload.RunStarted.new(command: "probe"),
+           run_id: run_id,
+           session_id: session_id,
+           provider: :claude
+         )}
+      )
+
+      {:ok, %{test_pid: test_pid, run_id: run_id}}
+    end
+
+    @impl true
+    def handle_cast(:interrupt, state) do
+      {:stop, :normal, state}
+    end
+  end
+
   test "create/3 emits backend-backed run events and final_result/1 projects text" do
     session_id = "stream-" <> Integer.to_string(System.unique_integer([:positive]))
     assert {:ok, session} = ASM.start_session(session_id: session_id, provider: :claude)
@@ -48,6 +87,31 @@ defmodule ASM.StreamTest do
 
     assert result.text == "hello"
     assert :ok = ASM.stop_session(session)
+  end
+
+  test "continuation is passed through ASM.stream/3 as a run option" do
+    session_id = "stream-continuation-" <> Integer.to_string(System.unique_integer([:positive]))
+    assert {:ok, session} = ASM.start_session(session_id: session_id, provider: :claude)
+
+    on_exit(fn -> :ok = ASM.stop_session(session) end)
+
+    run_id = "stream-continuation-run"
+
+    stream =
+      ASM.stream(session, "continue",
+        run_id: run_id,
+        run_module: ContinuationRunProbe,
+        run_module_opts: [test_pid: self()],
+        continuation: %{strategy: :exact, provider_session_id: "claude-session-42"}
+      )
+
+    assert [%ASM.Event{kind: :run_started, run_id: ^run_id}] = Enum.take(stream, 1)
+    assert_receive {:run_boot_opts, ^run_id, boot_opts}
+
+    assert boot_opts[:continuation] == %{
+             strategy: :exact,
+             provider_session_id: "claude-session-42"
+           }
   end
 
   test "text helpers expose deltas and composed content" do

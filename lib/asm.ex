@@ -24,13 +24,14 @@ defmodule ASM do
       ProviderBackend,
       ProviderRegistry,
       Result,
+      SessionControl,
       Store,
       {Store, []},
       Stream,
       Telemetry
     ]
 
-  alias ASM.{Error, Result, Session, Stream}
+  alias ASM.{Error, Result, Session, SessionControl, Stream}
 
   @type session_ref :: GenServer.server()
   @type session_info :: %{
@@ -168,6 +169,27 @@ defmodule ASM do
 
   @spec interrupt(session_ref(), String.t()) :: :ok | {:error, Error.t()}
   def interrupt(session, run_id), do: Session.Server.cancel_run(session, run_id)
+
+  @spec pause(session_ref(), String.t()) :: :ok | {:error, Error.t()}
+  def pause(session, run_id), do: SessionControl.pause(session, run_id)
+
+  @spec checkpoint(session_ref()) :: {:ok, map() | nil} | {:error, Error.t()}
+  def checkpoint(session), do: SessionControl.checkpoint(session)
+
+  @spec resume_run(session_ref(), String.t(), keyword()) ::
+          {:ok, String.t(), pid() | :queued} | {:error, Error.t()}
+  def resume_run(session, prompt, opts \\ []),
+    do: SessionControl.resume_run(session, prompt, opts)
+
+  @spec intervene(session_ref(), String.t(), String.t(), keyword()) ::
+          {:ok, String.t(), pid() | :queued} | {:error, Error.t()}
+  def intervene(session, run_id, prompt, opts \\ []),
+    do: SessionControl.intervene(session, run_id, prompt, opts)
+
+  @spec list_provider_sessions(session_ref() | atom(), keyword()) ::
+          {:ok, [SessionControl.Entry.t()]} | {:error, Error.t()}
+  def list_provider_sessions(provider_or_session, opts \\ []),
+    do: SessionControl.list_provider_sessions(provider_or_session, opts)
 
   @spec approve(session_ref(), String.t(), :allow | :deny) :: :ok | {:error, Error.t()}
   def approve(session, approval_id, decision),

@@ -31,6 +31,8 @@ defmodule ASM.Stream do
 
   @run_keys [
     :run_id,
+    :continuation,
+    :intervention_for_run_id,
     :run_module,
     :run_module_opts,
     :pipeline,

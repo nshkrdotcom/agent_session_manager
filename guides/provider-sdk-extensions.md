@@ -264,3 +264,15 @@ Codex namespace:
 
 These are capability labels for discovery and documentation only in this
 foundation slice. They are not new normalized kernel APIs.
+## Session-Control Extensions
+
+Provider SDK extensions may now publish optional callbacks and capability markers for:
+
+- session history listing
+- exact or latest-session resume
+- pause
+- operator intervention
+
+Those extensions are only valid when the provider runtime can back them with a real native surface.
+ASM now keeps the provider-native recovery handles in session/run state so a caller can choose exact
+resume before it falls back to replaying prompts.

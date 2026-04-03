@@ -7,6 +7,8 @@ defmodule ASM.Options.Claude do
   def schema do
     [
       model: [type: :string],
+      system_prompt: [type: {:or, [:string, :map, nil]}, default: nil],
+      append_system_prompt: [type: {:or, [:string, nil]}, default: nil],
       provider_backend: [type: {:or, [{:in, [:anthropic, :ollama]}, :string, nil]}, default: nil],
       external_model_overrides: [
         type: {:custom, ASM.Options, :validate_passthrough_map, [:external_model_overrides]},

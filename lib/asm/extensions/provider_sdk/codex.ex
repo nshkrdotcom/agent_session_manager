@@ -38,6 +38,7 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
   @asm_derived_thread_option_keys [
     :working_directory,
     :cd,
+    :additional_directories,
     :full_auto,
     :dangerously_bypass_approvals_and_sandbox,
     :skip_git_repo_check,
@@ -294,6 +295,7 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
   defp thread_option_attrs(validated, model_payload) do
     [
       working_directory: Keyword.get(validated, :cwd),
+      additional_directories: Keyword.get(validated, :additional_directories, []),
       approval_timeout_ms: Keyword.get(validated, :approval_timeout_ms),
       oss: codex_payload_oss?(model_payload),
       local_provider: codex_payload_oss_provider(model_payload),

@@ -30,6 +30,10 @@ defmodule ASM.Examples.Common do
 
   @providers [:claude, :gemini, :codex, :amp]
   @cli_probe_prompt "__ASM_EXAMPLE_CLI_PREFLIGHT__"
+  @example_ssh_options %{
+    "BatchMode" => "yes",
+    "ConnectTimeout" => 10
+  }
 
   @spec example_config!(String.t(), String.t(), String.t(), keyword()) :: t()
   def example_config!(script_name, description, default_prompt, opts \\ [])
@@ -544,7 +548,8 @@ defmodule ASM.Examples.Common do
                |> Keyword.put(:destination, destination)
                |> put_opt(:ssh_user, effective_user)
                |> put_opt(:port, ssh_port)
-               |> put_opt(:identity_file, identity_file),
+               |> put_opt(:identity_file, identity_file)
+               |> Keyword.put(:ssh_options, @example_ssh_options),
              {:ok, execution_surface} <-
                ExecutionSurface.new(
                  surface_kind: :ssh_exec,

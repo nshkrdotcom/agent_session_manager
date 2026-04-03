@@ -199,6 +199,8 @@ defmodule ASM.Examples.CommonTest do
     assert execution_surface.transport_options[:ssh_user] == "builder"
     assert execution_surface.transport_options[:port] == 2222
     assert execution_surface.transport_options[:identity_file] =~ "/tmp/id_ed25519"
+    assert execution_surface.transport_options[:ssh_options]["BatchMode"] == "yes"
+    assert execution_surface.transport_options[:ssh_options]["ConnectTimeout"] == 10
   end
 
   test "common example parser rejects orphan ssh flags without a host" do

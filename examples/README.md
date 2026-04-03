@@ -136,6 +136,10 @@ Shared flags:
 - `--ssh-port <port>`
 - `--ssh-identity-file <path>`
 
+When you pass `--ssh-host`, the examples also add noninteractive SSH transport
+defaults (`BatchMode=yes`, `ConnectTimeout=10`) so unattended runs fail fast
+instead of blocking on password or connection prompts.
+
 ## Run All Examples
 
 ```bash

@@ -625,6 +625,31 @@ The current partial common feature is the ASM Ollama surface:
 See [Common And Partial Provider Features](guides/common-and-partial-provider-features.md)
 for the discovery API and the Claude-versus-Codex Ollama semantics.
 
+Important boundary:
+
+- `permission_mode` is ASM's normalized public execution knob
+- provider-native flags such as Codex `:yolo`, Claude
+  `:bypass_permissions`, Gemini `--yolo`, or Amp
+  `--dangerously-allow-all` are downstream renderings of that one normalized
+  concept
+- provider-specific knobs that are not part of ASM's normalized execution
+  environment remain provider-specific
+
+Examples:
+
+- Gemini `sandbox` is provider-native and not part of ASM's normalized
+  execution environment contract
+- Codex `ask_for_approval` is a `codex_sdk` thread option, not an ASM common
+  execution-environment field
+- `allowed_tools` is part of ASM's normalized execution environment
+
+So if a host is reasoning at the ASM layer:
+
+- use `permission_mode` for the common approval/edit posture
+- use `allowed_tools` for the common tool allowlist
+- use provider-native overrides only when the selected provider actually owns
+  an additional concept outside the common ASM surface
+
 ## Event Model And Result Projection
 
 Backends emit core runtime events. `ASM.Run.Server` wraps them into `%ASM.Event{}` values that carry run/session scope plus stable observability metadata. Stream consumers therefore see the same lane and execution metadata that final results expose.

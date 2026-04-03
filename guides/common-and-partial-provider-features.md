@@ -47,6 +47,17 @@ Examples:
 - Codex `:bypass` -> `:yolo`
 - Amp `:bypass` -> `:dangerously_allow_all`
 
+This is only the normalized approval/edit posture.
+
+It is not a promise that every provider exposes the same lower-level controls.
+For example:
+
+- Codex also has provider-specific thread options such as
+  `ask_for_approval`
+- Gemini also has a provider-native `sandbox` CLI flag
+- those provider-specific knobs are not implied by ASM's common
+  `:permission_mode`
+
 If you need to present the native term:
 
 ```elixir
@@ -125,6 +136,19 @@ The ASM examples use these surfaces directly.
 - common prompt-based examples fail unless the provider returns the exact
   sentinel text they request
 - `--ollama` and the related `--ollama-*` flags are only valid for Claude and Codex examples
+
+## Practical Reading Guide
+
+When you are trying to understand one of these knobs, ask which layer you are
+standing in:
+
+- ASM execution environment
+  - common knobs such as `permission_mode`, `approval_posture`,
+    `allowed_tools`
+- ASM provider feature discovery
+  - provider-native names and CLI spellings for those common knobs
+- provider SDK or provider CLI layer
+  - extra provider-specific knobs that do not exist in ASM's common contract
 
 Use `ASM.ProviderFeatures` when you need to present or gate these features in a
 host application before starting a session.

@@ -91,7 +91,7 @@ defmodule AgentSessionManager.MixProject do
   defp workspace_dep_specs do
     [
       {:cli_subprocess_core, "../cli_subprocess_core", @cli_subprocess_core_requirement,
-       github: @cli_subprocess_core_repo, branch: "master"}
+       github: @cli_subprocess_core_repo, branch: "main"}
     ]
   end
 

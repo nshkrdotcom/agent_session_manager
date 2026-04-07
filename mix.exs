@@ -1,23 +1,30 @@
 defmodule AgentSessionManager.MixProject do
   use Mix.Project
 
-  @version "0.9.0"
+  @app :agent_session_manager
+  @version "0.10.1"
   @source_url "https://github.com/nshkrdotcom/agent_session_manager"
+  @homepage_url "https://hex.pm/packages/agent_session_manager"
+  @docs_url "https://hexdocs.pm/agent_session_manager"
+  @cli_subprocess_core_requirement "~> 0.1.1"
+  @cli_subprocess_core_repo "nshkrdotcom/cli_subprocess_core"
 
   def project do
     [
-      app: :agent_session_manager,
+      app: @app,
       version: @version,
       elixir: "~> 1.18",
+      compilers: project_compilers(),
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      docs: docs(),
       description: description(),
       package: package(),
-      name: "AgentSessionManager",
+      docs: docs(),
+      dialyzer: dialyzer(),
+      name: "ASM",
       source_url: @source_url,
-      homepage_url: @source_url
+      homepage_url: @homepage_url
     ]
   end
 
@@ -26,300 +33,229 @@ defmodule AgentSessionManager.MixProject do
 
   def application do
     [
+      mod: {ASM.Application, []},
       extra_applications: [:logger]
     ]
   end
 
+  defp project_compilers do
+    if boundary_checks_enabled?() do
+      [:boundary | Mix.compilers()]
+    else
+      Mix.compilers()
+    end
+  end
+
   defp deps do
-    [
-      # Core dependencies
-      {:telemetry, "~> 1.2"},
-      {:jason, "~> 1.4"},
+    workspace_deps() ++
+      [
+        {:boundary, "~> 0.10.4", runtime: false},
+        {:jason, "~> 1.4"},
+        {:nimble_options, "~> 1.1"},
+        {:zoi, "~> 0.17"},
+        {:telemetry, "~> 1.3"},
+        {:ex_doc, "~> 0.40", only: :dev, runtime: false},
+        {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+        {:dialyxir, "~> 1.4", only: :dev, runtime: false},
+        {:nimble_ownership, "~> 1.0", only: :test},
+        {:stream_data, "~> 1.1", only: :test},
+        {:mox, "~> 1.2", only: :test},
+        {:supertester, "~> 0.6.0", only: :test}
+      ]
+  end
 
-      # Agent SDKs
-      {:codex_sdk, "~> 0.11.0", optional: true},
-      {:claude_agent_sdk, "~> 0.15.0", optional: true},
-      {:gemini_cli_sdk, "~> 0.1.0", optional: true},
-      {:amp_sdk, "~> 0.4.0", optional: true},
-
-      # Persistence adapters (optional — consumers pick what they need)
-      {:ecto_sql, "~> 3.12", optional: true},
-      {:postgrex, "~> 0.19", optional: true},
-      {:ecto_sqlite3, "~> 0.17", optional: true},
-      # Ash Framework (optional -- alternative to raw Ecto adapters)
-      {:ash, "~> 3.0", optional: true},
-      {:ash_postgres, "~> 2.0", optional: true},
-      {:ex_aws, "~> 2.5", optional: true},
-      {:ex_aws_s3, "~> 2.5", optional: true},
-      {:sweet_xml, "~> 0.7", optional: true},
-      {:hackney, "~> 1.20", optional: true},
-      # PubSub integration (optional)
-      {:phoenix_pubsub, "~> 2.1", optional: true},
-
-      # Development and documentation
-      {:ex_doc, "~> 0.40", only: :dev, runtime: false},
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
-
-      # Testing
-      {:supertester, "~> 0.5.1", only: :test},
-      {:mox, "~> 1.1", only: :test}
-    ]
+  defp boundary_checks_enabled? do
+    Mix.env() in [:dev, :test] and is_nil(Mix.ProjectStack.peek())
   end
 
   defp description do
-    """
-    A comprehensive Elixir library for managing AI agent sessions, state persistence,
-    conversation context, and multi-agent orchestration workflows.
-    """
+    "Lean OTP-correct multi-provider CLI session runtime (ASM)."
   end
 
-  defp docs do
+  defp dialyzer do
     [
-      main: "readme",
-      name: "AgentSessionManager",
-      source_ref: "v#{@version}",
-      source_url: @source_url,
-      homepage_url: @source_url,
-      assets: %{"assets" => "assets"},
-      logo: "assets/agent_session_manager.svg",
-      extras: [
-        "README.md",
-        "guides/getting_started.md",
-        "guides/live_examples.md",
-        "guides/architecture.md",
-        "guides/configuration.md",
-        "guides/configuration_reference.md",
-        "guides/model_configuration.md",
-        "guides/sessions_and_runs.md",
-        "guides/session_server_runtime.md",
-        "guides/session_server_subscriptions.md",
-        "guides/session_continuity.md",
-        "guides/events_and_streaming.md",
-        "guides/rendering.md",
-        "guides/pubsub_integration.md",
-        "guides/stream_session.md",
-        "guides/cursor_streaming_and_migration.md",
-        "guides/workspace_snapshots.md",
-        "guides/provider_routing.md",
-        "guides/policy_enforcement.md",
-        "guides/cost_tracking.md",
-        "guides/advanced_patterns.md",
-        "guides/workflow_bridge.md",
-        "guides/provider_adapters.md",
-        "guides/shell_runner.md",
-        "guides/capabilities.md",
-        "guides/concurrency.md",
-        "guides/telemetry_and_observability.md",
-        "guides/error_handling.md",
-        "guides/testing.md",
-        "guides/persistence_overview.md",
-        "guides/migrating_to_v0.8.md",
-        "guides/ecto_session_store.md",
-        "guides/ash_session_store.md",
-        "guides/sqlite_session_store.md",
-        "guides/s3_artifact_store.md",
-        "guides/composite_store.md",
-        "guides/event_schema_versioning.md",
-        "guides/secrets_redaction.md",
-        "guides/custom_persistence_guide.md",
-        "CHANGELOG.md",
-        "LICENSE"
-      ],
-      groups_for_extras: [
-        Introduction: [
-          "README.md",
-          "guides/getting_started.md",
-          "guides/live_examples.md",
-          "guides/architecture.md",
-          "guides/configuration.md",
-          "guides/configuration_reference.md",
-          "guides/model_configuration.md"
-        ],
-        "Core Concepts": [
-          "guides/sessions_and_runs.md",
-          "guides/session_server_runtime.md",
-          "guides/session_server_subscriptions.md",
-          "guides/session_continuity.md",
-          "guides/events_and_streaming.md",
-          "guides/rendering.md",
-          "guides/pubsub_integration.md",
-          "guides/stream_session.md",
-          "guides/cursor_streaming_and_migration.md",
-          "guides/workspace_snapshots.md",
-          "guides/provider_routing.md",
-          "guides/policy_enforcement.md",
-          "guides/cost_tracking.md",
-          "guides/advanced_patterns.md",
-          "guides/capabilities.md"
-        ],
-        Persistence: [
-          "guides/persistence_overview.md",
-          "guides/migrating_to_v0.8.md",
-          "guides/ecto_session_store.md",
-          "guides/ash_session_store.md",
-          "guides/sqlite_session_store.md",
-          "guides/s3_artifact_store.md",
-          "guides/composite_store.md",
-          "guides/event_schema_versioning.md",
-          "guides/secrets_redaction.md",
-          "guides/custom_persistence_guide.md"
-        ],
-        Integration: [
-          "guides/provider_adapters.md",
-          "guides/workflow_bridge.md",
-          "guides/shell_runner.md",
-          "guides/concurrency.md",
-          "guides/telemetry_and_observability.md"
-        ],
-        Reference: [
-          "guides/error_handling.md",
-          "guides/testing.md",
-          "CHANGELOG.md",
-          "LICENSE"
-        ]
-      ],
-      groups_for_modules: [
-        "Core Domain": [
-          AgentSessionManager,
-          AgentSessionManager.Core.Session,
-          AgentSessionManager.Core.Run,
-          AgentSessionManager.Core.Event,
-          AgentSessionManager.Core.Transcript,
-          AgentSessionManager.Core.NormalizedEvent,
-          AgentSessionManager.Core.Capability,
-          AgentSessionManager.Core.Manifest,
-          AgentSessionManager.Core.Error
-        ],
-        "Event Pipeline": [
-          AgentSessionManager.Core.EventNormalizer,
-          AgentSessionManager.Core.EventStream,
-          AgentSessionManager.Core.TranscriptBuilder,
-          AgentSessionManager.Persistence.EventRedactor
-        ],
-        "Capability System": [
-          AgentSessionManager.Core.CapabilityResolver,
-          AgentSessionManager.Core.CapabilityResolver.NegotiationResult,
-          AgentSessionManager.Core.Registry
-        ],
-        Orchestration: [
-          AgentSessionManager.SessionManager,
-          AgentSessionManager.Routing.ProviderRouter
-        ],
-        "Workflow Integration": [
-          AgentSessionManager.WorkflowBridge,
-          AgentSessionManager.WorkflowBridge.StepResult,
-          AgentSessionManager.WorkflowBridge.ErrorClassification
-        ],
-        "Routing and Policy": [
-          AgentSessionManager.Routing.RoutingPolicy,
-          AgentSessionManager.Routing.CapabilityMatcher,
-          AgentSessionManager.Routing.CircuitBreaker,
-          AgentSessionManager.Policy.Policy,
-          AgentSessionManager.Policy.Evaluator,
-          AgentSessionManager.Policy.Runtime,
-          AgentSessionManager.Policy.AdapterCompiler,
-          AgentSessionManager.Policy.Preflight
-        ],
-        "Cost Tracking": [
-          AgentSessionManager.Cost.CostCalculator
-        ],
-        "Ports (Interfaces)": [
-          AgentSessionManager.Ports.ProviderAdapter,
-          AgentSessionManager.Ports.SessionStore,
-          AgentSessionManager.Ports.ArtifactStore
-        ],
-        "Adapters (Implementations)": [
-          AgentSessionManager.Adapters.ClaudeAdapter,
-          AgentSessionManager.Adapters.CodexAdapter,
-          AgentSessionManager.Adapters.AmpAdapter,
-          AgentSessionManager.Adapters.ShellAdapter,
-          AgentSessionManager.Adapters.InMemorySessionStore,
-          AgentSessionManager.Adapters.FileArtifactStore,
-          AgentSessionManager.Adapters.EctoSessionStore,
-          AgentSessionManager.Ash.Adapters.AshSessionStore,
-          AgentSessionManager.Ash.Adapters.AshQueryAPI,
-          AgentSessionManager.Ash.Adapters.AshMaintenance,
-          AgentSessionManager.Adapters.S3ArtifactStore,
-          AgentSessionManager.Adapters.CompositeSessionStore
-        ],
-        "Ash Integration": [
-          AgentSessionManager.Ash.Domain,
-          AgentSessionManager.Ash.Resources.Session,
-          AgentSessionManager.Ash.Resources.Run,
-          AgentSessionManager.Ash.Resources.Event,
-          AgentSessionManager.Ash.Resources.SessionSequence,
-          AgentSessionManager.Ash.Resources.Artifact,
-          AgentSessionManager.Ash.Adapters.AshSessionStore,
-          AgentSessionManager.Ash.Adapters.AshQueryAPI,
-          AgentSessionManager.Ash.Adapters.AshMaintenance
-        ],
-        Concurrency: [
-          AgentSessionManager.Concurrency.ConcurrencyLimiter,
-          AgentSessionManager.Concurrency.ControlOperations
-        ],
-        Runtime: [
-          AgentSessionManager.Runtime.RunQueue,
-          AgentSessionManager.Runtime.SessionRegistry,
-          AgentSessionManager.Runtime.SessionServer,
-          AgentSessionManager.Runtime.SessionSupervisor
-        ],
-        Workspace: [
-          AgentSessionManager.Workspace.Workspace,
-          AgentSessionManager.Workspace.Exec,
-          AgentSessionManager.Workspace.Snapshot,
-          AgentSessionManager.Workspace.Diff,
-          AgentSessionManager.Workspace.GitBackend,
-          AgentSessionManager.Workspace.HashBackend
-        ],
-        Rendering: [
-          AgentSessionManager.Rendering,
-          AgentSessionManager.Rendering.Renderer,
-          AgentSessionManager.Rendering.Sink,
-          AgentSessionManager.Rendering.Renderers.CompactRenderer,
-          AgentSessionManager.Rendering.Renderers.VerboseRenderer,
-          AgentSessionManager.Rendering.Renderers.PassthroughRenderer,
-          AgentSessionManager.Rendering.Renderers.StudioRenderer,
-          AgentSessionManager.Rendering.Studio.ANSI,
-          AgentSessionManager.Rendering.Studio.ToolSummary,
-          AgentSessionManager.Rendering.Sinks.TTYSink,
-          AgentSessionManager.Rendering.Sinks.FileSink,
-          AgentSessionManager.Rendering.Sinks.JSONLSink,
-          AgentSessionManager.Rendering.Sinks.CallbackSink,
-          AgentSessionManager.Rendering.Sinks.PubSubSink
-        ],
-        "Stream Session": [
-          AgentSessionManager.StreamSession,
-          AgentSessionManager.StreamSession.Supervisor
-        ],
-        "PubSub Integration": [
-          AgentSessionManager.PubSub,
-          AgentSessionManager.PubSub.Topic
-        ],
-        Configuration: [
-          AgentSessionManager.Config,
-          AgentSessionManager.Models
-        ],
-        Observability: [
-          AgentSessionManager.Telemetry,
-          AgentSessionManager.AuditLogger
-        ]
-      ]
+      plt_add_apps: [:mix, :ex_unit],
+      plt_core_path: "priv/plts/core",
+      plt_local_path: "priv/plts",
+      plt_ignore_apps: workspace_apps(),
+      paths: [project_ebin_path() | workspace_dialyzer_paths()]
     ]
+  end
+
+  defp workspace_deps do
+    Enum.map(workspace_dep_specs(), fn {app, path, requirement, opts} ->
+      workspace_dep(app, path, requirement, opts)
+    end)
+  end
+
+  defp workspace_dep_specs do
+    [
+      {:cli_subprocess_core, "../cli_subprocess_core", @cli_subprocess_core_requirement,
+       github: @cli_subprocess_core_repo, branch: "main"}
+    ]
+  end
+
+  defp workspace_apps do
+    Enum.map(workspace_dep_specs(), &elem(&1, 0))
+  end
+
+  defp workspace_dialyzer_paths do
+    Enum.map(workspace_apps(), fn app ->
+      build_ebin_path(app)
+    end)
+  end
+
+  defp project_ebin_path do
+    build_ebin_path(@app)
+  end
+
+  defp build_ebin_path(app) when is_atom(app) do
+    Path.join(["_build", Atom.to_string(Mix.env()), "lib", Atom.to_string(app), "ebin"])
   end
 
   defp package do
     [
       name: "agent_session_manager",
       description: description(),
-      files: ~w(lib mix.exs README.md CHANGELOG.md LICENSE),
-      licenses: ["MIT"],
+      files: ~w(lib guides examples assets mix.exs README.md CHANGELOG.md LICENSE .formatter.exs),
+      licenses: ["Apache-2.0"],
+      maintainers: ["nshkrdotcom"],
       links: %{
         "GitHub" => @source_url,
-        "Documentation" => "https://hexdocs.pm/agent_session_manager",
+        "Hex" => @homepage_url,
+        "HexDocs" => @docs_url,
         "Changelog" => "#{@source_url}/blob/main/CHANGELOG.md"
-      },
-      maintainers: ["nshkrdotcom"]
+      }
     ]
+  end
+
+  defp docs do
+    [
+      main: "overview",
+      logo: "assets/agent_session_manager.svg",
+      assets: %{"assets" => "assets"},
+      source_ref: "v#{@version}",
+      source_url: @source_url,
+      homepage_url: @homepage_url,
+      extras: extras(),
+      groups_for_extras: groups_for_extras(),
+      groups_for_modules: groups_for_modules(),
+      nest_modules_by_prefix: [
+        ASM,
+        ASM.Content,
+        ASM.Control,
+        ASM.Extensions,
+        ASM.Message,
+        ASM.Options,
+        ASM.Pipeline,
+        ASM.Provider,
+        ASM.ProviderBackend,
+        ASM.Run,
+        ASM.Session,
+        ASM.Store,
+        ASM.Stream,
+        ASM.Tool
+      ]
+    ]
+  end
+
+  defp extras do
+    [
+      "README.md": [title: "Overview", filename: "overview"],
+      "guides/lane-selection.md": [title: "Lane Selection"],
+      "guides/provider-backends.md": [title: "Provider Backends"],
+      "guides/inference-endpoints.md": [title: "Inference Endpoints"],
+      "guides/common-and-partial-provider-features.md": [
+        title: "Common And Partial Provider Features"
+      ],
+      "guides/provider-sdk-extensions.md": [title: "Provider SDK Extensions"],
+      "guides/event-model-and-result-projection.md": [title: "Event Model And Result Projection"],
+      "guides/approvals-and-interrupts.md": [title: "Approvals And Interrupts"],
+      "guides/remote-node-execution.md": [title: "Remote Node Execution"],
+      "guides/live-adapters.md": [title: "Live Adapters"],
+      "guides/boundary-enforcement.md": [title: "Boundary Enforcement"],
+      "examples/README.md": [title: "Examples", filename: "examples"],
+      "CHANGELOG.md": [title: "Changelog"],
+      LICENSE: [title: "License"]
+    ]
+  end
+
+  defp groups_for_extras do
+    [
+      "Project Overview": ["README.md"],
+      Foundations: [
+        "guides/lane-selection.md",
+        "guides/provider-backends.md",
+        "guides/inference-endpoints.md",
+        "guides/common-and-partial-provider-features.md",
+        "guides/provider-sdk-extensions.md"
+      ],
+      Runtime: [
+        "guides/event-model-and-result-projection.md",
+        "guides/approvals-and-interrupts.md",
+        "guides/remote-node-execution.md",
+        "guides/live-adapters.md"
+      ],
+      Examples: ["examples/README.md"],
+      Architecture: ["guides/boundary-enforcement.md"],
+      Reference: ["CHANGELOG.md", "LICENSE"]
+    ]
+  end
+
+  defp groups_for_modules do
+    [
+      "Public API": [
+        ASM,
+        ASM.Error,
+        ASM.Event,
+        ASM.History,
+        ASM.InferenceEndpoint,
+        ASM.Permission,
+        ASM.ProviderRegistry,
+        ASM.Result,
+        ASM.Stream
+      ],
+      "Inference Endpoint Contracts": ~r/^ASM\.InferenceEndpoint/,
+      Backends: [ASM.ProviderBackend, ASM.ProviderBackend.Core, ASM.ProviderBackend.SDK],
+      Providers: ~r/^ASM\.(Provider|Options)/,
+      Runtime: ~r/^ASM\.(Session|Run)/,
+      "Streaming & Tooling": ~r/^ASM\.(Store|Tool)/,
+      Pipeline: ~r/^ASM\.Pipeline/,
+      "Payload Types": ~r/^ASM\.(Content|Message|Control)/,
+      "Extensions/Persistence": ~r/^ASM\.Extensions\.Persistence/,
+      "Extensions/Routing": ~r/^ASM\.Extensions\.Routing/,
+      "Extensions/Policy": ~r/^ASM\.Extensions\.Policy/,
+      "Extensions/Rendering": ~r/^ASM\.Extensions\.Rendering/,
+      "Extensions/Workspace": ~r/^ASM\.Extensions\.Workspace/,
+      "Extensions/PubSub": ~r/^ASM\.Extensions\.PubSub/,
+      "Extensions/Provider Native": ~r/^ASM\.Extensions\.Provider(SDK)?/
+    ]
+  end
+
+  defp workspace_dep(app, path, requirement, opts) do
+    {release_opts, dep_opts} = Keyword.split(opts, [:github, :git, :branch, :tag, :ref])
+    expanded_path = Path.expand(path, __DIR__)
+
+    cond do
+      hex_packaging?() ->
+        {app, requirement, dep_opts}
+
+      workspace_checkout?() and File.dir?(expanded_path) ->
+        {app, Keyword.put(dep_opts, :path, path)}
+
+      release_opts != [] ->
+        {app, Keyword.merge(dep_opts, release_opts)}
+
+      true ->
+        {app, Keyword.put(dep_opts, :path, path)}
+    end
+  end
+
+  defp hex_packaging? do
+    Enum.any?(System.argv(), &String.starts_with?(&1, "hex."))
+  end
+
+  defp workspace_checkout? do
+    not Enum.member?(Path.split(Path.expand(__DIR__)), "deps")
   end
 end

@@ -1,0 +1,13 @@
+{
+  "type": "assistant",
+  "message": {
+    "model": "claude-opus-4-6",
+    "content": [
+      {
+        "type": "text",
+        "text": "CLAUDE_OK"
+      }
+    ]
+  },
+  "session_id": "example-session"
+}

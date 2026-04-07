@@ -1,0 +1,11 @@
+{
+  "type": "result",
+  "subtype": "success",
+  "stop_reason": null,
+  "duration_ms": 2393,
+  "usage": {
+    "input_tokens": 3,
+    "output_tokens": 7
+  },
+  "result": "CLAUDE_OK"
+}

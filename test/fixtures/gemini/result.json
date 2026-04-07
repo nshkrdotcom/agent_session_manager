@@ -1,0 +1,8 @@
+{
+  "type": "result",
+  "status": "completed",
+  "stats": {
+    "input_tokens": 9,
+    "output_tokens": 4
+  }
+}

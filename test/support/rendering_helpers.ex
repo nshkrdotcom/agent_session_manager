@@ -1,114 +1,105 @@
-defmodule AgentSessionManager.Test.RenderingHelpers do
-  @moduledoc """
-  Helpers for building canonical adapter events in rendering tests.
-  """
+defmodule ASM.Test.RenderingHelpers do
+  @moduledoc false
 
-  alias AgentSessionManager.Test.Models, as: TestModels
+  alias ASM.{Content, Control, Event, Message}
 
-  @default_session_id "ses_test_123"
-  @default_run_id "run_test_456"
+  @default_session_id "session-rendering-test"
+  @default_run_id "run-rendering-test"
+  @default_provider :claude
 
-  def event(type, data \\ %{}, opts \\ []) do
-    %{
-      type: type,
-      timestamp: DateTime.utc_now(),
-      session_id: opts[:session_id] || @default_session_id,
-      run_id: opts[:run_id] || @default_run_id,
-      data: data,
-      provider: opts[:provider] || :claude
+  @spec event(Event.kind(), Message.t() | Control.t(), keyword()) :: Event.t()
+  def event(kind, payload, opts \\ []) when is_atom(kind) and is_list(opts) do
+    %Event{
+      id: Event.generate_id(),
+      kind: kind,
+      run_id: Keyword.get(opts, :run_id, @default_run_id),
+      session_id: Keyword.get(opts, :session_id, @default_session_id),
+      provider: Keyword.get(opts, :provider, @default_provider),
+      payload: payload,
+      sequence: Keyword.get(opts, :sequence),
+      timestamp: Keyword.get(opts, :timestamp, ~U[2026-03-04 00:00:00Z])
     }
   end
 
+  @spec run_started(keyword()) :: Event.t()
   def run_started(opts \\ []) do
-    event(:run_started, %{
-      model: opts[:model] || TestModels.claude_sonnet_model(),
-      session_id: opts[:session_id] || @default_session_id
-    })
+    event(:run_started, %Control.RunLifecycle{status: :started, summary: %{}}, opts)
   end
 
-  def message_streamed(text) do
-    event(:message_streamed, %{content: text, delta: text})
-  end
-
-  def tool_call_started(name, opts \\ []) do
-    event(:tool_call_started, %{
-      tool_name: name,
-      tool_call_id: opts[:id] || "tool_#{name}_001",
-      tool_input: opts[:input] || %{}
-    })
-  end
-
-  def tool_call_completed(name, opts \\ []) do
-    event(:tool_call_completed, %{
-      tool_name: name,
-      tool_call_id: opts[:id] || "tool_#{name}_001",
-      tool_input: opts[:input] || %{},
-      tool_output: opts[:output] || "done"
-    })
-  end
-
-  def token_usage_updated(input_tokens, output_tokens) do
-    event(:token_usage_updated, %{
-      input_tokens: input_tokens,
-      output_tokens: output_tokens
-    })
-  end
-
-  def message_received(content \\ "Hello!") do
-    event(:message_received, %{content: content, role: "assistant"})
-  end
-
+  @spec run_completed(keyword()) :: Event.t()
   def run_completed(opts \\ []) do
-    event(:run_completed, %{
-      stop_reason: opts[:stop_reason] || "end_turn",
-      token_usage: opts[:token_usage] || %{input_tokens: 100, output_tokens: 50}
-    })
+    event(:run_completed, %Control.RunLifecycle{status: :completed, summary: %{}}, opts)
   end
 
-  def run_failed(error_message \\ "something went wrong") do
-    event(:run_failed, %{
-      error_code: :execution_error,
-      error_message: error_message
-    })
+  @spec assistant_delta(String.t(), keyword()) :: Event.t()
+  def assistant_delta(text, opts \\ []) when is_binary(text) do
+    event(:assistant_delta, %Message.Partial{content_type: :text, delta: text}, opts)
   end
 
-  def run_cancelled do
-    event(:run_cancelled, %{})
+  @spec assistant_message(String.t(), keyword()) :: Event.t()
+  def assistant_message(text, opts \\ []) when is_binary(text) do
+    payload = %Message.Assistant{content: [%Content.Text{text: text}]}
+    event(:assistant_message, payload, opts)
   end
 
-  def error_occurred(message \\ "unexpected error") do
-    event(:error_occurred, %{
-      error_code: :internal_error,
-      error_message: message
-    })
+  @spec tool_use(String.t(), map(), keyword()) :: Event.t()
+  def tool_use(tool_name, input \\ %{}, opts \\ []) when is_binary(tool_name) and is_map(input) do
+    payload =
+      %Message.ToolUse{
+        tool_name: tool_name,
+        tool_id: Keyword.get(opts, :tool_id, "tool-rendering-1"),
+        input: input
+      }
+
+    event(:tool_use, payload, opts)
   end
 
-  @doc """
-  Build a typical multi-turn event sequence for testing.
-  """
-  def simple_session_events do
+  @spec tool_result(String.t(), term(), keyword()) :: Event.t()
+  def tool_result(tool_id, content, opts \\ []) when is_binary(tool_id) do
+    payload =
+      %Message.ToolResult{
+        tool_id: tool_id,
+        content: content,
+        is_error: Keyword.get(opts, :is_error, false)
+      }
+
+    event(:tool_result, payload, opts)
+  end
+
+  @spec result_event(keyword()) :: Event.t()
+  def result_event(opts \\ []) do
+    payload =
+      %Message.Result{
+        stop_reason: Keyword.get(opts, :stop_reason, :end_turn),
+        usage: Keyword.get(opts, :usage, %{input_tokens: 5, output_tokens: 8}),
+        duration_ms: Keyword.get(opts, :duration_ms, 42),
+        metadata: Keyword.get(opts, :metadata, %{})
+      }
+
+    event(:result, payload, opts)
+  end
+
+  @spec error_event(keyword()) :: Event.t()
+  def error_event(opts \\ []) do
+    payload =
+      %Message.Error{
+        severity: Keyword.get(opts, :severity, :error),
+        message: Keyword.get(opts, :message, "rendering test error"),
+        kind: Keyword.get(opts, :kind, :runtime)
+      }
+
+    event(:error, payload, opts)
+  end
+
+  @spec sample_events() :: [Event.t()]
+  def sample_events do
     [
       run_started(),
-      message_streamed("Hello"),
-      message_streamed(" world"),
-      message_received("Hello world"),
-      token_usage_updated(100, 20),
-      run_completed()
-    ]
-  end
-
-  @doc """
-  Build a session with tool use for testing.
-  """
-  def tool_use_session_events do
-    [
-      run_started(),
-      message_streamed("Let me read that file."),
-      tool_call_started("Read", id: "tu_001", input: %{"path" => "/foo/bar.ex"}),
-      tool_call_completed("Read", id: "tu_001", output: "defmodule Foo do\nend"),
-      message_streamed("The file contains module Foo."),
-      message_received("Let me read that file. The file contains module Foo."),
-      token_usage_updated(200, 80),
+      assistant_delta("Hello"),
+      assistant_delta(" world"),
+      tool_use("bash", %{"cmd" => "pwd"}),
+      tool_result("tool-rendering-1", %{"stdout" => "/tmp"}),
+      result_event(),
       run_completed()
     ]
   end

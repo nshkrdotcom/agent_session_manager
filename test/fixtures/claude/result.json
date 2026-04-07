@@ -1,0 +1,9 @@
+{
+  "type": "result",
+  "stop_reason": "end_turn",
+  "usage": {
+    "input_tokens": 10,
+    "output_tokens": 5
+  },
+  "duration_ms": 42
+}

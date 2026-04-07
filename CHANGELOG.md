@@ -9,8 +9,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Bump `codex_sdk` dependency from `~> 0.10.1` to `~> 0.11.0`
-- Bump `claude_agent_sdk` dependency from `~> 0.14.0` to `~> 0.15.0`
+- README, guides, and lineage references now describe the final Phase 4
+  packaging model explicitly: `cli_subprocess_core` is the only required common
+  dependency, provider SDKs stay optional, and release publication order remains
+  core, provider SDKs, then ASM.
+
+### Fixed
+
+- Dialyzer now stores its core and project PLTs inside `priv/plts`, so the
+  release verification floor no longer depends on a writable global Mix home.
+
+## [0.10.0] - 2026-03-23
+
+### Added
+
+- Provider-native extension foundation under `ASM.Extensions.ProviderSDK`
+  - New explicit optional namespaces: `ASM.Extensions.ProviderSDK.Claude` and
+    `ASM.Extensions.ProviderSDK.Codex`
+  - New discovery/capability reporting API that keeps provider-native metadata
+    out of `ASM.ProviderRegistry`
+  - Documentation for the normalized-kernel versus provider-extension split
+- Remote-node execution mode for stream/query runs via `execution_mode: :remote_node`
+  - New execution config normalization: `ASM.Execution.Config`
+  - New remote runtime modules: `ASM.Stream.NodeDriver`, `ASM.Remote.NodeConnector`,
+    `ASM.Remote.TransportStarter`, `ASM.Remote.TransportSupervisor`, `ASM.Remote.Capabilities`
+  - Remote telemetry events under `[:asm, :remote, ...]`
+  - Distributed integration coverage with real `:peer` nodes (`@tag :distributed`)
+- Startup lease timeout support in `ASM.Transport.Port` (`startup_lease_timeout_ms`) to prevent orphaned transports when startup/attach paths fail
+- Timeout-aware transport control call variants in `ASM.Transport` and run-level timeout wiring via `transport_call_timeout_ms`
+
+### Changed
+
+- Published dependency cutover is now frozen to `cli_subprocess_core ~> 0.1.0`
+  plus optional `claude_agent_sdk ~> 0.16.0`, `codex_sdk ~> 0.15.0`,
+  `gemini_cli_sdk ~> 0.1.0`, and `amp_sdk ~> 0.4.0`.
+
+### Fixed
+
+- `ASM.Run.Server` interrupt path now catches transport call exits (`maybe_interrupt_transport/1`)
+- Stream driver-down dedupe now includes remote transport-backed node driver
 
 ## [0.8.0] - 2026-02-10
 
@@ -157,7 +194,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`InMemorySessionStore` event appends moved to queue-based buffering** to avoid O(n) append overhead under load
 - **`CompositeSessionStore` direct-call timeout handling** now propagates `wait_timeout_ms` and isolates artifact failures from session persistence paths
 - `crypto.strong_rand_bytes` used for workspace artifact keys instead of `System.unique_integer`
-- **Current-only contract cleanup** (backward-compatibility shims removed):
+- **Current-only contract cleanup** (backward-compatibility helpers removed):
   - Boolean continuation value `true` is no longer accepted; use `:auto`, `:replay`, `:native`, or `false`
   - Adapter tool events emit canonical keys only: `tool_call_id`, `tool_name`, `tool_input`, `tool_output`; provider-native aliases (`call_id`, `tool_use_id`, `arguments`, `input`, `output`, `content`) removed
   - `TranscriptBuilder` and renderers consume canonical tool keys only; fallback chains through legacy keys removed

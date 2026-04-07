@@ -1,337 +1,146 @@
 #!/usr/bin/env bash
-# Run AgentSessionManager examples.
-#
-# Usage:
-#   ./examples/run_all.sh                  # Run all providers (claude, codex, amp)
-#   ./examples/run_all.sh --provider amp   # Run only amp examples
-#   ./examples/run_all.sh -p claude        # Run only claude examples
-#
-# Requires SDK authentication (e.g. `claude login` / `codex login` / `amp login`).
-
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+EXAMPLES=(
+  "live_query.exs"
+  "live_stream.exs"
+  "live_session_lifecycle.exs"
+)
 
-cd "$PROJECT_DIR"
+declare -A PROVIDER_SPECIFIC_EXAMPLE=(
+  [amp]="provider_amp_sdk_stream.exs"
+  [claude]="provider_claude_control_client.exs"
+  [codex]="provider_codex_app_server.exs"
+  [gemini]="provider_gemini_session_resume.exs"
+)
 
-# ============================================================================
-# Argument parsing
-# ============================================================================
+usage() {
+  cat <<'EOF'
+run_all.sh only runs when you explicitly choose one or more providers.
 
-PROVIDER=""
+Usage:
+  ./examples/run_all.sh --provider claude
+  ./examples/run_all.sh --provider codex --model gpt-5.4
+  ./examples/run_all.sh --provider codex --ssh-host example.internal --danger-full-access
+  ./examples/run_all.sh --provider claude --ollama --model haiku --ollama-model llama3.2
+  ./examples/run_all.sh --provider codex --ollama --ollama-model gpt-oss:20b
+  ./examples/run_all.sh --provider claude --provider codex --ollama --ollama-model llama3.2
+  ./examples/run_all.sh --provider claude --provider gemini
+  ./examples/run_all.sh --provider amp --lane sdk --sdk-root ../amp_sdk
+  ./examples/run_all.sh --provider codex --ssh-host example.internal
+  ./examples/run_all.sh --provider claude --ssh-host builder@example.internal --ssh-port 2222
 
-print_usage() {
-  cat <<EOF
-
-Usage: ./examples/run_all.sh [options]
-
-Options:
-  --provider, -p <name>  Run examples for a single provider (claude, codex, or amp).
-                         Default: run all providers.
-  --help, -h             Show this help message.
-
-Examples:
-  ./examples/run_all.sh                  Run all providers
-  ./examples/run_all.sh --provider amp   Run only Amp examples
-  ./examples/run_all.sh -p claude        Run only Claude examples
-
+Notes:
+  - Repeat --provider or pass a comma-separated list.
+  - Any other flags are forwarded to each example.
+  - Each example also requires --provider when run directly.
+  - Common and provider-native examples default to ASM permission_mode=:bypass.
+  - --danger-full-access is the example alias for --permission-mode bypass.
+  - The examples print the provider-native permission term at startup.
+  - --ollama and the related --ollama-* flags are only valid for claude and codex.
+  - Provider-specific examples may require the matching SDK checkout on the code path or via --sdk-root.
+  - `live_session_lifecycle.exs` and `provider_gemini_session_resume.exs` are the session-recovery
+    examples for this hardening lane.
 EOF
 }
 
+providers=()
+forward_args=()
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --provider|-p)
-      PROVIDER="$2"
+    --provider)
+      if [[ $# -lt 2 ]]; then
+        echo "--provider requires a value" >&2
+        exit 1
+      fi
+
+      providers+=("$2")
       shift 2
       ;;
-    --help|-h)
-      print_usage
+    --provider=*)
+      providers+=("${1#*=}")
+      shift
+      ;;
+    -h|--help)
+      usage
       exit 0
       ;;
     *)
-      echo "Unknown option: $1"
-      print_usage
-      exit 1
+      forward_args+=("$1")
+      shift
       ;;
   esac
 done
 
-if [[ -n "$PROVIDER" ]] && [[ "$PROVIDER" != "claude" && "$PROVIDER" != "codex" && "$PROVIDER" != "amp" ]]; then
-  echo "Unknown provider: $PROVIDER"
-  echo "Valid providers: claude, codex, amp"
-  exit 1
+if [[ ${#providers[@]} -eq 0 ]]; then
+  usage
+  exit 0
 fi
 
-# ============================================================================
-# Build the run plan
-# ============================================================================
+ollama_requested=0
 
-# Determine which providers to run
-if [[ -n "$PROVIDER" ]]; then
-  PROVIDERS=("$PROVIDER")
-  MODE="single provider: $PROVIDER"
-else
-  PROVIDERS=("claude" "codex" "amp")
-  MODE="all providers"
-fi
-
-# Collect planned examples into arrays
-PLAN_NAMES=()
-PLAN_FILES=()
-PLAN_ARGS=()
-
-for p in "${PROVIDERS[@]}"; do
-  label="$(echo "${p:0:1}" | tr '[:lower:]' '[:upper:]')${p:1}"
-
-  PLAN_NAMES+=("Cursor Pagination ($label)")
-  PLAN_FILES+=("examples/cursor_pagination.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("Cursor Follow Stream ($label)")
-  PLAN_FILES+=("examples/cursor_follow_stream.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("Cursor Wait Follow ($label)")
-  PLAN_FILES+=("examples/cursor_wait_follow.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("Session Continuity ($label)")
-  PLAN_FILES+=("examples/session_continuity.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("Workspace Snapshot ($label)")
-  PLAN_FILES+=("examples/workspace_snapshot.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("Provider Routing ($label)")
-  PLAN_FILES+=("examples/provider_routing.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("Policy Enforcement ($label)")
-  PLAN_FILES+=("examples/policy_enforcement.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("Session Runtime ($label)")
-  PLAN_FILES+=("examples/session_runtime.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("Interactive Interrupt ($label)")
-  PLAN_FILES+=("examples/interactive_interrupt.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("Session Subscriptions ($label)")
-  PLAN_FILES+=("examples/session_subscription.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("Session Limiter ($label)")
-  PLAN_FILES+=("examples/session_limiter.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("Session Concurrency ($label)")
-  PLAN_FILES+=("examples/session_concurrency.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("One-Shot ($label)")
-  PLAN_FILES+=("examples/oneshot.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("Workflow Bridge ($label)")
-  PLAN_FILES+=("examples/workflow_bridge.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("Live Session ($label)")
-  PLAN_FILES+=("examples/live_session.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("Common Surface ($label)")
-  PLAN_FILES+=("examples/common_surface.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("Contract Surface ($label)")
-  PLAN_FILES+=("examples/contract_surface_live.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("Routing v2 ($label)")
-  PLAN_FILES+=("examples/routing_v2.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("Policy v2 ($label)")
-  PLAN_FILES+=("examples/policy_v2.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("Approval Gates ($label)")
-  PLAN_FILES+=("examples/approval_gates.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("Cost Tracking ($label)")
-  PLAN_FILES+=("examples/cost_tracking.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("Permission Mode ($label)")
-  PLAN_FILES+=("examples/permission_mode.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("Stream Session ($label)")
-  PLAN_FILES+=("examples/stream_session.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("Stream Session Raw ($label)")
-  PLAN_FILES+=("examples/stream_session.exs")
-  PLAN_ARGS+=("--provider $p --mode raw")
-
-  PLAN_NAMES+=("Rendering Compact ($label)")
-  PLAN_FILES+=("examples/rendering_compact.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("Rendering Verbose ($label)")
-  PLAN_FILES+=("examples/rendering_verbose.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("Rendering Studio ($label)")
-  PLAN_FILES+=("examples/rendering_studio.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("Rendering Multi-Sink ($label)")
-  PLAN_FILES+=("examples/rendering_multi_sink.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("Rendering Callback ($label)")
-  PLAN_FILES+=("examples/rendering_callback.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("PubSub Sink ($label)")
-  PLAN_FILES+=("examples/pubsub_sink.exs")
-  PLAN_ARGS+=("--provider $p")
-
-  PLAN_NAMES+=("$label Direct Features")
-  PLAN_FILES+=("examples/${p}_direct.exs")
-  PLAN_ARGS+=("")
+for arg in "${forward_args[@]}"; do
+  case "$arg" in
+    --ollama|--ollama=*|--ollama-model|--ollama-model=*|--ollama-base-url|--ollama-base-url=*|--ollama-http|--ollama-timeout-ms|--ollama-timeout-ms=*)
+      ollama_requested=1
+      ;;
+  esac
 done
 
-# Persistence examples (no provider needed)
-PLAN_NAMES+=("SQLite via Ecto SessionStore")
-PLAN_FILES+=("examples/sqlite_session_store_live.exs")
-PLAN_ARGS+=("")
+declare -A seen=()
+selected_providers=()
 
-PLAN_NAMES+=("Ecto SessionStore")
-PLAN_FILES+=("examples/ecto_session_store_live.exs")
-PLAN_ARGS+=("")
+for raw in "${providers[@]}"; do
+  IFS=',' read -r -a split_values <<<"$raw"
 
-PLAN_NAMES+=("S3 ArtifactStore")
-PLAN_FILES+=("examples/s3_artifact_store_live.exs")
-PLAN_ARGS+=("")
+  for value in "${split_values[@]}"; do
+    provider="${value,,}"
+    provider="${provider// /}"
 
-PLAN_NAMES+=("Composite Store")
-PLAN_FILES+=("examples/composite_store_live.exs")
-PLAN_ARGS+=("")
-
-PLAN_NAMES+=("Ash SessionStore")
-PLAN_FILES+=("examples/ash_session_store.exs")
-PLAN_ARGS+=("")
-
-# Persistence query, maintenance, and multi-run examples (no provider needed)
-PLAN_NAMES+=("Persistence Query API")
-PLAN_FILES+=("examples/persistence_query.exs")
-PLAN_ARGS+=("")
-
-PLAN_NAMES+=("Persistence Maintenance")
-PLAN_FILES+=("examples/persistence_maintenance.exs")
-PLAN_ARGS+=("")
-
-PLAN_NAMES+=("Secrets Redaction")
-PLAN_FILES+=("examples/secrets_redaction.exs")
-PLAN_ARGS+=("")
-
-PLAN_NAMES+=("Persistence Multi-Run")
-PLAN_FILES+=("examples/persistence_multi_run.exs")
-PLAN_ARGS+=("")
-
-# Shell execution example (requires real provider + shell adapter)
-for p in "${PROVIDERS[@]}"; do
-  label="$(echo "${p:0:1}" | tr '[:lower:]' '[:upper:]')${p:1}"
-
-  PLAN_NAMES+=("Shell Exec ($label)")
-  PLAN_FILES+=("examples/shell_exec.exs")
-  PLAN_ARGS+=("--provider $p")
+    case "$provider" in
+      claude|gemini|codex|amp)
+        if [[ -z "${seen[$provider]:-}" ]]; then
+          seen["$provider"]=1
+          selected_providers+=("$provider")
+        fi
+        ;;
+      "")
+        ;;
+      *)
+        echo "unsupported provider: $value" >&2
+        exit 1
+        ;;
+    esac
+  done
 done
 
-# Persistence live example (requires provider SDK)
-for p in "${PROVIDERS[@]}"; do
-  label="$(echo "${p:0:1}" | tr '[:lower:]' '[:upper:]')${p:1}"
+cd "$ROOT_DIR"
 
-  PLAN_NAMES+=("Persistence Live ($label)")
-  PLAN_FILES+=("examples/persistence_live.exs")
-  PLAN_ARGS+=("--provider $p")
-done
-
-# Note: persistence_s3_minio.exs requires Docker/MinIO and is not included in the default run.
-# Run manually: MINIO_ROOT_USER=minioadmin MINIO_ROOT_PASSWORD=minioadmin mix run examples/persistence_s3_minio.exs
-
-TOTAL=${#PLAN_NAMES[@]}
-
-# ============================================================================
-# Print run header
-# ============================================================================
-
-echo ""
-echo "========================================"
-echo " AgentSessionManager Examples"
-echo "========================================"
-echo ""
-echo "  Mode:      $MODE"
-echo "  Providers: ${PROVIDERS[*]}"
-echo "  Examples:  $TOTAL"
-echo ""
-echo "  Tip: Use --provider <name> to run a single provider."
-echo "        e.g. ./examples/run_all.sh --provider amp"
-echo ""
-echo "  Plan:"
-for (( i=0; i<TOTAL; i++ )); do
-  printf "    %2d. %s\n" $((i + 1)) "${PLAN_NAMES[$i]}"
-done
-echo ""
-echo "========================================"
-echo ""
-
-# ============================================================================
-# Execute
-# ============================================================================
-
-PASS=0
-FAIL=0
-
-run_example() {
-  local name="$1"
-  local file="$2"
-  shift 2
-
-  echo "--- $name ---"
-  if mix run "$file" "$@"; then
-    echo ""
-    echo "  PASS: $name"
-    PASS=$((PASS + 1))
-  else
-    echo ""
-    echo "  FAIL: $name"
-    FAIL=$((FAIL + 1))
+for provider in "${selected_providers[@]}"; do
+  if [[ $ollama_requested -eq 1 ]]; then
+    case "$provider" in
+      claude|codex)
+        ;;
+      *)
+        echo "provider $provider does not support the ASM common Ollama surface; --ollama* flags are only valid for claude and codex" >&2
+        exit 1
+        ;;
+    esac
   fi
-  echo ""
-}
 
-for (( i=0; i<TOTAL; i++ )); do
-  # shellcheck disable=SC2086
-  run_example "${PLAN_NAMES[$i]}" "${PLAN_FILES[$i]}" ${PLAN_ARGS[$i]}
+  for example in "${EXAMPLES[@]}"; do
+    echo
+    echo "== ${example} provider=${provider} =="
+    mix run --no-start "examples/${example}" -- --provider "$provider" "${forward_args[@]}"
+  done
+
+  specific_example="${PROVIDER_SPECIFIC_EXAMPLE[$provider]}"
+
+  if [[ -n "${specific_example:-}" ]]; then
+    echo
+    echo "== ${specific_example} provider=${provider} =="
+    mix run --no-start "examples/${specific_example}" -- --provider "$provider" "${forward_args[@]}"
+  fi
 done
-
-# ============================================================================
-# Summary
-# ============================================================================
-
-echo "========================================"
-echo " Results: $PASS passed, $FAIL failed (of $TOTAL)"
-echo "========================================"
-
-if [ "$FAIL" -gt 0 ]; then
-  exit 1
-fi

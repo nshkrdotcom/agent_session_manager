@@ -1,593 +1,205 @@
 # Examples
 
-This directory contains runnable examples for AgentSessionManager.
+These examples cover two surfaces:
 
-All examples use real modules and real provider adapters (no mocks/fakes/stubs).
+- three provider-agnostic live examples on ASM's common API
+- one offline inference-endpoint publication proof
+- four provider-specific examples that intentionally cross into one provider's
+  SDK-native surface
 
-## Cursor Event Streaming Examples
+Nothing runs by default. The live CLI examples require `--provider`.
 
-These examples demonstrate Feature 1 using live provider execution plus durable store cursors.
+## Included Examples
 
-### `cursor_pagination.exs` -- Cursor Pagination (Live Provider)
+- `live_query.exs`: one-off `ASM.query/3`
+- `live_stream.exs`: `ASM.start_session/1`, `ASM.stream/3`,
+  `ASM.Stream.final_result/1`, `ASM.stop_session/1`
+- `live_session_lifecycle.exs`: `ASM.start_session/1`, `ASM.session_info/1`,
+  `ASM.health/1`, `ASM.stream/3`, `ASM.query/3`, `ASM.cost/1`,
+  `ASM.stop_session/1`
+- `inference_endpoint_http.exs`: offline `ASM.InferenceEndpoint.ensure_endpoint/3`
+  publication, OpenAI-compatible HTTP completion/streaming call, and lease
+  release
+- `provider_amp_sdk_stream.exs`: direct `AmpSdk.execute/2`
+- `provider_claude_control_client.exs`: `ASM.Extensions.ProviderSDK.Claude`
+  control-client bridge
+- `provider_codex_app_server.exs`: `ASM.Extensions.ProviderSDK.Codex`
+  app-server bridge
+- `provider_gemini_session_resume.exs`: direct `GeminiCliSdk.execute/2` and
+  `GeminiCliSdk.resume_session/3`
+- `run_all.sh`: runs the full example set for one or more selected providers
 
-- Runs real provider executions via `SessionManager`
-- Reads persisted events with `SessionStore.get_events/3` using `after`, `before`, `limit`
-- Verifies monotonic sequence assignment from `append_event_with_sequence/2`
-- Reads `get_latest_sequence/2`
+## Default Behavior
 
-```bash
-mix run examples/cursor_pagination.exs --provider claude
-mix run examples/cursor_pagination.exs --provider codex
-mix run examples/cursor_pagination.exs --provider amp
-```
+If you omit `--provider`, the live CLI examples print usage and exit without
+touching a live CLI.
 
-### `cursor_follow_stream.exs` -- Cursor Follow Stream (Live Provider)
+That is deliberate. The live examples never silently pick a provider for you.
 
-- Captures a starting cursor with `get_latest_sequence/2`
-- Starts `SessionManager.stream_session_events/3` from `after: cursor`
-- Executes a real run and streams newly persisted events
-- Verifies streamed event sequence numbers are monotonic and after the cursor
+`inference_endpoint_http.exs` is the exception. It defaults to the Gemini
+provider profile and runs against a local fake backend so the publication seam
+stays deterministic and offline.
 
-```bash
-mix run examples/cursor_follow_stream.exs --provider claude
-mix run examples/cursor_follow_stream.exs --provider codex
-mix run examples/cursor_follow_stream.exs --provider amp
-```
+## Permission Defaults
 
-### `cursor_wait_follow.exs` -- Cursor Wait Follow (Long-Poll, Live Provider)
+All ASM examples in this directory default to `permission_mode: :bypass` unless
+you override it with `--permission-mode` or `ASM_PERMISSION_MODE`.
 
-- Demonstrates `wait_timeout_ms` long-poll mode (Phase 2 Feature 1)
-- Uses `SessionManager.stream_session_events/3` with `wait_timeout_ms: 30_000`
-- The store blocks until matching events arrive instead of busy polling
-- Prints adapter event metadata including `provider` name and timestamps
-- Shows cursor resumption from the last received sequence number
+`--danger-full-access` is the example-level alias for `--permission-mode bypass`.
+It keeps the public ASM contract normalized as `permission_mode` while exposing
+an obvious remote-tooling knob for hosts where provider-native sandboxed shell
+execution is not usable.
 
-```bash
-mix run examples/cursor_wait_follow.exs --provider claude
-mix run examples/cursor_wait_follow.exs --provider codex
-mix run examples/cursor_wait_follow.exs --provider amp
-```
+At startup, each example prints:
 
-## Session Continuity and Workspace Examples
+- the normalized ASM permission mode
+- the provider-native permission term
+- the provider-native CLI flag, when one exists
 
-These examples demonstrate Feature 2 and Feature 3 using live provider execution.
+Examples:
 
-### `session_continuity.exs` -- Session Continuity (Feature 2)
+- Claude: `:bypass` -> `:bypass_permissions` -> `--permission-mode bypassPermissions`
+- Gemini: `:bypass` -> `:yolo` -> `--yolo`
+- Codex: `:bypass` -> `:yolo` -> `--dangerously-bypass-approvals-and-sandbox`
+- Amp: `:bypass` -> `:dangerously_allow_all` -> `--dangerously-allow-all`
 
-- Runs two sequential turns in a single session
-- Executes turn 2 with `continuation: :auto` (Phase 2 mode)
-- Uses token-aware truncation via `max_tokens_approx: 4_000`
-- Reconstructs and prints transcript context from persisted events
+## Common Ollama Surface
 
-```bash
-mix run examples/session_continuity.exs --provider claude
-mix run examples/session_continuity.exs --provider codex
-mix run examples/session_continuity.exs --provider amp
-```
+The ASM common Ollama flags are available on the example CLI:
 
-## Workflow Bridge Examples
+- `--ollama`
+- `--ollama-model <name>`
+- `--ollama-base-url <url>`
+- `--ollama-http`
+- `--ollama-timeout-ms <ms>`
 
-### `workflow_bridge.exs` -- Workflow DAG Integration Bridge
+That surface is intentionally partial.
 
-- Demonstrates `WorkflowBridge.step_execute/3` for one-shot and multi-run modes
-- Shows `setup_workflow_session/3` and `complete_workflow_session/3` lifecycle
-- Exercises transcript continuity across workflow steps
-- Demonstrates `classify_error/1` for retry/failover routing decisions
+Supported:
 
-```bash
-mix run examples/workflow_bridge.exs --provider claude
-mix run examples/workflow_bridge.exs --provider codex
-mix run examples/workflow_bridge.exs --provider amp
-```
+- Claude
+- Codex
 
-### `workspace_snapshot.exs` -- Workspace Snapshot + Diff + Rollback (Feature 3)
+Unsupported:
 
-- Creates a temporary git workspace and enables workspace instrumentation
-- Demonstrates untracked file capture (Phase 2: git snapshots include untracked files)
-- Prints emitted workspace events (`:workspace_snapshot_taken`, `:workspace_diff_computed`)
-- Prints compact diff summary, patch presence, and `includes_untracked` metadata
-- Demonstrates git rollback-on-failure behavior (`rollback_on_failure: true`)
+- Gemini
+- Amp
 
-```bash
-mix run examples/workspace_snapshot.exs --provider claude
-mix run examples/workspace_snapshot.exs --provider codex
-mix run examples/workspace_snapshot.exs --provider amp
-```
+`run_all.sh` rejects `--ollama*` flags immediately for unsupported providers.
 
-## Routing and Policy Examples
+Provider semantics differ slightly:
 
-These examples demonstrate Feature 4 and Feature 5 using live provider execution.
+- Claude keeps the canonical Claude model slot. Use `--model` for the Claude
+  family name such as `haiku`, and `--ollama-model` for the actual Ollama
+  model id.
+- Codex uses the direct Ollama model id. `--ollama-model` is the effective
+  model selection knob for the common Ollama surface.
 
-### `provider_routing.exs` -- Provider Routing (Feature 4)
+For Codex, `gpt-oss:20b` remains the default validated Ollama example model,
+but the common surface also accepts other installed Ollama models such as
+`llama3.2`. Those non-default models may run with upstream fallback metadata
+and can behave less reliably under the full Codex agent prompt/tool stack.
+The common prompt-based smoke examples only enforce exact sentinel assertions
+for validated-default Codex/Ollama targets, so non-default Codex/Ollama models
+remain accepted routes but are reported as exploratory rather than guaranteed
+smoke-test targets.
 
-- Configures `ProviderRouter` as a normal `ProviderAdapter`
-- Demonstrates capability-driven selection using named capability requirements
-- Demonstrates retryable failover by forcing preferred-provider unavailability
-- Prints routing metadata (`routed_provider`, `routing_attempt`, `failover_from`, `failover_reason`)
-
-```bash
-mix run examples/provider_routing.exs --provider claude
-mix run examples/provider_routing.exs --provider codex
-mix run examples/provider_routing.exs --provider amp
-```
-
-### `policy_enforcement.exs` -- Policy Enforcement (Feature 5)
-
-- Runs two executions with real providers:
-  - cancel mode (`on_violation: :cancel`)
-  - warn mode (`on_violation: :warn`)
-- Emits and verifies `:policy_violation` events
-- Demonstrates final result semantics (cancel returns policy error, warn preserves success with metadata)
+## Run One Example
 
 ```bash
-mix run examples/policy_enforcement.exs --provider claude
-mix run examples/policy_enforcement.exs --provider codex
-mix run examples/policy_enforcement.exs --provider amp
+mix run --no-start examples/live_query.exs -- --provider claude
+mix run --no-start examples/live_stream.exs -- --provider gemini
+mix run --no-start examples/live_session_lifecycle.exs -- --provider codex --model gpt-5.4
+mix run --no-start examples/inference_endpoint_http.exs -- --provider gemini --stream
+mix run --no-start examples/live_query.exs -- --provider claude --ollama --model haiku --ollama-model llama3.2
+mix run --no-start examples/live_query.exs -- --provider codex --ollama --ollama-model gpt-oss:20b
+mix run --no-start examples/live_query.exs -- --provider amp --lane sdk --sdk-root ../amp_sdk
+mix run --no-start examples/live_query.exs -- --provider codex --ssh-host example.internal
+mix run --no-start examples/live_query.exs -- --provider codex --ssh-host example.internal --danger-full-access
+mix run --no-start examples/live_query.exs -- --provider claude --ssh-host builder@example.internal --ssh-port 2222
+mix run --no-start examples/provider_codex_app_server.exs -- --provider codex --ollama --ollama-model gpt-oss:20b
 ```
 
-## Routing and Policy v2 Examples
-
-These examples demonstrate Phase 2 enhancements to Feature 4 and Feature 5.
-
-### `routing_v2.exs` -- Provider Routing v2 (Phase 2)
-
-- Demonstrates weighted routing with `strategy: :weighted` and custom `weights` map
-- Demonstrates session stickiness across two runs using `sticky_session_id`
-- Prints routing metadata (`routed_provider`, `routing_candidates`)
-
-```bash
-mix run examples/routing_v2.exs --provider claude
-mix run examples/routing_v2.exs --provider codex
-mix run examples/routing_v2.exs --provider amp
-```
-
-### `policy_v2.exs` -- Policy Enforcement v2 (Phase 2)
-
-- Demonstrates policy stacking via `policies: [org_policy, team_policy]` with deterministic merge
-- Demonstrates provider-side enforcement where supported, with reactive fallback
-- Shows merged policy semantics: tool rules concatenated, strictest `on_violation` wins
-
-```bash
-mix run examples/policy_v2.exs --provider claude
-mix run examples/policy_v2.exs --provider codex
-mix run examples/policy_v2.exs --provider amp
-```
-
-### `approval_gates.exs` -- Approval Gates / Human-in-the-Loop (Section 4.5)
-
-- Demonstrates `on_violation: :request_approval` policy action
-- Shows `:tool_approval_requested` event emission (does NOT cancel the run)
-- Demonstrates `cancel_for_approval/4` helper for the cancel-and-resume pattern
-- Shows policy stacking with the new strictness ordering: `:cancel` > `:request_approval` > `:warn`
-
-```bash
-mix run examples/approval_gates.exs --provider claude
-mix run examples/approval_gates.exs --provider codex
-mix run examples/approval_gates.exs --provider amp
-```
-
-## Cost Tracking Example
-
-### `cost_tracking.exs` -- Cost Tracking / USD Calculation
-
-- Configures a pricing table with per-model rates
-- Runs a real provider session and displays token usage with USD cost
-- Demonstrates `CostCalculator` model resolution (exact, prefix, provider default)
-- Shows cost in run results and policy budget metadata
-
-```bash
-mix run examples/cost_tracking.exs --provider claude
-mix run examples/cost_tracking.exs --provider codex
-mix run examples/cost_tracking.exs --provider amp
-```
-
-## Session Server Runtime Examples
-
-These examples demonstrate Feature 6 using live provider execution.
-
-### `session_runtime.exs` -- Session Runtime (Feature 6)
-
-- Starts a `SessionServer` per session
-- Submits multiple runs quickly
-- Awaits results to demonstrate strict sequential FIFO execution (MVP)
-
-```bash
-mix run examples/session_runtime.exs --provider claude
-mix run examples/session_runtime.exs --provider codex
-mix run examples/session_runtime.exs --provider amp
-```
-
-### `interactive_interrupt.exs` -- Interrupt and Continue in Same Session
-
-Demonstrates the interrupt-and-continue pattern:
-
-- Starts a long-running response in a session
-- Cancels the run mid-stream after a configurable delay
-- Sends a follow-up prompt in the **same session** with `continuation: :replay`
-- Streams the follow-up response to completion
-- Shows event counts and types for both runs
-
-```bash
-mix run examples/interactive_interrupt.exs --provider claude
-mix run examples/interactive_interrupt.exs --provider claude --delay 2000
-mix run examples/interactive_interrupt.exs --provider codex
-mix run examples/interactive_interrupt.exs --provider amp
-```
-
-### `session_subscription.exs` -- Session Subscriptions (Feature 6)
-
-- Subscribes to stored events via `SessionServer.subscribe/2`
-- Prints `{:session_event, session_id, %Core.Event{}}` messages as runs execute
-- Uses `type:` filtering to keep output readable
-
-```bash
-mix run examples/session_subscription.exs --provider claude
-mix run examples/session_subscription.exs --provider codex
-mix run examples/session_subscription.exs --provider amp
-```
-
-### `session_limiter.exs` -- Session Limiter Integration (Feature 6)
-
-- Starts a real `ConcurrencyLimiter`
-- Configures `SessionServer` with `limiter:`
-- Prints limiter status near run start and after completion (acquire/release)
-
-```bash
-mix run examples/session_limiter.exs --provider claude
-mix run examples/session_limiter.exs --provider codex
-mix run examples/session_limiter.exs --provider amp
-```
-
-### `session_concurrency.exs` -- Multi-Slot Concurrency (Feature 6 v2)
-
-- Starts a `SessionServer` with `max_concurrent_runs: 2`
-- Submits 4 runs and shows that up to 2 execute in parallel
-- Remaining runs are queued and drained as slots free up
-- Demonstrates `drain/2` waiting for all runs to complete
-- Prints status showing in-flight and queued counts
-
-```bash
-mix run examples/session_concurrency.exs --provider claude
-mix run examples/session_concurrency.exs --provider codex
-mix run examples/session_concurrency.exs --provider amp
-```
-
-## Permission Mode Example
-
-### `permission_mode.exs` -- Normalized Permission Modes
-
-- Starts an adapter with a configurable `permission_mode`
-- Demonstrates the normalized mode being passed through to the provider SDK
-- Supports all five modes: `:default`, `:accept_edits`, `:plan`, `:full_auto`, `:dangerously_skip_permissions`
-- Each provider maps the mode to its native semantics (Claude `permission_mode`, Codex `full_auto`/`dangerously_bypass`, Amp `dangerously_allow_all`)
-
-```bash
-mix run examples/permission_mode.exs --provider claude
-mix run examples/permission_mode.exs --provider codex
-mix run examples/permission_mode.exs --provider amp
-
-# With a specific mode:
-mix run examples/permission_mode.exs --provider claude --mode dangerously_skip_permissions
-```
-
-## StreamSession Example
-
-### `stream_session.exs` -- StreamSession One-Shot Lifecycle (Live Provider)
-
-- Demonstrates `StreamSession.start/1` replacing ~35 lines of hand-rolled stream boilerplate with a single call
-- Exercises two output modes:
-  - **rendering**: pipes the event stream through CompactRenderer + TTYSink
-  - **raw**: consumes events directly, prints streaming text and event summary
-- StreamSession automatically manages store creation, adapter lifecycle, task launch, and cleanup
-- Shows the idempotent `close_fun` for resource release
-
-```bash
-mix run examples/stream_session.exs --provider claude
-mix run examples/stream_session.exs --provider codex --mode raw
-mix run examples/stream_session.exs --provider amp --no-color
-```
-
-## Rendering Pipeline Examples
-
-These examples demonstrate the Rendering system (Renderer x Sink architecture) using live provider execution.
-
-### `rendering_compact.exs` -- CompactRenderer (Live Provider)
-
-- Runs a real provider session and renders the event stream using CompactRenderer
-- Demonstrates compact token format: `r+` (run start), `r-` (run end), `t+`/`t-` (tool), `>>` (text stream), `tk:` (usage)
-- Supports `--no-color` flag to disable ANSI coloring
-- Uses TTYSink for terminal output
-
-```bash
-mix run examples/rendering_compact.exs --provider claude
-mix run examples/rendering_compact.exs --provider codex --no-color
-mix run examples/rendering_compact.exs --provider amp
-```
-
-### `rendering_verbose.exs` -- VerboseRenderer (Live Provider)
-
-- Runs a real provider session and renders using VerboseRenderer
-- Demonstrates bracketed line-by-line format: `[run_started]`, `[tool_call_started]`, etc.
-- Shows inline text streaming with automatic line breaks before structured events
-- Uses TTYSink for terminal output
-
-```bash
-mix run examples/rendering_verbose.exs --provider claude
-mix run examples/rendering_verbose.exs --provider codex
-mix run examples/rendering_verbose.exs --provider amp
-```
-
-### `rendering_studio.exs` -- StudioRenderer (Live Provider)
-
-- Runs a real provider session and renders using StudioRenderer
-- Demonstrates CLI-grade display with tool status symbols and human-readable summaries
-- Supports tool output verbosity via `--tool-output summary|preview|full`
-- Uses TTYSink for terminal output
-
-```bash
-mix run examples/rendering_studio.exs --provider claude
-mix run examples/rendering_studio.exs --provider codex --tool-output preview
-mix run examples/rendering_studio.exs --provider amp --tool-output full
-```
-
-### `rendering_multi_sink.exs` -- Multi-Sink Pipeline (Live Provider)
-
-- Runs a real provider session through all four sink types simultaneously
-- **TTYSink**: colored terminal output
-- **FileSink**: ANSI-stripped plain-text log file (uses `:io` option for pre-opened file with header)
-- **JSONLSink**: both full and compact modes side-by-side in separate files
-- **CallbackSink**: programmatic event counting
-- Prints log file contents and first few JSONL lines after completion
-- Supports `--mode compact|verbose` flag
-
-```bash
-mix run examples/rendering_multi_sink.exs --provider claude
-mix run examples/rendering_multi_sink.exs --provider codex --mode verbose
-mix run examples/rendering_multi_sink.exs --provider amp
-```
-
-### `rendering_callback.exs` -- PassthroughRenderer + CallbackSink (Live Provider)
-
-- Runs a real provider session with PassthroughRenderer (no terminal rendering)
-- All events processed programmatically via CallbackSink
-- Aggregates event statistics: total events, text bytes, tools used, model, stop reason
-- Captures full response text and prints it after completion
-- Demonstrates using the rendering pipeline as a programmable event processor
-
-```bash
-mix run examples/rendering_callback.exs --provider claude
-mix run examples/rendering_callback.exs --provider codex
-mix run examples/rendering_callback.exs --provider amp
-```
-
-## PubSub Integration Example
-
-### `pubsub_sink.exs` -- PubSubSink + Event Callback Bridge (Live Provider)
-
-- Starts a local Phoenix.PubSub server
-- Demonstrates two PubSub integration paths:
-  - **Path 1**: PubSubSink in the rendering pipeline (broadcasts events from stream)
-  - **Path 2**: `PubSub.event_callback` bridge (broadcasts events from SessionManager callback)
-- Subscribes to session-scoped topics and shows events arriving via PubSub
-- Uses canonical topic naming (`asm:session:{session_id}`)
-
-```bash
-mix run examples/pubsub_sink.exs --provider claude
-mix run examples/pubsub_sink.exs --provider codex
-mix run examples/pubsub_sink.exs --provider amp
-```
-
-## Other Live Provider Examples
-
-### `oneshot.exs` -- One-Shot Execution
-
-```bash
-mix run examples/oneshot.exs --provider claude
-mix run examples/oneshot.exs --provider codex
-mix run examples/oneshot.exs --provider amp
-```
-
-### `live_session.exs` -- Full Lifecycle
-
-```bash
-mix run examples/live_session.exs --provider claude
-mix run examples/live_session.exs --provider codex
-mix run examples/live_session.exs --provider amp
-```
-
-### `common_surface.exs` -- Provider-Agnostic Session Flow
-
-```bash
-mix run examples/common_surface.exs --provider claude
-mix run examples/common_surface.exs --provider codex
-mix run examples/common_surface.exs --provider amp
-```
-
-### `contract_surface_live.exs` -- Runtime Contract Checks
-
-```bash
-mix run examples/contract_surface_live.exs --provider claude
-mix run examples/contract_surface_live.exs --provider codex
-mix run examples/contract_surface_live.exs --provider amp
-```
-
-### Provider-Specific SDK Examples
-
-```bash
-mix run examples/claude_direct.exs
-mix run examples/codex_direct.exs
-mix run examples/amp_direct.exs
-```
-
-## Persistence Adapter Examples
-
-These examples demonstrate the persistence adapters. They run locally without external services.
-
-### `sqlite_session_store_live.exs` -- SQLite via Ecto SessionStore
-
-- Creates a SQLite database, migrates schema, and saves sessions/events
-- Demonstrates atomic sequence assignment and cursor queries
-- Shows data survives store restart
-
-```bash
-mix run examples/sqlite_session_store_live.exs
-```
-
-### `ecto_session_store_live.exs` -- Ecto SessionStore
-
-- Uses an Ecto Repo backed by SQLite
-- Demonstrates all session, run, and event operations
-- Shows the same SessionStore contract works with Ecto
-
-```bash
-mix run examples/ecto_session_store_live.exs
-```
-
-### `s3_artifact_store_live.exs` -- S3 ArtifactStore
-
-- Uses an in-memory mock S3 client (no AWS credentials needed)
-- Demonstrates put/get/delete lifecycle
-- Shows not-found handling and idempotent deletes
-
-```bash
-mix run examples/s3_artifact_store_live.exs
-```
-
-### `composite_store_live.exs` -- CompositeSessionStore
-
-- Combines Ecto/SQLite (sessions) with FileArtifactStore (artifacts)
-- Shows session and artifact operations through a single composite store
-- Demonstrates the unified interface
-
-```bash
-mix run examples/composite_store_live.exs
-```
-
-### `ash_session_store.exs` -- Ash Framework SessionStore
-
-- Uses Ash resources backed by AshPostgres for persistence
-- Demonstrates AshSessionStore, AshQueryAPI, and AshMaintenance adapters
-- Shows the same SessionStore contract working with Ash
-- Requires PostgreSQL (not SQLite)
-
-```bash
-# First create the database:
-createdb asm_ash_example
-
-mix run examples/ash_session_store.exs
-```
-
-## Persistence Query, Maintenance, and Multi-Run Examples
-
-These examples demonstrate the persistence query, maintenance, and multi-provider capabilities.
-They run locally with SQLite (no external services needed).
-
-### `persistence_query.exs` -- QueryAPI Demo
-
-- Seeds sessions with multiple providers (Claude, Codex, Amp)
-- Demonstrates cross-session search, filtering by agent, status, and provider
-- Shows usage summaries, session stats, event search, and export
-- Demonstrates cursor-based pagination
-
-```bash
-mix run examples/persistence_query.exs
-```
-
-### `persistence_maintenance.exs` -- Retention and Maintenance
-
-- Creates sessions with varied ages and statuses
-- Executes configurable retention policy (soft-delete, event pruning)
-- Demonstrates health check for data integrity
-- Shows hard-delete of expired sessions
-
-```bash
-mix run examples/persistence_maintenance.exs
-```
-
-### `persistence_multi_run.exs` -- Multi-Provider Session
-
-- Creates a single session with runs from 3 different providers
-- Demonstrates cross-provider QueryAPI aggregation and usage breakdown
-- Shows per-provider event grouping and sequence integrity
-
-```bash
-mix run examples/persistence_multi_run.exs
-```
-
-### `persistence_live.exs` -- Live Provider + Persistence
-
-- Runs a real provider SDK with EctoSessionStore persistence
-- Events flow through EventPipeline into SQLite
-- Verifies persisted sessions, runs, events, and sequence integrity
-
-```bash
-mix run examples/persistence_live.exs --provider claude
-mix run examples/persistence_live.exs --provider codex
-mix run examples/persistence_live.exs --provider amp
-```
-
-### `persistence_s3_minio.exs` -- S3 Artifacts with MinIO
-
-- Uses S3ArtifactStore with a real MinIO instance (Docker)
-- Demonstrates put/get/delete with real S3-compatible storage
-- Requires Docker: see example header for setup instructions
-
-```bash
-docker run -d --name minio \
-  -p 9000:9000 -p 9001:9001 \
-  -e MINIO_ROOT_USER=minioadmin \
-  -e MINIO_ROOT_PASSWORD=minioadmin \
-  minio/minio server /data --console-address ":9001"
-
-MINIO_ROOT_USER=minioadmin MINIO_ROOT_PASSWORD=minioadmin \
-  mix run examples/persistence_s3_minio.exs
-```
-
-## Shell Execution Examples
-
-These examples demonstrate the Shell Runner feature (ShellAdapter + Workspace.Exec)
-in a real mixed workflow with a real provider CLI adapter.
-
-### `shell_exec.exs` -- Shell Command Execution
-
-- Demonstrates mixed execution with a real provider adapter (`claude`, `codex`, or `amp`)
-- Demonstrates ShellAdapter as a ProviderAdapter for shell commands
-- Shows simple string commands, structured map input, and non-zero exit codes
-- Demonstrates direct Workspace.Exec usage without SessionManager overhead
-
-```bash
-mix run examples/shell_exec.exs --provider claude
-mix run examples/shell_exec.exs --provider codex
-mix run examples/shell_exec.exs --provider amp
-```
-
-## Secrets Redaction Example
-
-### `secrets_redaction.exs` -- EventRedactor Demo
-
-- Demonstrates the `EventRedactor` module for secret pattern detection and redaction
-- Shows categorized replacement (`[REDACTED:aws_access_key]`) through the EventBuilder pipeline
-- Demonstrates the public `redact_map/2` API for wrapping user callbacks
-- Shows custom pattern support (append and replace modes)
-
-```bash
-mix run examples/secrets_redaction.exs
-```
+Shared flags:
+
+- `--lane <core|auto|sdk>` for common-surface examples
+- `--prompt <text>`
+- `--model <name>`
+- `--stream` for `inference_endpoint_http.exs`
+- `--cli-path <path|command>`
+- `--permission-mode <mode>`
+- `--danger-full-access`
+- `--cwd <path>`
+- `--sdk-root <path>`
+- `--ssh-host <host>`
+- `--ssh-user <user>`
+- `--ssh-port <port>`
+- `--ssh-identity-file <path>`
+
+When you pass `--ssh-host`, the examples also add noninteractive SSH transport
+defaults (`BatchMode=yes`, `ConnectTimeout=10`) so unattended runs fail fast
+instead of blocking on password or connection prompts.
 
 ## Run All Examples
 
 ```bash
-# Default: all examples across all providers (claude, codex, amp)
-bash examples/run_all.sh
-
-# Single provider
-bash examples/run_all.sh --provider codex
+./examples/run_all.sh --provider claude
+./examples/run_all.sh --provider codex --model gpt-5.4
+./examples/run_all.sh --provider claude --ollama --model haiku --ollama-model llama3.2
+./examples/run_all.sh --provider codex --ollama --ollama-model gpt-oss:20b
+./examples/run_all.sh --provider claude --provider codex --ollama --ollama-model llama3.2
+./examples/run_all.sh --provider amp --lane sdk --sdk-root ../amp_sdk
+./examples/run_all.sh --provider codex --ssh-host example.internal
+./examples/run_all.sh --provider codex --ssh-host example.internal --danger-full-access
+./examples/run_all.sh --provider claude --provider codex --ssh-host builder@example.internal --ssh-port 2222
 ```
 
-Use `bash examples/run_all.sh --help` for all options.
+`run_all.sh` forwards extra flags to every selected example.
 
-## Provider Authentication
+When you pass `--ssh-host`, the examples switch to `execution_surface: :ssh_exec`
+for the selected provider while keeping the default local subprocess route
+unchanged when you omit the SSH flags.
 
-- Claude: `claude login` or set `ANTHROPIC_API_KEY`
-- Codex: `codex login` or set `CODEX_API_KEY`
-- Amp: `amp login` or set `AMP_API_KEY`
+When you also pass `--danger-full-access`, the examples keep the same transport
+surface and switch only the normalized ASM permission mode to `:bypass`. ASM
+then projects the provider-native permissive runtime flag for the selected
+provider.
+
+If `gpt-oss:20b` is installed locally in Ollama, the Codex examples above are
+the primary validated route. You can still substitute another installed model
+such as `llama3.2`, but that path is less tightly validated by the example
+smoke checks and now skips exact-output assertions on the Codex side by
+default.
+
+The three common examples are self-checking:
+
+- `live_query.exs` must return exactly `LIVE_QUERY_OK`
+- `live_stream.exs` must return exactly `LIVE_STREAM_OK`
+- `live_session_lifecycle.exs` must return exactly
+  `LIVE_SESSION_STREAM_OK` and `LIVE_SESSION_QUERY_OK`
+
+Provider-native examples validate their own provider-specific success
+conditions as well.
+
+## Environment
+
+- `CLAUDE_CLI_PATH`, `ASM_CLAUDE_MODEL`
+- `GEMINI_CLI_PATH`, `ASM_GEMINI_MODEL`
+- `CODEX_PATH`, `ASM_CODEX_MODEL`
+- `AMP_CLI_PATH`, `ASM_AMP_MODEL`
+- `ASM_PERMISSION_MODE`
+- `CLAUDE_AGENT_SDK_ROOT`, `CODEX_SDK_ROOT`, `GEMINI_CLI_SDK_ROOT`,
+  `AMP_SDK_ROOT`
+
+The examples preflight the selected CLI before they start a session and print an
+install hint if it is missing.
+## Recovery-Oriented Examples
+
+The standard example runner already includes the session-focused paths relevant to the emergency
+hardening work:
+
+- `examples/live_session_lifecycle.exs`
+- `examples/provider_gemini_session_resume.exs`
+
+Those examples exercise the same provider-session history and resume seams now exposed through
+`ASM.SessionControl`.

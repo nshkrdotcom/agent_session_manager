@@ -1,0 +1,10 @@
+{
+  "type": "assistant",
+  "model": "claude-sonnet-4",
+  "content": [
+    {
+      "type": "text",
+      "text": "Hello from Claude."
+    }
+  ]
+}

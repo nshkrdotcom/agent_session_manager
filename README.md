@@ -4,6 +4,18 @@
 
 # ASM (Agent Session Manager)
 
+<p align="center">
+  <a href="https://hex.pm/packages/agent_session_manager">
+    <img src="https://img.shields.io/hexpm/v/agent_session_manager.svg" alt="Hex" />
+  </a>
+  <a href="https://hexdocs.pm/agent_session_manager">
+    <img src="https://img.shields.io/badge/hexdocs-docs-blue.svg" alt="HexDocs" />
+  </a>
+  <a href="https://github.com/nshkrdotcom/agent_session_manager">
+    <img src="https://img.shields.io/badge/github-nshkrdotcom%2Fagent__session__manager-24292e.svg" alt="GitHub" />
+  </a>
+</p>
+
 `ASM` is an OTP-native Elixir runtime for running multi-turn AI sessions across multiple CLI providers with one API.
 
 Supported providers:
@@ -37,7 +49,7 @@ Supported providers:
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.10.1"}
+    {:agent_session_manager, "~> 0.9.0"}
   ]
 end
 ```
@@ -54,14 +66,14 @@ Optional provider SDK dependencies stay additive. Add one only when you want
 that provider's SDK lane/runtime kit or, where it exists today, its ASM
 provider-native namespace:
 
-- `{:claude_agent_sdk, "~> 0.16.0", optional: true}` for Claude control-protocol
+- `{:claude_agent_sdk, "~> 0.17.0", optional: true}` for Claude control-protocol
   helpers and `ASM.Extensions.ProviderSDK.Claude`
-- `{:codex_sdk, "~> 0.15.0", optional: true}` for Codex app-server, MCP,
+- `{:codex_sdk, "~> 0.16.0", optional: true}` for Codex app-server, MCP,
   realtime, voice helpers, and `ASM.Extensions.ProviderSDK.Codex`
-- `{:gemini_cli_sdk, "~> 0.1.0", optional: true}` for Gemini SDK lane/runtime-kit
+- `{:gemini_cli_sdk, "~> 0.2.0", optional: true}` for Gemini SDK lane/runtime-kit
   availability only; ASM does not expose a separate Gemini native extension
   namespace today
-- `{:amp_sdk, "~> 0.4.0", optional: true}` for Amp SDK lane/runtime-kit
+- `{:amp_sdk, "~> 0.5.0", optional: true}` for Amp SDK lane/runtime-kit
   availability only; ASM does not expose a separate Amp native extension
   namespace today
 

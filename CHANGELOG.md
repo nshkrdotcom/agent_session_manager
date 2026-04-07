@@ -7,47 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- README, guides, and lineage references now describe the final Phase 4
-  packaging model explicitly: `cli_subprocess_core` is the only required common
-  dependency, provider SDKs stay optional, and release publication order remains
-  core, provider SDKs, then ASM.
-
-### Fixed
-
-- Dialyzer now stores its core and project PLTs inside `priv/plts`, so the
-  release verification floor no longer depends on a writable global Mix home.
-
-## [0.10.0] - 2026-03-23
+## [0.9.0] - 2026-04-06
 
 ### Added
 
-- Provider-native extension foundation under `ASM.Extensions.ProviderSDK`
-  - New explicit optional namespaces: `ASM.Extensions.ProviderSDK.Claude` and
-    `ASM.Extensions.ProviderSDK.Codex`
-  - New discovery/capability reporting API that keeps provider-native metadata
-    out of `ASM.ProviderRegistry`
-  - Documentation for the normalized-kernel versus provider-extension split
-- Remote-node execution mode for stream/query runs via `execution_mode: :remote_node`
-  - New execution config normalization: `ASM.Execution.Config`
-  - New remote runtime modules: `ASM.Stream.NodeDriver`, `ASM.Remote.NodeConnector`,
-    `ASM.Remote.TransportStarter`, `ASM.Remote.TransportSupervisor`, `ASM.Remote.Capabilities`
-  - Remote telemetry events under `[:asm, :remote, ...]`
-  - Distributed integration coverage with real `:peer` nodes (`@tag :distributed`)
-- Startup lease timeout support in `ASM.Transport.Port` (`startup_lease_timeout_ms`) to prevent orphaned transports when startup/attach paths fail
-- Timeout-aware transport control call variants in `ASM.Transport` and run-level timeout wiring via `transport_call_timeout_ms`
+- A rebuilt `ASM` runtime centered on OTP-native session/run orchestration for
+  Claude, Codex, Gemini, and Amp with one normalized query/stream API.
+- Transport-neutral execution surfaces for local subprocess, SSH, and
+  remote-node backed runs, including shared session-control recovery
+  orchestration.
+- Provider backend lanes that split common `cli_subprocess_core` execution from
+  optional SDK-backed execution, with backend-aware model payload resolution and
+  normalized provider registry metadata.
+- Optional provider-SDK discovery and bridge surfaces for Claude and Codex,
+  while keeping Gemini and Amp honest as common-surface providers unless their
+  SDK lane is explicitly available.
+- `ASM.InferenceEndpoint` for publishing the landed CLI provider set as
+  completion/streaming endpoint-shaped targets.
+- A new docs/example/test set focused on lane selection, provider backends,
+  remote execution, live adapter proofs, and endpoint publication.
 
 ### Changed
 
-- Published dependency cutover is now frozen to `cli_subprocess_core ~> 0.1.0`
-  plus optional `claude_agent_sdk ~> 0.16.0`, `codex_sdk ~> 0.15.0`,
-  `gemini_cli_sdk ~> 0.1.0`, and `amp_sdk ~> 0.4.0`.
+- Breaking change: the package was substantially reshaped around the `ASM`
+  namespace and a normalized orchestration kernel instead of the much broader
+  `AgentSessionManager` architecture shipped in `v0.8.0`.
+- The public package story now centers on `ASM.start_link/1`, `ASM.query/3`,
+  `ASM.stream/3`, provider backend lanes, and run/session-scoped `%ASM.Event{}`
+  envelopes rather than provider-local transport ownership.
+- `cli_subprocess_core` is now the only required shared runtime dependency;
+  provider SDKs are additive opt-ins, and ASM finalizes provider options by
+  handing backend-specific payload resolution down to the shared core/SDK layer.
+- Boundary enforcement and schema normalization were tightened around the new
+  package shape, with `Boundary`, `Zoi`, and `NimbleOptions` carrying the public
+  ingress and dynamic boundary work.
+- README, guides, examples, and package metadata were rewritten around the new
+  release model, including explicit documentation for provider backends,
+  endpoint publication, remote execution, and provider-SDK extension seams.
+
+### Removed
+
+- The old `v0.8.0` package center of gravity is no longer present as a
+  first-class runtime story: the prior persistence/query/storage adapters,
+  direct provider adapters, shell-runner path, and much of the routing,
+  rendering, workspace, PubSub, policy, and migration-era example/documentation
+  surface were removed or reduced to narrower extension/compatibility seams.
 
 ### Fixed
 
-- `ASM.Run.Server` interrupt path now catches transport call exits (`maybe_interrupt_transport/1`)
-- Stream driver-down dedupe now includes remote transport-backed node driver
+- Boundary enforcement, startup error surfacing, interrupt handling, and SSH
+  example coverage were hardened around the rebuilt runtime contract.
+- Dialyzer now stores its core and project PLTs inside `priv/plts`, so the
+  release verification floor no longer depends on a writable global Mix home.
 
 ## [0.8.0] - 2026-02-10
 
@@ -644,7 +655,8 @@ See `guides/migrating_to_v0.8.md` for migration details.
 - Basic project structure with mix.exs configuration
 - Project logo and assets
 
-[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.5.1...v0.6.0

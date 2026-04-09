@@ -63,7 +63,7 @@ defmodule ASM.Migration.MainCompatTest do
   end
 
   describe "build_query/3" do
-    test "builds prompt/session/query opts from main style input and options" do
+    test "rejects migrated Codex full_auto onto ASM codex auto mode" do
       input = %{messages: [%{role: "user", content: "Refactor this"}]}
 
       opts = [
@@ -79,21 +79,9 @@ defmodule ASM.Migration.MainCompatTest do
         ]
       ]
 
-      assert {:ok, spec} = MainCompat.build_query(:codex, input, opts)
+      assert {:error, error} = MainCompat.build_query(:codex, input, opts)
 
-      assert spec.provider == :codex
-      assert spec.prompt == "user: Refactor this"
-
-      assert spec.session_opts[:provider] == :codex
-      assert spec.session_opts[:agent_id] == "agent-main"
-      assert spec.session_opts[:metadata] == %{request_id: "req-123"}
-      assert spec.session_opts[:context] == %{system_prompt: "be direct"}
-      assert spec.session_opts[:tags] == ["migration"]
-
-      assert spec.query_opts[:cwd] == "/tmp/project"
-      assert spec.query_opts[:model] == "gpt-5.4"
-      assert spec.query_opts[:reasoning_effort] == :high
-      assert spec.query_opts[:permission_mode] == :auto
+      assert error.message =~ "Permission mode :auto is not valid for provider :codex_exec"
     end
 
     test "returns explicit unsupported error for unsupported main options" do

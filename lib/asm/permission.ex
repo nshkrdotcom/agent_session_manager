@@ -119,8 +119,6 @@ defmodule ASM.Permission do
   defp provider_mode_map(:codex_exec) do
     %{
       default: %{normalized: :default, native: :default},
-      auto: %{normalized: :auto, native: :auto_edit},
-      auto_edit: %{normalized: :auto, native: :auto_edit},
       bypass: %{normalized: :bypass, native: :yolo},
       yolo: %{normalized: :bypass, native: :yolo},
       plan: %{normalized: :plan, native: :plan}

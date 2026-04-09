@@ -343,6 +343,34 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert metadata[:asm_provider] == :gemini
   end
 
+  test "gemini sdk backend maps ASM bypass mode onto approval_mode without legacy yolo duplication" do
+    provider = %{Provider.resolve!(:gemini) | sdk_runtime: GeminiRuntimeStub}
+
+    config = %{
+      provider: provider,
+      prompt: "hello",
+      execution_config: execution_config([]),
+      provider_opts: [
+        model: "gemini-2.5-pro",
+        permission_mode: :bypass,
+        provider_permission_mode: :yolo
+      ],
+      metadata: %{test_pid: self()}
+    }
+
+    assert {:ok, proxy, info} = SDK.start_run(config)
+    on_exit(fn -> SDK.close(proxy) end)
+
+    assert info.lane == :sdk
+    assert info.provider == :gemini
+
+    assert_receive {:gemini_runtime_start_opts, start_opts}
+
+    assert %GeminiCliSdk.Options{} = options = Keyword.fetch!(start_opts, :options)
+    assert options.approval_mode == :yolo
+    assert options.yolo == false
+  end
+
   test "sdk backends reject explicit approval_posture :none before runtime start" do
     provider = %{Provider.resolve!(:claude) | sdk_runtime: ClaudeRuntimeStub}
 

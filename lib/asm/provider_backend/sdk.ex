@@ -288,7 +288,6 @@ defmodule ASM.ProviderBackend.SDK do
       model_payload: model_payload,
       model: model_payload_value(model_payload, :resolved_model),
       system_prompt: kw(config, :system_prompt),
-      yolo: kw(config, :provider_permission_mode) == :yolo,
       approval_mode: gemini_approval_mode(kw(config, :provider_permission_mode)),
       sandbox: kw(config, :sandbox, false),
       resume: kw(config, :resume, gemini_resume_value(config)),

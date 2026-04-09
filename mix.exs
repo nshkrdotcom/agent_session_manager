@@ -2,7 +2,7 @@ defmodule AgentSessionManager.MixProject do
   use Mix.Project
 
   @app :agent_session_manager
-  @version "0.9.0"
+  @version "0.9.1"
   @source_url "https://github.com/nshkrdotcom/agent_session_manager"
   @homepage_url "https://hex.pm/packages/agent_session_manager"
   @docs_url "https://hexdocs.pm/agent_session_manager"
@@ -196,5 +196,4 @@ defmodule AgentSessionManager.MixProject do
       "Extensions/Provider Native": ~r/^ASM\.Extensions\.Provider(SDK)?/
     ]
   end
-
 end

@@ -51,7 +51,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
       provider: :codex,
       cwd: "/tmp/asm-codex-thread",
       additional_directories: ["/tmp/asm-codex-thread/docs", "/tmp/asm-codex-thread/test"],
-      permission_mode: :auto,
+      permission_mode: :bypass,
       skip_git_repo_check: true,
       approval_timeout_ms: 45_000,
       output_schema: %{"type" => "object"}
@@ -73,8 +73,8 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
            ]
 
     assert options.approval_timeout_ms == 45_000
-    assert options.full_auto == true
-    assert options.dangerously_bypass_approvals_and_sandbox == false
+    assert options.full_auto == false
+    assert options.dangerously_bypass_approvals_and_sandbox == true
     assert options.skip_git_repo_check == true
     assert options.output_schema == %{"type" => "object"}
     assert options.personality == :pragmatic
@@ -85,6 +85,17 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
              reasoning_effort: nil,
              developer_instructions: nil
            }
+  end
+
+  test "thread_options/2 rejects ASM normalized auto mode for Codex" do
+    assert {:error, error} =
+             CodexExtension.thread_options(
+               provider: :codex,
+               cwd: "/tmp/asm-codex-thread",
+               permission_mode: :auto
+             )
+
+    assert error.message =~ "Permission mode :auto is not valid for provider :codex_exec"
   end
 
   test "Codex bridges accept the ASM common Ollama surface" do

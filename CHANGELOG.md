@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-04-08
+
+### Changed
+
+- ASM no longer normalizes Codex `permission_mode: :auto` onto the provider's
+  workspace-write auto-edit path. Codex stays supported on the shared ingress
+  for `:default`, `:bypass`, and `:plan`, while provider-native auto-edit
+  remains a direct `codex_sdk` concern.
+
+### Fixed
+
+- The shared ASM Codex contract now avoids routing normalized `:auto` through a
+  current Codex CLI path that creates a repo-local `.codex` artifact in the
+  workspace root.
+- Codex bridge docs/examples now show `:default` on the ASM side and explain
+  when callers should drop down to provider-native `codex_sdk` thread options.
+
 ## [0.9.0] - 2026-04-06
 
 ### Added

@@ -47,6 +47,14 @@ Examples:
 - Codex `:bypass` -> `:yolo`
 - Amp `:bypass` -> `:dangerously_allow_all`
 
+Codex exception:
+
+- ASM does not accept normalized Codex `:auto` on the shared ingress
+- the current Codex workspace-write/auto-edit path creates a repo-local
+  `.codex` artifact
+- use Codex `:default` or `:bypass` through ASM, or use `codex_sdk` directly
+  when you explicitly want provider-native auto-edit behavior
+
 This is only the normalized approval/edit posture.
 
 It is not a promise that every provider exposes the same lower-level controls.

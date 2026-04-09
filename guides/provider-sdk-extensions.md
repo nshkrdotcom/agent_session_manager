@@ -206,7 +206,7 @@ alias Codex, as: CodexSDK
     [
       provider: :codex,
       cwd: "/repo",
-      execution_environment: [permission_mode: :auto],
+      execution_environment: [permission_mode: :default],
       approval_timeout_ms: 45_000,
       output_schema: %{"type" => "object"}
     ],
@@ -222,6 +222,12 @@ alias Codex, as: CodexSDK
 
 {:ok, thread} = CodexSDK.start_thread(codex_opts, thread_opts)
 ```
+
+ASM intentionally does not normalize Codex `:auto` onto `Codex.Thread.Options`
+because the current Codex workspace-write auto-edit path dirties repo roots
+with a `.codex` artifact. Keep ASM's Codex bridge on `:default` or `:bypass`,
+or use `codex_sdk` directly when you explicitly need provider-native
+workspace-write behavior.
 
 ## Optional-Loading Rules
 

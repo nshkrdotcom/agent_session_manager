@@ -46,6 +46,18 @@ defmodule ASM.ProviderFeaturesTest do
     assert amp.permission_modes.dangerously_allow_all.cli_excerpt == "--dangerously-allow-all"
   end
 
+  test "ASM rejects normalized auto mode for Codex while preserving native feature discovery" do
+    schema = Provider.resolve!(:codex).options_schema
+
+    assert {:error, error} =
+             Options.validate([provider: :codex, permission_mode: :auto], schema)
+
+    assert error.message =~ "Permission mode :auto is not valid for provider :codex_exec"
+
+    assert ProviderFeatures.permission_mode!(:codex, :yolo).cli_excerpt ==
+             "--dangerously-bypass-approvals-and-sandbox"
+  end
+
   test "common ollama surface maps to Claude backend configuration" do
     schema = Provider.resolve!(:claude).options_schema
 
@@ -199,6 +211,22 @@ defmodule ASM.ProviderFeaturesTest do
              )
 
     assert amp_error.message =~ "unknown options [:system_prompt]"
+  end
+
+  test "claude leaves max_turns unset by default and amp rejects it entirely" do
+    claude_schema = Provider.resolve!(:claude).options_schema
+    amp_schema = Provider.resolve!(:amp).options_schema
+
+    assert {:ok, claude_validated} =
+             Options.validate([provider: :claude, model: "haiku"], claude_schema)
+
+    assert claude_validated[:max_turns] == nil
+    assert {:ok, ^claude_validated} = ProviderOptionsSchema.validate(claude_validated)
+
+    assert {:error, amp_error} =
+             Options.validate([provider: :amp, model: "amp-1", max_turns: 2], amp_schema)
+
+    assert amp_error.message =~ "unknown options [:max_turns]"
   end
 
   test "codex rejects conflicting model and ollama_model values" do

@@ -17,7 +17,7 @@ defmodule ASM.Options.Claude do
       anthropic_base_url: [type: {:or, [:string, nil]}, default: nil],
       anthropic_auth_token: [type: {:or, [:string, nil]}, default: nil],
       include_thinking: [type: :boolean, default: false],
-      max_turns: [type: :pos_integer, default: 1]
+      max_turns: [type: {:or, [:pos_integer, nil]}, default: nil]
     ]
   end
 end

@@ -49,7 +49,7 @@ Supported providers:
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.9.0"}
+    {:agent_session_manager, "~> 0.9.1"}
   ]
 end
 ```
@@ -582,7 +582,7 @@ alias Codex, as: CodexSDK
     [
       provider: :codex,
       cwd: "/workspaces/repo",
-      execution_environment: [permission_mode: :auto],
+      execution_environment: [permission_mode: :default],
       approval_timeout_ms: 45_000,
       output_schema: %{"type" => "object"}
     ],
@@ -646,6 +646,10 @@ Important boundary:
   concept
 - provider-specific knobs that are not part of ASM's normalized execution
   environment remain provider-specific
+- Codex `:auto` / `:auto_edit` is intentionally not exposed through ASM's
+  normalized `permission_mode`; use `:default`, `:bypass`, or direct
+  `codex_sdk` thread options when you need Codex-native workspace-write
+  behavior
 
 Examples:
 
@@ -842,6 +846,14 @@ Provider-specific examples:
 - Codex: `model`, `reasoning_effort`, `output_schema`
 - Amp: `model`, `mode`, `include_thinking`, `tools`
 
+Provider caveat:
+
+- Codex rejects ASM `permission_mode: :auto` on the shared ingress because the
+  current Codex workspace-write/auto-edit path creates a repo-local `.codex`
+  artifact. Keep Codex on `:default` or `:bypass` in ASM, or drop down to
+  direct `codex_sdk` thread options when you explicitly want that provider
+  behavior.
+
 ## Live Examples
 
 The repo examples are provider-agnostic and stay on the common ASM surface.
@@ -913,7 +925,8 @@ specific escape hatches.
   exact session resume before replaying work
 - provider option validation now honestly reflects runtime support for recovery-related prompt
   controls: Claude, Codex, and Gemini accept supported prompt surfaces, while Amp rejects
-  unsupported `system_prompt` input instead of silently dropping it
+  unsupported prompt controls such as `system_prompt` and `max_turns` instead of silently
+  dropping them
 
 This is the orchestration boundary that lets `prompt_runner_sdk` resume the same provider
 conversation with `Continue` after a recoverable runtime failure.

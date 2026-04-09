@@ -65,7 +65,7 @@ defmodule ASM.Schema.ProviderOptions do
     anthropic_base_url: Conventions.optional_trimmed_string(),
     anthropic_auth_token: Conventions.optional_trimmed_string(),
     include_thinking: Zoi.boolean(),
-    max_turns: Zoi.integer() |> Zoi.min(1)
+    max_turns: Zoi.optional(Zoi.nullish(Zoi.integer() |> Zoi.min(1)))
   }
 
   @codex_fields %{
@@ -91,7 +91,6 @@ defmodule ASM.Schema.ProviderOptions do
     model: Conventions.optional_trimmed_string(),
     mode: Conventions.trimmed_string() |> Zoi.min(1),
     include_thinking: Zoi.boolean(),
-    max_turns: Zoi.integer() |> Zoi.min(1),
     permissions: Zoi.optional(Zoi.nullish(Conventions.any_map())),
     mcp_config: Zoi.optional(Zoi.nullish(Conventions.any_map())),
     tools: Zoi.array(Conventions.trimmed_string() |> Zoi.min(1))

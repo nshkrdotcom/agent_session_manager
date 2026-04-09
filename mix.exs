@@ -46,7 +46,7 @@ defmodule AgentSessionManager.MixProject do
 
   defp deps do
     [
-      {:cli_subprocess_core, "~> 0.1.0"},
+      {:cli_subprocess_core, path: "../cli_subprocess_core"},
       {:boundary, "~> 0.10.4", runtime: false},
       {:jason, "~> 1.4"},
       {:nimble_options, "~> 1.1"},

@@ -3,15 +3,27 @@ defmodule ASM.Execution.Config do
   Normalized execution-mode, execution-surface, and execution-environment
   configuration with precedence-aware merging.
 
-  In Wave 1 this module is also the explicit carrier boundary between the ASM
-  kernel and the frozen lower contract packet:
+  This module is the explicit carrier boundary between the ASM kernel, the
+  frozen lower contract packet, and the Wave 5 durable session vocabulary:
 
   - `BoundarySessionDescriptor.v1`
+  - `ExecutionRoute.v1`
   - `AttachGrant.v1`
+  - `CredentialHandleRef.v1`
   - `ExecutionEvent.v1`
   - `ExecutionOutcome.v1`
   - `ProcessExecutionIntent.v1`
   - `JsonRpcExecutionIntent.v1`
+
+  The named boundary metadata groups carried above that packet are:
+
+  - `descriptor`
+  - `route`
+  - `attach_grant`
+  - `replay`
+  - `approval`
+  - `callback`
+  - `identity`
 
   `execution_surface` and `execution_environment` remain the family-facing
   mapped carrier IR here. The detailed lower intent interiors stay provisional
@@ -22,9 +34,20 @@ defmodule ASM.Execution.Config do
   alias ASM.Schema.RemoteNode, as: RemoteNodeSchema
   alias CliSubprocessCore.ExecutionSurface
 
+  @boundary_contract_keys [
+    "descriptor",
+    "route",
+    "attach_grant",
+    "replay",
+    "approval",
+    "callback",
+    "identity"
+  ]
   @execution_plane_contracts [
     "BoundarySessionDescriptor.v1",
+    "ExecutionRoute.v1",
     "AttachGrant.v1",
+    "CredentialHandleRef.v1",
     "ExecutionEvent.v1",
     "ExecutionOutcome.v1",
     "ProcessExecutionIntent.v1",
@@ -86,6 +109,9 @@ defmodule ASM.Execution.Config do
 
   @spec execution_plane_contracts() :: [String.t(), ...]
   def execution_plane_contracts, do: @execution_plane_contracts
+
+  @spec boundary_contract_keys() :: [String.t(), ...]
+  def boundary_contract_keys, do: @boundary_contract_keys
 
   @spec provisional_minimal_lane_contracts() :: [String.t(), ...]
   def provisional_minimal_lane_contracts, do: @provisional_minimal_lane_contracts

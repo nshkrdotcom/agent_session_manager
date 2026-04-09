@@ -3,13 +3,15 @@
 ASM remains the provider-neutral session kernel above the family kits and below
 product UX.
 
-## Wave 1 Lower Packet
+## Lower Packet And Wave 5 Session Carriage
 
 The canonical lower-boundary contract names that ASM must now keep consistent
-with the Wave 1 packet are:
+with the packet and Wave 5 session carriage are:
 
 - `BoundarySessionDescriptor.v1`
+- `ExecutionRoute.v1`
 - `AttachGrant.v1`
+- `CredentialHandleRef.v1`
 - `ExecutionEvent.v1`
 - `ExecutionOutcome.v1`
 - `ProcessExecutionIntent.v1`
@@ -17,6 +19,17 @@ with the Wave 1 packet are:
 
 `ASM.Execution.Config.execution_plane_contracts/0` publishes that list for the
 kernel-side carrier boundary.
+
+`ASM.Execution.Config.boundary_contract_keys/0` publishes the named boundary
+metadata groups ASM consumes without reclaiming transport ownership:
+
+- `descriptor`
+- `route`
+- `attach_grant`
+- `replay`
+- `approval`
+- `callback`
+- `identity`
 
 ## Ownership Rule
 

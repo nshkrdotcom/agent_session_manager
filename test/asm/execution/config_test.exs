@@ -60,6 +60,29 @@ defmodule ASM.Execution.ConfigTest do
     assert cfg.remote.remote_bootstrap_mode == :ensure_started
   end
 
+  test "execution config publishes the Wave 5 lower-boundary vocabulary and metadata keys" do
+    assert Config.execution_plane_contracts() == [
+             "BoundarySessionDescriptor.v1",
+             "ExecutionRoute.v1",
+             "AttachGrant.v1",
+             "CredentialHandleRef.v1",
+             "ExecutionEvent.v1",
+             "ExecutionOutcome.v1",
+             "ProcessExecutionIntent.v1",
+             "JsonRpcExecutionIntent.v1"
+           ]
+
+    assert Config.boundary_contract_keys() == [
+             "descriptor",
+             "route",
+             "attach_grant",
+             "replay",
+             "approval",
+             "callback",
+             "identity"
+           ]
+  end
+
   test "resolve/2 rejects invalid execution_mode" do
     assert {:error, error} = Config.resolve([execution_mode: :somewhere], [])
     assert error.kind == :config_invalid

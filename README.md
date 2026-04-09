@@ -45,7 +45,8 @@ Supported providers:
 - Native Elixir streaming (`Enumerable`) with reducer-based result projections.
 - Provider registry that resolves providers onto backend lanes instead of provider-specific command/parser ownership.
 - Remote-node execution that starts provider backends remotely while keeping the ASM session/run processes local.
-- Lower-boundary carriage aligned to the Wave 1 packet without re-exporting raw
+- Lower-boundary carriage aligned to the packet and Wave 5 durable session
+  vocabulary without re-exporting raw
   `execution_plane/*` packages.
 
 ## Install
@@ -264,10 +265,13 @@ without branching on adapter modules or transport-family-specific path rules,
 so future built-in surfaces should not require another ASM contract rewrite.
 
 The current `execution_surface` and `execution_environment` forms are the
-family-facing mapped carrier IR around the frozen Wave 1 packet:
+family-facing mapped carrier IR around the frozen packet and Wave 5 durable
+session vocabulary:
 
 - `BoundarySessionDescriptor.v1`
+- `ExecutionRoute.v1`
 - `AttachGrant.v1`
+- `CredentialHandleRef.v1`
 - `ExecutionEvent.v1`
 - `ExecutionOutcome.v1`
 - `ProcessExecutionIntent.v1`
@@ -277,6 +281,10 @@ The detailed minimal-lane interiors for the two intent contracts remain
 provisional until Wave 3 prove-out. ASM names and carries that packet through
 `ASM.Execution.Config.execution_plane_contracts/0`; it does not expose raw
 Execution Plane package names as its public kernel API.
+Boundary-backed metadata stays explicit under `metadata["boundary"]` with the
+named subcontracts `descriptor`, `route`, `attach_grant`, `replay`,
+`approval`, `callback`, and `identity`, published by
+`ASM.Execution.Config.boundary_contract_keys/0`.
 Boundary-backed external sessions can now arrive through that unchanged
 transport-neutral surface as attach-ready `:guest_bridge` placement authored
 above ASM. ASM does not inspect lower-boundary backend details; it only

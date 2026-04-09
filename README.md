@@ -28,6 +28,8 @@ Supported providers:
 ## Documentation Menu
 
 - `README.md` - install, lanes, provider boundaries, and validation workflow
+- `guides/execution-plane-alignment.md` - frozen lower-boundary packet and
+  Wave 3 provisional lane note
 - `guides/lane-selection.md` - lane discovery and execution fallback rules
 - `guides/provider-backends.md` - core vs SDK backend responsibilities
 - `guides/inference-endpoints.md` - `ASM.InferenceEndpoint` publication and endpoint contracts
@@ -43,6 +45,8 @@ Supported providers:
 - Native Elixir streaming (`Enumerable`) with reducer-based result projections.
 - Provider registry that resolves providers onto backend lanes instead of provider-specific command/parser ownership.
 - Remote-node execution that starts provider backends remotely while keeping the ASM session/run processes local.
+- Lower-boundary carriage aligned to the Wave 1 packet without re-exporting raw
+  `execution_plane/*` packages.
 
 ## Install
 
@@ -258,6 +262,21 @@ policy do not.
 Transport expansion stays core-owned. ASM carries the opaque placement contract
 without branching on adapter modules or transport-family-specific path rules,
 so future built-in surfaces should not require another ASM contract rewrite.
+
+The current `execution_surface` and `execution_environment` forms are the
+family-facing mapped carrier IR around the frozen Wave 1 packet:
+
+- `BoundarySessionDescriptor.v1`
+- `AttachGrant.v1`
+- `ExecutionEvent.v1`
+- `ExecutionOutcome.v1`
+- `ProcessExecutionIntent.v1`
+- `JsonRpcExecutionIntent.v1`
+
+The detailed minimal-lane interiors for the two intent contracts remain
+provisional until Wave 3 prove-out. ASM names and carries that packet through
+`ASM.Execution.Config.execution_plane_contracts/0`; it does not expose raw
+Execution Plane package names as its public kernel API.
 Boundary-backed external sessions can now arrive through that unchanged
 transport-neutral surface as attach-ready `:guest_bridge` placement authored
 above ASM. ASM does not inspect lower-boundary backend details; it only

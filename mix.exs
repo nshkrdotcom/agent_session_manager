@@ -127,6 +127,7 @@ defmodule AgentSessionManager.MixProject do
   defp extras do
     [
       "README.md": [title: "Overview", filename: "overview"],
+      "guides/execution-plane-alignment.md": [title: "Execution Plane Alignment"],
       "guides/lane-selection.md": [title: "Lane Selection"],
       "guides/provider-backends.md": [title: "Provider Backends"],
       "guides/inference-endpoints.md": [title: "Inference Endpoints"],
@@ -149,6 +150,7 @@ defmodule AgentSessionManager.MixProject do
     [
       "Project Overview": ["README.md"],
       Foundations: [
+        "guides/execution-plane-alignment.md",
         "guides/lane-selection.md",
         "guides/provider-backends.md",
         "guides/inference-endpoints.md",

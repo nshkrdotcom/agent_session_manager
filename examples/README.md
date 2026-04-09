@@ -165,6 +165,14 @@ surface and switch only the normalized ASM permission mode to `:bypass`. ASM
 then projects the provider-native permissive runtime flag for the selected
 provider.
 
+These example `execution_surface` and `execution_environment` forms are the
+current ASM-facing mapped carriers around the frozen Wave 1 lower packet,
+especially `ProcessExecutionIntent.v1`, `JsonRpcExecutionIntent.v1`, and
+`AttachGrant.v1`. Their detailed minimal-lane payload interiors remain
+provisional until Wave 3 prove-out.
+
+See `guides/execution-plane-alignment.md` for the ownership and carriage rule.
+
 If `gpt-oss:20b` is installed locally in Ollama, the Codex examples above are
 the primary validated route. You can still substitute another installed model
 such as `llama3.2`, but that path is less tightly validated by the example

@@ -2,11 +2,38 @@ defmodule ASM.Execution.Config do
   @moduledoc """
   Normalized execution-mode, execution-surface, and execution-environment
   configuration with precedence-aware merging.
+
+  In Wave 1 this module is also the explicit carrier boundary between the ASM
+  kernel and the frozen lower contract packet:
+
+  - `BoundarySessionDescriptor.v1`
+  - `AttachGrant.v1`
+  - `ExecutionEvent.v1`
+  - `ExecutionOutcome.v1`
+  - `ProcessExecutionIntent.v1`
+  - `JsonRpcExecutionIntent.v1`
+
+  `execution_surface` and `execution_environment` remain the family-facing
+  mapped carrier IR here. The detailed lower intent interiors stay provisional
+  until Wave 3 prove-out.
   """
 
   alias ASM.{Error, Execution.Environment, Permission}
   alias ASM.Schema.RemoteNode, as: RemoteNodeSchema
   alias CliSubprocessCore.ExecutionSurface
+
+  @execution_plane_contracts [
+    "BoundarySessionDescriptor.v1",
+    "AttachGrant.v1",
+    "ExecutionEvent.v1",
+    "ExecutionOutcome.v1",
+    "ProcessExecutionIntent.v1",
+    "JsonRpcExecutionIntent.v1"
+  ]
+  @provisional_minimal_lane_contracts [
+    "ProcessExecutionIntent.v1",
+    "JsonRpcExecutionIntent.v1"
+  ]
 
   @execution_surface_keys [
     :contract_version,
@@ -56,6 +83,12 @@ defmodule ASM.Execution.Config do
           provider_permission_mode: atom() | nil,
           remote: remote_t() | nil
         }
+
+  @spec execution_plane_contracts() :: [String.t(), ...]
+  def execution_plane_contracts, do: @execution_plane_contracts
+
+  @spec provisional_minimal_lane_contracts() :: [String.t(), ...]
+  def provisional_minimal_lane_contracts, do: @provisional_minimal_lane_contracts
 
   @spec resolve(keyword(), keyword(), keyword()) :: {:ok, t()} | {:error, Error.t()}
   def resolve(session_stream_opts, run_stream_opts, opts \\ [])

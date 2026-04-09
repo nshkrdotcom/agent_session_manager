@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-04-09
+
+### Added
+
+- Added `guides/execution-plane-alignment.md` to document how ASM carries
+  execution-surface and execution-environment data without taking ownership of
+  lower transport mechanics.
+
+### Changed
+
+- `ASM.Execution.Config` now exposes explicit helper functions for the named
+  execution-plane contract list and its smaller provisional subset:
+  `execution_plane_contracts/0` and `provisional_minimal_lane_contracts/0`.
+- README, examples, and the HexDocs menu now include the execution-plane
+  alignment material as part of the main ASM documentation set.
+- Bumped the published package version to `0.9.2`.
+
 ## [0.9.1] - 2026-04-08
 
 ### Changed
@@ -672,7 +689,9 @@ See `guides/migrating_to_v0.8.md` for migration details.
 - Basic project structure with mix.exs configuration
 - Project logo and assets
 
-[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.9.2...HEAD
+[0.9.2]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.9.1...v0.9.2
+[0.9.1]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.6.0...v0.7.0

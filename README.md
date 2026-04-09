@@ -53,7 +53,7 @@ Supported providers:
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.9.1"}
+    {:agent_session_manager, "~> 0.9.2"}
   ]
 end
 ```

@@ -930,3 +930,7 @@ specific escape hatches.
 
 This is the orchestration boundary that lets `prompt_runner_sdk` resume the same provider
 conversation with `Continue` after a recoverable runtime failure.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.

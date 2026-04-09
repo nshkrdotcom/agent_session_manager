@@ -82,7 +82,7 @@ defmodule AgentSessionManager.MixProject do
     [
       name: "agent_session_manager",
       description: description(),
-      files: ~w(lib assets mix.exs README.md CHANGELOG.md LICENSE .formatter.exs),
+      files: ~w(lib assets mix.exs README.md CHANGELOG.md LICENSE .formatter.exs guides),
       licenses: ["Apache-2.0"],
       maintainers: ["nshkrdotcom"],
       links: %{

@@ -11,9 +11,22 @@ defmodule ASM.Run.Server do
   alias ASM.ProviderBackend.Info, as: BackendInfo
   alias CliSubprocessCore.Payload
 
+  @boot_timeout_ms 15_000
+
   @spec start_link(keyword()) :: GenServer.on_start()
-  def start_link(opts) do
-    GenServer.start_link(__MODULE__, opts)
+  def start_link(opts) when is_list(opts) do
+    caller = self()
+    reply_ref = make_ref()
+
+    with_trap_exit(fn ->
+      case GenServer.start_link(__MODULE__, {caller, reply_ref, opts}) do
+        {:ok, pid} ->
+          await_bootstrap(pid, reply_ref, Keyword.get(opts, :boot_timeout_ms, @boot_timeout_ms))
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end)
   end
 
   @spec interrupt(GenServer.server()) :: :ok
@@ -38,35 +51,27 @@ defmodule ASM.Run.Server do
   end
 
   @impl true
-  def init(opts) do
+  def init({caller, reply_ref, opts}) when is_list(opts) do
+    Process.put({__MODULE__, :boot_waiter}, {caller, reply_ref})
+    {:ok, Run.State.new(opts), {:continue, :bootstrap}}
+  end
+
+  def init(opts) when is_list(opts) do
     {:ok, Run.State.new(opts), {:continue, :bootstrap}}
   end
 
   @impl true
   def handle_continue(:bootstrap, state) do
-    _ = ASM.Telemetry.run_started(state.session_id, state.run_id, state.provider)
-
     case start_backend(state) do
       {:ok, next_state} ->
+        _ = ASM.Telemetry.run_started(state.session_id, state.run_id, state.provider)
+        notify_bootstrap_waiter(:ok)
         {:noreply, next_state}
 
       {:error, %Error{} = error, next_state} ->
-        error_event =
-          Event.new(
-            :error,
-            error_payload(error),
-            run_id: state.run_id,
-            session_id: state.session_id,
-            provider: state.provider,
-            timestamp: DateTime.utc_now()
-          )
-
-        next_state =
-          next_state
-          |> process_events([error_event])
-          |> Map.put(:error, error)
-
-        finish_run(next_state)
+        notify_bootstrap_waiter({:error, error})
+        _ = maybe_close_backend(next_state)
+        {:stop, :normal, %{next_state | error: error}}
     end
   end
 
@@ -214,12 +219,9 @@ defmodule ASM.Run.Server do
          {:ok, resolution} <-
            resolve_backend(provider, state),
          start_config <- backend_start_config(provider, state, resolution),
-         {:ok, pid, info} <- resolution.backend.start_run(start_config),
-         :ok <- detach_backend_link(pid),
-         :ok <- subscribe_backend(resolution.backend, pid, start_config.subscription_ref),
-         next_state <- put_backend_state(state, resolution, pid, info, start_config),
-         :ok <- deliver_prompt(next_state) do
-      {:ok, next_state}
+         {:ok, pid, info} <- resolution.backend.start_run(start_config) do
+      detach_backend_link(pid)
+      bootstrap_backend_session(state, resolution, pid, info, start_config)
     else
       {:error, %Error{} = error} ->
         {:error, error, state}
@@ -228,6 +230,18 @@ defmodule ASM.Run.Server do
         {:error,
          Error.new(:runtime, :runtime, "backend start failed: #{inspect(reason)}", cause: reason),
          state}
+    end
+  end
+
+  defp bootstrap_backend_session(state, resolution, pid, info, start_config) do
+    with :ok <- subscribe_backend(resolution.backend, pid, start_config.subscription_ref),
+         next_state <- put_backend_state(state, resolution, pid, info, start_config),
+         :ok <- deliver_prompt(next_state) do
+      {:ok, next_state}
+    else
+      {:error, %Error{} = error} ->
+        _ = safe_close_backend(resolution.backend, pid)
+        {:error, error, state}
     end
   end
 
@@ -515,6 +529,68 @@ defmodule ASM.Run.Server do
     backend.close(pid)
   rescue
     _ -> :ok
+  end
+
+  defp await_bootstrap(pid, reply_ref, timeout_ms) when is_pid(pid) and is_reference(reply_ref) do
+    receive do
+      {:asm_run_bootstrapped, ^reply_ref} ->
+        {:ok, pid}
+
+      {:asm_run_boot_failed, ^reply_ref, %Error{} = error} ->
+        safe_stop_run(pid)
+        {:error, error}
+
+      {:EXIT, ^pid, %Error{} = error} ->
+        {:error, error}
+
+      {:EXIT, ^pid, reason} ->
+        {:error, normalize_bootstrap_exit(reason)}
+    after
+      timeout_ms ->
+        safe_stop_run(pid)
+        {:error, Error.new(:timeout, :runtime, "run bootstrap timed out")}
+    end
+  end
+
+  defp safe_stop_run(pid) when is_pid(pid) do
+    GenServer.stop(pid, :normal)
+  catch
+    :exit, _reason -> :ok
+  end
+
+  defp normalize_bootstrap_exit(%Error{} = error), do: error
+
+  defp normalize_bootstrap_exit({%Error{} = error, _stacktrace}), do: error
+
+  defp normalize_bootstrap_exit(reason) do
+    Error.new(:runtime, :runtime, "run bootstrap failed: #{inspect(reason)}", cause: reason)
+  end
+
+  defp notify_bootstrap_waiter(message) do
+    case Process.delete({__MODULE__, :boot_waiter}) do
+      {caller, reply_ref} when is_pid(caller) and is_reference(reply_ref) ->
+        payload =
+          case message do
+            :ok -> {:asm_run_bootstrapped, reply_ref}
+            {:error, %Error{} = error} -> {:asm_run_boot_failed, reply_ref, error}
+          end
+
+        send(caller, payload)
+        :ok
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp with_trap_exit(fun) when is_function(fun, 0) do
+    previous_trap_exit? = Process.flag(:trap_exit, true)
+
+    try do
+      fun.()
+    after
+      Process.flag(:trap_exit, previous_trap_exit?)
+    end
   end
 
   defp error_payload(%Error{} = error) do

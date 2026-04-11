@@ -48,6 +48,18 @@ defmodule ASM.Session.ServerTest do
     end
   end
 
+  defmodule FailingRunProbe do
+    @moduledoc false
+    use GenServer
+
+    def start_link(_opts) do
+      {:error, ASM.Error.new(:cli_not_found, :provider, "run bootstrap failed")}
+    end
+
+    @impl true
+    def init(state), do: {:ok, state}
+  end
+
   test "submit_run/3 starts active run under capacity" do
     %{server: server, session_id: session_id} = start_session!(provider: :claude)
 
@@ -284,6 +296,45 @@ defmodule ASM.Session.ServerTest do
 
     state = Server.get_state(server)
     assert state.active_runs[run_id2] == run_pid2
+    assert :queue.len(state.run_queue) == 0
+
+    assert :ok = SessionSupervisor.stop_session(session_id)
+  end
+
+  test "queued run bootstrap failures emit terminal error and next queued run still starts" do
+    %{server: server, session_id: session_id} = start_session!(provider: :claude)
+
+    assert {:ok, run_id1, run_pid1} =
+             Server.submit_run(server, "r1",
+               run_module: RunProbe,
+               run_module_opts: [test_pid: self()]
+             )
+
+    assert_receive {:run_started, ^run_id1, ^run_pid1}
+
+    assert {:ok, failed_run_id, :queued} =
+             Server.submit_run(server, "r2",
+               run_module: FailingRunProbe,
+               run_module_opts: [subscriber: self()]
+             )
+
+    assert {:ok, run_id3, :queued} =
+             Server.submit_run(server, "r3",
+               run_module: RunProbe,
+               run_module_opts: [test_pid: self()]
+             )
+
+    GenServer.cast(run_pid1, :stop)
+
+    assert_receive {:asm_run_event, ^failed_run_id, %ASM.Event{kind: :error} = event}
+    assert ASM.Event.legacy_payload(event).kind == :cli_not_found
+    assert_receive {:asm_run_done, ^failed_run_id}
+    assert_receive {:run_started, ^run_id3, run_pid3}
+    assert is_pid(run_pid3)
+
+    state = Server.get_state(server)
+    assert state.active_runs[run_id3] == run_pid3
+    refute Map.has_key?(state.active_runs, failed_run_id)
     assert :queue.len(state.run_queue) == 0
 
     assert :ok = SessionSupervisor.stop_session(session_id)

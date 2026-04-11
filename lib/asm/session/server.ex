@@ -11,6 +11,7 @@ defmodule ASM.Session.Server do
   alias ASM.Session.Continuation
   alias ASM.Session.State
   alias ASM.SessionControl
+  alias CliSubprocessCore.Payload
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
@@ -309,8 +310,12 @@ defmodule ASM.Session.Server do
       {{:value, %{run_id: run_id, prompt: prompt, opts: opts}}, remaining}
       when map_size(state.active_runs) < state.provider_profile.max_concurrent_runs ->
         case start_run(%{state | run_queue: remaining}, run_id, prompt, opts) do
-          {:ok, _pid, started_state} -> started_state
-          _ -> %{state | run_queue: remaining}
+          {:ok, _pid, started_state} ->
+            started_state
+
+          {:error, %Error{} = error} ->
+            notify_queued_run_start_failure(state, run_id, opts, error)
+            maybe_start_next_queued_run(%{state | run_queue: remaining})
         end
 
       _ ->
@@ -414,4 +419,40 @@ defmodule ASM.Session.Server do
 
   defp default_zero(nil), do: 0
   defp default_zero(value), do: value
+
+  defp notify_queued_run_start_failure(%State{} = state, run_id, opts, %Error{} = error)
+       when is_binary(run_id) and is_list(opts) do
+    case queued_run_subscriber(opts) do
+      pid when is_pid(pid) ->
+        event =
+          ASM.Event.new(
+            :error,
+            Payload.Error.new(
+              message: error.message,
+              code: to_string(error.kind),
+              metadata: %{asm_error_domain: error.domain}
+            ),
+            run_id: run_id,
+            session_id: state.session_id,
+            provider: state.provider.name,
+            timestamp: DateTime.utc_now()
+          )
+
+        send(pid, {:asm_run_event, run_id, event})
+        send(pid, {:asm_run_done, run_id})
+        :ok
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp queued_run_subscriber(opts) when is_list(opts) do
+    opts
+    |> Keyword.get(:run_module_opts, [])
+    |> case do
+      module_opts when is_list(module_opts) -> Keyword.get(module_opts, :subscriber)
+      _other -> nil
+    end
+  end
 end

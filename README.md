@@ -909,6 +909,7 @@ If you omit `--provider`, the example prints a usage note and exits without runn
 - [Common And Partial Provider Features](guides/common-and-partial-provider-features.md)
 - [Provider SDK Extensions](guides/provider-sdk-extensions.md)
 - [Event Model And Result Projection](guides/event-model-and-result-projection.md)
+- [Recovery Projection](guides/recovery-projection.md)
 - [Approvals And Interrupts](guides/approvals-and-interrupts.md)
 - [Live Adapter Feature Matrix](guides/live-adapters.md)
 - [Remote Node Execution](guides/remote-node-execution.md)

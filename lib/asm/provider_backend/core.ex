@@ -9,6 +9,7 @@ defmodule ASM.ProviderBackend.Core do
   alias ASM.ProviderBackend.Proxy
   alias ASM.Remote.NodeConnector
   alias CliSubprocessCore.ProviderCLI.Error, as: ProviderCLIError
+  alias CliSubprocessCore.RecoveryEnvelope
   alias CliSubprocessCore.Session
 
   @impl true
@@ -241,7 +242,16 @@ defmodule ASM.ProviderBackend.Core do
   defp provider_cli_error(provider, %ProviderCLIError{} = error) do
     Error.new(:cli_not_found, :provider, Exception.message(error),
       cause: error,
-      provider: provider
+      provider: provider,
+      retryable: false,
+      recovery:
+        RecoveryEnvelope.from_runtime_failure(%CliSubprocessCore.ProviderCLI.ErrorRuntimeFailure{
+          kind: :cli_not_found,
+          provider: provider,
+          message: Exception.message(error),
+          context: %{provider: provider},
+          cause: error
+        })
     )
   end
 

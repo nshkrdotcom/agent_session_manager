@@ -197,7 +197,12 @@ defmodule ASM.Run.EventReducer do
   end
 
   defp error_from_payload(%ASM.Message.Error{} = payload, %Payload.Error{} = raw_payload) do
-    Error.new(payload.kind, error_domain(raw_payload.metadata), payload.message)
+    recovery = error_recovery(raw_payload.metadata)
+
+    Error.new(payload.kind, error_domain(raw_payload.metadata), payload.message,
+      retryable: recovery_retryable?(recovery),
+      recovery: recovery
+    )
   end
 
   defp error_from_payload(payload, _raw_payload) do
@@ -211,6 +216,29 @@ defmodule ASM.Run.EventReducer do
   end
 
   defp error_domain(_metadata), do: :runtime
+
+  defp error_recovery(metadata) when is_map(metadata) do
+    metadata[:recovery] ||
+      metadata["recovery"] ||
+      metadata
+      |> Map.get(:runtime_failure, Map.get(metadata, "runtime_failure"))
+      |> case do
+        runtime_failure when is_map(runtime_failure) ->
+          runtime_failure[:recovery] || runtime_failure["recovery"]
+
+        _other ->
+          nil
+      end
+  end
+
+  defp error_recovery(_metadata), do: nil
+
+  defp recovery_retryable?(recovery) when is_map(recovery) do
+    value = recovery[:retryable?] || recovery["retryable?"]
+    value in [true, "true", "TRUE", 1, "1"]
+  end
+
+  defp recovery_retryable?(_recovery), do: nil
 
   defp normalize_error_domain(domain)
        when domain in [

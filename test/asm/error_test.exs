@@ -8,7 +8,8 @@ defmodule ASM.ErrorTest do
       Error.new(:timeout, :transport, "transport timed out",
         provider: :claude,
         exit_code: 124,
-        retryable: true
+        retryable: true,
+        recovery: %{"class" => "transport_timeout"}
       )
 
     assert error.kind == :timeout
@@ -17,6 +18,7 @@ defmodule ASM.ErrorTest do
     assert error.provider == :claude
     assert error.exit_code == 124
     assert error.retryable == true
+    assert error.recovery["class"] == "transport_timeout"
   end
 
   test "exception/1 uses defaults when fields are missing" do

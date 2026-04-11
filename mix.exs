@@ -136,6 +136,7 @@ defmodule AgentSessionManager.MixProject do
       ],
       "guides/provider-sdk-extensions.md": [title: "Provider SDK Extensions"],
       "guides/event-model-and-result-projection.md": [title: "Event Model And Result Projection"],
+      "guides/recovery-projection.md": [title: "Recovery Projection"],
       "guides/approvals-and-interrupts.md": [title: "Approvals And Interrupts"],
       "guides/remote-node-execution.md": [title: "Remote Node Execution"],
       "guides/live-adapters.md": [title: "Live Adapters"],
@@ -159,6 +160,7 @@ defmodule AgentSessionManager.MixProject do
       ],
       Runtime: [
         "guides/event-model-and-result-projection.md",
+        "guides/recovery-projection.md",
         "guides/approvals-and-interrupts.md",
         "guides/remote-node-execution.md",
         "guides/live-adapters.md"

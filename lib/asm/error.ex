@@ -4,7 +4,7 @@ defmodule ASM.Error do
   """
 
   @enforce_keys [:kind, :domain, :message]
-  defexception [:kind, :domain, :message, :cause, :provider, :exit_code, :retryable]
+  defexception [:kind, :domain, :message, :cause, :provider, :exit_code, :retryable, :recovery]
 
   @type domain ::
           :transport | :parser | :provider | :approval | :guardrail | :tool | :runtime | :config
@@ -36,7 +36,8 @@ defmodule ASM.Error do
           cause: term() | nil,
           provider: atom() | nil,
           exit_code: integer() | nil,
-          retryable: boolean() | nil
+          retryable: boolean() | nil,
+          recovery: map() | nil
         }
 
   @spec new(kind(), domain(), String.t(), keyword()) :: t()
@@ -48,7 +49,8 @@ defmodule ASM.Error do
       cause: Keyword.get(opts, :cause),
       provider: Keyword.get(opts, :provider),
       exit_code: Keyword.get(opts, :exit_code),
-      retryable: Keyword.get(opts, :retryable)
+      retryable: Keyword.get(opts, :retryable),
+      recovery: Keyword.get(opts, :recovery)
     }
   end
 
@@ -62,7 +64,8 @@ defmodule ASM.Error do
       cause: Keyword.get(opts, :cause),
       provider: Keyword.get(opts, :provider),
       exit_code: Keyword.get(opts, :exit_code),
-      retryable: Keyword.get(opts, :retryable)
+      retryable: Keyword.get(opts, :retryable),
+      recovery: Keyword.get(opts, :recovery)
     )
   end
 

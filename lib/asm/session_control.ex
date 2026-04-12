@@ -6,6 +6,18 @@ defmodule ASM.SessionControl do
 
   alias ASM.{Error, Provider, ProviderRegistry, Session}
 
+  @lineage_keys [
+    :semantic_session_id,
+    :session_id,
+    :lane_session_id,
+    :provider_session_id,
+    :boundary_session_id,
+    :route_id,
+    :attach_grant_id,
+    :provider,
+    :status
+  ]
+
   defmodule Entry do
     @moduledoc """
     Standardized provider-native resumable session entry.
@@ -37,6 +49,9 @@ defmodule ASM.SessionControl do
 
   @type provider_or_session :: Provider.provider_name() | pid()
   @type resume_target :: :checkpoint | :latest | String.t()
+
+  @spec lineage_keys() :: [atom(), ...]
+  def lineage_keys, do: @lineage_keys
 
   @spec list_provider_sessions(provider_or_session(), keyword()) ::
           {:ok, [Entry.t()]} | {:error, Error.t()}
@@ -91,6 +106,42 @@ defmodule ASM.SessionControl do
     checkpoint
     |> continuation_target(Keyword.get(opts, :target, :checkpoint))
     |> build_continuation()
+  end
+
+  @doc """
+  Returns a stable lineage descriptor connecting semantic, ASM, and provider sessions.
+  """
+  @spec lineage_descriptor(provider_or_session() | map(), keyword()) ::
+          {:ok, map()} | {:error, Error.t()}
+  def lineage_descriptor(provider_or_session, opts \\ [])
+
+  def lineage_descriptor(session, opts) when is_pid(session) and is_list(opts) do
+    with {:ok, info} <- ASM.session_info(session) do
+      {:ok, build_lineage_descriptor(info, opts)}
+    end
+  end
+
+  def lineage_descriptor(info, opts) when is_map(info) and is_list(opts) do
+    {:ok, build_lineage_descriptor(info, opts)}
+  end
+
+  @doc """
+  Returns a stable provider fact for pressure or reconnect events.
+  """
+  @spec provider_fact(:pressure | :reconnect, map()) :: map()
+  def provider_fact(kind, attrs) when kind in [:pressure, :reconnect] and is_map(attrs) do
+    attrs = Map.new(attrs)
+
+    %{
+      fact_kind: kind,
+      session_id: fetch_optional(attrs, :session_id),
+      lane_session_id: fetch_optional(attrs, :lane_session_id),
+      provider_session_id: fetch_optional(attrs, :provider_session_id),
+      provider: normalize_provider(fetch_optional(attrs, :provider)),
+      reason: fetch_optional(attrs, :reason),
+      observed_at: fetch_optional(attrs, :observed_at),
+      metadata: normalize_map(Map.get(attrs, :metadata, Map.get(attrs, "metadata", %{})))
+    }
   end
 
   defp continuation_target(checkpoint, :checkpoint),
@@ -173,6 +224,33 @@ defmodule ASM.SessionControl do
        "provider runtime does not publish a list_provider_sessions/1 surface"
      )}
   end
+
+  defp build_lineage_descriptor(info, opts) do
+    info = Map.new(info)
+
+    %{
+      semantic_session_id: Keyword.get(opts, :semantic_session_id),
+      session_id: fetch_optional(info, :session_id),
+      lane_session_id: Keyword.get(opts, :lane_session_id, fetch_optional(info, :session_id)),
+      provider_session_id:
+        Keyword.get(
+          opts,
+          :provider_session_id,
+          fetch_optional(info, :provider_session_id)
+        ),
+      boundary_session_id: Keyword.get(opts, :boundary_session_id),
+      route_id: Keyword.get(opts, :route_id),
+      attach_grant_id: Keyword.get(opts, :attach_grant_id),
+      provider: normalize_provider(fetch_optional(info, :provider)),
+      status: fetch_optional(info, :status)
+    }
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
+  end
+
+  defp normalize_provider(nil), do: nil
+  defp normalize_provider(provider) when is_atom(provider), do: provider
+  defp normalize_provider(provider) when is_binary(provider), do: String.to_atom(provider)
 
   defp normalize_entry(provider, %Entry{} = entry), do: %{entry | provider: provider}
 

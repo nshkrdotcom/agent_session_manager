@@ -19,6 +19,7 @@ defmodule AgentSessionManager.MixProject do
       description: description(),
       package: package(),
       docs: docs(),
+      aliases: aliases(),
       dialyzer: dialyzer(),
       name: "ASM",
       source_url: @source_url,
@@ -34,6 +35,10 @@ defmodule AgentSessionManager.MixProject do
       mod: {ASM.Application, []},
       extra_applications: [:logger]
     ]
+  end
+
+  def cli do
+    []
   end
 
   defp project_compilers do
@@ -75,6 +80,18 @@ defmodule AgentSessionManager.MixProject do
       plt_add_apps: [:mix, :ex_unit],
       plt_core_path: "priv/plts/core",
       plt_local_path: "priv/plts"
+    ]
+  end
+
+  defp aliases do
+    [
+      ci: [
+        "format --check-formatted",
+        "compile --warnings-as-errors",
+        "credo",
+        "cmd env MIX_ENV=test mix test",
+        "dialyzer"
+      ]
     ]
   end
 

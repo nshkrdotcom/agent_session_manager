@@ -9,7 +9,7 @@ defmodule ASM.ProviderRegistry do
   - `resolve/2` applies execution-mode compatibility to produce the effective backend
   """
 
-  alias ASM.{Error, Provider}
+  alias ASM.{Error, Provider, ProviderRuntimeProfile}
 
   @type lane :: :auto | :core | :sdk
   @type execution_mode :: :local | :remote_node
@@ -56,6 +56,7 @@ defmodule ASM.ProviderRegistry do
           execution_mode: execution_mode(),
           lane_reason: atom(),
           lane_fallback_reason: atom() | nil,
+          provider_runtime_profile: ProviderRuntimeProfile.t() | nil,
           observability: map()
         }
 
@@ -133,8 +134,9 @@ defmodule ASM.ProviderRegistry do
   @spec resolve(atom(), keyword()) :: {:ok, resolution()} | {:error, Error.t()}
   def resolve(provider, opts \\ []) do
     with {:ok, info} <- lane_info(provider, opts),
-         {:ok, execution_mode} <- execution_mode(opts) do
-      resolve_for_execution_mode(info, execution_mode)
+         {:ok, execution_mode} <- execution_mode(opts),
+         {:ok, runtime_profile} <- ProviderRuntimeProfile.resolve(info.provider.name) do
+      resolve_for_execution_mode(info, execution_mode, runtime_profile)
     end
   end
 
@@ -206,21 +208,50 @@ defmodule ASM.ProviderRegistry do
   end
 
   defp resolve_for_execution_mode(
+         %{requested_lane: :sdk} = info,
+         _execution_mode,
+         %{ref: ref}
+       ) do
+    {:error,
+     config_error(
+       "sdk lane is unavailable while provider runtime profile #{inspect(ref)} is active for #{inspect(info.provider.name)}"
+     )}
+  end
+
+  defp resolve_for_execution_mode(%{} = info, execution_mode, %{} = runtime_profile) do
+    lane_fallback_reason =
+      if info.preferred_lane == :core do
+        nil
+      else
+        :provider_runtime_profile
+      end
+
+    finalize_resolution(info, :core, execution_mode, lane_fallback_reason, runtime_profile)
+  end
+
+  defp resolve_for_execution_mode(
          %{requested_lane: :sdk, preferred_lane: :sdk},
-         :remote_node
+         :remote_node,
+         nil
        ) do
     {:error, config_error("sdk lane is unavailable for :remote_node execution")}
   end
 
-  defp resolve_for_execution_mode(%{preferred_lane: :sdk} = info, :remote_node) do
-    finalize_resolution(info, :core, :remote_node, :sdk_remote_unsupported)
+  defp resolve_for_execution_mode(%{preferred_lane: :sdk} = info, :remote_node, nil) do
+    finalize_resolution(info, :core, :remote_node, :sdk_remote_unsupported, nil)
   end
 
-  defp resolve_for_execution_mode(%{} = info, execution_mode) do
-    finalize_resolution(info, info.preferred_lane, execution_mode, nil)
+  defp resolve_for_execution_mode(%{} = info, execution_mode, nil) do
+    finalize_resolution(info, info.preferred_lane, execution_mode, nil, nil)
   end
 
-  defp finalize_resolution(%{} = info, lane, execution_mode, lane_fallback_reason) do
+  defp finalize_resolution(
+         %{} = info,
+         lane,
+         execution_mode,
+         lane_fallback_reason,
+         runtime_profile
+       ) do
     capabilities = lane_capabilities(info.provider, lane)
 
     {:ok,
@@ -238,6 +269,7 @@ defmodule ASM.ProviderRegistry do
        execution_mode: execution_mode,
        lane_reason: info.lane_reason,
        lane_fallback_reason: lane_fallback_reason,
+       provider_runtime_profile: runtime_profile,
        observability:
          Map.merge(info.observability, %{
            lane: lane,
@@ -246,6 +278,7 @@ defmodule ASM.ProviderRegistry do
            capabilities: capabilities,
            lane_fallback_reason: lane_fallback_reason
          })
+         |> Map.merge(ProviderRuntimeProfile.observability(runtime_profile))
      }}
   end
 

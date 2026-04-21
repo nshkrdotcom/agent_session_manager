@@ -5,7 +5,7 @@ defmodule ASM.Run.Server do
 
   use GenServer, restart: :temporary
 
-  alias ASM.{Error, Event, Metadata, Provider, ProviderRegistry, Run}
+  alias ASM.{Error, Event, Metadata, Provider, ProviderRegistry, ProviderRuntimeProfile, Run}
   alias ASM.Execution.{Config, PolicyPlug}
   alias ASM.ProviderBackend.Event, as: BackendEvent
   alias ASM.ProviderBackend.Info, as: BackendInfo
@@ -234,7 +234,7 @@ defmodule ASM.Run.Server do
   end
 
   defp bootstrap_backend_session(state, resolution, pid, info, start_config) do
-    with :ok <- subscribe_backend(resolution.backend, pid, start_config.subscription_ref),
+    with :ok <- maybe_subscribe_backend(resolution.backend, pid, start_config.subscription_ref),
          next_state <- put_backend_state(state, resolution, pid, info, start_config),
          :ok <- deliver_prompt(next_state) do
       {:ok, next_state}
@@ -245,33 +245,43 @@ defmodule ASM.Run.Server do
     end
   end
 
+  defp maybe_subscribe_backend(ASM.ProviderBackend.Core, _pid, _ref), do: :ok
+
+  defp maybe_subscribe_backend(backend, pid, ref), do: subscribe_backend(backend, pid, ref)
+
   defp resolve_backend(provider, %Run.State{backend: backend} = state)
        when is_atom(backend) and not is_nil(backend) do
-    lane = backend_override_lane(state.lane)
-    capabilities = backend_override_capabilities(provider, lane)
-    execution_mode = execution_mode(state)
+    with {:ok, runtime_profile} <- ProviderRuntimeProfile.resolve(provider.name),
+         :ok <- validate_backend_override(provider, backend, runtime_profile) do
+      lane = backend_override_lane(state.lane)
+      capabilities = backend_override_capabilities(provider, lane)
+      execution_mode = execution_mode(state)
 
-    {:ok,
-     %{
-       provider: provider,
-       backend: backend,
-       requested_lane: state.lane || lane,
-       preferred_lane: lane,
-       lane: lane,
-       capabilities: capabilities,
-       observability: %{
-         provider: provider.name,
-         provider_display_name: provider.display_name,
+      {:ok,
+       %{
+         provider: provider,
+         backend: backend,
          requested_lane: state.lane || lane,
          preferred_lane: lane,
          lane: lane,
-         lane_reason: :backend_override,
-         lane_fallback_reason: nil,
-         execution_mode: execution_mode,
-         backend: backend,
-         capabilities: capabilities
-       }
-     }}
+         capabilities: capabilities,
+         provider_runtime_profile: runtime_profile,
+         observability:
+           %{
+             provider: provider.name,
+             provider_display_name: provider.display_name,
+             requested_lane: state.lane || lane,
+             preferred_lane: lane,
+             lane: lane,
+             lane_reason: :backend_override,
+             lane_fallback_reason: nil,
+             execution_mode: execution_mode,
+             backend: backend,
+             capabilities: capabilities
+           }
+           |> Map.merge(ProviderRuntimeProfile.observability(runtime_profile))
+       }}
+    end
   end
 
   defp resolve_backend(provider, %Run.State{} = state) do
@@ -689,6 +699,20 @@ defmodule ASM.Run.Server do
 
   defp backend_override_capabilities(%Provider{} = provider, :sdk) do
     module_capabilities(provider.sdk_runtime)
+  end
+
+  defp validate_backend_override(_provider, _backend, nil), do: :ok
+  defp validate_backend_override(_provider, ASM.ProviderBackend.Core, %{}), do: :ok
+
+  defp validate_backend_override(%Provider{} = provider, backend, %{ref: ref}) do
+    {:error,
+     Error.new(
+       :config_invalid,
+       :config,
+       "backend override #{inspect(backend)} is unavailable while provider runtime profile #{inspect(ref)} is active for #{inspect(provider.name)}",
+       provider: provider.name,
+       cause: %{provider: provider.name, backend: backend, provider_runtime_profile_ref: ref}
+     )}
   end
 
   defp module_capabilities(module) when is_atom(module) do

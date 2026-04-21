@@ -89,7 +89,7 @@ workspace_provider_ebins =
   end)
   |> Enum.uniq()
 
-Code.prepend_paths(workspace_provider_ebins)
+Code.append_paths(workspace_provider_ebins)
 
 ExUnit.start(
   exclude: [:live_ssh | ASM.TestSupport.Capabilities.default_excludes()],

@@ -81,7 +81,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
 
     assert options.collaboration_mode == %Codex.Protocol.CollaborationMode{
              mode: :plan,
-             model: "",
+             model: nil,
              reasoning_effort: nil,
              developer_instructions: nil
            }

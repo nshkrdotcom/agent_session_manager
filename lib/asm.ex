@@ -9,6 +9,7 @@ defmodule ASM do
       Content,
       {Content, []},
       Control,
+      AdapterSelectionPolicy,
       {Control, []},
       Error,
       Event,

@@ -9,7 +9,7 @@ defmodule ASM.ProviderRegistry do
   - `resolve/2` applies execution-mode compatibility to produce the effective backend
   """
 
-  alias ASM.{Error, Provider, ProviderRuntimeProfile}
+  alias ASM.{AdapterSelectionPolicy, Error, Provider, ProviderRuntimeProfile}
 
   @type lane :: :auto | :core | :sdk
   @type execution_mode :: :local | :remote_node
@@ -65,6 +65,20 @@ defmodule ASM.ProviderRegistry do
     Provider.supported_providers()
   end
 
+  @doc """
+  Declares the Phase 6 adapter selection policy for ASM provider resolution.
+  """
+  @spec adapter_selection_policy() :: AdapterSelectionPolicy.t()
+  def adapter_selection_policy do
+    AdapterSelectionPolicy.new!(%{
+      selection_surface: "provider_registry",
+      owner_repo: "agent_session_manager",
+      config_key: "cli_subprocess_core.provider_runtime_profiles",
+      default_value_when_unset: "normal_lane_resolution",
+      fail_closed_action_when_misconfigured: "force_core_lane_or_reject_required_profile"
+    })
+  end
+
   @spec fetch(atom() | Provider.t()) :: {:ok, Provider.t()} | {:error, Error.t()}
   def fetch(provider), do: Provider.resolve(provider)
 
@@ -95,6 +109,7 @@ defmodule ASM.ProviderRegistry do
   @spec lane_info(atom() | Provider.t(), keyword()) :: {:ok, lane_info()} | {:error, Error.t()}
   def lane_info(provider, opts \\ []) do
     with {:ok, %Provider{} = config} <- fetch(provider),
+         :ok <- reject_public_simulation_selector(config.name, opts),
          {:ok, requested_lane} <- requested_lane(opts) do
       sdk_available? = sdk_available?(config)
       provider_info = provider_info_from_config(config)
@@ -312,7 +327,23 @@ defmodule ASM.ProviderRegistry do
     |> Keyword.get(:runtime_loader, &Code.ensure_loaded?/1)
   end
 
-  defp config_error(message) do
-    Error.new(:config_invalid, :config, message)
+  defp reject_public_simulation_selector(provider, opts) when is_list(opts) do
+    if Enum.any?(opts, &public_simulation_entry?/1) do
+      {:error,
+       config_error(
+         "public simulation selector is forbidden; use owner registry configuration",
+         provider,
+         %{provider: provider, forbidden_key: :simulation}
+       )}
+    else
+      :ok
+    end
+  end
+
+  defp public_simulation_entry?({key, _value}), do: key in [:simulation, "simulation"]
+  defp public_simulation_entry?(_entry), do: false
+
+  defp config_error(message, provider \\ nil, cause \\ nil) do
+    Error.new(:config_invalid, :config, message, provider: provider, cause: cause)
   end
 end

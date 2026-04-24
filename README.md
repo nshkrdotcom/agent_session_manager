@@ -59,8 +59,7 @@ def deps do
 end
 ```
 
-For local workspace development, replace that published requirement with the
-repo-local `path:` override.
+For local workspace development, use the sibling repo as a `path:` dependency.
 
 That dependency gives you ASM's normalized kernel plus the discovery modules
 for the current built-in Claude/Codex extension namespaces. Those namespace

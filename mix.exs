@@ -6,6 +6,7 @@ defmodule AgentSessionManager.MixProject do
   @source_url "https://github.com/nshkrdotcom/agent_session_manager"
   @homepage_url "https://hex.pm/packages/agent_session_manager"
   @docs_url "https://hexdocs.pm/agent_session_manager"
+  @cli_subprocess_core_version "~> 0.1.0"
 
   def project do
     [
@@ -51,8 +52,7 @@ defmodule AgentSessionManager.MixProject do
 
   defp deps do
     [
-      {:cli_subprocess_core, path: "../cli_subprocess_core"},
-      {:execution_plane, path: "../execution_plane", override: true},
+      cli_subprocess_core_dep(),
       {:boundary, "~> 0.10.4", runtime: false},
       {:jason, "~> 1.4"},
       {:nimble_options, "~> 1.1"},
@@ -66,6 +66,39 @@ defmodule AgentSessionManager.MixProject do
       {:mox, "~> 1.2", only: :test},
       {:supertester, "~> 0.6.0", only: :test}
     ]
+  end
+
+  defp cli_subprocess_core_dep do
+    case workspace_dep_path("../cli_subprocess_core", "AGENT_SESSION_MANAGER_HEX_DEPS") do
+      nil -> {:cli_subprocess_core, @cli_subprocess_core_version}
+      path -> {:cli_subprocess_core, path: path}
+    end
+  end
+
+  defp workspace_dep_path(relative_path, force_hex_env) do
+    if prefer_workspace_paths?(force_hex_env) do
+      path = Path.expand(relative_path, __DIR__)
+      if File.dir?(path), do: path
+    end
+  end
+
+  defp prefer_workspace_paths?(force_hex_env) do
+    workspace_paths_forced?(force_hex_env) or
+      (not release_deps_forced?(force_hex_env) and not Enum.member?(Path.split(__DIR__), "deps"))
+  end
+
+  defp release_deps_forced?(force_hex_env) do
+    force_hex_deps?(force_hex_env) or
+      Enum.any?(System.argv(), &(&1 in ["hex.build", "hex.publish"]))
+  end
+
+  defp workspace_paths_forced?(force_hex_env) do
+    not force_hex_deps?(force_hex_env) and
+      System.get_env("FORCE_WORKSPACE_PATH_DEPS") in ["1", "true", "TRUE", "yes", "YES"]
+  end
+
+  defp force_hex_deps?(force_hex_env) do
+    System.get_env(force_hex_env) in ["1", "true", "TRUE", "yes", "YES"]
   end
 
   defp boundary_checks_enabled? do

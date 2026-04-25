@@ -6,7 +6,7 @@ defmodule ASM.AdapterSelectionPolicy do
   rule. It does not expose request-time simulation selectors.
   """
 
-  @contract_version "ExecutionPlane.AdapterSelectionPolicy.v1"
+  @contract_version "ASM.AdapterSelectionPolicy.v1"
   @owner_repo "agent_session_manager"
   @selection_surfaces [
     "application_config",

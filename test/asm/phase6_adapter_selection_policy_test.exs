@@ -7,7 +7,7 @@ defmodule ASM.Phase6AdapterSelectionPolicyTest do
     policy = ProviderRegistry.adapter_selection_policy()
     dump = AdapterSelectionPolicy.dump(policy)
 
-    assert policy.contract_version == "ExecutionPlane.AdapterSelectionPolicy.v1"
+    assert policy.contract_version == "ASM.AdapterSelectionPolicy.v1"
     assert policy.owner_repo == "agent_session_manager"
     assert policy.selection_surface == "provider_registry"
     assert policy.config_key == "cli_subprocess_core.provider_runtime_profiles"

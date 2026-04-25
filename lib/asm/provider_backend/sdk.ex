@@ -5,15 +5,18 @@ defmodule ASM.ProviderBackend.SDK do
 
   @behaviour ASM.ProviderBackend
 
-  alias ASM.{Error, Execution, Options, Provider}
+  alias ASM.{Error, Execution, HostTool, Options, Provider}
   alias ASM.ProviderBackend.Proxy
+  alias ASM.ProviderBackend.SDK.CodexAppServer
   @claude_options_module Module.concat(["ClaudeAgentSDK", "Options"])
   @gemini_options_module Module.concat(["GeminiCliSdk", "Options"])
   @amp_options_module Module.concat(["AmpSdk", "Types", "Options"])
   @codex_module Module.concat(["Codex"])
   @codex_options_module Module.concat(["Codex", "Options"])
   @codex_thread_options_module Module.concat(["Codex", "Thread", "Options"])
+  @codex_thread_runner_module Module.concat(["Codex", "Thread"])
   @codex_exec_options_module Module.concat(["Codex", "Exec", "Options"])
+  @codex_app_server_module Module.concat(["Codex", "AppServer"])
 
   @impl true
   def start_run(%{provider: %Provider{} = provider} = config) do
@@ -21,8 +24,33 @@ defmodule ASM.ProviderBackend.SDK do
            fetch_execution_config(config),
          {:ok, execution_surface} <- execution_surface_from_config(execution_config),
          config = Map.put(config, :execution_surface, execution_surface),
-         :ok <- validate_approval_posture(execution_config),
-         runtime when is_atom(runtime) <- provider.sdk_runtime,
+         :ok <- validate_approval_posture(execution_config) do
+      case codex_app_server_mode(provider, config) do
+        :app_server -> start_codex_app_server_run(provider, config)
+        :exec -> start_runtime_proxy(provider, config)
+      end
+    else
+      {:ok, %Execution.Config{execution_mode: :remote_node}} ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :config,
+           "sdk lane is not supported for :remote_node execution"
+         )}
+
+      {:error, _reason} = error ->
+        error
+
+      other ->
+        {:error,
+         Error.new(:runtime, :runtime, "sdk backend start failed: #{inspect(other)}",
+           cause: other
+         )}
+    end
+  end
+
+  defp start_runtime_proxy(%Provider{} = provider, config) do
+    with runtime when is_atom(runtime) <- provider.sdk_runtime,
          true <- Code.ensure_loaded?(runtime),
          {:ok, start_opts} <- build_start_opts(provider, config),
          {:ok, proxy, info} <-
@@ -40,14 +68,6 @@ defmodule ASM.ProviderBackend.SDK do
            ) do
       {:ok, proxy, info}
     else
-      {:ok, %Execution.Config{execution_mode: :remote_node}} ->
-        {:error,
-         Error.new(
-           :config_invalid,
-           :config,
-           "sdk lane is not supported for :remote_node execution"
-         )}
-
       false ->
         {:error, Error.new(:config_invalid, :provider, "sdk runtime is unavailable")}
 
@@ -217,6 +237,106 @@ defmodule ASM.ProviderBackend.SDK do
       {:error, %Error{} = error} ->
         {:error, error}
     end
+  end
+
+  defp codex_app_server_requested?(%Provider{name: :codex}, config) do
+    provider_opts = Map.get(config, :provider_opts, [])
+
+    Keyword.get(provider_opts, :app_server, false) == true or
+      non_empty_keyword_list?(provider_opts, :host_tools) or
+      non_empty_keyword_list?(provider_opts, :dynamic_tools)
+  end
+
+  defp codex_app_server_requested?(_provider, _config), do: false
+
+  defp codex_app_server_mode(provider, config) do
+    if codex_app_server_requested?(provider, config), do: :app_server, else: :exec
+  end
+
+  defp start_codex_app_server_run(%Provider{name: :codex} = provider, config) do
+    with {:ok, provider_opts} <-
+           Options.finalize_provider_opts(
+             :codex,
+             effective_provider_opts(config, Map.get(config, :execution_config))
+           ),
+         config = Map.put(config, :provider_opts, provider_opts),
+         model_payload = Keyword.fetch!(provider_opts, :model_payload),
+         {:ok, codex_opts} <-
+           new_sdk_struct(
+             @codex_options_module,
+             codex_option_attrs(config, model_payload, Map.fetch!(config, :execution_surface)),
+             "codex"
+           ),
+         {:ok, conn} <- connect_codex_app_server(codex_opts, config),
+         {:ok, thread_opts} <-
+           new_sdk_struct(
+             @codex_thread_options_module,
+             codex_app_server_thread_option_attrs(config, model_payload, conn),
+             "codex"
+           ),
+         {:ok, thread} <-
+           build_codex_thread(codex_opts, thread_opts, Map.get(config, :continuation)),
+         {:ok, pid, info} <-
+           CodexAppServer.start_link(
+             app_server_api:
+               backend_opt(config, :codex_app_server_module, @codex_app_server_module),
+             conn: conn,
+             thread: thread,
+             thread_runner:
+               backend_opt(config, :codex_thread_runner_module, @codex_thread_runner_module),
+             prompt: Map.fetch!(config, :prompt),
+             run_opts: backend_opt(config, :run_opts, []),
+             tools: Map.get(config, :tools, %{}),
+             metadata: Map.get(config, :metadata, %{}),
+             capabilities: [:streaming, :app_server, :host_tools, :session_resume],
+             initial_subscribers: initial_subscribers(config)
+           ) do
+      {:ok, pid, %{info | provider: provider.name, lane: :sdk, backend: __MODULE__}}
+    else
+      {:error, %Error{} = error} ->
+        {:error, error}
+
+      {:error, reason} ->
+        {:error,
+         Error.new(
+           :runtime,
+           :runtime,
+           "codex app-server backend start failed: #{inspect(reason)}",
+           cause: reason
+         )}
+    end
+  end
+
+  defp connect_codex_app_server(codex_opts, config) do
+    app_server_api = backend_opt(config, :codex_app_server_module, @codex_app_server_module)
+
+    connect_opts =
+      [experimental_api: true, init_timeout_ms: 30_000]
+      |> Keyword.merge(backend_opt(config, :connect_opts, []))
+
+    app_server_api.connect(codex_opts, connect_opts)
+  end
+
+  defp codex_app_server_thread_option_attrs(config, model_payload, conn) do
+    config
+    |> codex_thread_option_attrs(model_payload)
+    |> Keyword.put(:transport, {:app_server, conn})
+    |> Keyword.put(:dynamic_tools, codex_dynamic_tools(config))
+  end
+
+  defp codex_dynamic_tools(config) do
+    provider_opts = Map.get(config, :provider_opts, [])
+
+    host_dynamic_tools =
+      provider_opts
+      |> Keyword.get(:host_tools, [])
+      |> HostTool.Spec.normalize_list()
+      |> case do
+        {:ok, specs} -> Enum.map(specs, &HostTool.Spec.to_dynamic_tool/1)
+        {:error, _reason} -> []
+      end
+
+    host_dynamic_tools ++ Keyword.get(provider_opts, :dynamic_tools, [])
   end
 
   defp sdk_start_opts(_runtime, config, extra) do
@@ -502,6 +622,19 @@ defmodule ASM.ProviderBackend.SDK do
 
   defp maybe_put(provider_opts, _key, nil), do: provider_opts
   defp maybe_put(provider_opts, key, value), do: Keyword.put(provider_opts, key, value)
+
+  defp non_empty_keyword_list?(keyword, key) when is_list(keyword) do
+    case Keyword.get(keyword, key, []) do
+      values when is_list(values) -> values != []
+      _value -> true
+    end
+  end
+
+  defp backend_opt(config, key, default) do
+    config
+    |> Map.get(:backend_opts, [])
+    |> Keyword.get(key, default)
+  end
 
   defp execution_surface_from_config(%Execution.Config{} = execution_config) do
     {:ok, Execution.Config.to_execution_surface(execution_config)}

@@ -6,8 +6,8 @@ final result.
 
 ## Event Envelope
 
-Backends emit `CliSubprocessCore.Event` values. `ASM.Run.Server` wraps them as
-`%ASM.Event{}` with:
+Backends usually emit `CliSubprocessCore.Event` values. `ASM.Run.Server` wraps
+them as `%ASM.Event{}` with:
 
 - `run_id`
 - `session_id`
@@ -21,6 +21,20 @@ Backends emit `CliSubprocessCore.Event` values. `ASM.Run.Server` wraps them as
 - `metadata`
 
 The original normalized core event remains available in `event.core_event`.
+
+Some promoted ASM-native lanes emit `%ASM.Event{}` directly through the same
+backend envelope. The current native event set includes:
+
+- `:host_tool_requested`
+- `:host_tool_completed`
+- `:host_tool_failed`
+- `:host_tool_denied`
+- `:session_checkpoint`
+- `:session_resumed`
+
+The Codex app-server lane uses those host-tool events for dynamic tool
+request/response handling while continuing to emit normal core assistant and
+result events for text/result projection.
 
 `%ASM.Event{}` remains the ergonomic public envelope. `ASM.Schema.Event`
 validates and normalizes rebuilt event maps, while forward-compatible unknown
@@ -71,6 +85,8 @@ side channel.
 - `:result` marks the run completed successfully
 - `:error` marks the run failed and becomes `%ASM.Error{}`
 - `:run_completed` is the ASM-local lifecycle completion signal
+- `:host_tool_*` events are ASM-local host-tool lifecycle events and do not
+  replace the terminal `:result` / `:error` semantics
 - approval and cost events continue to update run state before the final result
 
 That deterministic reducer path is the source of truth for one-shot

@@ -178,6 +178,13 @@ kernel APIs. They only:
 - start `Codex.AppServer` when callers explicitly opt into the SDK-local
   app-server family
 
+The normalized ASM backend has one promoted Codex app-server path: host dynamic
+tools. When a Codex run requests `app_server: true`, `host_tools: [...]`, or
+`dynamic_tools: [...]`, `ASM.ProviderBackend.SDK` starts app-server, renders the
+tool specs, handles `DynamicToolCallRequested`, and emits ASM host-tool events.
+Other Codex app-server APIs still belong to `codex_sdk` or this explicit
+extension seam.
+
 Example:
 
 ```elixir
@@ -249,8 +256,9 @@ workspace-write behavior.
 - the Codex bridge follows the same rule for ASM-derived fields such as
   `:model`, `:reasoning_effort`, `:cwd`, `:approval_timeout_ms`, and
   `:output_schema`
-- the Codex bridge is intentionally useful only at the app-server entry seam;
-  the actual app-server, MCP, realtime, and voice APIs remain in `codex_sdk`
+- the Codex bridge is intentionally useful at the app-server entry seam; ASM
+  only promotes host dynamic tools into the backend, while the broader
+  app-server, MCP, realtime, and voice APIs remain in `codex_sdk`
 
 ## Current Native Capability Inventory
 

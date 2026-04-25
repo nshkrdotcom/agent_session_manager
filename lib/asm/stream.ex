@@ -37,6 +37,7 @@ defmodule ASM.Stream do
     :run_module_opts,
     :pipeline,
     :pipeline_ctx,
+    :tools,
     :approval_timeout_ms,
     :backend_module,
     :backend_opts

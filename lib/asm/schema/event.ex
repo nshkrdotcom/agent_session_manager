@@ -9,7 +9,16 @@ defmodule ASM.Schema.Event do
   alias CliSubprocessCore.Event, as: CoreEvent
   alias CliSubprocessCore.Schema.Conventions
 
-  @kinds CoreEvent.kinds() ++ [:run_completed]
+  @kinds CoreEvent.kinds() ++
+           [
+             :run_completed,
+             :host_tool_requested,
+             :host_tool_completed,
+             :host_tool_failed,
+             :host_tool_denied,
+             :session_checkpoint,
+             :session_resumed
+           ]
 
   @known_fields [
     :id,

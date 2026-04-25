@@ -72,6 +72,67 @@ defmodule ASM.ProviderBackend.SDKTest do
     end
   end
 
+  defmodule CodexAppServerStub do
+    @moduledoc false
+
+    def connect(_options, connect_opts) when is_list(connect_opts) do
+      if pid = Keyword.get(connect_opts, :test_pid) do
+        send(pid, {:codex_app_server_connect_opts, connect_opts})
+      end
+
+      conn =
+        spawn_link(fn ->
+          receive do
+            :disconnect -> :ok
+          end
+        end)
+
+      {:ok, conn}
+    end
+
+    def respond(conn, request_id, response) when is_pid(conn) do
+      send(conn, {:dynamic_tool_response, request_id, response})
+      :ok
+    end
+
+    def disconnect(conn) when is_pid(conn) do
+      send(conn, :disconnect)
+      :ok
+    end
+  end
+
+  defmodule CodexThreadRunnerStub do
+    @moduledoc false
+
+    def run_streamed(thread, prompt, opts) do
+      send(opts[:test_pid], {:codex_app_server_run_streamed, thread, prompt, opts})
+
+      {:ok,
+       [
+         %Codex.Events.TurnStarted{thread_id: "thread-app-1", turn_id: "turn-1"},
+         %Codex.Events.DynamicToolCallRequested{
+           id: "jsonrpc-1",
+           thread_id: "thread-app-1",
+           turn_id: "turn-1",
+           call_id: "call-1",
+           tool_name: "echo_json",
+           arguments: %{"message" => "hello"}
+         },
+         %Codex.Events.ItemAgentMessageDelta{
+           thread_id: "thread-app-1",
+           turn_id: "turn-1",
+           item: %{"text" => "done"}
+         },
+         %Codex.Events.TurnCompleted{
+           thread_id: "thread-app-1",
+           turn_id: "turn-1",
+           status: "completed",
+           final_response: %Codex.Items.AgentMessage{text: "done"}
+         }
+       ]}
+    end
+  end
+
   defmodule AmpRuntimeStub do
     @moduledoc false
 
@@ -250,6 +311,97 @@ defmodule ASM.ProviderBackend.SDKTest do
     metadata = Keyword.fetch!(start_opts, :metadata)
     assert metadata[:lane] == :sdk
     assert metadata[:asm_provider] == :codex
+  end
+
+  test "codex sdk backend selects app-server runtime when host dynamic tools are requested" do
+    provider = %{Provider.resolve!(:codex) | sdk_runtime: CodexRuntimeStub}
+    subscription_ref = make_ref()
+
+    host_tools = [
+      %{
+        name: "echo_json",
+        description: "Echo JSON arguments",
+        input_schema: %{
+          "type" => "object",
+          "properties" => %{"message" => %{"type" => "string"}},
+          "required" => ["message"]
+        }
+      }
+    ]
+
+    config = %{
+      provider: provider,
+      prompt: "use echo_json",
+      execution_config: execution_config([]),
+      provider_opts: [
+        app_server: true,
+        host_tools: host_tools,
+        system_prompt: "Use dynamic tools when requested."
+      ],
+      backend_opts: [
+        codex_app_server_module: CodexAppServerStub,
+        codex_thread_runner_module: CodexThreadRunnerStub,
+        connect_opts: [test_pid: self()],
+        run_opts: [test_pid: self()]
+      ],
+      tools: %{
+        "echo_json" => fn args -> {:ok, %{"echo" => args}} end
+      },
+      subscriber_pid: self(),
+      subscription_ref: subscription_ref,
+      metadata: %{test_pid: self()}
+    }
+
+    assert {:ok, session, info} = SDK.start_run(config)
+    on_exit(fn -> SDK.close(session) end)
+
+    assert info.lane == :sdk
+    assert info.provider == :codex
+    assert info.runtime == ASM.ProviderBackend.SDK.CodexAppServer
+    assert :app_server in info.capabilities
+    assert :host_tools in info.capabilities
+
+    assert_receive {:codex_app_server_connect_opts, connect_opts}
+    assert connect_opts[:experimental_api] == true
+
+    assert_receive {:codex_app_server_run_streamed, thread, "use echo_json", run_opts}
+    assert run_opts[:test_pid] == self()
+    assert %Codex.Thread.Options{} = thread.thread_opts
+    assert {:app_server, conn} = thread.thread_opts.transport
+    assert is_pid(conn)
+    assert [%{"name" => "echo_json"}] = thread.thread_opts.dynamic_tools
+
+    assert_receive %ASM.ProviderBackend.Event{
+      subscription_ref: ^subscription_ref,
+      asm_event: %ASM.Event{
+        kind: :host_tool_requested,
+        payload: %ASM.HostTool.Request{
+          id: "jsonrpc-1",
+          provider_session_id: "thread-app-1",
+          provider_turn_id: "turn-1",
+          tool_name: "echo_json",
+          arguments: %{"message" => "hello"}
+        }
+      }
+    }
+
+    assert_receive %ASM.ProviderBackend.Event{
+      subscription_ref: ^subscription_ref,
+      asm_event: %ASM.Event{
+        kind: :host_tool_completed,
+        payload: %ASM.HostTool.Response{request_id: "jsonrpc-1", success?: true}
+      }
+    }
+
+    assert_receive %ASM.ProviderBackend.Event{
+      subscription_ref: ^subscription_ref,
+      core_event: %CliSubprocessCore.Event{kind: :assistant_delta}
+    }
+
+    assert_receive %ASM.ProviderBackend.Event{
+      subscription_ref: ^subscription_ref,
+      core_event: %CliSubprocessCore.Event{kind: :result, provider_session_id: "thread-app-1"}
+    }
   end
 
   test "amp sdk backend maps ASM bypass mode to dangerously_allow_all and keeps safe defaults" do

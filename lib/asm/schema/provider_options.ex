@@ -76,6 +76,9 @@ defmodule ASM.Schema.ProviderOptions do
     model_provider: Conventions.optional_trimmed_string(),
     oss_provider: Conventions.optional_trimmed_string(),
     skip_git_repo_check: Zoi.boolean(),
+    app_server: Zoi.boolean(),
+    host_tools: Zoi.array(Conventions.optional_any()),
+    dynamic_tools: Zoi.array(Conventions.optional_any()),
     output_schema: Zoi.optional(Zoi.nullish(Conventions.any_map())),
     additional_directories: Zoi.array(Conventions.trimmed_string() |> Zoi.min(1))
   }

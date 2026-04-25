@@ -46,6 +46,69 @@ defmodule ASM.ProviderFeaturesTest do
     assert amp.permission_modes.dangerously_allow_all.cli_excerpt == "--dangerously-allow-all"
   end
 
+  test "provider lane capability manifests use support states across all four SDK providers" do
+    assert ProviderFeatures.support_states() == [
+             :common,
+             :native,
+             :sdk_local,
+             :event_only,
+             :unsupported,
+             :planned
+           ]
+
+    codex_app_server = ProviderFeatures.lane_manifest!(:codex, :sdk_app_server)
+    assert codex_app_server.composition_mode == :native_extension
+    assert codex_app_server.capabilities.host_tools.support_state == :native
+    assert codex_app_server.capabilities.host_tools.supported? == true
+    assert codex_app_server.capabilities.host_tools.provider_native? == true
+    assert :host_tools in codex_app_server.capabilities.host_tools.asm_option_keys
+    assert :dynamic_tools in codex_app_server.capabilities.host_tools.provider_native_option_keys
+    assert :host_tool_requested in codex_app_server.capabilities.host_tools.event_kinds
+    assert codex_app_server.capabilities.app_server.support_state == :native
+    assert codex_app_server.capabilities.sandbox_policy.support_state == :native
+
+    codex_core = ProviderFeatures.lane_manifest!(:codex, :core)
+    assert codex_core.composition_mode == :common_surface_only
+    assert codex_core.capabilities.host_tools.support_state == :event_only
+    assert codex_core.capabilities.app_server.support_state == :unsupported
+    assert codex_core.capabilities.workspace_context.support_state == :common
+
+    claude_sdk = ProviderFeatures.lane_manifest!(:claude, :sdk)
+    assert claude_sdk.composition_mode == :native_extension
+    assert claude_sdk.capabilities.host_tools.support_state == :unsupported
+    assert claude_sdk.capabilities.provider_control.support_state == :native
+    assert claude_sdk.capabilities.app_server.support_state == :unsupported
+    refute :dynamic_tools in claude_sdk.capabilities.host_tools.provider_native_option_keys
+
+    for provider <- [:amp, :gemini] do
+      manifest = ProviderFeatures.lane_manifest!(provider, :sdk)
+
+      assert manifest.composition_mode == :common_surface_only
+      assert manifest.native_namespaces == []
+      assert manifest.capabilities.host_tools.support_state == :unsupported
+      assert manifest.capabilities.host_tools.supported? == false
+      assert manifest.capabilities.app_server.support_state == :unsupported
+      assert manifest.capabilities.sandbox_policy.support_state in [:unsupported, :sdk_local]
+      refute :dynamic_tools in manifest.capabilities.host_tools.provider_native_option_keys
+    end
+  end
+
+  test "unsupported provider capabilities fail with explicit provider lane and capability context" do
+    assert :ok = ProviderFeatures.require_capability(:codex, :sdk_app_server, :host_tools)
+
+    assert {:error, error} = ProviderFeatures.require_capability(:amp, :sdk, :host_tools)
+    assert error.kind == :config_invalid
+    assert error.domain == :provider
+    assert error.message =~ ":amp"
+    assert error.message =~ ":sdk"
+    assert error.message =~ ":host_tools"
+    assert error.message =~ "unsupported"
+
+    assert {:error, error} = ProviderFeatures.require_capability(:gemini, :sdk, :app_server)
+    assert error.message =~ ":gemini"
+    assert error.message =~ ":app_server"
+  end
+
   test "ASM rejects normalized auto mode for Codex while preserving native feature discovery" do
     schema = Provider.resolve!(:codex).options_schema
 

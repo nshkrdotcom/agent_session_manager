@@ -14,7 +14,15 @@ defmodule ASM.Event do
   alias CliSubprocessCore.Event, as: CoreEvent
   alias CliSubprocessCore.Payload
 
-  @local_kinds [:run_completed]
+  @local_kinds [
+    :run_completed,
+    :host_tool_requested,
+    :host_tool_completed,
+    :host_tool_failed,
+    :host_tool_denied,
+    :session_checkpoint,
+    :session_resumed
+  ]
   @core_kinds CoreEvent.kinds()
   @kinds @core_kinds ++ @local_kinds
 
@@ -36,7 +44,15 @@ defmodule ASM.Event do
     extra: %{}
   ]
 
-  @type kind :: CoreEvent.kind() | :run_completed
+  @type kind ::
+          CoreEvent.kind()
+          | :run_completed
+          | :host_tool_requested
+          | :host_tool_completed
+          | :host_tool_failed
+          | :host_tool_denied
+          | :session_checkpoint
+          | :session_resumed
   @type payload ::
           CoreEvent.payload()
           | Control.RunLifecycle.t()

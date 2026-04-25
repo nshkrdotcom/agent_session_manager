@@ -9,6 +9,8 @@ It answers two questions:
 
 - what provider-native term does ASM map a normalized permission mode onto?
 - which ASM common features are available for this provider?
+- which lane-specific capabilities are common, native, SDK-local,
+  event-only, unsupported, or planned?
 
 ## Discover Provider Features
 
@@ -17,7 +19,8 @@ iex> ASM.ProviderFeatures.manifest!(:codex)
 %{
   provider: :codex,
   permission_modes: %{...},
-  common_features: %{ollama: %{supported?: true, ...}}
+  common_features: %{ollama: %{supported?: true, ...}},
+  lanes: %{core: %{...}, sdk: %{...}, sdk_app_server: %{...}}
 }
 ```
 
@@ -34,6 +37,47 @@ iex> ASM.ProviderFeatures.common_feature!(:claude, :ollama)
   notes: [...]
 }
 ```
+
+## Lane Capability Manifests
+
+`ASM.ProviderFeatures.lane_manifest!/2` exposes support states for capability
+gating before a host starts a run.
+
+Support states are:
+
+- `:common` for normalized ASM support
+- `:native` for a provider-native ASM lane
+- `:sdk_local` for SDK behavior that is not promoted into ASM
+- `:event_only` for observable provider events without a response API
+- `:unsupported` for behavior callers must not request
+- `:planned` for documented future work
+
+Codex app-server host tools are native only on the promoted SDK app-server lane:
+
+```elixir
+iex> ASM.ProviderFeatures.lane_manifest!(:codex, :sdk_app_server).capabilities.host_tools.support_state
+:native
+```
+
+Codex core exec can observe tool-use events, but it cannot answer app-server
+dynamic tool requests:
+
+```elixir
+iex> ASM.ProviderFeatures.lane_manifest!(:codex, :core).capabilities.host_tools.support_state
+:event_only
+```
+
+Amp and Gemini stay common-surface-only. They may have SDK lanes, but they do
+not claim Codex app-server or host dynamic-tool semantics:
+
+```elixir
+iex> ASM.ProviderFeatures.require_capability(:gemini, :sdk, :host_tools)
+{:error, %ASM.Error{}}
+```
+
+Claude reports native control capability separately. Claude hooks and
+permission callbacks are not represented as Codex `dynamicTools` unless a real
+request/response loop is implemented and tested.
 
 ## Common Permission Mode
 

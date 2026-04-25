@@ -132,7 +132,7 @@ defmodule ASM.Run.Server do
 
   @impl true
   def handle_info(
-        %BackendEvent{subscription_ref: ref, core_event: core_event},
+        %BackendEvent{subscription_ref: ref, core_event: %CliSubprocessCore.Event{} = core_event},
         %{backend_subscription_ref: ref} = state
       ) do
     event =
@@ -141,6 +141,13 @@ defmodule ASM.Run.Server do
         core_event
       )
 
+    consume_event(state, event)
+  end
+
+  def handle_info(
+        %BackendEvent{subscription_ref: ref, asm_event: %Event{} = event},
+        %{backend_subscription_ref: ref} = state
+      ) do
     consume_event(state, event)
   end
 
@@ -302,6 +309,7 @@ defmodule ASM.Run.Server do
       continuation: state.continuation,
       provider_opts: state.provider_opts,
       backend_opts: state.backend_opts,
+      tools: state.tools,
       execution_config: state.execution_config,
       subscriber_pid: self(),
       subscription_ref: subscription_ref,

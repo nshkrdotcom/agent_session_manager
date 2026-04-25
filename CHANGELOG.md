@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Provider/lane capability manifests with support states for Codex, Claude,
+  Amp, and Gemini, including explicit unsupported capability errors for
+  Codex-style host dynamic tools on Amp/Gemini.
+- `ASM.HostTool` specs, requests, and responses plus ASM-local host-tool event
+  kinds for Codex app-server dynamic tool request/response flows.
+- A Codex SDK app-server backend path that advertises `dynamicTools`, executes
+  registered host tools, responds through `Codex.AppServer.respond/3`, and
+  projects host-tool lifecycle events.
+
 ### Changed
 
 - Renamed the provider adapter-selection policy contract from the old

@@ -19,6 +19,15 @@ defmodule ASM.Options.Codex do
       model_provider: [type: {:or, [:string, nil]}, default: nil],
       oss_provider: [type: {:or, [:string, nil]}, default: nil],
       skip_git_repo_check: [type: :boolean, default: false],
+      app_server: [type: :boolean, default: false],
+      host_tools: [
+        type: {:custom, ASM.Options, :validate_passthrough_list, [:host_tools]},
+        default: []
+      ],
+      dynamic_tools: [
+        type: {:custom, ASM.Options, :validate_passthrough_list, [:dynamic_tools]},
+        default: []
+      ],
       output_schema: [
         type: {:custom, ASM.Options, :validate_passthrough_map, [:output_schema]},
         default: nil

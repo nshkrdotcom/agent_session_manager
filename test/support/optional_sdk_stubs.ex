@@ -310,6 +310,7 @@ unless Code.ensure_loaded?(Codex.Thread.Options) do
               output_schema: nil,
               personality: nil,
               collaboration_mode: nil,
+              dynamic_tools: [],
               transport: nil
 
     def new(attrs) when is_list(attrs) or is_map(attrs) do
@@ -357,6 +358,73 @@ unless Code.ensure_loaded?(Codex.Thread) do
               thread_opts: nil,
               thread_id: nil,
               transport: nil
+  end
+end
+
+unless Code.ensure_loaded?(Codex.Items.AgentMessage) do
+  defmodule Codex.Items.AgentMessage do
+    @moduledoc false
+
+    defstruct id: nil, type: :agent_message, text: nil, parsed: nil, phase: nil
+  end
+end
+
+unless Code.ensure_loaded?(Codex.Events.TurnStarted) do
+  defmodule Codex.Events.TurnStarted do
+    @moduledoc false
+
+    defstruct turn_id: nil, thread_id: nil
+  end
+end
+
+unless Code.ensure_loaded?(Codex.Events.TurnCompleted) do
+  defmodule Codex.Events.TurnCompleted do
+    @moduledoc false
+
+    defstruct thread_id: nil,
+              turn_id: nil,
+              response_id: nil,
+              final_response: nil,
+              usage: nil,
+              status: nil,
+              error: nil
+  end
+end
+
+unless Code.ensure_loaded?(Codex.Events.ItemAgentMessageDelta) do
+  defmodule Codex.Events.ItemAgentMessageDelta do
+    @moduledoc false
+
+    defstruct item: %{}, thread_id: nil, turn_id: nil
+  end
+end
+
+unless Code.ensure_loaded?(Codex.Events.ItemCompleted) do
+  defmodule Codex.Events.ItemCompleted do
+    @moduledoc false
+
+    defstruct item: nil, thread_id: nil, turn_id: nil
+  end
+end
+
+unless Code.ensure_loaded?(Codex.Events.TurnFailed) do
+  defmodule Codex.Events.TurnFailed do
+    @moduledoc false
+
+    defstruct error: %{}, thread_id: nil, turn_id: nil
+  end
+end
+
+unless Code.ensure_loaded?(Codex.Events.DynamicToolCallRequested) do
+  defmodule Codex.Events.DynamicToolCallRequested do
+    @moduledoc false
+
+    defstruct id: nil,
+              thread_id: nil,
+              turn_id: nil,
+              call_id: nil,
+              tool_name: nil,
+              arguments: %{}
   end
 end
 

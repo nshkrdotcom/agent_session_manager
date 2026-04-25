@@ -14,6 +14,8 @@ defmodule ASM do
       Error,
       Event,
       History,
+      HostTool,
+      {HostTool, []},
       InferenceEndpoint,
       Message,
       {Message, []},

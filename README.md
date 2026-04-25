@@ -22,7 +22,7 @@ Supported providers:
 
 - Claude CLI
 - Gemini CLI
-- Codex CLI (`exec` mode)
+- Codex CLI (`exec` mode plus SDK app-server host tools when requested)
 - Amp CLI
 
 ## Documentation Menu
@@ -189,6 +189,8 @@ are rejected on that endpoint seam.
 Gemini and Amp remain common-surface-only providers. Their capability
 publication can make them valid endpoint targets without introducing a second
 ASM-native extension namespace.
+They explicitly report Codex-style host dynamic tools and app-server control as
+unsupported, even when their SDK runtime kits are installed.
 
 See `guides/inference-endpoints.md` and
 `examples/inference_endpoint_http.exs` for the published descriptor contract
@@ -629,11 +631,13 @@ That bridge is intentionally narrow:
 
 - ASM-derived fields such as `:model`, `:reasoning_effort`, `:cwd`,
   `:approval_timeout_ms`, and `:output_schema` stay in ASM config
-- Codex-native fields such as `:personality`, `:collaboration_mode`,
-  `:attachments`, and app-server `transport` stay in `native_overrides`
+- Codex-native thread fields such as `:personality`, `:collaboration_mode`,
+  and `:attachments` stay in `native_overrides` for direct extension helpers
 - richer Codex APIs still live in `codex_sdk`
-- app-server, MCP, realtime, and voice remain outside `ASM`, `ASM.Stream`, and
-  `ASM.ProviderRegistry`
+- Codex app-server host dynamic tools are promoted through the SDK backend only
+  when `app_server: true`, `host_tools: [...]`, or `dynamic_tools: [...]` is
+  requested; MCP, realtime, voice, and broader app-server APIs remain in
+  `codex_sdk`
 
 See [Provider SDK Extensions](guides/provider-sdk-extensions.md) for the
 kernel-versus-extension split and the discovery API.
@@ -651,6 +655,12 @@ ASM.ProviderFeatures.permission_mode!(:codex, :yolo).cli_excerpt
 
 ASM.ProviderFeatures.common_feature!(:claude, :ollama)
 # => %{supported?: true, activation: %{provider_backend: :ollama}, ...}
+
+ASM.ProviderFeatures.lane_manifest!(:codex, :sdk_app_server).capabilities.host_tools
+# => %{support_state: :native, supported?: true, ...}
+
+ASM.ProviderFeatures.require_capability(:amp, :sdk, :host_tools)
+# => {:error, %ASM.Error{message: "... unsupported ..."}}
 ```
 
 The current partial common feature is the ASM Ollama surface:

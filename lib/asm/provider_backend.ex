@@ -16,20 +16,28 @@ defmodule ASM.ProviderBackend do
     ASM-owned event delivery envelope emitted by provider backends.
     """
 
+    alias ASM.Event, as: ASMEvent
     alias CliSubprocessCore.Event, as: CoreEvent
 
-    @enforce_keys [:subscription_ref, :core_event]
-    defstruct [:subscription_ref, :core_event]
+    @enforce_keys [:subscription_ref]
+    defstruct [:subscription_ref, :core_event, :asm_event]
 
     @type t :: %__MODULE__{
             subscription_ref: reference(),
-            core_event: CoreEvent.t()
+            core_event: CoreEvent.t() | nil,
+            asm_event: ASMEvent.t() | nil
           }
 
     @spec new(reference(), CoreEvent.t()) :: t()
     def new(subscription_ref, %CoreEvent{} = core_event)
         when is_reference(subscription_ref) do
       %__MODULE__{subscription_ref: subscription_ref, core_event: core_event}
+    end
+
+    @spec new_asm(reference(), ASMEvent.t()) :: t()
+    def new_asm(subscription_ref, %ASMEvent{} = asm_event)
+        when is_reference(subscription_ref) do
+      %__MODULE__{subscription_ref: subscription_ref, asm_event: asm_event}
     end
   end
 

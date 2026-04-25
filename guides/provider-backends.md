@@ -22,6 +22,8 @@ driver/parser stacks.
 - never becomes a required dependency for ASM itself
 - may exist without any separate ASM provider-native namespace, as with Gemini
   and Amp today
+- promotes the Codex app-server host-tool lane when Codex provider options
+  request `app_server: true`, `host_tools: [...]`, or `dynamic_tools: [...]`
 
 ## Common Contract
 
@@ -40,7 +42,9 @@ Both backends satisfy the same `ASM.ProviderBackend` behaviour:
 That keeps `ASM.Run.Server` lane-agnostic after resolution.
 
 After `subscribe/3`, the kernel receives `%ASM.ProviderBackend.Event{}` messages
-instead of matching provider or transport mailbox tags directly.
+instead of matching provider or transport mailbox tags directly. The envelope
+can carry either a normalized `CliSubprocessCore.Event` or an ASM-native event
+such as `:host_tool_requested` from the Codex app-server lane.
 
 `ASM.ProviderBackend.Info` is the ASM-owned metadata contract consumed by the
 kernel:
@@ -116,6 +120,24 @@ the current catalog.
 For Claude specifically, `ASM.Extensions.ProviderSDK.Claude` can bridge ASM
 config into `ClaudeAgentSDK.Client`, but the resulting control calls still live
 on `ClaudeAgentSDK.Client.*` rather than the backend contract.
+
+## Codex App-Server Host Tools
+
+Codex remains on the normal SDK exec runtime unless app-server is requested.
+The app-server path:
+
+- starts `Codex.AppServer` with `experimental_api: true`
+- converts `ASM.HostTool.Spec` values into Codex `dynamicTools`
+- starts or resumes a Codex thread using the app-server transport
+- maps `DynamicToolCallRequested` to `:host_tool_requested`
+- executes registered run `tools` automatically when present
+- responds with `Codex.AppServer.respond/3`
+- emits `:host_tool_completed`, `:host_tool_failed`, or `:host_tool_denied`
+
+The app-server backend still reports through the same `ASM.ProviderBackend`
+contract and emits normal core assistant/result events for stream consumers.
+Broader Codex app-server APIs such as MCP, realtime, voice, plugin, and
+filesystem helpers remain in `codex_sdk` or the provider SDK extension seam.
 
 ## Claude Backend-Specific Model Inputs
 

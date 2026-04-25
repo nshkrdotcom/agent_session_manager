@@ -200,6 +200,14 @@ defmodule ASM.Options do
     {:error, "expected #{inspect(key)} to be a map, got: #{inspect(value)}"}
   end
 
+  @doc false
+  def validate_passthrough_list(value, _key) when is_list(value), do: {:ok, value}
+  def validate_passthrough_list(nil, _key), do: {:ok, []}
+
+  def validate_passthrough_list(value, key) do
+    {:error, "expected #{inspect(key)} to be a list, got: #{inspect(value)}"}
+  end
+
   def validate_model_payload(nil, _key), do: {:ok, nil}
   def validate_model_payload(value, _key) when is_map(value), do: {:ok, value}
 

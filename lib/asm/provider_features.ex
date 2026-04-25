@@ -269,7 +269,7 @@ defmodule ASM.ProviderFeatures do
         capability_manifest(:native, :sdk_app_server,
           provider_native?: true,
           provider_native_option_keys: [:app_server],
-          live_example: "mix run examples/live_app_server_dynamic_tools.exs"
+          live_example: "mix run examples/live_codex_app_server_dynamic_tools.exs"
         ),
       host_tools:
         capability_manifest(:native, :sdk_app_server,
@@ -282,7 +282,7 @@ defmodule ASM.ProviderFeatures do
             :host_tool_failed,
             :host_tool_denied
           ],
-          live_example: "mix run examples/live_app_server_dynamic_tools.exs"
+          live_example: "mix run examples/live_codex_app_server_dynamic_tools.exs"
         ),
       session_resume:
         capability_manifest(:native, :sdk_app_server,

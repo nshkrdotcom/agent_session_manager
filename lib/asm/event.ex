@@ -420,11 +420,18 @@ defmodule ASM.Event do
   defp legacy_content_block(%{type: "text", text: text}) when is_binary(text),
     do: %Content.Text{text: text}
 
+  defp legacy_content_block(%{type: :text, text: text}) when is_binary(text),
+    do: %Content.Text{text: text}
+
   defp legacy_content_block(%{"type" => "thinking", "thinking" => thinking} = block)
        when is_binary(thinking),
        do: %Content.Thinking{thinking: thinking, signature: Map.get(block, "signature")}
 
   defp legacy_content_block(%{type: "thinking", thinking: thinking} = block)
+       when is_binary(thinking),
+       do: %Content.Thinking{thinking: thinking, signature: Map.get(block, :signature)}
+
+  defp legacy_content_block(%{type: :thinking, thinking: thinking} = block)
        when is_binary(thinking),
        do: %Content.Thinking{thinking: thinking, signature: Map.get(block, :signature)}
 
@@ -444,6 +451,14 @@ defmodule ASM.Event do
     }
   end
 
+  defp legacy_content_block(%{type: :tool_use} = block) do
+    %Content.ToolUse{
+      tool_name: Map.get(block, :name) || "",
+      tool_id: Map.get(block, :id) || "",
+      input: normalize_map(Map.get(block, :input))
+    }
+  end
+
   defp legacy_content_block(%{"type" => "tool_result"} = block) do
     %Content.ToolResult{
       tool_id: Map.get(block, "tool_use_id") || Map.get(block, "id") || "",
@@ -453,6 +468,14 @@ defmodule ASM.Event do
   end
 
   defp legacy_content_block(%{type: "tool_result"} = block) do
+    %Content.ToolResult{
+      tool_id: Map.get(block, :tool_use_id) || Map.get(block, :id) || "",
+      content: Map.get(block, :content),
+      is_error: Map.get(block, :is_error, false)
+    }
+  end
+
+  defp legacy_content_block(%{type: :tool_result} = block) do
     %Content.ToolResult{
       tool_id: Map.get(block, :tool_use_id) || Map.get(block, :id) || "",
       content: Map.get(block, :content),

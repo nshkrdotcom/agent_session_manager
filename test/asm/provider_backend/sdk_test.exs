@@ -402,6 +402,12 @@ defmodule ASM.ProviderBackend.SDKTest do
       subscription_ref: ^subscription_ref,
       core_event: %CliSubprocessCore.Event{kind: :result, provider_session_id: "thread-app-1"}
     }
+
+    refute_receive %ASM.ProviderBackend.Event{
+                     subscription_ref: ^subscription_ref,
+                     core_event: %CliSubprocessCore.Event{kind: :assistant_message}
+                   },
+                   50
   end
 
   test "amp sdk backend maps ASM bypass mode to dangerously_allow_all and keeps safe defaults" do

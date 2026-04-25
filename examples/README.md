@@ -4,7 +4,7 @@ These examples cover two surfaces:
 
 - three provider-agnostic live examples on ASM's common API
 - one offline inference-endpoint publication proof
-- four provider-specific examples that intentionally cross into one provider's
+- seven provider-specific examples that intentionally cross into one provider's
   SDK-native surface
 
 Nothing runs by default. The live CLI examples require `--provider`.
@@ -25,6 +25,12 @@ Nothing runs by default. The live CLI examples require `--provider`.
   control-client bridge
 - `provider_codex_app_server.exs`: `ASM.Extensions.ProviderSDK.Codex`
   app-server bridge
+- `live_codex_app_server_session.exs`: promoted ASM SDK lane with a live Codex
+  app-server session
+- `live_codex_app_server_dynamic_tools.exs`: live Codex app-server dynamic tool
+  request projected as ASM host-tool events and fulfilled by a host executor
+- `live_codex_app_server_resume.exs`: live Codex app-server checkpoint and exact
+  provider-thread resume through ASM continuation metadata
 - `provider_gemini_session_resume.exs`: direct `GeminiCliSdk.execute/2` and
   `GeminiCliSdk.resume_session/3`
 - `run_all.sh`: runs the full example set for one or more selected providers
@@ -118,6 +124,9 @@ mix run --no-start examples/live_query.exs -- --provider codex --ssh-host exampl
 mix run --no-start examples/live_query.exs -- --provider codex --ssh-host example.internal --danger-full-access
 mix run --no-start examples/live_query.exs -- --provider claude --ssh-host builder@example.internal --ssh-port 2222
 mix run --no-start examples/provider_codex_app_server.exs -- --provider codex --ollama --ollama-model gpt-oss:20b
+mix run --no-start examples/live_codex_app_server_session.exs -- --provider codex --lane sdk
+mix run --no-start examples/live_codex_app_server_dynamic_tools.exs -- --provider codex --lane sdk
+mix run --no-start examples/live_codex_app_server_resume.exs -- --provider codex --lane sdk
 ```
 
 Shared flags:
@@ -188,6 +197,16 @@ The three common examples are self-checking:
 
 Provider-native examples validate their own provider-specific success
 conditions as well.
+
+The Codex app-server examples require the Codex SDK lane. They force
+`lane: :sdk` for the actual run, advertise `app_server: true`, and use the
+current working directory as the Codex workspace unless you pass `--cwd`.
+`live_codex_app_server_dynamic_tools.exs` also passes `%ASM.HostTool.Spec{}`
+values plus a host `tools` executor map, then requires
+`:host_tool_requested` and `:host_tool_completed` events before it exits green.
+`live_codex_app_server_resume.exs` records the first turn's provider thread id
+from result/checkpoint metadata and sends the second turn with
+`continuation: %{strategy: :exact, provider_session_id: thread_id}`.
 
 ## Environment
 

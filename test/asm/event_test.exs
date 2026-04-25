@@ -88,6 +88,27 @@ defmodule ASM.EventTest do
              Event.legacy_payload(result)
   end
 
+  test "assistant_text/1 accepts atom and string content block types" do
+    string_event =
+      Event.new(
+        :assistant_message,
+        Payload.AssistantMessage.new(content: [%{"type" => "text", "text" => "string"}]),
+        run_id: "run-1",
+        session_id: "session-1"
+      )
+
+    atom_event =
+      Event.new(
+        :assistant_message,
+        Payload.AssistantMessage.new(content: [%{type: :text, text: "atom"}]),
+        run_id: "run-1",
+        session_id: "session-1"
+      )
+
+    assert Event.assistant_text(string_event) == "string"
+    assert Event.assistant_text(atom_event) == "atom"
+  end
+
   test "legacy_payload/1 preserves guardrail error kinds emitted by ASM" do
     event =
       Event.new(

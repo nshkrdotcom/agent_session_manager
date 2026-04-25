@@ -17,12 +17,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A Codex SDK app-server backend path that advertises `dynamicTools`, executes
   registered host tools, responds through `Codex.AppServer.respond/3`, and
   projects host-tool lifecycle events.
+- Live-only Codex app-server ASM examples for plain app-server sessions,
+  dynamic host-tool fulfillment, and exact provider-thread resume.
 
 ### Changed
 
 - Renamed the provider adapter-selection policy contract from the old
   `ExecutionPlane.*` namespace to the ASM-owned
   `ASM.AdapterSelectionPolicy.v1` vocabulary.
+
+### Fixed
+
+- Codex app-server result projection now avoids duplicate final text when a
+  turn emits both streaming deltas and completed assistant-message items, and
+  ASM content projection accepts atom-form content block types.
 
 ## [0.9.2] - 2026-04-09
 

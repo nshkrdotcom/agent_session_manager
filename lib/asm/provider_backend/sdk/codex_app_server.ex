@@ -28,6 +28,7 @@ defmodule ASM.ProviderBackend.SDK.CodexAppServer do
     :run_opts,
     :tools,
     :info,
+    :delta_turns,
     capabilities: [],
     subscribers: %{}
   ]
@@ -94,6 +95,7 @@ defmodule ASM.ProviderBackend.SDK.CodexAppServer do
       run_opts: Keyword.get(opts, :run_opts, []),
       tools: Keyword.get(opts, :tools, %{}),
       info: info,
+      delta_turns: MapSet.new(),
       capabilities: capabilities,
       subscribers: normalize_subscribers(Keyword.get(opts, :initial_subscribers, %{}))
     }
@@ -261,27 +263,31 @@ defmodule ASM.ProviderBackend.SDK.CodexAppServer do
       )
     )
 
-    state
+    mark_delta_seen(state, event)
   end
 
   defp handle_codex_event(
          %__MODULE__{} = state,
          %{__struct__: @item_completed, item: %{__struct__: @agent_message, text: text}} = event
        ) do
-    publish_core(
-      state,
-      CoreEvent.new(:assistant_message,
-        provider: @provider,
-        provider_session_id: event.thread_id,
-        payload: %{
-          content: [%{type: :text, text: text}],
-          metadata: %{provider_turn_id: event.turn_id}
-        },
-        metadata: Map.merge(state.metadata, %{provider_turn_id: event.turn_id})
+    if delta_seen?(state, event) do
+      state
+    else
+      publish_core(
+        state,
+        CoreEvent.new(:assistant_message,
+          provider: @provider,
+          provider_session_id: event.thread_id,
+          payload: %{
+            content: [%{"type" => "text", "text" => text}],
+            metadata: %{provider_turn_id: event.turn_id}
+          },
+          metadata: Map.merge(state.metadata, %{provider_turn_id: event.turn_id})
+        )
       )
-    )
 
-    state
+      state
+    end
   end
 
   defp handle_codex_event(%__MODULE__{} = state, %{__struct__: @turn_completed} = event) do
@@ -457,6 +463,16 @@ defmodule ASM.ProviderBackend.SDK.CodexAppServer do
   end
 
   defp normalize_subscribers(_subscribers), do: %{}
+
+  defp mark_delta_seen(%__MODULE__{} = state, event) do
+    %{state | delta_turns: MapSet.put(state.delta_turns, turn_key(event))}
+  end
+
+  defp delta_seen?(%__MODULE__{} = state, event) do
+    MapSet.member?(state.delta_turns, turn_key(event))
+  end
+
+  defp turn_key(event), do: {Map.get(event, :thread_id), Map.get(event, :turn_id)}
 
   defp thread_working_directory(%{thread_opts: %{working_directory: cwd}}), do: cwd
   defp thread_working_directory(_thread), do: nil

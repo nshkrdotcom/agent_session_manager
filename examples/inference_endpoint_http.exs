@@ -134,7 +134,7 @@ provider =
   |> Keyword.get(:provider, "gemini")
   |> String.to_existing_atom()
 
-model = Keyword.get(opts, :model, "gemini-2.5-pro")
+model = Keyword.get(opts, :model, "gemini-3.1-flash-lite-preview")
 message = Keyword.get(opts, :message, "Summarize the CLI inference endpoint seam.")
 answer = Keyword.get(opts, :answer, "ASM inference endpoint example is alive.")
 stream? = Keyword.get(opts, :stream, false)

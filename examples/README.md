@@ -44,7 +44,8 @@ That is deliberate. The live examples never silently pick a provider for you.
 
 `inference_endpoint_http.exs` is the exception. It defaults to the Gemini
 provider profile and runs against a local fake backend so the publication seam
-stays deterministic and offline.
+stays deterministic and offline. Its default model is
+`gemini-3.1-flash-lite-preview`.
 
 ## Permission Defaults
 

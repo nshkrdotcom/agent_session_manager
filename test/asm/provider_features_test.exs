@@ -261,7 +261,11 @@ defmodule ASM.ProviderFeaturesTest do
 
     assert {:ok, gemini_validated} =
              Options.validate(
-               [provider: :gemini, model: "gemini-2.5-pro", system_prompt: "Be concise."],
+               [
+                 provider: :gemini,
+                 model: "gemini-3.1-flash-lite-preview",
+                 system_prompt: "Be concise."
+               ],
                gemini_schema
              )
 

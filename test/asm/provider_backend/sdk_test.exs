@@ -471,7 +471,7 @@ defmodule ASM.ProviderBackend.SDKTest do
           surface_ref: "surface-9"
         ),
       continuation: %{strategy: :exact, provider_session_id: "gemini-session-123"},
-      provider_opts: [model: "gemini-2.5-pro", system_prompt: "Be brief."],
+      provider_opts: [model: "gemini-3.1-flash-lite-preview", system_prompt: "Be brief."],
       metadata: %{test_pid: self()}
     }
 
@@ -509,7 +509,7 @@ defmodule ASM.ProviderBackend.SDKTest do
       prompt: "hello",
       execution_config: execution_config([]),
       provider_opts: [
-        model: "gemini-2.5-pro",
+        model: "gemini-3.1-flash-lite-preview",
         permission_mode: :bypass,
         provider_permission_mode: :yolo
       ],

@@ -70,7 +70,7 @@ defmodule ASM.InferenceEndpointTest do
   test "ensure_endpoint/3 publishes a loopback descriptor and release_endpoint/1 retires it" do
     assert {:ok, endpoint, compatibility} =
              InferenceEndpoint.ensure_endpoint(
-               request(:gemini, "gemini-2.5-pro"),
+               request(:gemini, "gemini-3.1-flash-lite-preview"),
                compatible_consumer_manifest(),
                context(boundary_ref: "boundary-cli-1")
              )
@@ -80,7 +80,7 @@ defmodule ASM.InferenceEndpointTest do
     assert endpoint.target_class == :cli_endpoint
     assert endpoint.protocol == :openai_chat_completions
     assert endpoint.provider_identity == :gemini
-    assert endpoint.model_identity == "gemini-2.5-pro"
+    assert endpoint.model_identity == "gemini-3.1-flash-lite-preview"
     assert endpoint.source_runtime == :agent_session_manager
     assert endpoint.source_runtime_ref == endpoint.lease_ref
     assert endpoint.boundary_ref == "boundary-cli-1"
@@ -100,7 +100,7 @@ defmodule ASM.InferenceEndpointTest do
 
     assert {:ok, endpoint, _compatibility} =
              InferenceEndpoint.ensure_endpoint(
-               request(:gemini, "gemini-2.5-pro"),
+               request(:gemini, "gemini-3.1-flash-lite-preview"),
                compatible_consumer_manifest(),
                context()
              )
@@ -112,7 +112,7 @@ defmodule ASM.InferenceEndpointTest do
              })
 
     assert payload["object"] == "chat.completion"
-    assert payload["model"] == "gemini-2.5-pro"
+    assert payload["model"] == "gemini-3.1-flash-lite-preview"
 
     assert get_in(payload, ["choices", Access.at(0), "message", "content"]) ==
              "ASM completion endpoint OK"
@@ -126,7 +126,7 @@ defmodule ASM.InferenceEndpointTest do
 
     assert {:ok, endpoint, _compatibility} =
              InferenceEndpoint.ensure_endpoint(
-               request(:gemini, "gemini-2.5-pro", stream?: true),
+               request(:gemini, "gemini-3.1-flash-lite-preview", stream?: true),
                compatible_consumer_manifest(required_capabilities: %{streaming?: true}),
                context()
              )
@@ -159,7 +159,9 @@ defmodule ASM.InferenceEndpointTest do
   test "ensure_endpoint/3 rejects requests that would smuggle agent-loop semantics into a completion endpoint" do
     assert {:error, {:incompatible, compatibility}} =
              InferenceEndpoint.ensure_endpoint(
-               request(:gemini, "gemini-2.5-pro", tool_policy: %{tools: [%{name: "shell"}]}),
+               request(:gemini, "gemini-3.1-flash-lite-preview",
+                 tool_policy: %{tools: [%{name: "shell"}]}
+               ),
                compatible_consumer_manifest(),
                context()
              )

@@ -212,7 +212,7 @@ defmodule ASM.Provider do
           cli_path_env: "GEMINI_CLI_PATH",
           install_hint: "npm install -g @google/gemini-cli",
           model_env: "ASM_GEMINI_MODEL",
-          example_default_model: "gemini-2.5-flash",
+          example_default_model: "gemini-3.1-flash-lite-preview",
           sdk_app: :gemini_cli_sdk,
           sdk_repo_dir: "gemini_cli_sdk",
           sdk_root_env: "GEMINI_CLI_SDK_ROOT",

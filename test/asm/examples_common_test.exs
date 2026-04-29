@@ -74,7 +74,7 @@ defmodule ASM.Examples.CommonTest do
     refute Keyword.has_key?(config.session_opts, :cli_path)
   end
 
-  test "gemini examples default to flash when no explicit model is provided" do
+  test "gemini examples default to the current flash-lite preview when no explicit model is provided" do
     assert {:ok, config} =
              Common.build_example_config(
                ["--provider", "gemini"],
@@ -83,7 +83,7 @@ defmodule ASM.Examples.CommonTest do
                @default_prompt
              )
 
-    assert config.session_opts[:model] == "gemini-2.5-flash"
+    assert config.session_opts[:model] == "gemini-3.1-flash-lite-preview"
   end
 
   test "examples default to bypass mode with provider-native permission metadata" do

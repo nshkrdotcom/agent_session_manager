@@ -205,6 +205,11 @@ Relevant Gemini provider fields:
 
 - `:model`
 
+The shared model registry currently accepts Gemini CLI virtual model ids such
+as `auto-gemini-3` and `auto-gemini-2.5`, CLI aliases such as `pro`, `flash`,
+and `flash-lite`, and concrete Gemini ids such as
+`gemini-3.1-flash-lite-preview`.
+
 When ASM bridges into `gemini_cli_sdk`, the Gemini SDK now consumes the shared
 normalized payload instead of re-resolving over an explicit payload. Repo-local
 `GEMINI_MODEL` defaults remain fallback inputs only when the caller did not

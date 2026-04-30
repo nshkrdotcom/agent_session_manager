@@ -98,6 +98,23 @@ defmodule ASM.OptionsPreflightTest do
     assert error.migration =~ "provider SDK"
   end
 
+  test "strict common preflight rejects every host-tool admission key for every provider" do
+    for provider <- [:claude, :codex, :gemini, :amp],
+        {key, value} <- [
+          tools: [%{name: "search"}],
+          host_tools: [%{name: "lookup"}],
+          dynamic_tools: [%{"name" => "lookup"}]
+        ] do
+      assert {:error, %ProviderNativeOptionError{} = error} =
+               Options.preflight(provider, [{key, value}])
+
+      assert error.key == key
+      assert error.provider == provider
+      assert error.reason == :provider_native
+      assert error.migration =~ "provider SDK"
+    end
+  end
+
   test "compat preflight classifies provider-native options with structured warnings" do
     assert {:ok, result} =
              Options.preflight(:codex, [provider_backend: :oss, model_provider: "gateway"],

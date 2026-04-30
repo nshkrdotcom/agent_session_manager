@@ -79,6 +79,12 @@ Claude reports native control capability separately. Claude hooks and
 permission callbacks are not represented as Codex `dynamicTools` unless a real
 request/response loop is implemented and tested.
 
+`allowed_tools` remains an ASM execution-policy allowlist for observed
+provider tool-use events. It is not host-executable tool registration, and it
+does not change the host-tool admission decision: generic ASM `tools:`,
+`host_tools:`, and `dynamic_tools:` remain rejected from strict common paths
+until the all-four host-tool proof matrix is complete.
+
 ## Permission Mode Compatibility
 
 Historically ASM kept a public knob normalized as `:permission_mode`, then

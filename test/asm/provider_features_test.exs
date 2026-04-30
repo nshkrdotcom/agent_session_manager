@@ -93,6 +93,24 @@ defmodule ASM.ProviderFeaturesTest do
     end
   end
 
+  test "host tools are not admitted as an all-provider common ASM capability" do
+    for provider <- [:claude, :codex, :gemini, :amp],
+        lane <- Map.keys(ProviderFeatures.manifest!(provider).lanes) do
+      manifest = ProviderFeatures.lane_manifest!(provider, lane)
+      host_tools = manifest.capabilities.host_tools
+
+      refute host_tools.support_state == :common
+
+      if provider == :codex and lane == :sdk_app_server do
+        assert host_tools.support_state == :native
+        assert host_tools.provider_native? == true
+      else
+        assert host_tools.support_state in [:event_only, :unsupported]
+        refute host_tools.provider_native? && host_tools.supported?
+      end
+    end
+  end
+
   test "unsupported provider capabilities fail with explicit provider lane and capability context" do
     assert :ok = ProviderFeatures.require_capability(:codex, :sdk_app_server, :host_tools)
 

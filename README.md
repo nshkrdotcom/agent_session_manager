@@ -693,12 +693,15 @@ Examples:
   execution environment contract
 - Codex `ask_for_approval` is a `codex_sdk` thread option, not an ASM common
   execution-environment field
-- `allowed_tools` is part of ASM's normalized execution environment
+- `allowed_tools` is an ASM policy allowlist for observed provider tool-use
+  events; it is not host-executable tool registration and does not admit
+  common ASM host tools
 
 So if a host is reasoning at the ASM layer:
 
 - use `permission_mode` for the common approval/edit posture
-- use `allowed_tools` for the common tool allowlist
+- use `allowed_tools` only to constrain observed tool-use events when that
+  policy layer is active
 - use provider-native overrides only when the selected provider actually owns
   an additional concept outside the common ASM surface
 

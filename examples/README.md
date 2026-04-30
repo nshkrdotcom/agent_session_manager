@@ -28,6 +28,9 @@ Nothing runs by default. The live CLI examples require `--provider`.
 - `provider_gemini_hybrid_plain_response.exs`:
   `ASM.Extensions.ProviderSDK.Gemini` strict common derivation plus
   SDK-native plain-response settings
+- `promotion_path/README.md`: promotion-path hub for ASM core lane,
+  SDK-backed lane, SDK-direct ownership links, hybrid examples, and inference
+  ASM adapter examples
 - `live_codex_app_server_session.exs`: promoted ASM SDK lane with a live Codex
   app-server session
 - `live_codex_app_server_dynamic_tools.exs`: live Codex app-server dynamic tool

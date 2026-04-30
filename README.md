@@ -943,6 +943,7 @@ Environment knobs used by examples:
 - `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL`, `ASM_AMP_MODEL`
 
 If you omit `--provider`, the example prints a usage note and exits without running a live provider. See [examples/README.md](examples/README.md) for the full example set.
+The promotion-path hub is [examples/promotion_path/README.md](examples/promotion_path/README.md).
 
 ## Guides
 

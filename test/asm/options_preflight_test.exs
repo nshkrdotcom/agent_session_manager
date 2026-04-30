@@ -77,6 +77,25 @@ defmodule ASM.OptionsPreflightTest do
     assert error.migration =~ "provider SDK"
   end
 
+  test "strict common preflight keeps sandboxing on execution_surface, not provider flags" do
+    assert {:ok, result} =
+             Options.preflight(:gemini,
+               execution_surface: [
+                 surface_kind: :local_subprocess,
+                 boundary_class: :local_weak
+               ]
+             )
+
+    assert result.common.execution_surface.boundary_class == :local_weak
+
+    assert {:error, %ProviderNativeOptionError{} = error} =
+             Options.preflight(:gemini, sandbox: true)
+
+    assert error.key == :sandbox
+    assert error.reason == :provider_native
+    assert error.migration =~ "provider SDK"
+  end
+
   test "strict common preflight rejects legacy permission and internal model payload keys" do
     assert {:error, %ProviderNativeOptionError{} = permission_error} =
              Options.preflight(:codex, permission_mode: :bypass)

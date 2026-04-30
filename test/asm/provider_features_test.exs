@@ -111,6 +111,17 @@ defmodule ASM.ProviderFeaturesTest do
     end
   end
 
+  test "sandbox policy discovery does not expose a common ASM sandbox control" do
+    for provider <- [:claude, :codex, :gemini, :amp],
+        lane <- Map.keys(ProviderFeatures.manifest!(provider).lanes) do
+      manifest = ProviderFeatures.lane_manifest!(provider, lane)
+      sandbox_policy = manifest.capabilities.sandbox_policy
+
+      refute sandbox_policy.support_state == :common
+      refute sandbox_policy.common_surface? == true
+    end
+  end
+
   test "unsupported provider capabilities fail with explicit provider lane and capability context" do
     assert :ok = ProviderFeatures.require_capability(:codex, :sdk_app_server, :host_tools)
 

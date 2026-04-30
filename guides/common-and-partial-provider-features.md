@@ -85,6 +85,17 @@ does not change the host-tool admission decision: generic ASM `tools:`,
 `host_tools:`, and `dynamic_tools:` remain rejected from strict common paths
 until the all-four host-tool proof matrix is complete.
 
+## Sandboxing And Placement
+
+ASM does not expose a top-level all-provider sandbox switch. Execution
+isolation and target placement are represented by `execution_surface`, including
+surface kind, transport options, boundary class, and observability metadata.
+
+Provider CLI sandbox flags remain provider-native. For example, Gemini's
+`sandbox` flag and Codex's sandbox/app-server settings belong in the owning
+provider SDK or explicit provider-native extension path. They are not the same
+as Execution Plane isolation, and strict common ASM preflight rejects them.
+
 ## Permission Mode Compatibility
 
 Historically ASM kept a public knob normalized as `:permission_mode`, then

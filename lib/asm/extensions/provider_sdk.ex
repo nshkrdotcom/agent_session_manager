@@ -11,32 +11,35 @@ defmodule ASM.Extensions.ProviderSDK do
 
   Discovery is intentionally split into registered-versus-active views:
 
-  - `extensions/0` and `provider_extensions/1` return the static Claude/Codex
-    native-extension catalog that ASM knows about
+  - `extensions/0` and `provider_extensions/1` return the static native
+    extension catalog that ASM knows about for all four providers
   - `available_extensions/0` and `available_provider_extensions/1` return only
     the active subset for the currently installed optional deps
   - `provider_report/1` and `capability_report/0` expose both views through
     `registered_namespaces` versus `namespaces`
 
-  Gemini and Amp may therefore compose with `sdk_available?: true` while still
-  reporting no native namespaces, because they currently use only the common
-  ASM surface plus the optional SDK lane/runtime kit.
+  Gemini and Amp start with limited derivation helpers, but they still have
+  explicit namespaces so provider-native behavior has one clear home.
   """
 
   use Boundary,
     deps: [ASM],
     exports: [
+      Amp,
       Extension,
       Claude,
-      Codex
+      Codex,
+      Gemini
     ]
 
   alias ASM.{Error, Provider, ProviderRegistry}
   alias ASM.Extensions.ProviderSDK.Extension
 
   @catalog [
+    ASM.Extensions.ProviderSDK.Amp,
     ASM.Extensions.ProviderSDK.Claude,
-    ASM.Extensions.ProviderSDK.Codex
+    ASM.Extensions.ProviderSDK.Codex,
+    ASM.Extensions.ProviderSDK.Gemini
   ]
 
   @typedoc """

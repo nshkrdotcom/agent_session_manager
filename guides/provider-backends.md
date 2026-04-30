@@ -120,12 +120,14 @@ Provider-native capability reporting now lives under
 - `ASM.Extensions.ProviderSDK.capability_report/0`
 
 That keeps backend discovery focused on `:core` versus `:sdk`, while
-provider-native surfaces such as Claude control semantics and Codex app-server,
-MCP, realtime, and voice remain explicit optional seams above the kernel.
+provider-native surfaces such as Claude control semantics, Codex app-server,
+Gemini settings profiles, and Amp permissions/MCP remain explicit optional
+seams above the kernel.
 
-Gemini and Amp still affect backend lane availability through their optional
-runtime kits, but they do not add separate ASM provider-native namespaces in
-the current catalog.
+All four providers now have explicit extension namespaces. Gemini and Amp start
+with limited strict `derive_options/2` helpers; those helpers derive only common
+placement/session data and require provider-native settings in
+`native_overrides`.
 
 For Claude specifically, `ASM.Extensions.ProviderSDK.Claude` can bridge ASM
 config into `ClaudeAgentSDK.Client`, but the resulting control calls still live

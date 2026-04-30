@@ -2,11 +2,54 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
   use ASM.TestCase
 
   alias ASM.Extensions.ProviderSDK.Claude
+  alias ASM.Options.ProviderNativeOptionError
   alias ClaudeAgentSDK.{Client, Hooks, Options}
   alias ClaudeAgentSDK.Hooks.Matcher
   alias ClaudeAgentSDK.TestSupport.FakeCLI
   alias CliSubprocessCore.ModelRegistry.Selection
   alias CliSubprocessCore.TestSupport.FakeSSH
+
+  test "derive_options/2 maps strict common ASM config and keeps Claude-native overrides explicit" do
+    native_overrides = [
+      system_prompt: "Native Claude instruction.",
+      permission_mode: :plan
+    ]
+
+    assert {:ok, %Options{} = options} =
+             Claude.derive_options(
+               [
+                 cwd: "/tmp/asm-claude-strict-extension",
+                 cli_path: "/usr/local/bin/claude",
+                 model: "haiku",
+                 execution_surface: [
+                   surface_kind: :ssh_exec,
+                   transport_options: [destination: "claude.strict-extension.example"]
+                 ],
+                 transport_timeout_ms: 11_000
+               ],
+               native_overrides: native_overrides
+             )
+
+    assert options.cwd == "/tmp/asm-claude-strict-extension"
+    assert options.path_to_claude_code_executable == "/usr/local/bin/claude"
+    assert options.model == "haiku"
+    assert options.execution_surface.surface_kind == :ssh_exec
+
+    assert options.execution_surface.transport_options[:destination] ==
+             "claude.strict-extension.example"
+
+    assert options.timeout_ms == 11_000
+    assert options.system_prompt == "Native Claude instruction."
+    assert options.permission_mode == :plan
+  end
+
+  test "derive_options/2 rejects Claude-native settings in generic ASM input" do
+    assert {:error, %ProviderNativeOptionError{} = error} =
+             Claude.derive_options(model: "haiku", include_thinking: true)
+
+    assert error.key == :include_thinking
+    assert error.provider == :claude
+  end
 
   test "sdk_options/2 maps ASM config and keeps Claude-native overrides explicit" do
     hook = fn _input, _tool_use_id, _context -> %{} end

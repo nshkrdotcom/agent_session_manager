@@ -29,11 +29,13 @@ defmodule ASM.Extensions.ProviderSDKTest do
   test "extensions/0 exposes the built-in provider-native namespaces" do
     extensions = ProviderSDK.extensions()
 
-    assert Enum.map(extensions, & &1.provider) == [:claude, :codex]
+    assert Enum.map(extensions, & &1.provider) == [:amp, :claude, :codex, :gemini]
 
     assert Enum.map(extensions, & &1.namespace) == [
+             ASM.Extensions.ProviderSDK.Amp,
              ASM.Extensions.ProviderSDK.Claude,
-             ASM.Extensions.ProviderSDK.Codex
+             ASM.Extensions.ProviderSDK.Codex,
+             ASM.Extensions.ProviderSDK.Gemini
            ]
   end
 
@@ -51,6 +53,10 @@ defmodule ASM.Extensions.ProviderSDKTest do
              :hooks,
              :permission_callbacks
            ]
+
+    assert {:ok, gemini} = ProviderSDK.extension(:gemini)
+    assert gemini.namespace == ASM.Extensions.ProviderSDK.Gemini
+    assert gemini.native_capabilities == [:extensions, :settings_profiles, :trust_controls]
   end
 
   test "provider_extensions/1 resolves provider aliases and preserves kernel/provider split" do
@@ -77,7 +83,7 @@ defmodule ASM.Extensions.ProviderSDKTest do
     assert capabilities == [:control_client, :control_protocol, :hooks, :permission_callbacks]
   end
 
-  test "capability_report/0 reports all providers while keeping Gemini and Amp common-surface-only" do
+  test "capability_report/0 reports all providers with explicit extension namespaces" do
     report = ProviderSDK.capability_report()
 
     assert report.claude.namespaces == [ASM.Extensions.ProviderSDK.Claude]
@@ -106,14 +112,12 @@ defmodule ASM.Extensions.ProviderSDKTest do
            ]
 
     assert report.gemini.sdk_available? == true
-    assert report.gemini.namespaces == []
-    assert report.gemini.extensions == []
-    assert report.gemini.native_capabilities == []
+    assert report.gemini.namespaces == [ASM.Extensions.ProviderSDK.Gemini]
+    assert report.gemini.native_capabilities == [:extensions, :settings_profiles, :trust_controls]
 
     assert report.amp.sdk_available? == true
-    assert report.amp.namespaces == []
-    assert report.amp.extensions == []
-    assert report.amp.native_capabilities == []
+    assert report.amp.namespaces == [ASM.Extensions.ProviderSDK.Amp]
+    assert report.amp.native_capabilities == [:mcp, :permissions, :skills, :threads]
   end
 
   test "available?/1 reflects optional sdk loading without widening the kernel export list" do

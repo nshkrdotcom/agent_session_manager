@@ -2,6 +2,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
   use ASM.TestCase
 
   alias ASM.Extensions.ProviderSDK.Codex, as: CodexExtension
+  alias ASM.Options.ProviderNativeOptionError
   alias CliSubprocessCore.ModelRegistry.Selection
   alias CliSubprocessCore.TestSupport.FakeSSH
   alias Codex.AppServer.Connection
@@ -9,6 +10,39 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
   alias Codex.{Options, Thread}
   alias Codex.TestSupport.AppServerSubprocess
   alias Codex.Thread.Options, as: ThreadOptions
+
+  test "derive_options/2 maps strict common ASM config and keeps Codex-native overrides explicit" do
+    assert {:ok, %Options{} = options} =
+             CodexExtension.derive_options(
+               [
+                 cli_path: "/usr/local/bin/codex",
+                 model: "gpt-5.4",
+                 execution_surface: [
+                   surface_kind: :ssh_exec,
+                   transport_options: [destination: "codex.strict-extension.example"]
+                 ]
+               ],
+               native_overrides: [model_personality: :pragmatic, reasoning_effort: :high]
+             )
+
+    assert options.codex_path_override == "/usr/local/bin/codex"
+    assert options.model == "gpt-5.4"
+    assert options.execution_surface.surface_kind == :ssh_exec
+
+    assert options.execution_surface.transport_options[:destination] ==
+             "codex.strict-extension.example"
+
+    assert options.model_personality == :pragmatic
+    assert options.reasoning_effort == :high
+  end
+
+  test "derive_options/2 rejects Codex-native settings in generic ASM input" do
+    assert {:error, %ProviderNativeOptionError{} = error} =
+             CodexExtension.derive_options(model: "gpt-5.4", output_schema: %{"type" => "object"})
+
+    assert error.key == :output_schema
+    assert error.provider == :codex
+  end
 
   test "codex_options/2 maps ASM config and keeps Codex-native overrides explicit" do
     asm_opts = [

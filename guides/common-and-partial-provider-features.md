@@ -67,8 +67,8 @@ iex> ASM.ProviderFeatures.lane_manifest!(:codex, :core).capabilities.host_tools.
 :event_only
 ```
 
-Amp and Gemini stay common-surface-only. They may have SDK lanes, but they do
-not claim Codex app-server or host dynamic-tool semantics:
+Amp and Gemini have explicit provider SDK extension namespaces, but they still
+do not claim Codex app-server or host dynamic-tool semantics:
 
 ```elixir
 iex> ASM.ProviderFeatures.require_capability(:gemini, :sdk, :host_tools)

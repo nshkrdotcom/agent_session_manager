@@ -61,10 +61,10 @@ end
 
 For local workspace development, use the sibling repo as a `path:` dependency.
 
-That dependency gives you ASM's normalized kernel plus the discovery modules
-for the current built-in Claude/Codex extension namespaces. Those namespace
-modules are always present in ASM, but they activate only when the matching
-optional provider SDK dependency is installed.
+That dependency gives you ASM's normalized kernel plus discovery modules for
+the built-in provider SDK extension namespaces. Those namespace modules are
+always present in ASM, but they activate only when the matching optional
+provider SDK dependency is installed.
 
 Optional provider SDK dependencies stay additive. Add one only when you want
 that provider's SDK lane/runtime kit or, where it exists today, its ASM
@@ -75,17 +75,15 @@ provider-native namespace:
 - `{:codex_sdk, "~> 0.16.0", optional: true}` for Codex app-server, MCP,
   realtime, voice helpers, and `ASM.Extensions.ProviderSDK.Codex`
 - `{:gemini_cli_sdk, "~> 0.2.0", optional: true}` for Gemini SDK lane/runtime-kit
-  availability only; ASM does not expose a separate Gemini native extension
-  namespace today
+  availability and `ASM.Extensions.ProviderSDK.Gemini`
 - `{:amp_sdk, "~> 0.5.0", optional: true}` for Amp SDK lane/runtime-kit
-  availability only; ASM does not expose a separate Amp native extension
-  namespace today
+  availability and `ASM.Extensions.ProviderSDK.Amp`
 
 Declaring the optional dependency is the only client-side activation step. No
 extra ASM wiring is required. ASM always keeps the common surface available
 through `cli_subprocess_core`, auto-detects optional provider runtime
-availability, and activates only the provider-native extension namespaces that
-genuinely exist today.
+availability, and activates only the provider-native extension namespaces
+backed by the installed optional SDKs.
 
 The package publication order for this stack remains:
 `cli_subprocess_core` first, then the provider SDK packages, then
@@ -186,9 +184,9 @@ the landed provider profiles and runtime tiers, but the endpoint path only
 exposes completion and streaming. Tool-bearing or agent-loop-shaped requests
 are rejected on that endpoint seam.
 
-Gemini and Amp remain common-surface-only providers. Their capability
-publication can make them valid endpoint targets without introducing a second
-ASM-native extension namespace.
+Gemini and Amp remain common-surface-only for inference endpoint publication.
+Their provider SDK extension namespaces are explicit homes for provider-native
+settings, but those namespaces do not widen the endpoint contract.
 They explicitly report Codex-style host dynamic tools and app-server control as
 unsupported, even when their SDK runtime kits are installed.
 
@@ -504,10 +502,10 @@ claude_extension.namespace
 # ASM.Extensions.ProviderSDK.Claude
 
 Enum.map(catalog, & &1.provider)
-# [:claude, :codex]
+# [:amp, :claude, :codex, :gemini]
 
 Enum.map(active_extensions, & &1.provider)
-# subset of [:claude, :codex], depending on installed optional deps
+# subset of [:amp, :claude, :codex, :gemini], depending on installed optional deps
 
 Enum.map(active_claude_extensions, & &1.namespace)
 # [] or [ASM.Extensions.ProviderSDK.Claude]
@@ -519,13 +517,15 @@ report.claude.sdk_available?
 # true | false
 
 gemini_report.namespaces
-# []
+# [] or [ASM.Extensions.ProviderSDK.Gemini]
 ```
 
 Current built-in namespaces:
 
+- `ASM.Extensions.ProviderSDK.Amp`
 - `ASM.Extensions.ProviderSDK.Claude`
 - `ASM.Extensions.ProviderSDK.Codex`
+- `ASM.Extensions.ProviderSDK.Gemini`
 
 Optional-loading rules:
 
@@ -541,12 +541,12 @@ Optional-loading rules:
 - `registered_namespaces` and `registered_extensions` keep the static catalog
   explicit even when `namespaces` and `extensions` are empty for the current
   dependency set
-- rich provider-native APIs still live in `claude_agent_sdk` and `codex_sdk`
+- rich provider-native APIs still live in the owning provider SDKs
 - ASM does not normalize those richer APIs into `ASM`, `ASM.Stream`, or
   `ASM.ProviderRegistry`
-- Gemini and Amp may report `sdk_available?: true` while still exposing
-  `namespaces: []` because they currently compose only through the common ASM
-  surface and not through a separate provider-native extension namespace
+- Gemini and Amp extension helpers start deliberately narrow. They derive only
+  common placement/session data and require explicit `native_overrides` for
+  Gemini settings/trust controls or Amp permissions/MCP/skills/thread behavior.
 
 The Claude namespace now exposes an explicit bridge into the SDK-local control
 family:

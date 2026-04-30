@@ -20,7 +20,7 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
   """
 
   alias ASM.{Error, Options, Provider, ProviderRegistry}
-  alias ASM.Extensions.ProviderSDK.{Dispatch, Extension, SessionOptions}
+  alias ASM.Extensions.ProviderSDK.{Derivation, Dispatch, Extension, SessionOptions}
 
   @sdk_app :codex_sdk
   @sdk_module Module.concat(["Codex"])
@@ -44,6 +44,11 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
     :skip_git_repo_check,
     :output_schema,
     :approval_timeout_ms
+  ]
+  @strict_derived_codex_option_keys [
+    :execution_surface,
+    :model,
+    :codex_path_override
   ]
 
   @native_surface_modules [
@@ -76,6 +81,33 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
 
   @spec sdk_module() :: module()
   def sdk_module, do: @sdk_module
+
+  @doc """
+  Derives `Codex.Options` from strict common ASM options.
+
+  Provider-native Codex options must be supplied in `:native_overrides`; they
+  are never read from the generic ASM option map.
+  """
+  @spec derive_options(keyword(), keyword()) :: {:ok, struct()} | {:error, term()}
+  def derive_options(asm_common, opts \\ [])
+      when is_list(asm_common) and is_list(opts) do
+    native_overrides = Keyword.get(opts, :native_overrides, [])
+
+    with {:ok, preflight} <- Derivation.strict_common(:codex, asm_common),
+         :ok <-
+           Derivation.ensure_native_override_boundary(
+             native_overrides,
+             @strict_derived_codex_option_keys,
+             "Codex"
+           ) do
+      attrs =
+        preflight.common
+        |> strict_codex_option_attrs()
+        |> Keyword.merge(native_overrides)
+
+      new_sdk_struct(@sdk_options_module, attrs, "codex")
+    end
+  end
 
   @doc """
   Derives `Codex.Options` from ASM-style Codex configuration.
@@ -290,6 +322,13 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
       codex_path_override: Keyword.get(finalized, :cli_path)
     ]
     |> drop_nil_values()
+  end
+
+  defp strict_codex_option_attrs(common) when is_map(common) do
+    []
+    |> Derivation.maybe_put(:execution_surface, Map.get(common, :execution_surface))
+    |> Derivation.maybe_put(:model, Map.get(common, :model))
+    |> Derivation.maybe_put(:codex_path_override, Map.get(common, :cli_path))
   end
 
   defp thread_option_attrs(validated, model_payload) do

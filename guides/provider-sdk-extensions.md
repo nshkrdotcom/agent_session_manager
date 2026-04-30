@@ -36,11 +36,8 @@ ASM keeps `cli_subprocess_core` required and all provider SDK packages
 optional.
 
 - depending only on `:agent_session_manager` gives you the common ASM surface
-- adding `:claude_agent_sdk` or `:codex_sdk` activates the matching SDK lane
-  and the matching provider-native namespace when it is loadable locally
-- adding `:gemini_cli_sdk` or `:amp_sdk` activates only SDK lane/runtime-kit
-  availability today; Gemini and Amp still have no separate ASM native
-  namespace
+- adding any provider SDK activates the matching SDK lane and the matching
+  provider-native namespace when it is loadable locally
 - declaring the optional dependency is the only client-app activation step;
   ASM performs discovery and activation automatically
 
@@ -84,15 +81,17 @@ report = ProviderSDK.capability_report()
 
 Current built-in namespaces:
 
+- `ASM.Extensions.ProviderSDK.Amp`
 - `ASM.Extensions.ProviderSDK.Claude`
 - `ASM.Extensions.ProviderSDK.Codex`
+- `ASM.Extensions.ProviderSDK.Gemini`
 
 These root modules are the namespace anchors for optional provider-native
 helpers.
 
 Activation-aware discovery follows a separate rule:
 
-- `extensions/0` is the static Claude/Codex native-extension catalog
+- `extensions/0` is the static all-provider native-extension catalog
 - `provider_extensions/1` is the static native-extension catalog for one
   provider
 - `available_extensions/0` reports which of those namespaces are active for the
@@ -105,12 +104,36 @@ Activation-aware discovery follows a separate rule:
 - `registered_namespaces` and `registered_extensions` keep the static catalog
   visible even when a provider currently composes only through the common
   surface
-- Gemini and Amp may therefore report `sdk_available?: true` with
-  `namespaces: []`, because they currently compose only through the common ASM
-  surface
+- Gemini and Amp start with limited derivation helpers. They still have explicit
+  namespaces so Gemini settings/trust controls and Amp permissions/MCP/skills
+  have one provider-native home.
+
+Every namespace exposes `derive_options/2` for the strict common path:
+
+```elixir
+alias ASM.Extensions.ProviderSDK.Gemini
+
+asm_common = [
+  model: "gemini-3.1-flash-lite-preview",
+  cwd: File.cwd!(),
+  execution_surface: [surface_kind: :local_subprocess]
+]
+
+native_overrides = [
+  settings: GeminiCliSdk.SettingsProfiles.plain_response(),
+  skip_trust: true
+]
+
+{:ok, gemini_options} = Gemini.derive_options(asm_common, native_overrides: native_overrides)
+```
+
+The first argument is checked with strict common ASM preflight. Provider-native
+keys in that map are rejected. Native provider data must be passed explicitly in
+`native_overrides` or through the provider SDK directly.
 
 Claude now exposes an explicit bridge into the SDK-local control family:
 
+- `ASM.Extensions.ProviderSDK.Claude.derive_options/2`
 - `ASM.Extensions.ProviderSDK.Claude.sdk_options/2`
 - `ASM.Extensions.ProviderSDK.Claude.sdk_options_for_session/3`
 - `ASM.Extensions.ProviderSDK.Claude.start_client/3`
@@ -161,6 +184,7 @@ into the Claude-native client surface.
 Codex now exposes a similarly narrow bridge into the SDK-local app-server
 entry path:
 
+- `ASM.Extensions.ProviderSDK.Codex.derive_options/2`
 - `ASM.Extensions.ProviderSDK.Codex.codex_options/2`
 - `ASM.Extensions.ProviderSDK.Codex.codex_options_for_session/3`
 - `ASM.Extensions.ProviderSDK.Codex.thread_options/2`
@@ -275,6 +299,19 @@ Codex namespace:
 - `:mcp`
 - `:realtime`
 - `:voice`
+
+Gemini namespace:
+
+- `:extensions`
+- `:settings_profiles`
+- `:trust_controls`
+
+Amp namespace:
+
+- `:mcp`
+- `:permissions`
+- `:skills`
+- `:threads`
 
 These are capability labels for discovery and documentation only in this
 foundation slice. They are not new normalized kernel APIs.

@@ -17,7 +17,7 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
   """
 
   alias ASM.{Error, Options, Provider, ProviderRegistry}
-  alias ASM.Extensions.ProviderSDK.{Dispatch, Extension, SessionOptions}
+  alias ASM.Extensions.ProviderSDK.{Derivation, Dispatch, Extension, SessionOptions}
 
   @sdk_app :claude_agent_sdk
   @sdk_module Module.concat(["ClaudeAgentSDK"])
@@ -34,6 +34,13 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
     :model,
     :max_turns,
     :timeout_ms
+  ]
+  @strict_derived_sdk_option_keys [
+    :cwd,
+    :path_to_claude_code_executable,
+    :model,
+    :timeout_ms,
+    :execution_surface
   ]
   @native_capabilities [:control_client, :control_protocol, :hooks, :permission_callbacks]
 
@@ -97,6 +104,33 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
 
   @spec native_surface_modules() :: [module()]
   def native_surface_modules, do: @native_surface_modules
+
+  @doc """
+  Derives `ClaudeAgentSDK.Options` from strict common ASM options.
+
+  Provider-native Claude options must be supplied in `:native_overrides`; they
+  are never read from the generic ASM option map.
+  """
+  @spec derive_options(keyword(), keyword()) :: {:ok, struct()} | {:error, term()}
+  def derive_options(asm_common, opts \\ [])
+      when is_list(asm_common) and is_list(opts) do
+    native_overrides = Keyword.get(opts, :native_overrides, [])
+
+    with {:ok, preflight} <- Derivation.strict_common(:claude, asm_common),
+         :ok <-
+           Derivation.ensure_native_override_boundary(
+             native_overrides,
+             @strict_derived_sdk_option_keys,
+             "Claude"
+           ) do
+      attrs =
+        preflight.common
+        |> strict_sdk_option_attrs()
+        |> Keyword.merge(native_overrides)
+
+      new_sdk_struct(@sdk_options_module, attrs)
+    end
+  end
 
   @doc """
   Derives `ClaudeAgentSDK.Options` from ASM-style Claude configuration.
@@ -262,6 +296,15 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
       timeout_ms: Keyword.get(finalized, :transport_timeout_ms)
     ]
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+  end
+
+  defp strict_sdk_option_attrs(common) when is_map(common) do
+    []
+    |> Derivation.maybe_put(:cwd, Map.get(common, :cwd))
+    |> Derivation.maybe_put(:path_to_claude_code_executable, Map.get(common, :cli_path))
+    |> Derivation.maybe_put(:execution_surface, Map.get(common, :execution_surface))
+    |> Derivation.maybe_put(:model, Map.get(common, :model))
+    |> Derivation.maybe_put(:timeout_ms, Map.get(common, :transport_timeout_ms))
   end
 
   defp maybe_add_thinking(attrs, validated, native_overrides) do

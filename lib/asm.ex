@@ -34,7 +34,7 @@ defmodule ASM do
       Telemetry
     ]
 
-  alias ASM.{Error, Result, Session, SessionControl, Stream}
+  alias ASM.{Error, Options, Result, Session, SessionControl, Stream}
 
   @type session_ref :: GenServer.server()
   @type session_info :: %{
@@ -103,6 +103,20 @@ defmodule ASM do
   end
 
   def query(provider, prompt, opts) when is_atom(provider) and is_binary(prompt) do
+    case Options.ensure_positional_provider(provider, opts) do
+      :ok ->
+        query_with_provider(provider, prompt, opts)
+
+      {:error, error} ->
+        {:error,
+         Error.new(:config_invalid, :config, Exception.message(error),
+           cause: error,
+           provider: provider
+         )}
+    end
+  end
+
+  defp query_with_provider(provider, prompt, opts) do
     case start_session(Keyword.put(opts, :provider, provider)) do
       {:ok, session} ->
         run_opts = Keyword.drop(opts, [:session_id, :provider, :name, :options])

@@ -79,10 +79,13 @@ Claude reports native control capability separately. Claude hooks and
 permission callbacks are not represented as Codex `dynamicTools` unless a real
 request/response loop is implemented and tested.
 
-## Common Permission Mode
+## Permission Mode Compatibility
 
-ASM keeps the public knob normalized as `:permission_mode`, then maps it to the
-provider-native form during validation.
+Historically ASM kept a public knob normalized as `:permission_mode`, then
+mapped it to the provider-native form during validation. That behavior remains
+available for compatibility, but new strict-common integrations should treat
+permission controls as partial/provider-native until all-four safety semantics
+are proven.
 
 Examples:
 
@@ -99,7 +102,7 @@ Codex exception:
 - use Codex `:default` or `:bypass` through ASM, or use `codex_sdk` directly
   when you explicitly want provider-native auto-edit behavior
 
-This is only the normalized approval/edit posture.
+This is only the compatibility normalized approval/edit posture.
 
 It is not a promise that every provider exposes the same lower-level controls.
 For example:
@@ -109,6 +112,10 @@ For example:
 - Gemini also has a provider-native `sandbox` CLI flag
 - those provider-specific knobs are not implied by ASM's common
   `:permission_mode`
+
+`ASM.Options.preflight(provider, opts)` rejects permission aliases in strict
+common mode. Compatibility mode classifies them separately from `common` and
+returns structured warning metadata.
 
 If you need to present the native term:
 

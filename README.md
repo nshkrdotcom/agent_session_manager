@@ -864,16 +864,42 @@ Session defaults and per-run overrides can also control execution behavior:
 
 ## Provider Options
 
-Common options:
+Strict common options are intentionally narrow. Use
+`ASM.Options.preflight(provider, opts)` to classify options before building new
+generic ASM integrations. The strict classifier is pure validation: it does not
+start sessions, spawn provider CLIs, or load optional SDK runtime modules.
 
-- `provider`
-- `permission_mode` (`:default | :auto | :bypass | :plan`)
+Strict common/session options include:
+
+- `model`
+- `lane` (`:auto | :core | :sdk`)
+- `execution_surface`
 - `cli_path`
 - `cwd`
-- `env`
 - `approval_timeout_ms`
 - `transport_timeout_ms` (lane runtime timeout forwarded to the effective core or SDK backend)
 - `transport_headless_timeout_ms` (core lane subprocess headless timeout)
+- queue/subscriber/run-capacity options used by ASM session scheduling
+
+`ASM.query/3` takes the provider positionally:
+
+```elixir
+ASM.query(:gemini, "Say hello", model: "fake-default", lane: :core)
+```
+
+Do not pass `provider:` in `ASM.query/3` options. A mismatched `provider:`
+option is rejected instead of being silently overwritten.
+
+Compatibility-only or provider-native options include:
+
+- `permission_mode` and `provider_permission_mode`
+- `env` and raw `args`
+- provider-native system prompts, sandbox flags, tools, MCP, app-server, and
+  backend-routing controls
+
+Compatibility mode may still classify legacy callers, but these keys are not
+part of the strict common ASM contract. Provider-native behavior belongs in the
+owning SDK or in an explicit provider-native extension.
 
 Provider-specific examples:
 

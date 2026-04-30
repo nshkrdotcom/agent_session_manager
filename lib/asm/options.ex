@@ -3,8 +3,19 @@ defmodule ASM.Options do
   Shared runtime options validation and normalization.
   """
 
-  alias ASM.{Error, Permission, ProviderFeatures}
+  alias ASM.{Error, Permission, Provider, ProviderFeatures}
+
+  alias ASM.Options.{
+    PartialFeatureUnsupportedError,
+    ProviderMismatchError,
+    ProviderNativeOptionError,
+    UnsupportedExecutionSurfaceError,
+    UnsupportedOptionError,
+    Warning
+  }
+
   alias ASM.Schema.ProviderOptions, as: ProviderOptionsSchema
+  alias CliSubprocessCore.ExecutionSurface
   alias CliSubprocessCore.ModelInput
   alias CliSubprocessCore.ModelRegistry.Selection
 
@@ -36,7 +47,106 @@ defmodule ASM.Options do
     :debug
   ]
 
+  @preflight_modes [:strict_common, :compat]
+  @preflight_lanes [:core, :sdk, :auto]
+  @preflight_common_keys [
+    :model,
+    :cli_path,
+    :cwd,
+    :execution_surface,
+    :transport_timeout_ms,
+    :transport_headless_timeout_ms,
+    :approval_timeout_ms,
+    :max_stdout_buffer_bytes,
+    :max_stderr_buffer_bytes,
+    :debug
+  ]
+  @preflight_session_keys [
+    :lane,
+    :session_id,
+    :name,
+    :queue_limit,
+    :overflow_policy,
+    :subscriber_queue_warn,
+    :subscriber_queue_limit,
+    :max_concurrent_runs,
+    :max_queued_runs
+  ]
+  @preflight_partial_keys [
+    :ollama,
+    :ollama_model,
+    :ollama_base_url,
+    :ollama_http,
+    :ollama_timeout_ms
+  ]
+  @preflight_escape_hatch_keys [:env, :args]
+  @preflight_legacy_provider_native_keys [
+    :permission_mode,
+    :provider_permission_mode,
+    :model_payload,
+    :system_prompt,
+    :append_system_prompt,
+    :provider_backend,
+    :external_model_overrides,
+    :anthropic_base_url,
+    :anthropic_auth_token,
+    :include_thinking,
+    :max_turns,
+    :reasoning_effort,
+    :model_provider,
+    :oss_provider,
+    :skip_git_repo_check,
+    :app_server,
+    :host_tools,
+    :dynamic_tools,
+    :output_schema,
+    :additional_directories,
+    :sandbox,
+    :extensions,
+    :mode,
+    :permissions,
+    :mcp_config,
+    :tools
+  ]
+  @high_risk_env_fragments [
+    "API_KEY",
+    "AUTH_TOKEN",
+    "BASE_URL",
+    "MODEL",
+    "PERMISSION",
+    "SANDBOX",
+    "TOOLS",
+    "MCP"
+  ]
+  @high_risk_env_prefixes [
+    "ANTHROPIC_",
+    "CLAUDE_",
+    "CODEX_",
+    "OPENAI_",
+    "GEMINI_",
+    "GOOGLE_",
+    "AMP_"
+  ]
+
   @type t :: keyword()
+  @type preflight_mode :: :strict_common | :compat
+  @type preflight_result :: %{
+          required(:provider) => atom(),
+          required(:mode) => preflight_mode(),
+          required(:common) => map(),
+          required(:session) => map(),
+          required(:partial) => map(),
+          required(:provider_native_legacy) => map(),
+          required(:rejected) => list(),
+          required(:warnings) => [Warning.t()]
+        }
+
+  @type preflight_error ::
+          UnsupportedOptionError.t()
+          | ProviderMismatchError.t()
+          | ProviderNativeOptionError.t()
+          | PartialFeatureUnsupportedError.t()
+          | UnsupportedExecutionSurfaceError.t()
 
   @spec schema() :: keyword()
   def schema do
@@ -92,6 +202,372 @@ defmodule ASM.Options do
       debug: [type: :boolean, default: false]
     ]
   end
+
+  @spec preflight(Provider.provider_name(), keyword()) ::
+          {:ok, preflight_result()} | {:error, preflight_error() | Error.t()}
+  def preflight(provider, opts), do: preflight(provider, opts, mode: :strict_common)
+
+  @spec preflight(Provider.provider_name(), keyword(), keyword()) ::
+          {:ok, preflight_result()} | {:error, preflight_error() | Error.t()}
+  def preflight(provider, opts, preflight_opts)
+      when is_list(opts) and is_list(preflight_opts) do
+    if Keyword.keyword?(opts) and Keyword.keyword?(preflight_opts) do
+      with {:ok, %Provider{name: canonical_provider}} <- Provider.resolve(provider),
+           {:ok, mode} <-
+             normalize_preflight_mode(Keyword.get(preflight_opts, :mode, :strict_common)),
+           {:ok, result} <- base_preflight_result(canonical_provider, mode),
+           {:ok, result} <- preflight_provider_option(canonical_provider, opts, mode, result) do
+        classify_preflight_opts(canonical_provider, opts, mode, result)
+      end
+    else
+      preflight_keyword_error(provider)
+    end
+  end
+
+  def preflight(provider, opts, preflight_opts) do
+    _ = opts
+    _ = preflight_opts
+    preflight_keyword_error(provider)
+  end
+
+  defp preflight_keyword_error(provider) do
+    {:error,
+     UnsupportedOptionError.exception(
+       key: :opts,
+       provider: provider,
+       mode: :strict_common,
+       reason: :invalid_opts,
+       message: "ASM.Options.preflight/3 expects opts and preflight options to be keyword lists"
+     )}
+  end
+
+  @spec ensure_positional_provider(Provider.provider_name(), keyword()) ::
+          :ok | {:error, ProviderMismatchError.t()}
+  def ensure_positional_provider(provider, opts) when is_atom(provider) and is_list(opts) do
+    case Keyword.fetch(opts, :provider) do
+      :error ->
+        :ok
+
+      {:ok, option_provider} ->
+        compare_positional_provider(provider, option_provider)
+    end
+  end
+
+  defp compare_positional_provider(provider, option_provider) do
+    case {canonical_provider_name(provider), canonical_provider_name(option_provider)} do
+      {{:ok, positional}, {:ok, positional}} ->
+        :ok
+
+      {{:ok, positional}, {:ok, _option_name}} ->
+        {:error,
+         ProviderMismatchError.exception(
+           expected_provider: positional,
+           actual_provider: option_provider,
+           mode: :compat,
+           reason: :mismatch
+         )}
+
+      {{:error, %Error{} = error}, _other} ->
+        invalid_provider_mismatch(provider, option_provider, :compat, error)
+
+      {_positional, {:error, %Error{} = error}} ->
+        invalid_provider_mismatch(provider, option_provider, :compat, error)
+    end
+  end
+
+  defp normalize_preflight_mode(mode) when mode in @preflight_modes, do: {:ok, mode}
+
+  defp normalize_preflight_mode(mode) do
+    {:error,
+     UnsupportedOptionError.exception(
+       key: :mode,
+       mode: mode,
+       reason: :invalid_mode,
+       message:
+         "invalid ASM preflight mode #{inspect(mode)}; expected one of #{inspect(@preflight_modes)}"
+     )}
+  end
+
+  defp base_preflight_result(provider, mode) do
+    {:ok,
+     %{
+       provider: provider,
+       mode: mode,
+       common: %{},
+       session: %{},
+       partial: %{},
+       provider_native_legacy: %{},
+       rejected: [],
+       warnings: []
+     }}
+  end
+
+  defp preflight_provider_option(provider, opts, mode, result) do
+    case Keyword.fetch(opts, :provider) do
+      :error ->
+        {:ok, result}
+
+      {:ok, option_provider} ->
+        classify_preflight_provider_value(provider, option_provider, mode, result)
+    end
+  end
+
+  defp classify_preflight_provider_value(provider, option_provider, mode, result) do
+    case canonical_provider_name(option_provider) do
+      {:ok, ^provider} ->
+        classify_matching_preflight_provider(provider, option_provider, mode, result)
+
+      {:ok, _other_provider} ->
+        {:error,
+         ProviderMismatchError.exception(
+           expected_provider: provider,
+           actual_provider: option_provider,
+           mode: mode,
+           reason: :mismatch
+         )}
+
+      {:error, %Error{} = error} ->
+        invalid_provider_mismatch(provider, option_provider, mode, error)
+    end
+  end
+
+  defp classify_matching_preflight_provider(provider, option_provider, :strict_common, _result) do
+    {:error,
+     ProviderMismatchError.exception(
+       expected_provider: provider,
+       actual_provider: option_provider,
+       mode: :strict_common,
+       reason: :redundant_provider
+     )}
+  end
+
+  defp classify_matching_preflight_provider(_provider, option_provider, :compat, result) do
+    {:ok,
+     result
+     |> put_preflight_value(:provider_native_legacy, :provider, option_provider)
+     |> add_warning(
+       :provider,
+       :redundant_provider,
+       "provider is positional for ASM.query/3-style APIs; keep provider in opts only for compatibility paths",
+       "Remove :provider from ASM.query/3 opts and pass it positionally."
+     )}
+  end
+
+  defp canonical_provider_name(provider_or_name) do
+    case Provider.resolve(provider_or_name) do
+      {:ok, %Provider{name: name}} -> {:ok, name}
+      {:error, %Error{} = error} -> {:error, error}
+    end
+  end
+
+  defp invalid_provider_mismatch(expected_provider, actual_provider, mode, error) do
+    {:error,
+     ProviderMismatchError.exception(
+       expected_provider: expected_provider,
+       actual_provider: actual_provider,
+       mode: mode,
+       reason: :invalid_provider,
+       message: Exception.message(error)
+     )}
+  end
+
+  defp classify_preflight_opts(provider, opts, mode, result) do
+    opts
+    |> Enum.reject(fn {key, _value} -> key == :provider end)
+    |> Enum.reduce_while({:ok, result}, fn {key, value}, {:ok, acc} ->
+      case classify_preflight_option(provider, key, value, mode, acc) do
+        {:ok, next} -> {:cont, {:ok, next}}
+        {:error, error} -> {:halt, {:error, error}}
+      end
+    end)
+  end
+
+  defp classify_preflight_option(provider, key, value, mode, result)
+       when key in @preflight_common_keys do
+    normalize_common_preflight_value(provider, key, value, mode, result)
+  end
+
+  defp classify_preflight_option(provider, :lane = key, value, mode, result) do
+    if value in @preflight_lanes do
+      {:ok, put_preflight_value(result, :session, key, value)}
+    else
+      {:error,
+       UnsupportedOptionError.exception(
+         key: key,
+         provider: provider,
+         mode: mode,
+         reason: :invalid_lane,
+         message: "invalid lane #{inspect(value)}; expected one of #{inspect(@preflight_lanes)}"
+       )}
+    end
+  end
+
+  defp classify_preflight_option(_provider, key, value, _mode, result)
+       when key in @preflight_session_keys do
+    {:ok, put_preflight_value(result, :session, key, value)}
+  end
+
+  defp classify_preflight_option(provider, key, value, mode, result)
+       when key in @preflight_partial_keys do
+    case mode do
+      :strict_common ->
+        {:error,
+         PartialFeatureUnsupportedError.exception(
+           key: key,
+           provider: provider,
+           mode: mode,
+           feature: :ollama
+         )}
+
+      :compat ->
+        {:ok,
+         result
+         |> put_preflight_value(:partial, key, value)
+         |> add_warning(
+           key,
+           :partial_feature,
+           "option #{inspect(key)} belongs to a partial feature and is not all-provider common ASM behavior",
+           "Use a provider SDK or keep this behind an explicit compatibility path."
+         )}
+    end
+  end
+
+  defp classify_preflight_option(provider, key, value, mode, result)
+       when key in @preflight_escape_hatch_keys do
+    classify_provider_native_preflight_option(provider, key, value, mode, result, :escape_hatch)
+  end
+
+  defp classify_preflight_option(provider, key, value, mode, result)
+       when key in @preflight_legacy_provider_native_keys do
+    classify_provider_native_preflight_option(
+      provider,
+      key,
+      value,
+      mode,
+      result,
+      :provider_native
+    )
+  end
+
+  defp classify_preflight_option(provider, key, _value, mode, _result) do
+    {:error,
+     UnsupportedOptionError.exception(
+       key: key,
+       provider: provider,
+       mode: mode,
+       reason: :unknown_option
+     )}
+  end
+
+  defp normalize_common_preflight_value(_provider, :execution_surface = key, value, _mode, result) do
+    case ExecutionSurface.new(value) do
+      {:ok, %ExecutionSurface{} = execution_surface} ->
+        {:ok, put_preflight_value(result, :common, key, execution_surface)}
+
+      {:error, reason} ->
+        {:error, UnsupportedExecutionSurfaceError.exception(value: value, reason: reason)}
+    end
+  end
+
+  defp normalize_common_preflight_value(_provider, key, value, _mode, result) do
+    {:ok, put_preflight_value(result, :common, key, value)}
+  end
+
+  defp classify_provider_native_preflight_option(provider, key, value, mode, result, reason) do
+    case mode do
+      :strict_common ->
+        {:error,
+         ProviderNativeOptionError.exception(
+           key: key,
+           provider: provider,
+           mode: mode,
+           reason: reason,
+           migration: provider_native_migration(key)
+         )}
+
+      :compat ->
+        warning_reason = compat_warning_reason(key, value, reason)
+
+        {:ok,
+         result
+         |> put_preflight_value(:provider_native_legacy, key, value)
+         |> add_warning(
+           key,
+           warning_reason,
+           compat_warning_message(key, value, warning_reason),
+           provider_native_migration(key)
+         )}
+    end
+  end
+
+  defp put_preflight_value(result, bucket, key, value) do
+    Map.update!(result, bucket, &Map.put(&1, key, value))
+  end
+
+  defp add_warning(result, key, reason, message, migration) do
+    warning = %Warning{
+      key: key,
+      reason: reason,
+      message: message,
+      migration: migration,
+      mode: result.mode
+    }
+
+    Map.update!(result, :warnings, &(&1 ++ [warning]))
+  end
+
+  defp compat_warning_reason(:env, value, _reason) do
+    if high_risk_env?(value), do: :provider_native_env, else: :escape_hatch
+  end
+
+  defp compat_warning_reason(_key, _value, reason), do: reason
+
+  defp compat_warning_message(:env, value, :provider_native_env) do
+    "env contains provider-native-looking keys #{inspect(high_risk_env_keys(value))}; env is compatibility-only subprocess configuration"
+  end
+
+  defp compat_warning_message(key, _value, :escape_hatch) do
+    "option #{inspect(key)} is an escape hatch and is not part of ASM's strict common contract"
+  end
+
+  defp compat_warning_message(key, _value, :provider_native) do
+    "option #{inspect(key)} is provider-native legacy compatibility, not common ASM behavior"
+  end
+
+  defp high_risk_env?(value), do: high_risk_env_keys(value) != []
+
+  defp high_risk_env_keys(value) when is_map(value) do
+    value
+    |> Map.keys()
+    |> Enum.map(&to_string/1)
+    |> Enum.filter(&high_risk_env_key?/1)
+  end
+
+  defp high_risk_env_keys(_value), do: []
+
+  defp high_risk_env_key?(key) do
+    Enum.any?(@high_risk_env_prefixes, &String.starts_with?(key, &1)) or
+      Enum.any?(@high_risk_env_fragments, &String.contains?(key, &1))
+  end
+
+  defp provider_native_migration(:env),
+    do:
+      "Pass provider configuration through provider SDK options; use ASM env only in legacy compatibility paths."
+
+  defp provider_native_migration(:args),
+    do:
+      "Use a provider SDK for native CLI flags; generic ASM does not admit raw args as common behavior."
+
+  defp provider_native_migration(:permission_mode),
+    do: "Use provider SDK permission controls until all-provider permission semantics are proven."
+
+  defp provider_native_migration(:model_payload),
+    do:
+      "Use public :model in strict ASM paths; model_payload remains internal/compatibility-only."
+
+  defp provider_native_migration(key),
+    do:
+      "Move #{inspect(key)} to the owning provider SDK or an explicit provider-native extension."
 
   @spec validate(keyword(), keyword()) :: {:ok, t()} | {:error, Error.t()}
   def validate(opts, provider_schema \\ [])

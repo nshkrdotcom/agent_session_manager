@@ -55,6 +55,20 @@ defmodule ASM.APITest do
     assert error.cause.actual_provider == :claude
   end
 
+  test "query/3 rejects redundant provider options for positional provider calls" do
+    assert {:error, error} =
+             ASM.query(:gemini, "hello",
+               provider: :gemini,
+               backend_module: FakeBackend
+             )
+
+    assert error.kind == :config_invalid
+    assert %ASM.Options.ProviderMismatchError{} = error.cause
+    assert error.cause.reason == :redundant_provider
+    assert error.cause.expected_provider == :gemini
+    assert error.cause.actual_provider == :gemini
+  end
+
   test "session-level provider options are inherited by stream/query calls" do
     session_id = "api-options-" <> Integer.to_string(System.unique_integer([:positive]))
 

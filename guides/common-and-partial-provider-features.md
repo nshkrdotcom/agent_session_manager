@@ -202,10 +202,13 @@ When you are trying to understand one of these knobs, ask which layer you are
 standing in:
 
 - ASM execution environment
-  - common knobs such as `permission_mode`, `approval_posture`,
-    `allowed_tools`
+  - strict common/runtime knobs such as `model`, `lane`,
+    `execution_surface`, `cwd`, and runtime timeout or queue settings
+  - compatibility-only knobs such as `permission_mode` while all-four safety
+    semantics remain unproven
 - ASM provider feature discovery
-  - provider-native names and CLI spellings for those common knobs
+  - provider-native names and CLI spellings for compatibility or
+    partial/discovery knobs
 - provider SDK or provider CLI layer
   - extra provider-specific knobs that do not exist in ASM's common contract
 

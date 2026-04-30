@@ -225,7 +225,12 @@ defmodule AgentSessionManager.MixProject do
         ASM.Stream
       ],
       "Inference Endpoint Contracts": ~r/^ASM\.InferenceEndpoint/,
-      Backends: [ASM.ProviderBackend, ASM.ProviderBackend.Core, ASM.ProviderBackend.SDK],
+      Backends: [
+        ASM.ProviderBackend,
+        ASM.ProviderBackend.Core,
+        ASM.ProviderBackend.SDK,
+        ASM.ProviderBackend.SdkUnavailableError
+      ],
       Providers: ~r/^ASM\.(Provider|Options)/,
       Runtime: ~r/^ASM\.(Session|Run)/,
       "Streaming & Tooling": ~r/^ASM\.(Store|Tool)/,

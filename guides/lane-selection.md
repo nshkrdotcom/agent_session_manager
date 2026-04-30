@@ -14,13 +14,23 @@ This distinction matters most when `execution_mode: :remote_node` is involved.
 
 ## Lane Policies
 
-- `:core` always resolves to `ASM.ProviderBackend.Core`
+- `:core` always resolves to `ASM.ProviderBackend.Core` and does not probe or
+  load optional provider SDK runtime modules
 - `:sdk` resolves to `ASM.ProviderBackend.SDK` only when the provider runtime kit is installed locally
 - `:auto` prefers `:sdk` when that runtime kit is available locally, otherwise it uses `:core`
+
+An explicit `lane: :sdk` without a loadable SDK runtime fails as a config error
+whose `cause` is `%ASM.ProviderBackend.SdkUnavailableError{}`. It never falls
+back to the core backend. `lane: :auto` is the only lane that may fall back to
+core for SDK absence.
 
 Use `ASM.ProviderRegistry.provider_info/1` when you want provider-level facts,
 `lane_info/2` when you want discovery without execution-mode compatibility, and
 `resolve/2` when you need the effective backend choice for a real run.
+
+`lane_info(provider, lane: :core)` intentionally does not check SDK
+availability. Use `provider_info/1` when you explicitly need provider SDK
+availability discovery.
 
 ## Local Versus Remote Execution
 

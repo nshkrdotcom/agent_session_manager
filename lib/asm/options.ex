@@ -249,29 +249,35 @@ defmodule ASM.Options do
         :ok
 
       {:ok, option_provider} ->
-        compare_positional_provider(provider, option_provider)
+        compare_positional_provider(provider, option_provider, :strict_common)
     end
   end
 
-  defp compare_positional_provider(provider, option_provider) do
+  defp compare_positional_provider(provider, option_provider, mode) do
     case {canonical_provider_name(provider), canonical_provider_name(option_provider)} do
       {{:ok, positional}, {:ok, positional}} ->
-        :ok
+        {:error,
+         ProviderMismatchError.exception(
+           expected_provider: positional,
+           actual_provider: option_provider,
+           mode: mode,
+           reason: :redundant_provider
+         )}
 
       {{:ok, positional}, {:ok, _option_name}} ->
         {:error,
          ProviderMismatchError.exception(
            expected_provider: positional,
            actual_provider: option_provider,
-           mode: :compat,
+           mode: mode,
            reason: :mismatch
          )}
 
       {{:error, %Error{} = error}, _other} ->
-        invalid_provider_mismatch(provider, option_provider, :compat, error)
+        invalid_provider_mismatch(provider, option_provider, mode, error)
 
       {_positional, {:error, %Error{} = error}} ->
-        invalid_provider_mismatch(provider, option_provider, :compat, error)
+        invalid_provider_mismatch(provider, option_provider, mode, error)
     end
   end
 

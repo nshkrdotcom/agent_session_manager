@@ -10,6 +10,7 @@ defmodule ASM.ProviderRegistry do
   """
 
   alias ASM.{AdapterSelectionPolicy, Error, Provider, ProviderRuntimeProfile}
+  alias ASM.ProviderBackend.SdkUnavailableError
 
   @type lane :: :auto | :core | :sdk
   @type execution_mode :: :local | :remote_node
@@ -111,10 +112,16 @@ defmodule ASM.ProviderRegistry do
     with {:ok, %Provider{} = config} <- fetch(provider),
          :ok <- reject_public_simulation_selector(config.name, opts),
          {:ok, requested_lane} <- requested_lane(opts) do
-      sdk_available? = sdk_available?(config)
-      provider_info = provider_info_from_config(config)
+      sdk_available? = if requested_lane == :core, do: false, else: sdk_available?(config)
 
-      case select_preferred_lane(requested_lane, sdk_available?) do
+      provider_info =
+        if requested_lane == :core do
+          core_only_provider_info_from_config(config)
+        else
+          provider_info_from_config(config)
+        end
+
+      case select_preferred_lane(config, requested_lane, sdk_available?) do
         {:ok, preferred_lane, lane_reason} ->
           capabilities = lane_capabilities(config, preferred_lane)
 
@@ -192,6 +199,31 @@ defmodule ASM.ProviderRegistry do
     }
   end
 
+  defp core_only_provider_info_from_config(%Provider{} = config) do
+    core_capabilities = module_capabilities(config.core_profile)
+
+    %{
+      provider: config,
+      core_profile: config.core_profile,
+      core_profile_id: config.name,
+      sdk_runtime: config.sdk_runtime,
+      sdk_available?: false,
+      available_lanes: [:core],
+      default_lane: :auto,
+      core_capabilities: core_capabilities,
+      sdk_capabilities: [],
+      observability: %{
+        provider: config.name,
+        provider_display_name: config.display_name,
+        core_profile_id: config.name,
+        sdk_runtime: config.sdk_runtime,
+        sdk_available?: false,
+        available_lanes: [:core],
+        default_lane: :auto
+      }
+    }
+  end
+
   defp requested_lane(opts) when is_list(opts) do
     case Keyword.get(opts, :lane, :auto) do
       lane when lane in [:auto, :core, :sdk] ->
@@ -213,13 +245,21 @@ defmodule ASM.ProviderRegistry do
     end
   end
 
-  defp select_preferred_lane(:auto, true), do: {:ok, :sdk, :sdk_available}
-  defp select_preferred_lane(:auto, false), do: {:ok, :core, :sdk_unavailable}
-  defp select_preferred_lane(:core, _sdk_available?), do: {:ok, :core, :explicit_core}
-  defp select_preferred_lane(:sdk, true), do: {:ok, :sdk, :explicit_sdk}
+  defp select_preferred_lane(_config, :auto, true), do: {:ok, :sdk, :sdk_available}
+  defp select_preferred_lane(_config, :auto, false), do: {:ok, :core, :sdk_unavailable}
+  defp select_preferred_lane(_config, :core, _sdk_available?), do: {:ok, :core, :explicit_core}
+  defp select_preferred_lane(_config, :sdk, true), do: {:ok, :sdk, :explicit_sdk}
 
-  defp select_preferred_lane(:sdk, false) do
-    {:error, config_error("sdk lane requested but runtime kit is unavailable")}
+  defp select_preferred_lane(%Provider{} = config, :sdk, false) do
+    cause =
+      SdkUnavailableError.exception(
+        provider: config.name,
+        lane: :sdk,
+        runtime: config.sdk_runtime,
+        reason: :sdk_unavailable
+      )
+
+    {:error, config_error(cause.message, config.name, cause)}
   end
 
   defp resolve_for_execution_mode(
@@ -227,9 +267,19 @@ defmodule ASM.ProviderRegistry do
          _execution_mode,
          %{ref: ref}
        ) do
+    cause =
+      SdkUnavailableError.exception(
+        provider: info.provider.name,
+        lane: :sdk,
+        runtime: info.sdk_runtime,
+        reason: :provider_runtime_profile
+      )
+
     {:error,
      config_error(
-       "sdk lane is unavailable while provider runtime profile #{inspect(ref)} is active for #{inspect(info.provider.name)}"
+       "sdk lane is unavailable while provider runtime profile #{inspect(ref)} is active for #{inspect(info.provider.name)}",
+       info.provider.name,
+       cause
      )}
   end
 
@@ -245,11 +295,20 @@ defmodule ASM.ProviderRegistry do
   end
 
   defp resolve_for_execution_mode(
-         %{requested_lane: :sdk, preferred_lane: :sdk},
+         %{requested_lane: :sdk, preferred_lane: :sdk} = info,
          :remote_node,
          nil
        ) do
-    {:error, config_error("sdk lane is unavailable for :remote_node execution")}
+    cause =
+      SdkUnavailableError.exception(
+        provider: info.provider.name,
+        lane: :sdk,
+        runtime: info.sdk_runtime,
+        execution_mode: :remote_node,
+        reason: :unsupported_execution_mode
+      )
+
+    {:error, config_error(cause.message, info.provider.name, cause)}
   end
 
   defp resolve_for_execution_mode(%{preferred_lane: :sdk} = info, :remote_node, nil) do

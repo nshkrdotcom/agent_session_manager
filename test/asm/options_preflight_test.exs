@@ -44,6 +44,12 @@ defmodule ASM.OptionsPreflightTest do
   end
 
   test "provider mismatch is rejected before session startup compatibility handling" do
+    assert {:error, %ProviderMismatchError{} = redundant_error} =
+             Options.ensure_positional_provider(:gemini, provider: :gemini)
+
+    assert redundant_error.reason == :redundant_provider
+    assert redundant_error.mode == :strict_common
+
     assert {:error, %ProviderMismatchError{} = error} =
              Options.ensure_positional_provider(:gemini, provider: :claude)
 
@@ -81,6 +87,15 @@ defmodule ASM.OptionsPreflightTest do
              Options.preflight(:codex, model_payload: %{id: "fake-default"})
 
     assert payload_error.key == :model_payload
+  end
+
+  test "strict common preflight rejects unadmitted tool contracts" do
+    assert {:error, %ProviderNativeOptionError{} = error} =
+             Options.preflight(:amp, tools: [%{name: "search"}])
+
+    assert error.key == :tools
+    assert error.reason == :provider_native
+    assert error.migration =~ "provider SDK"
   end
 
   test "compat preflight classifies provider-native options with structured warnings" do

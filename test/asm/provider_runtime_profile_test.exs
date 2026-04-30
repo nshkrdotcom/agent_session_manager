@@ -96,6 +96,9 @@ defmodule ASM.ProviderRuntimeProfileTest do
     assert error.domain == :config
     assert error.message =~ "sdk lane is unavailable"
     assert error.message =~ "phase5prelim://asm/codex-no-sdk"
+    assert %ASM.ProviderBackend.SdkUnavailableError{} = error.cause
+    assert error.cause.provider == :codex
+    assert error.cause.reason == :provider_runtime_profile
   end
 
   test "required runtime profile fails before CLI resolution or spawn" do

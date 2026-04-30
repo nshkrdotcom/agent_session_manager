@@ -65,13 +65,19 @@ data crosses into ASM kernel state.
 
 `ASM.ProviderRegistry.resolve/2` chooses which backend module to use.
 
-- `lane: :core` resolves to `ASM.ProviderBackend.Core`
+- `lane: :core` resolves to `ASM.ProviderBackend.Core` without probing or
+  loading optional provider SDK modules
 - `lane: :sdk` resolves to `ASM.ProviderBackend.SDK` only when the runtime kit is available locally
 - `lane: :auto` prefers the SDK lane when available and otherwise falls back to the core lane
 
 An explicit `lane: :sdk` must fail clearly when the SDK runtime kit is
 unavailable. It must not silently fall back to the core lane. Fallback is only
 valid for documented `lane: :auto` cases.
+
+The public error remains `%ASM.Error{kind: :config_invalid, domain: :config}`,
+with `%ASM.ProviderBackend.SdkUnavailableError{}` in `error.cause` for the
+SDK-unavailable category. Tests and callers should assert that category instead
+of matching human-readable error text.
 
 `execution_mode` is applied after lane discovery. In the landed Phase 3
 boundary, remote execution always uses the core backend even if `:auto`

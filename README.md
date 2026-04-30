@@ -884,11 +884,19 @@ Strict common/session options include:
 `ASM.query/3` takes the provider positionally:
 
 ```elixir
-ASM.query(:gemini, "Say hello", model: "fake-default", lane: :core)
+ASM.query(:gemini, "Say hello", model: selected_model, lane: :core)
 ```
 
-Do not pass `provider:` in `ASM.query/3` options. A mismatched `provider:`
-option is rejected instead of being silently overwritten.
+Here `selected_model` should come from the host application's explicit config
+or request context, not hidden provider-specific environment reads inside ASM.
+
+Do not pass `provider:` in `ASM.query/3` options. Redundant or mismatched
+`provider:` options are rejected instead of being silently overwritten.
+
+`lane: :core` does not probe or load optional provider SDK modules. An explicit
+`lane: :sdk` without a loadable SDK runtime fails as
+`%ASM.Error{kind: :config_invalid, domain: :config}` with
+`%ASM.ProviderBackend.SdkUnavailableError{}` in `error.cause`.
 
 Compatibility-only or provider-native options include:
 

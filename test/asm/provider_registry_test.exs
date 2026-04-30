@@ -55,6 +55,39 @@ defmodule ASM.ProviderRegistryTest do
     assert info.lane_reason == :sdk_unavailable
   end
 
+  test "lane_info/2 does not load provider SDK runtimes for explicit core lane" do
+    put_runtime_loader(fn
+      GeminiCliSdk.Runtime.CLI -> flunk("explicit core lane must not probe Gemini SDK")
+      runtime -> Code.ensure_loaded?(runtime)
+    end)
+
+    assert {:ok, info} = ProviderRegistry.lane_info(:gemini, lane: :core)
+
+    assert info.requested_lane == :core
+    assert info.preferred_lane == :core
+    assert info.backend == ASM.ProviderBackend.Core
+    assert info.sdk_available? == false
+    assert info.lane_reason == :explicit_core
+  end
+
+  test "explicit local sdk lane fails with stable unavailable cause when runtime is absent" do
+    put_runtime_loader(fn
+      Codex.Runtime.Exec -> false
+      runtime -> Code.ensure_loaded?(runtime)
+    end)
+
+    assert {:error, error} = ProviderRegistry.resolve(:codex, lane: :sdk)
+
+    assert error.kind == :config_invalid
+    assert error.domain == :config
+    assert error.provider == :codex
+    assert %ASM.ProviderBackend.SdkUnavailableError{} = cause = error.cause
+    assert cause.provider == :codex
+    assert cause.runtime == Codex.Runtime.Exec
+    assert cause.lane == :sdk
+    assert cause.reason == :sdk_unavailable
+  end
+
   test "resolve/2 applies remote compatibility after lane selection" do
     put_runtime_loader(fn
       Codex.Runtime.Exec -> true
@@ -81,6 +114,9 @@ defmodule ASM.ProviderRegistryTest do
 
     assert error.kind == :config_invalid
     assert error.message =~ "sdk lane"
+    assert %ASM.ProviderBackend.SdkUnavailableError{} = error.cause
+    assert error.cause.provider == :codex
+    assert error.cause.reason == :unsupported_execution_mode
   end
 
   defp put_runtime_loader(fun) when is_function(fun, 1) do

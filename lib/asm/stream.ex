@@ -40,7 +40,8 @@ defmodule ASM.Stream do
     :tools,
     :approval_timeout_ms,
     :backend_module,
-    :backend_opts
+    :backend_opts,
+    :metadata
   ]
 
   @type stream_state :: %{
@@ -238,9 +239,11 @@ defmodule ASM.Stream do
 
   defp partition_opts(opts) do
     {stream_opts, rest} = Keyword.split(opts, @stream_keys)
-    {run_opts, provider_opts} = Keyword.split(rest, @run_keys)
+    {run_opts, provider_opts} = Keyword.split(rest, run_keys())
     {stream_opts, run_opts, provider_opts}
   end
+
+  defp run_keys, do: @run_keys ++ ASM.RuntimeAuth.option_keys()
 
   defp merge_opts(base, override) do
     Keyword.merge(base, override, fn

@@ -9,7 +9,7 @@ defmodule ASM.Event do
 
   import Bitwise
 
-  alias ASM.{Content, Control, Message}
+  alias ASM.{Content, Control, Message, Metadata}
   alias ASM.Schema.Event, as: EventSchema
   alias CliSubprocessCore.Event, as: CoreEvent
   alias CliSubprocessCore.Payload
@@ -184,7 +184,10 @@ defmodule ASM.Event do
       provider_session_id: core_event.provider_session_id,
       timestamp: core_event.timestamp,
       metadata:
-        Map.merge(Map.get(run_scope, :metadata, %{}), normalize_metadata(core_event.metadata))
+        Metadata.merge_run_metadata(
+          Map.get(run_scope, :metadata, %{}),
+          normalize_metadata(core_event.metadata)
+        )
     )
   end
 

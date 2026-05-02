@@ -5,7 +5,7 @@ defmodule ASM.Session.Server do
 
   use GenServer
 
-  alias ASM.{Control, Error}
+  alias ASM.{Control, Error, Metadata, RuntimeAuth}
   alias ASM.Provider
   alias ASM.Run.ApprovalCoordinator
   alias ASM.Session.Continuation
@@ -68,8 +68,9 @@ defmodule ASM.Session.Server do
     session_id = Keyword.fetch!(opts, :session_id)
     provider = opts |> Keyword.get(:provider, :claude) |> Provider.resolve!()
     session_options = Keyword.get(opts, :options, [])
+    runtime_auth = Keyword.fetch!(opts, :runtime_auth)
 
-    {:ok, State.new(session_id, provider, session_options)}
+    {:ok, State.new(session_id, provider, session_options, runtime_auth)}
   end
 
   @impl true
@@ -293,16 +294,36 @@ defmodule ASM.Session.Server do
     run_module_opts = Keyword.get(run_opts, :run_module_opts, [])
     passthrough_opts = Keyword.drop(run_opts, [:run_module, :run_module_opts])
 
-    child_opts =
-      [
-        run_id: run_id,
-        session_id: state.session_id,
-        provider: state.provider.name,
-        prompt: prompt,
-        session_pid: self()
-      ] ++ passthrough_opts ++ run_module_opts
+    {runtime_auth_opts, passthrough_opts} =
+      Keyword.split(passthrough_opts, RuntimeAuth.option_keys())
 
-    DynamicSupervisor.start_child(run_sup, {run_module, child_opts})
+    with {:ok, runtime_auth} <- RuntimeAuth.for_run(state.runtime_auth, run_id, runtime_auth_opts) do
+      passthrough_opts =
+        put_runtime_auth_metadata(passthrough_opts, RuntimeAuth.to_metadata(runtime_auth))
+
+      child_opts =
+        [
+          run_id: run_id,
+          session_id: state.session_id,
+          provider: state.provider.name,
+          prompt: prompt,
+          session_pid: self()
+        ] ++ passthrough_opts ++ run_module_opts
+
+      DynamicSupervisor.start_child(run_sup, {run_module, child_opts})
+    end
+  end
+
+  defp put_runtime_auth_metadata(opts, metadata) when is_list(opts) and is_map(metadata) do
+    existing_metadata =
+      case Keyword.get(opts, :metadata, %{}) do
+        existing when is_map(existing) -> existing
+        _other -> %{}
+      end
+
+    opts
+    |> Keyword.delete(:metadata)
+    |> Keyword.put(:metadata, Metadata.merge_run_metadata(metadata, existing_metadata))
   end
 
   defp maybe_start_next_queued_run(state) do

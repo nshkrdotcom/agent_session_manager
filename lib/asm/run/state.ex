@@ -124,6 +124,7 @@ defmodule ASM.Run.State do
       continuation: Keyword.get(opts, :continuation),
       pipeline: Keyword.get(opts, :pipeline, []),
       pipeline_ctx: Keyword.get(opts, :pipeline_ctx, %{}),
+      metadata: normalize_metadata(Keyword.get(opts, :metadata, %{})),
       approval_timers: %{},
       approval_timeout_ms:
         Keyword.get(opts, :approval_timeout_ms, app_default(:approval_timeout_ms, 120_000)),
@@ -145,4 +146,7 @@ defmodule ASM.Run.State do
   defp app_default(key, default) do
     Application.get_env(:agent_session_manager, key, default)
   end
+
+  defp normalize_metadata(metadata) when is_map(metadata), do: metadata
+  defp normalize_metadata(_metadata), do: %{}
 end

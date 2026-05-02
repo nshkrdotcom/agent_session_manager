@@ -27,6 +27,8 @@ defmodule ASM do
       ProviderBackend,
       ProviderRegistry,
       Result,
+      RuntimeAuth,
+      {RuntimeAuth, []},
       SessionControl,
       Store,
       {Store, []},
@@ -34,14 +36,17 @@ defmodule ASM do
       Telemetry
     ]
 
-  alias ASM.{Error, Options, Result, Session, SessionControl, Stream}
+  alias ASM.{Error, Options, Result, RuntimeAuth, Session, SessionControl, Stream}
 
   @type session_ref :: GenServer.server()
   @type session_info :: %{
           session_id: String.t(),
           provider: ASM.Provider.provider_name(),
           options: keyword(),
-          status: atom()
+          status: atom(),
+          execution_context_ref: String.t(),
+          connector_instance_ref: String.t(),
+          runtime_auth: map()
         }
 
   @spec start_link(keyword()) :: {:ok, session_ref()} | {:error, Error.t() | term()}
@@ -160,7 +165,10 @@ defmodule ASM do
        session_id: state.session_id,
        provider: state.provider.name,
        options: state.options,
-       status: state.status
+       status: state.status,
+       execution_context_ref: state.runtime_auth.execution_context.ref,
+       connector_instance_ref: state.runtime_auth.connector_instance.ref,
+       runtime_auth: RuntimeAuth.to_map(state.runtime_auth)
      }}
   rescue
     error ->

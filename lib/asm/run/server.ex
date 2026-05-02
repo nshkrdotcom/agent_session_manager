@@ -137,7 +137,12 @@ defmodule ASM.Run.Server do
       ) do
     event =
       Event.wrap_core(
-        %{run_id: state.run_id, session_id: state.session_id, provider: state.provider},
+        %{
+          run_id: state.run_id,
+          session_id: state.session_id,
+          provider: state.provider,
+          metadata: state.metadata
+        },
         core_event
       )
 
@@ -313,7 +318,7 @@ defmodule ASM.Run.Server do
       execution_config: state.execution_config,
       subscriber_pid: self(),
       subscription_ref: subscription_ref,
-      metadata: %{run_id: state.run_id, session_id: state.session_id}
+      metadata: Map.merge(state.metadata, %{run_id: state.run_id, session_id: state.session_id})
     }
   end
 

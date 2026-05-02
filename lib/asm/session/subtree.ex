@@ -30,6 +30,7 @@ defmodule ASM.Session.Subtree do
     session_id = Keyword.fetch!(opts, :session_id)
     provider = Keyword.get(opts, :provider, :claude)
     session_options = Keyword.get(opts, :options, [])
+    runtime_auth = Keyword.fetch!(opts, :runtime_auth)
 
     children = [
       {ASM.Run.Supervisor, [session_id: session_id, name: via_name(session_id, :run_sup)]},
@@ -38,6 +39,7 @@ defmodule ASM.Session.Subtree do
          session_id: session_id,
          provider: provider,
          options: session_options,
+         runtime_auth: runtime_auth,
          name: via_name(session_id, :server)
        ]}
     ]

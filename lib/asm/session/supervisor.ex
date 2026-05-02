@@ -5,6 +5,7 @@ defmodule ASM.Session.Supervisor do
 
   use DynamicSupervisor
 
+  alias ASM.{Provider, RuntimeAuth}
   alias ASM.Execution.Config
 
   @registry :asm_sessions
@@ -27,12 +28,17 @@ defmodule ASM.Session.Supervisor do
       |> Keyword.drop([:session_id, :provider, :name, :options])
       |> Keyword.merge(Keyword.get(opts, :options, []))
 
-    with {:ok, session_options} <- normalize_session_options(provider, session_options) do
+    with {:ok, provider_config} <- Provider.resolve(provider),
+         {:ok, session_options} <-
+           normalize_session_options(provider_config.name, session_options),
+         {:ok, runtime_auth} <-
+           RuntimeAuth.new(session_id, provider_config.name, session_options) do
       subtree_opts =
         opts
         |> Keyword.put(:session_id, session_id)
-        |> Keyword.put(:provider, provider)
+        |> Keyword.put(:provider, provider_config.name)
         |> Keyword.put(:options, session_options)
+        |> Keyword.put(:runtime_auth, runtime_auth)
 
       DynamicSupervisor.start_child(supervisor, {ASM.Session.Subtree, subtree_opts})
     end

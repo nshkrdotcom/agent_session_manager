@@ -3,14 +3,15 @@ defmodule ASM.Session.State do
   Aggregate state owned by `ASM.Session.Server`.
   """
 
-  alias ASM.Provider
+  alias ASM.{Provider, RuntimeAuth}
 
-  @enforce_keys [:session_id, :provider, :provider_profile, :options]
+  @enforce_keys [:session_id, :provider, :provider_profile, :options, :runtime_auth]
   defstruct [
     :session_id,
     :provider,
     :provider_profile,
     :options,
+    :runtime_auth,
     status: :ready,
     active_runs: %{},
     run_monitors: %{},
@@ -25,6 +26,7 @@ defmodule ASM.Session.State do
           provider: Provider.t(),
           provider_profile: Provider.Profile.t(),
           options: keyword(),
+          runtime_auth: RuntimeAuth.t(),
           status: :ready | :stopped,
           active_runs: %{optional(String.t()) => pid()},
           run_monitors: %{optional(pid()) => reference()},
@@ -45,13 +47,15 @@ defmodule ASM.Session.State do
           required(:opts) => keyword()
         }
 
-  @spec new(String.t(), Provider.t(), keyword()) :: t()
-  def new(session_id, %Provider{} = provider, options \\ []) when is_binary(session_id) do
+  @spec new(String.t(), Provider.t(), keyword(), RuntimeAuth.t()) :: t()
+  def new(session_id, %Provider{} = provider, options, %RuntimeAuth{} = runtime_auth)
+      when is_binary(session_id) do
     %__MODULE__{
       session_id: session_id,
       provider: provider,
       provider_profile: profile_from_options(provider.profile, options),
-      options: options
+      options: options,
+      runtime_auth: runtime_auth
     }
   end
 

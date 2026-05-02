@@ -135,6 +135,58 @@ defmodule ASM.RuntimeAuthTest do
     refute result.metadata.governed_authority
   end
 
+  test "standalone runtime auth cannot be upgraded to governed for a run" do
+    assert {:ok, runtime_auth} =
+             ASM.RuntimeAuth.new("runtime-auth-no-upgrade-" <> unique_suffix(), :codex)
+
+    assert {:error, error} =
+             ASM.RuntimeAuth.for_run(runtime_auth, "run-no-upgrade",
+               runtime_auth_mode: :governed,
+               runtime_auth_scope: :governed,
+               authority_ref: "citadel-authority://decision/1",
+               credential_lease_ref: "jido-credential-lease://lease/1",
+               native_auth_assertion_ref: "codex-native-auth://assertion/1",
+               provider_account_ref: "provider-account://codex/account-1"
+             )
+
+    assert error.kind == :config_invalid
+    assert error.message =~ "standalone runtime_auth cannot be upgraded"
+  end
+
+  test "governed runtime auth requires lease and native auth assertion evidence" do
+    assert {:error, error} =
+             ASM.RuntimeAuth.new("runtime-auth-governed-missing-" <> unique_suffix(), :codex,
+               runtime_auth_mode: :governed,
+               runtime_auth_scope: :governed,
+               execution_context_ref: "asm-execution-context://governed/missing",
+               connector_instance_ref: "jido-connector-instance://codex/instance-1",
+               connector_binding_ref: "jido-connector-binding://codex/binding-1",
+               provider_account_ref: "provider-account://codex/account-1",
+               authority_ref: "citadel-authority://decision/1"
+             )
+
+    assert error.kind == :config_invalid
+    assert error.message =~ "governed runtime_auth requires"
+  end
+
+  test "complete governed runtime auth satisfies governed authority" do
+    assert {:ok, runtime_auth} =
+             ASM.RuntimeAuth.new("runtime-auth-governed-" <> unique_suffix(), :codex,
+               runtime_auth_mode: :governed,
+               runtime_auth_scope: :governed,
+               execution_context_ref: "asm-execution-context://governed/session-1",
+               connector_instance_ref: "jido-connector-instance://codex/instance-1",
+               connector_binding_ref: "jido-connector-binding://codex/binding-1",
+               provider_account_ref: "provider-account://codex/account-1",
+               authority_ref: "citadel-authority://decision/1",
+               credential_lease_ref: "jido-credential-lease://lease/1",
+               native_auth_assertion_ref: "codex-native-auth://assertion/1"
+             )
+
+    assert ASM.RuntimeAuth.governed_authority?(runtime_auth)
+    assert ASM.RuntimeAuth.governed_authority?(ASM.RuntimeAuth.to_metadata(runtime_auth))
+  end
+
   defp start_query_session(provider, opts) do
     assert {:ok, session} = ASM.start_session(Keyword.put(opts, :provider, provider))
 

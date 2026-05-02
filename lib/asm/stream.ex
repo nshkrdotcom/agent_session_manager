@@ -41,6 +41,7 @@ defmodule ASM.Stream do
     :approval_timeout_ms,
     :backend_module,
     :backend_opts,
+    :codex_materialized_runtime,
     :metadata
   ]
 

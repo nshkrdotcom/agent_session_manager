@@ -8,6 +8,7 @@ defmodule ASM.ProviderBackend.SDK do
   alias ASM.{Error, Execution, HostTool, Options, Provider}
   alias ASM.ProviderBackend.Proxy
   alias ASM.ProviderBackend.SDK.CodexAppServer
+  alias ASM.RuntimeAuth.CodexMaterialization
   @claude_options_module Module.concat(["ClaudeAgentSDK", "Options"])
   @gemini_options_module Module.concat(["GeminiCliSdk", "Options"])
   @amp_options_module Module.concat(["AmpSdk", "Types", "Options"])
@@ -206,6 +207,8 @@ defmodule ASM.ProviderBackend.SDK do
              effective_provider_opts(config, Map.get(config, :execution_config))
            ),
          config = Map.put(config, :provider_opts, provider_opts),
+         {:ok, materialization} <- CodexMaterialization.authorize_config(config, provider_opts),
+         config = put_codex_materialization(config, materialization),
          model_payload = Keyword.fetch!(provider_opts, :model_payload),
          {:ok, codex_opts} <-
            new_sdk_struct(
@@ -260,6 +263,8 @@ defmodule ASM.ProviderBackend.SDK do
              effective_provider_opts(config, Map.get(config, :execution_config))
            ),
          config = Map.put(config, :provider_opts, provider_opts),
+         {:ok, materialization} <- CodexMaterialization.authorize_config(config, provider_opts),
+         config = put_codex_materialization(config, materialization),
          model_payload = Keyword.fetch!(provider_opts, :model_payload),
          {:ok, codex_opts} <-
            new_sdk_struct(
@@ -309,9 +314,11 @@ defmodule ASM.ProviderBackend.SDK do
 
   defp connect_codex_app_server(codex_opts, config) do
     app_server_api = backend_opt(config, :codex_app_server_module, @codex_app_server_module)
+    materialization = Map.get(config, :codex_materialization)
 
     connect_opts =
       [experimental_api: true, init_timeout_ms: 30_000]
+      |> Keyword.merge(CodexMaterialization.connect_opts(materialization))
       |> Keyword.merge(backend_opt(config, :connect_opts, []))
 
     app_server_api.connect(codex_opts, connect_opts)
@@ -349,6 +356,19 @@ defmodule ASM.ProviderBackend.SDK do
     extra
     |> Keyword.put(:metadata, metadata)
     |> Keyword.put(:execution_surface, Map.fetch!(config, :execution_surface))
+  end
+
+  defp put_codex_materialization(config, nil), do: config
+
+  defp put_codex_materialization(config, %CodexMaterialization{} = materialization) do
+    metadata =
+      config
+      |> Map.get(:metadata, %{})
+      |> CodexMaterialization.put_redacted_metadata(materialization)
+
+    config
+    |> Map.put(:codex_materialization, materialization)
+    |> Map.put(:metadata, metadata)
   end
 
   defp validate_approval_posture(execution_config) when is_map(execution_config) do
@@ -439,6 +459,8 @@ defmodule ASM.ProviderBackend.SDK do
   end
 
   defp codex_option_attrs(config, model_payload, execution_surface) do
+    materialization = Map.get(config, :codex_materialization)
+
     [
       execution_surface: execution_surface,
       model_payload: model_payload,
@@ -446,10 +468,13 @@ defmodule ASM.ProviderBackend.SDK do
       reasoning_effort: reasoning_atom(model_payload_value(model_payload, :reasoning)),
       codex_path_override: kw(config, :cli_path)
     ]
+    |> Keyword.merge(CodexMaterialization.codex_option_attrs(materialization))
     |> drop_nil_values()
   end
 
   defp codex_thread_option_attrs(config, model_payload) do
+    materialization = Map.get(config, :codex_materialization)
+
     [
       working_directory: kw(config, :cwd),
       additional_directories: kw(config, :additional_directories, []),
@@ -462,10 +487,13 @@ defmodule ASM.ProviderBackend.SDK do
       skip_git_repo_check: kw(config, :skip_git_repo_check, false),
       output_schema: kw(config, :output_schema)
     ]
+    |> Keyword.merge(CodexMaterialization.thread_attrs(materialization))
     |> drop_nil_values()
   end
 
   defp codex_exec_option_attrs(codex_opts, thread, config, execution_surface) do
+    materialization = Map.get(config, :codex_materialization)
+
     [
       codex_opts: codex_opts,
       execution_surface: execution_surface,
@@ -473,6 +501,7 @@ defmodule ASM.ProviderBackend.SDK do
       timeout_ms: kw(config, :transport_timeout_ms),
       max_stderr_buffer_bytes: kw(config, :max_stderr_buffer_bytes)
     ]
+    |> Keyword.merge(CodexMaterialization.exec_attrs(materialization))
     |> drop_nil_values()
   end
 
@@ -654,7 +683,18 @@ defmodule ASM.ProviderBackend.SDK do
 
   defp reasoning_atom(nil), do: nil
   defp reasoning_atom(value) when is_atom(value), do: value
-  defp reasoning_atom(value) when is_binary(value), do: String.to_atom(value)
+
+  defp reasoning_atom(value) when is_binary(value) do
+    case value do
+      "none" -> :none
+      "minimal" -> :minimal
+      "low" -> :low
+      "medium" -> :medium
+      "high" -> :high
+      "xhigh" -> :xhigh
+      _other -> nil
+    end
+  end
 
   defp codex_payload_oss?(payload) when is_map(payload) do
     model_payload_value(payload, :provider_backend) in [:oss, "oss"]

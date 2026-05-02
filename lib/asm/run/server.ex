@@ -314,6 +314,7 @@ defmodule ASM.Run.Server do
       continuation: state.continuation,
       provider_opts: state.provider_opts,
       backend_opts: state.backend_opts,
+      codex_materialized_runtime: state.codex_materialized_runtime,
       tools: state.tools,
       execution_config: state.execution_config,
       subscriber_pid: self(),

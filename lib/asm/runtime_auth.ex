@@ -229,32 +229,34 @@ defmodule ASM.RuntimeAuth do
     provider = runtime_auth.execution_context.provider
     session_id = runtime_auth.execution_context.session_id
 
-    base_opts =
-      [
-        runtime_auth_mode: runtime_auth.mode,
-        runtime_auth_scope: runtime_auth.execution_context.scope,
-        execution_context_ref: runtime_auth.execution_context.ref,
-        connector_instance_ref: runtime_auth.connector_instance.ref,
-        connector_binding_ref: runtime_auth.connector_binding.ref,
-        connector_id: runtime_auth.connector_instance.connector_id,
-        connector_runtime_ref: runtime_auth.connector_instance.runtime_ref,
-        connector_auth_backend: runtime_auth.connector_instance.auth_backend,
-        provider_auth_backend: runtime_auth.provider_auth_backend,
-        provider_account_ref: runtime_auth.provider_account_identity.ref,
-        provider_account_status: runtime_auth.provider_account_identity.identity_status,
-        provider_account_evidence: runtime_auth.provider_account_identity.evidence,
-        target_ref: runtime_auth.connector_binding.target_ref,
-        tenant_ref: runtime_auth.execution_context.tenant_ref,
-        installation_ref: runtime_auth.execution_context.installation_ref,
-        authority_ref: runtime_auth.connector_binding.authority_ref,
-        authority_decision_ref: runtime_auth.connector_binding.authority_decision_ref,
-        credential_lease_ref: runtime_auth.connector_binding.credential_lease_ref,
-        native_auth_assertion_ref: runtime_auth.connector_binding.native_auth_assertion_ref
-      ]
-      |> Keyword.merge(opts)
-      |> Keyword.delete(:runtime_auth)
+    with :ok <- reject_standalone_governed_upgrade(runtime_auth, opts) do
+      base_opts =
+        [
+          runtime_auth_mode: runtime_auth.mode,
+          runtime_auth_scope: runtime_auth.execution_context.scope,
+          execution_context_ref: runtime_auth.execution_context.ref,
+          connector_instance_ref: runtime_auth.connector_instance.ref,
+          connector_binding_ref: runtime_auth.connector_binding.ref,
+          connector_id: runtime_auth.connector_instance.connector_id,
+          connector_runtime_ref: runtime_auth.connector_instance.runtime_ref,
+          connector_auth_backend: runtime_auth.connector_instance.auth_backend,
+          provider_auth_backend: runtime_auth.provider_auth_backend,
+          provider_account_ref: runtime_auth.provider_account_identity.ref,
+          provider_account_status: runtime_auth.provider_account_identity.identity_status,
+          provider_account_evidence: runtime_auth.provider_account_identity.evidence,
+          target_ref: runtime_auth.connector_binding.target_ref,
+          tenant_ref: runtime_auth.execution_context.tenant_ref,
+          installation_ref: runtime_auth.execution_context.installation_ref,
+          authority_ref: runtime_auth.connector_binding.authority_ref,
+          authority_decision_ref: runtime_auth.connector_binding.authority_decision_ref,
+          credential_lease_ref: runtime_auth.connector_binding.credential_lease_ref,
+          native_auth_assertion_ref: runtime_auth.connector_binding.native_auth_assertion_ref
+        ]
+        |> Keyword.merge(opts)
+        |> Keyword.delete(:runtime_auth)
 
-    build(session_id, provider, run_id, base_opts)
+      build(session_id, provider, run_id, base_opts)
+    end
   end
 
   @spec to_metadata(t()) :: map()
@@ -297,7 +299,8 @@ defmodule ASM.RuntimeAuth do
     binding = runtime_auth.connector_binding
 
     governed_mode?(runtime_auth.mode) and governed_scope?(context.scope) and
-      present?(binding.authority_ref || binding.authority_decision_ref)
+      governed_source?(context.source) and governed_binding_evidence?(binding) and
+      governed_identity_evidence?(runtime_auth)
   end
 
   def governed_authority?(metadata) when is_map(metadata) do
@@ -309,18 +312,61 @@ defmodule ASM.RuntimeAuth do
     binding =
       map_value(metadata, :connector_binding) || map_value(runtime_auth, :connector_binding)
 
-    mode = map_value(metadata, :runtime_auth_mode) || map_value(runtime_auth, :mode)
-    scope = map_value(context, :scope)
-    authority_ref = map_value(metadata, :authority_ref) || map_value(binding, :authority_ref)
-
-    authority_decision_ref =
-      map_value(metadata, :authority_decision_ref) || map_value(binding, :authority_decision_ref)
-
-    governed_mode?(mode) and governed_scope?(scope) and
-      present?(authority_ref || authority_decision_ref)
+    metadata
+    |> governed_map_authority_evidence(runtime_auth, context, binding)
+    |> governed_authority_evidence?()
   end
 
   def governed_authority?(_other), do: false
+
+  @spec governed_context?(t() | map() | term()) :: boolean()
+  def governed_context?(%__MODULE__{} = runtime_auth) do
+    governed_mode?(runtime_auth.mode) or governed_scope?(runtime_auth.execution_context.scope)
+  end
+
+  def governed_context?(metadata) when is_map(metadata) do
+    runtime_auth = map_value(metadata, :runtime_auth)
+
+    context =
+      map_value(metadata, :execution_context) || map_value(runtime_auth, :execution_context)
+
+    mode = map_value(metadata, :runtime_auth_mode) || map_value(runtime_auth, :mode)
+    scope = map_value(metadata, :runtime_auth_scope) || map_value(context, :scope)
+
+    governed_mode?(mode) or governed_scope?(scope)
+  end
+
+  def governed_context?(_other), do: false
+
+  defp governed_map_authority_evidence(metadata, runtime_auth, context, binding) do
+    %{
+      mode: map_value(metadata, :runtime_auth_mode) || map_value(runtime_auth, :mode),
+      scope: map_value(context, :scope),
+      source: map_value(context, :source),
+      authority_ref: map_value(metadata, :authority_ref) || map_value(binding, :authority_ref),
+      authority_decision_ref:
+        map_value(metadata, :authority_decision_ref) ||
+          map_value(binding, :authority_decision_ref),
+      credential_lease_ref:
+        map_value(metadata, :credential_lease_ref) || map_value(binding, :credential_lease_ref),
+      native_auth_assertion_ref:
+        map_value(metadata, :native_auth_assertion_ref) ||
+          map_value(binding, :native_auth_assertion_ref),
+      connector_instance_ref:
+        map_value(metadata, :connector_instance_ref) ||
+          map_value(binding, :connector_instance_ref),
+      provider_account_ref:
+        map_value(metadata, :provider_account_ref) || map_value(binding, :provider_account_ref)
+    }
+  end
+
+  defp governed_authority_evidence?(evidence) do
+    governed_mode?(evidence.mode) and governed_scope?(evidence.scope) and
+      governed_source?(evidence.source) and
+      present?(evidence.authority_ref || evidence.authority_decision_ref) and
+      present?(evidence.credential_lease_ref) and present?(evidence.native_auth_assertion_ref) and
+      present?(evidence.connector_instance_ref) and present?(evidence.provider_account_ref)
+  end
 
   defp build(session_id, provider, run_id, opts) do
     with {:ok, mode} <-
@@ -448,21 +494,84 @@ defmodule ASM.RuntimeAuth do
   end
 
   defp validate(%__MODULE__{} = runtime_auth) do
-    if runtime_auth.connector_instance.ref == runtime_auth.provider_account_identity.ref do
+    cond do
+      runtime_auth.connector_instance.ref == runtime_auth.provider_account_identity.ref ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :config,
+           "connector_instance_ref must be distinct from provider_account_ref",
+           provider: runtime_auth.execution_context.provider,
+           cause: %{
+             connector_instance_ref: runtime_auth.connector_instance.ref,
+             provider_account_ref: runtime_auth.provider_account_identity.ref
+           }
+         )}
+
+      governed_context?(runtime_auth) and not governed_authority?(runtime_auth) ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :config,
+           "governed runtime_auth requires governed context source, authority ref, credential lease ref, native auth assertion ref, connector instance ref, and provider account ref",
+           provider: runtime_auth.execution_context.provider,
+           cause: governed_validation_cause(runtime_auth)
+         )}
+
+      true ->
+        {:ok, runtime_auth}
+    end
+  end
+
+  defp reject_standalone_governed_upgrade(%__MODULE__{mode: :standalone} = runtime_auth, opts) do
+    requested_mode = Keyword.get(opts, :runtime_auth_mode, runtime_auth.mode)
+    requested_scope = Keyword.get(opts, :runtime_auth_scope, runtime_auth.execution_context.scope)
+
+    if governed_mode?(requested_mode) or governed_scope?(requested_scope) do
       {:error,
        Error.new(
          :config_invalid,
          :config,
-         "connector_instance_ref must be distinct from provider_account_ref",
+         "standalone runtime_auth cannot be upgraded or relabeled as governed authority",
          provider: runtime_auth.execution_context.provider,
          cause: %{
-           connector_instance_ref: runtime_auth.connector_instance.ref,
-           provider_account_ref: runtime_auth.provider_account_identity.ref
+           runtime_auth_mode: requested_mode,
+           runtime_auth_scope: requested_scope,
+           execution_context_ref: runtime_auth.execution_context.ref
          }
        )}
     else
-      {:ok, runtime_auth}
+      :ok
     end
+  end
+
+  defp reject_standalone_governed_upgrade(_runtime_auth, _opts), do: :ok
+
+  defp governed_binding_evidence?(binding) do
+    present?(binding.authority_ref || binding.authority_decision_ref) and
+      present?(binding.credential_lease_ref) and present?(binding.native_auth_assertion_ref) and
+      present?(binding.connector_instance_ref) and present?(binding.provider_account_ref)
+  end
+
+  defp governed_identity_evidence?(%__MODULE__{} = runtime_auth) do
+    present?(runtime_auth.connector_instance.ref) and
+      present?(runtime_auth.provider_account_identity.ref)
+  end
+
+  defp governed_validation_cause(%__MODULE__{} = runtime_auth) do
+    binding = runtime_auth.connector_binding
+
+    %{
+      runtime_auth_mode: runtime_auth.mode,
+      runtime_auth_scope: runtime_auth.execution_context.scope,
+      execution_context_source: runtime_auth.execution_context.source,
+      authority_ref: binding.authority_ref,
+      authority_decision_ref: binding.authority_decision_ref,
+      credential_lease_ref: binding.credential_lease_ref,
+      native_auth_assertion_ref: binding.native_auth_assertion_ref,
+      connector_instance_ref: binding.connector_instance_ref,
+      provider_account_ref: binding.provider_account_ref
+    }
   end
 
   defp normalize_mode(mode, _provider) when mode in @modes, do: {:ok, mode}
@@ -547,6 +656,7 @@ defmodule ASM.RuntimeAuth do
 
   defp governed_mode?(mode), do: mode in [:governed, "governed"]
   defp governed_scope?(scope), do: scope in [:governed, "governed"]
+  defp governed_source?(source), do: source in [:governed_context, "governed_context"]
 
   defp present?(value) when is_binary(value), do: value != ""
   defp present?(value), do: not is_nil(value)

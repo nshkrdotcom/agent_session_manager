@@ -7,6 +7,7 @@ defmodule ASM.ProviderBackend.Core do
 
   alias ASM.{Error, Execution, Options, Provider}
   alias ASM.ProviderBackend.Proxy
+  alias ASM.RuntimeAuth.CodexMaterialization
   alias ASM.Remote.NodeConnector
   alias CliSubprocessCore.ProviderCLI.Error, as: ProviderCLIError
   alias CliSubprocessCore.RecoveryEnvelope
@@ -102,10 +103,13 @@ defmodule ASM.ProviderBackend.Core do
            Options.finalize_provider_opts(
              provider.name,
              effective_provider_opts(config, execution_config)
-           ) do
+           ),
+         {:ok, materialization} <-
+           authorize_codex_materialization(provider, config, provider_opts) do
       provider_opts =
         provider_opts
         |> Keyword.put(:prompt, Map.fetch!(config, :prompt))
+        |> put_codex_materialization_opts(materialization)
         |> maybe_put_cli_path()
 
       {:ok,
@@ -146,6 +150,22 @@ defmodule ASM.ProviderBackend.Core do
         provider_opts
     end
   end
+
+  defp put_codex_materialization_opts(provider_opts, nil), do: provider_opts
+
+  defp put_codex_materialization_opts(provider_opts, %CodexMaterialization{} = materialization) do
+    provider_opts
+    |> Keyword.put(:command, materialization.command)
+    |> Keyword.put(:cwd, materialization.cwd)
+    |> Keyword.put(:env, materialization.env)
+    |> Keyword.put(:clear_env?, materialization.clear_env?)
+  end
+
+  defp authorize_codex_materialization(%Provider{name: :codex}, config, provider_opts) do
+    CodexMaterialization.authorize_config(config, provider_opts)
+  end
+
+  defp authorize_codex_materialization(%Provider{}, _config, _provider_opts), do: {:ok, nil}
 
   defp validate_approval_posture(execution_config) when is_map(execution_config) do
     if Execution.Config.to_execution_environment(execution_config).approval_posture == :none do

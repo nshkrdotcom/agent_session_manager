@@ -75,8 +75,9 @@ defmodule ASM.ProviderBackend.SDKTest do
   defmodule CodexAppServerStub do
     @moduledoc false
 
-    def connect(_options, connect_opts) when is_list(connect_opts) do
+    def connect(options, connect_opts) when is_list(connect_opts) do
       if pid = Keyword.get(connect_opts, :test_pid) do
+        send(pid, {:codex_app_server_options, options})
         send(pid, {:codex_app_server_connect_opts, connect_opts})
       end
 
@@ -313,6 +314,109 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert metadata[:asm_provider] == :codex
   end
 
+  test "codex sdk backend applies governed materialized runtime without ambient auth" do
+    saved_env = capture_codex_env()
+    clear_codex_env()
+    on_exit(fn -> restore_env(saved_env) end)
+
+    provider = %{Provider.resolve!(:codex) | sdk_runtime: CodexRuntimeStub}
+
+    config = %{
+      provider: provider,
+      prompt: "hello",
+      execution_config: execution_config([]),
+      provider_opts: [model: "gpt-5.4"],
+      codex_materialized_runtime: materialized_codex_runtime(),
+      metadata: Map.put(governed_runtime_metadata(), :test_pid, self())
+    }
+
+    assert {:ok, proxy, info} = SDK.start_run(config)
+    on_exit(fn -> SDK.close(proxy) end)
+
+    assert info.lane == :sdk
+    assert info.provider == :codex
+
+    assert_receive {:codex_runtime_start_opts, start_opts}
+
+    assert %Codex.Exec.Options{} = exec_opts = Keyword.fetch!(start_opts, :exec_opts)
+    assert exec_opts.codex_opts.codex_path_override == "/materialized/bin/codex"
+    assert exec_opts.codex_opts.api_key == nil
+    assert exec_opts.thread.thread_opts.working_directory == "/workspace/project"
+    assert exec_opts.env == %{"CODEX_HOME" => "/materialized/codex-home"}
+    assert exec_opts.clear_env? == true
+
+    metadata = Keyword.fetch!(start_opts, :metadata)
+    assert metadata[:codex_materialization].env_keys == ["CODEX_HOME"]
+    assert metadata[:codex_materialization].command == :redacted_materialized_command
+    refute inspect(metadata[:codex_materialization]) =~ "/materialized/bin/codex"
+  end
+
+  test "codex sdk backend rejects governed provider auth option smuggling" do
+    saved_env = capture_codex_env()
+    clear_codex_env()
+    on_exit(fn -> restore_env(saved_env) end)
+
+    provider = %{Provider.resolve!(:codex) | sdk_runtime: CodexRuntimeStub}
+
+    config = %{
+      provider: provider,
+      prompt: "hello",
+      execution_config: execution_config([]),
+      provider_opts: [model: "gpt-5.4", env: %{"CODEX_API_KEY" => "secret"}],
+      codex_materialized_runtime: materialized_codex_runtime(),
+      metadata: governed_runtime_metadata()
+    }
+
+    assert {:error, error} = SDK.start_run(config)
+    assert error.kind == :config_invalid
+    assert error.message =~ "governed Codex strict mode rejects"
+  end
+
+  test "codex app-server backend applies governed materialized launch context" do
+    saved_env = capture_codex_env()
+    clear_codex_env()
+    on_exit(fn -> restore_env(saved_env) end)
+
+    provider = %{Provider.resolve!(:codex) | sdk_runtime: CodexRuntimeStub}
+
+    config = %{
+      provider: provider,
+      prompt: "use app-server",
+      execution_config: execution_config([]),
+      provider_opts: [app_server: true, model: "gpt-5.4"],
+      backend_opts: [
+        codex_app_server_module: CodexAppServerStub,
+        codex_thread_runner_module: CodexThreadRunnerStub,
+        connect_opts: [test_pid: self()],
+        run_opts: [test_pid: self()]
+      ],
+      codex_materialized_runtime: materialized_codex_runtime(),
+      metadata: Map.put(governed_runtime_metadata(), :test_pid, self())
+    }
+
+    assert {:ok, session, info} = SDK.start_run(config)
+    on_exit(fn -> SDK.close(session) end)
+
+    assert info.lane == :sdk
+    assert info.provider == :codex
+    assert info.runtime == ASM.ProviderBackend.SDK.CodexAppServer
+
+    assert_receive {:codex_app_server_options, codex_opts}
+    assert codex_opts.codex_path_override == "/materialized/bin/codex"
+    assert codex_opts.api_key == nil
+
+    assert_receive {:codex_app_server_connect_opts, connect_opts}
+    assert connect_opts[:cwd] == "/workspace/project"
+    assert connect_opts[:process_env] == %{"CODEX_HOME" => "/materialized/codex-home"}
+    assert connect_opts[:clear_env?] == true
+    assert connect_opts[:codex_home] == "/materialized/codex-home"
+    assert connect_opts[:experimental_api] == true
+
+    assert_receive {:codex_app_server_run_streamed, thread, "use app-server", run_opts}
+    assert run_opts[:test_pid] == self()
+    assert thread.thread_opts.working_directory == "/workspace/project"
+  end
+
   test "codex sdk backend selects app-server runtime when host dynamic tools are requested" do
     provider = %{Provider.resolve!(:codex) | sdk_runtime: CodexRuntimeStub}
     subscription_ref = make_ref()
@@ -544,6 +648,58 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert error.domain == :config
     assert error.message =~ "approval_posture"
     assert error.message =~ ":none"
+  end
+
+  defp governed_runtime_metadata do
+    "sdk-governed-runtime"
+    |> ASM.RuntimeAuth.new!(:codex,
+      runtime_auth_mode: :governed,
+      runtime_auth_scope: :governed,
+      execution_context_ref: "asm-execution-context://governed/sdk",
+      connector_instance_ref: "jido-connector-instance://codex/sdk-instance",
+      connector_binding_ref: "jido-connector-binding://codex/sdk-binding",
+      provider_account_ref: "provider-account://codex/sdk-account",
+      authority_ref: "citadel-authority://decision/sdk",
+      credential_lease_ref: "jido-credential-lease://lease/sdk",
+      native_auth_assertion_ref: "codex-native-auth://assertion/sdk"
+    )
+    |> ASM.RuntimeAuth.to_metadata()
+  end
+
+  defp materialized_codex_runtime do
+    %{
+      source: :verified_materializer,
+      command: "/materialized/bin/codex",
+      cwd: "/workspace/project",
+      config_root: "/materialized/codex-home",
+      env: %{"CODEX_HOME" => "/materialized/codex-home"},
+      clear_env?: true,
+      target_auth_posture: :materialize_on_attach,
+      native_auth_assertion: %{
+        introspection_level: :auth_file_metadata,
+        limits: %{secrets: :redacted, token_values: :not_read},
+        redacted?: true
+      }
+    }
+  end
+
+  defp capture_codex_env do
+    Map.new(codex_env_keys(), &{&1, System.get_env(&1)})
+  end
+
+  defp clear_codex_env do
+    Enum.each(codex_env_keys(), &System.delete_env/1)
+  end
+
+  defp restore_env(saved) do
+    Enum.each(saved, fn
+      {key, nil} -> System.delete_env(key)
+      {key, value} -> System.put_env(key, value)
+    end)
+  end
+
+  defp codex_env_keys do
+    ["CODEX_API_KEY", "OPENAI_API_KEY", "CODEX_HOME", "OPENAI_BASE_URL"]
   end
 
   defp execution_config(surface_attrs) when is_list(surface_attrs) do

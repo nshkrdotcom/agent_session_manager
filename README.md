@@ -470,6 +470,14 @@ Lane rules:
 
 Approval routing, interrupt control, and result projection are lane-agnostic. The lane changes how the provider backend is started, not how the session aggregate behaves.
 
+Governed Codex runs must enter through runtime-auth evidence and a materialized
+runtime produced by the verified materializer. `ASM.RuntimeAuth.CodexMaterialization`
+accepts finalized provider defaults only when they do not carry live overrides,
+then rejects provider-only calls, unmanaged ambient auth, and command, cwd, env,
+config-root, auth-root, API-key, or base-URL smuggling before a Codex backend can
+start. Default tests exercise this deterministically without live provider
+credentials; live Codex smoke is separate from ASM CI.
+
 ASM intentionally stops at this normalized backend boundary. Rich
 provider-native control families such as Claude hooks/permission callbacks and
 Codex app-server remain in the provider SDK repos and stay out of ASM's core

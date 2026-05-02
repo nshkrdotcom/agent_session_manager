@@ -3,6 +3,7 @@ defmodule ASM.RuntimeAuthCodexMaterializationTest do
 
   alias ASM.RuntimeAuth
   alias ASM.RuntimeAuth.CodexMaterialization
+  alias ASM.Options
   alias CliSubprocessCore.ExecutionSurface
 
   setup do
@@ -58,6 +59,17 @@ defmodule ASM.RuntimeAuthCodexMaterializationTest do
       assert error.kind == :config_invalid
       assert error.message =~ "governed Codex strict mode rejects"
     end
+  end
+
+  test "governed Codex strict mode accepts finalized empty provider defaults" do
+    metadata = governed_metadata()
+    assert {:ok, provider_opts} = Options.finalize_provider_opts(:codex, [])
+
+    assert {:ok, %CodexMaterialization{}} =
+             CodexMaterialization.authorize_config(
+               config(metadata, materialized_runtime()),
+               provider_opts
+             )
   end
 
   test "governed Codex strict mode rejects transport and backend override smuggling" do

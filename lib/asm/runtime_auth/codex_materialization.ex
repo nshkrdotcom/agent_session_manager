@@ -650,8 +650,16 @@ defmodule ASM.RuntimeAuth.CodexMaterialization do
   defp binding_value(_runtime_auth, _key), do: nil
 
   defp has_attr?(attrs, key) when is_atom(key) do
-    not is_nil(attr(attrs, key))
+    attrs
+    |> attr(key)
+    |> present_override?()
   end
+
+  defp present_override?(nil), do: false
+  defp present_override?(value) when is_binary(value), do: String.trim(value) != ""
+  defp present_override?(value) when is_list(value), do: value != []
+  defp present_override?(value) when is_map(value), do: map_size(value) > 0
+  defp present_override?(value), do: not is_nil(value)
 
   defp attr(attrs, key, default \\ nil)
 

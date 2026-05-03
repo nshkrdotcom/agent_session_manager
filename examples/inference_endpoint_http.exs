@@ -132,7 +132,15 @@ end
 provider =
   opts
   |> Keyword.get(:provider, "gemini")
-  |> String.to_existing_atom()
+  |> String.trim()
+  |> String.downcase()
+  |> case do
+    "amp" -> :amp
+    "claude" -> :claude
+    "codex" -> :codex
+    "gemini" -> :gemini
+    other -> raise ArgumentError, "unsupported example provider: #{inspect(other)}"
+  end
 
 model = Keyword.get(opts, :model, "gemini-3.1-flash-lite-preview")
 message = Keyword.get(opts, :message, "Summarize the CLI inference endpoint seam.")

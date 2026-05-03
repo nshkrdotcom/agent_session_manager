@@ -4,8 +4,7 @@ defmodule ASM.Schema.Event do
   `%ASM.Event{}`.
   """
 
-  alias ASM.Event
-  alias ASM.Schema
+  alias ASM.{Event, Provider, Schema}
   alias CliSubprocessCore.Event, as: CoreEvent
   alias CliSubprocessCore.Schema.Conventions
 
@@ -120,15 +119,18 @@ defmodule ASM.Schema.Event do
   end
 
   defp normalize_provider(nil), do: {:ok, nil}
-  defp normalize_provider(provider) when is_atom(provider), do: {:ok, provider}
+
+  defp normalize_provider(provider) when is_atom(provider) do
+    case Provider.resolve(provider) do
+      {:ok, %Provider{name: provider_name}} -> {:ok, provider_name}
+      {:error, _error} -> {:error, "provider must be a supported provider atom, string, or nil"}
+    end
+  end
 
   defp normalize_provider(provider) when is_binary(provider) do
-    normalized = String.trim(provider)
-
-    try do
-      {:ok, String.to_existing_atom(normalized)}
-    rescue
-      ArgumentError -> {:error, "provider must be an existing atom or nil"}
+    case Provider.resolve(provider) do
+      {:ok, %Provider{name: provider_name}} -> {:ok, provider_name}
+      {:error, _error} -> {:error, "provider must be a supported provider atom, string, or nil"}
     end
   end
 

@@ -114,8 +114,29 @@ defmodule ASM.Extensions.Rendering.Sinks.File do
   end
 
   defp strip_ansi(text) when is_binary(text) do
-    String.replace(text, ~r/\x1b\[[0-9;]*[A-Za-z]|\r(?!\n)/, "")
+    strip_ansi_bytes(text, [])
   end
+
+  defp strip_ansi_bytes(<<>>, acc), do: acc |> Enum.reverse() |> IO.iodata_to_binary()
+
+  defp strip_ansi_bytes(<<"\e[", rest::binary>>, acc) do
+    case csi_remainder(rest) do
+      {:ok, remainder} -> strip_ansi_bytes(remainder, acc)
+      :error -> strip_ansi_bytes(rest, ["\e[" | acc])
+    end
+  end
+
+  defp strip_ansi_bytes(<<"\r\n", rest::binary>>, acc), do: strip_ansi_bytes(rest, ["\r\n" | acc])
+  defp strip_ansi_bytes(<<"\r", rest::binary>>, acc), do: strip_ansi_bytes(rest, acc)
+  defp strip_ansi_bytes(<<byte, rest::binary>>, acc), do: strip_ansi_bytes(rest, [<<byte>> | acc])
+
+  defp csi_remainder(<<byte, rest::binary>>) when byte in ?0..?9 or byte == ?;,
+    do: csi_remainder(rest)
+
+  defp csi_remainder(<<byte, rest::binary>>) when byte in ?A..?Z or byte in ?a..?z,
+    do: {:ok, rest}
+
+  defp csi_remainder(_other), do: :error
 
   defp validate_append(value) when is_boolean(value), do: :ok
 

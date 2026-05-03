@@ -959,13 +959,36 @@ defmodule ASM.Examples.Common do
     label
     |> String.trim()
     |> String.downcase()
-    |> String.replace(~r/[^a-z0-9]+/u, "_")
-    |> String.trim("_")
+    |> normalize_smoke_assertion_key([])
     |> case do
       "" -> "result"
       normalized -> normalized
     end
   end
+
+  defp normalize_smoke_assertion_key(<<>>, acc) do
+    acc
+    |> drop_trailing_separator()
+    |> Enum.reverse()
+    |> IO.iodata_to_binary()
+  end
+
+  defp normalize_smoke_assertion_key(<<byte, rest::binary>>, acc) do
+    if ascii_lower_or_digit?(byte) do
+      normalize_smoke_assertion_key(rest, [<<byte>> | acc])
+    else
+      normalize_smoke_assertion_key(rest, maybe_add_separator(acc))
+    end
+  end
+
+  defp maybe_add_separator([]), do: []
+  defp maybe_add_separator(["_" | _rest] = acc), do: acc
+  defp maybe_add_separator(acc), do: ["_" | acc]
+
+  defp drop_trailing_separator(["_" | rest]), do: rest
+  defp drop_trailing_separator(acc), do: acc
+
+  defp ascii_lower_or_digit?(byte), do: byte in ?a..?z or byte in ?0..?9
 
   defp payload_support_tier(payload) when is_map(payload) do
     payload

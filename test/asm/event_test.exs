@@ -5,11 +5,13 @@ defmodule ASM.EventTest do
   alias CliSubprocessCore.Event, as: CoreEvent
   alias CliSubprocessCore.Payload
 
+  @crockford_base32_chars ~c"0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
   test "generate_id/0 returns 26-char crockford base32 id" do
     id = Event.generate_id()
 
     assert String.length(id) == 26
-    assert id =~ ~r/^[0-9A-HJKMNP-TV-Z]{26}$/
+    assert crockford_base32_id?(id)
   end
 
   test "generate_id_at/1 returns different ids for same timestamp" do
@@ -140,5 +142,24 @@ defmodule ASM.EventTest do
     assert event.provider == :claude
     assert event.extra == %{"future_flag" => "kept"}
     assert Event.to_map(event)["future_flag"] == "kept"
+  end
+
+  test "parse/1 rejects unsupported provider strings without atom creation" do
+    assert {:error, {:invalid_asm_event, details}} =
+             Event.parse(%{
+               "kind" => "assistant_delta",
+               "run_id" => "run-1",
+               "session_id" => "session-1",
+               "provider" => "unknown-provider",
+               "payload" => %{"delta" => "hello"}
+             })
+
+    assert details.message == "provider must be a supported provider atom, string, or nil"
+  end
+
+  defp crockford_base32_id?(value) when is_binary(value) do
+    value
+    |> String.to_charlist()
+    |> Enum.all?(&(&1 in @crockford_base32_chars))
   end
 end

@@ -21,13 +21,21 @@ defmodule ASM.Phase6AdapterSelectionPolicyTest do
   end
 
   test "ASM adapter policy rejects public simulation selectors" do
-    assert_raise ArgumentError, ~r/public simulation selector/i, fn ->
-      AdapterSelectionPolicy.new!(Map.put(adapter_policy_attrs(), :simulation, "service_mode"))
-    end
+    error =
+      assert_raise ArgumentError, fn ->
+        AdapterSelectionPolicy.new!(Map.put(adapter_policy_attrs(), :simulation, "service_mode"))
+      end
 
-    assert_raise ArgumentError, ~r/config_key.*public simulation selector/i, fn ->
-      AdapterSelectionPolicy.new!(adapter_policy_attrs(%{config_key: "request.simulation"}))
-    end
+    assert error.message |> String.downcase() |> String.contains?("public simulation selector")
+
+    error =
+      assert_raise ArgumentError, fn ->
+        AdapterSelectionPolicy.new!(adapter_policy_attrs(%{config_key: "request.simulation"}))
+      end
+
+    normalized_message = String.downcase(error.message)
+    assert String.contains?(normalized_message, "config_key")
+    assert String.contains?(normalized_message, "public simulation selector")
   end
 
   test "ASM rejects public simulation request keywords at provider resolution" do

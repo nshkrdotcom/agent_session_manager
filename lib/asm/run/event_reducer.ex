@@ -6,6 +6,17 @@ defmodule ASM.Run.EventReducer do
   alias ASM.{Error, Event, Metadata, Result, Run}
   alias CliSubprocessCore.Payload
 
+  @normalized_error_domains %{
+    "approval" => :approval,
+    "config" => :config,
+    "guardrail" => :guardrail,
+    "parser" => :parser,
+    "provider" => :provider,
+    "runtime" => :runtime,
+    "tool" => :tool,
+    "transport" => :transport
+  }
+
   @conversation_kinds [
     :assistant_message,
     :assistant_delta,
@@ -254,14 +265,13 @@ defmodule ASM.Run.EventReducer do
        do: domain
 
   defp normalize_error_domain(domain) when is_binary(domain) do
-    domain
-    |> String.trim()
-    |> String.downcase()
-    |> String.replace("-", "_")
-    |> String.to_existing_atom()
-    |> normalize_error_domain()
-  rescue
-    ArgumentError -> :runtime
+    normalized =
+      domain
+      |> String.trim()
+      |> String.downcase()
+      |> String.replace("-", "_")
+
+    Map.get(@normalized_error_domains, normalized, :runtime)
   end
 
   defp normalize_error_domain(_domain), do: :runtime

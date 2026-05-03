@@ -171,6 +171,30 @@ defmodule ASM.InferenceEndpointTest do
     assert compatibility.missing_requirements == [:tool_calling]
   end
 
+  test "compatibility maps string capability keys through the bounded capability table" do
+    assert {:error, {:incompatible, compatibility}} =
+             InferenceEndpoint.ensure_endpoint(
+               request(:gemini, "gemini-3.1-flash-lite-preview"),
+               compatible_consumer_manifest(
+                 required_capabilities: %{"unknown_capability" => true}
+               ),
+               context()
+             )
+
+    assert compatibility.reason == :missing_capability
+    assert compatibility.missing_requirements == [:capability]
+
+    assert {:error, {:incompatible, compatibility}} =
+             InferenceEndpoint.ensure_endpoint(
+               request(:gemini, "gemini-3.1-flash-lite-preview"),
+               compatible_consumer_manifest(required_capabilities: %{"tool_calling?" => true}),
+               context()
+             )
+
+    assert compatibility.reason == :missing_capability
+    assert compatibility.missing_requirements == [:tool_calling]
+  end
+
   defp configure_fake_backend(text) do
     Application.put_env(
       :agent_session_manager,

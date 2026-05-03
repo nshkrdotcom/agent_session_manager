@@ -64,6 +64,11 @@ defmodule ASM.SessionControlTest do
              session_id: "asm-1",
              provider: "claude"
            }).provider == :claude
+
+    assert SessionControl.provider_fact(:reconnect, %{
+             session_id: "asm-1",
+             provider: "unbounded"
+           }).provider == nil
   end
 
   defp start_session!(opts) when is_list(opts) do

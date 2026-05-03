@@ -32,6 +32,14 @@ defmodule ASM.Provider do
 
   @type provider_name :: :amp | :claude | :codex | :codex_exec | :gemini | atom()
 
+  @provider_names_by_string %{
+    "amp" => :amp,
+    "claude" => :claude,
+    "codex" => :codex,
+    "codex_exec" => :codex,
+    "gemini" => :gemini
+  }
+
   @type t :: %__MODULE__{
           name: provider_name(),
           display_name: String.t(),
@@ -95,13 +103,29 @@ defmodule ASM.Provider do
     end
   end
 
-  @spec resolve(t() | provider_name()) :: {:ok, t()} | {:error, Error.t()}
+  @spec resolve(t() | provider_name() | String.t()) :: {:ok, t()} | {:error, Error.t()}
   def resolve(%__MODULE__{} = provider), do: {:ok, provider}
 
   def resolve(name) when is_atom(name) do
     case find_provider(name) do
       {:ok, provider} ->
         {:ok, provider}
+
+      :error ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :config,
+           "Unknown provider: #{inspect(name)}",
+           cause: %{provider: name}
+         )}
+    end
+  end
+
+  def resolve(name) when is_binary(name) do
+    case provider_name_from_string(name) do
+      {:ok, provider_name} ->
+        resolve(provider_name)
 
       :error ->
         {:error,
@@ -255,6 +279,13 @@ defmodule ASM.Provider do
 
   defp normalize_name(:codex_exec), do: :codex
   defp normalize_name(name), do: name
+
+  defp provider_name_from_string(name) when is_binary(name) do
+    name
+    |> String.trim()
+    |> String.downcase()
+    |> then(&Map.fetch(@provider_names_by_string, &1))
+  end
 
   defp feature_manifest_for(provider) when is_atom(provider) do
     ollama =

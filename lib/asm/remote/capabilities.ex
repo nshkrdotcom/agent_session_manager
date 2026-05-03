@@ -58,12 +58,7 @@ defmodule ASM.Remote.Capabilities do
   end
 
   defp parse_major_minor(version) do
-    parts =
-      version
-      |> String.split(~r/[^0-9]+/, trim: true)
-      |> Enum.take(2)
-
-    case parts do
+    case numeric_groups(version) do
       [major, minor] ->
         with {major, ""} <- Integer.parse(major),
              {minor, ""} <- Integer.parse(minor) do
@@ -75,6 +70,34 @@ defmodule ASM.Remote.Capabilities do
       _ ->
         :error
     end
+  end
+
+  defp numeric_groups(version) when is_binary(version) do
+    version
+    |> numeric_group_bytes([], [])
+    |> Enum.take(2)
+  end
+
+  defp numeric_group_bytes(<<>>, current, groups), do: finish_numeric_groups(current, groups)
+
+  defp numeric_group_bytes(<<byte, rest::binary>>, current, groups) when byte in ?0..?9 do
+    numeric_group_bytes(rest, [<<byte>> | current], groups)
+  end
+
+  defp numeric_group_bytes(<<_byte, rest::binary>>, [], groups) do
+    numeric_group_bytes(rest, [], groups)
+  end
+
+  defp numeric_group_bytes(<<_byte, rest::binary>>, current, groups) do
+    group = current |> Enum.reverse() |> IO.iodata_to_binary()
+    numeric_group_bytes(rest, [], [group | groups])
+  end
+
+  defp finish_numeric_groups([], groups), do: Enum.reverse(groups)
+
+  defp finish_numeric_groups(current, groups) do
+    group = current |> Enum.reverse() |> IO.iodata_to_binary()
+    Enum.reverse([group | groups])
   end
 
   defp parse_otp_major(release) when is_binary(release) do

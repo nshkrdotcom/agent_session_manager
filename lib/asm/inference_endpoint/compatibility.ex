@@ -3,6 +3,17 @@ defmodule ASM.InferenceEndpoint.Compatibility do
 
   alias ASM.InferenceEndpoint.{BackendManifest, CompatibilityResult, ConsumerManifest}
 
+  @capability_lookup_keys %{
+    "embeddings" => :embeddings?,
+    "streaming" => :streaming?,
+    "tool_calling" => :tool_calling?
+  }
+  @requirement_keys %{
+    "embeddings" => :embeddings,
+    "streaming" => :streaming,
+    "tool_calling" => :tool_calling
+  }
+
   @spec resolve(BackendManifest.t(), ConsumerManifest.t(), map()) :: CompatibilityResult.t()
   def resolve(
         %BackendManifest{} = backend_manifest,
@@ -130,29 +141,42 @@ defmodule ASM.InferenceEndpoint.Compatibility do
   defp normalize_requirement_key(key) when is_atom(key) do
     key
     |> Atom.to_string()
-    |> String.trim_trailing("?")
-    |> String.to_atom()
+    |> normalize_requirement_name()
   end
 
   defp normalize_requirement_key(key) when is_binary(key) do
     key
-    |> String.trim_trailing("?")
-    |> String.to_atom()
+    |> normalize_requirement_name()
   end
 
   defp normalize_requirement_key(_key), do: :capability
+
+  defp normalize_requirement_name(key) when is_binary(key) do
+    key
+    |> String.trim()
+    |> String.trim_trailing("?")
+    |> then(&Map.get(@requirement_keys, &1, :capability))
+  end
 
   defp capability_value(capabilities, key) when is_atom(key) do
     Map.get(capabilities, key, Map.get(capabilities, Atom.to_string(key)))
   end
 
   defp capability_value(capabilities, key) when is_binary(key) do
-    Map.get(capabilities, key, Map.get(capabilities, String.to_atom(key)))
-  rescue
-    ArgumentError -> Map.get(capabilities, key)
+    case capability_lookup_key(key) do
+      nil -> Map.get(capabilities, key)
+      lookup_key -> Map.get(capabilities, key, Map.get(capabilities, lookup_key))
+    end
   end
 
   defp capability_value(_capabilities, _key), do: nil
+
+  defp capability_lookup_key(key) when is_binary(key) do
+    key
+    |> String.trim()
+    |> String.trim_trailing("?")
+    |> then(&Map.get(@capability_lookup_keys, &1))
+  end
 
   defp request_stream?(request) do
     case value(request, :stream?, false) do

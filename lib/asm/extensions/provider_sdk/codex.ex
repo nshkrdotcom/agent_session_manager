@@ -410,7 +410,18 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
 
   defp reasoning_atom(nil), do: nil
   defp reasoning_atom(value) when is_atom(value), do: value
-  defp reasoning_atom(value) when is_binary(value), do: String.to_atom(value)
+
+  defp reasoning_atom(value) when is_binary(value) do
+    case value |> String.trim() |> String.downcase() do
+      "none" -> :none
+      "minimal" -> :minimal
+      "low" -> :low
+      "medium" -> :medium
+      "high" -> :high
+      "xhigh" -> :xhigh
+      _other -> nil
+    end
+  end
 
   defp codex_payload_oss?(payload) when is_map(payload) do
     model_payload_value(payload, :provider_backend) in [:oss, "oss"]

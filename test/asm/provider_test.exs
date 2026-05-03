@@ -24,6 +24,15 @@ defmodule ASM.ProviderTest do
     assert support.install_hint =~ "@sourcegraph/amp"
   end
 
+  test "resolve/1 accepts bounded provider strings and rejects unknown strings" do
+    assert {:ok, provider} = Provider.resolve("codex_exec")
+    assert provider.name == :codex
+
+    assert {:error, error} = Provider.resolve("unknown-provider")
+    assert error.kind == :config_invalid
+    assert error.message =~ "Unknown provider"
+  end
+
   test "provider profiles use the schema-backed closed boundary" do
     assert {:ok, %Profile{max_concurrent_runs: 2, max_queued_runs: 4}} =
              Profile.new(max_concurrent_runs: 2, max_queued_runs: 4)

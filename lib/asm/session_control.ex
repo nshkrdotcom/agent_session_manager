@@ -250,7 +250,13 @@ defmodule ASM.SessionControl do
 
   defp normalize_provider(nil), do: nil
   defp normalize_provider(provider) when is_atom(provider), do: provider
-  defp normalize_provider(provider) when is_binary(provider), do: String.to_atom(provider)
+
+  defp normalize_provider(provider) when is_binary(provider) do
+    case Provider.resolve(provider) do
+      {:ok, %Provider{name: provider_name}} -> provider_name
+      {:error, %Error{}} -> nil
+    end
+  end
 
   defp normalize_entry(provider, %Entry{} = entry), do: %{entry | provider: provider}
 

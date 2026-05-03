@@ -172,6 +172,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
 
     assert codex_options.model == "llama3.2"
     assert codex_options.model_payload.provider_backend == :oss
+    assert codex_options.reasoning_effort == :high
     assert codex_options.model_payload.backend_metadata["oss_provider"] == "ollama"
 
     assert codex_options.model_payload.backend_metadata["support_tier"] ==

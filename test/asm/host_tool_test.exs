@@ -88,4 +88,30 @@ defmodule ASM.HostToolTest do
              "contentItems" => [%{"type" => "inputText", "text" => "ok"}]
            }
   end
+
+  test "host tool contracts reject secret-shaped metadata keys" do
+    assert {:error, {:sensitive_host_tool_metadata_keys, ["API_TOKEN"]}} =
+             HostTool.Spec.new(
+               name: "unsafe",
+               input_schema: %{"type" => "object"},
+               metadata: %{"API_TOKEN" => "secret"}
+             )
+
+    assert {:error, {:sensitive_host_tool_metadata_keys, ["auth_root"]}} =
+             HostTool.Request.new(
+               id: "jsonrpc-2",
+               session_id: "session-1",
+               run_id: "run-1",
+               provider: :codex,
+               tool_name: "unsafe",
+               metadata: %{"auth_root" => "/tmp/auth"}
+             )
+
+    assert {:error, {:sensitive_host_tool_metadata_keys, ["credential_ref"]}} =
+             HostTool.Response.new(
+               request_id: "jsonrpc-2",
+               success?: false,
+               metadata: %{"credential_ref" => "credential://raw"}
+             )
+  end
 end

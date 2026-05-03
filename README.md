@@ -478,6 +478,13 @@ config-root, auth-root, API-key, or base-URL smuggling before a Codex backend ca
 start. Default tests exercise this deterministically without live provider
 credentials; live Codex smoke is separate from ASM CI.
 
+Governed Claude, Gemini, and Amp starts are fail-closed in ASM until their
+provider-auth materializers are available. Complete runtime-auth evidence is not
+enough to reuse standalone CLI env, native login state, provider defaults,
+command overrides, cwd overrides, session refs, target refs, or raw env maps as
+governed authority. Those values remain standalone/example compatibility knobs
+only.
+
 ASM intentionally stops at this normalized backend boundary. Rich
 provider-native control families such as Claude hooks/permission callbacks and
 Codex app-server remain in the provider SDK repos and stay out of ASM's core
@@ -712,6 +719,11 @@ So if a host is reasoning at the ASM layer:
   policy layer is active
 - use provider-native overrides only when the selected provider actually owns
   an additional concept outside the common ASM surface
+
+Host-tool request, response, and declaration metadata reject secret-shaped
+fields such as API-key, token, auth, credential, password, and bearer keys.
+Provider tools must pass explicit policy-safe refs or redacted evidence instead
+of raw credential material.
 
 ## Event Model And Result Projection
 
@@ -952,6 +964,10 @@ Environment knobs used by examples:
 - `CLAUDE_CLI_PATH`, `GEMINI_CLI_PATH`, `CODEX_PATH`, `AMP_CLI_PATH`
 - `ASM_PERMISSION_MODE` (`default`, `auto`, `bypass`, `plan`)
 - `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL`, `ASM_AMP_MODEL`
+
+These knobs are read by examples and standalone compatibility helpers. They do
+not satisfy governed runtime-auth, provider-account, target, session, handoff,
+host-tool, or credential materialization authority.
 
 If you omit `--provider`, the example prints a usage note and exits without running a live provider. See [examples/README.md](examples/README.md) for the full example set.
 The promotion-path hub is [examples/promotion_path/README.md](examples/promotion_path/README.md).

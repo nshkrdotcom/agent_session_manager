@@ -650,6 +650,72 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert error.message =~ ":none"
   end
 
+  test "non-codex governed sdk backends reject unmanaged ambient provider auth env" do
+    for {provider_name, runtime, env_key, model} <- [
+          {:claude, ClaudeRuntimeStub, "ANTHROPIC_API_KEY", "sonnet"},
+          {:gemini, GeminiRuntimeStub, "GEMINI_API_KEY", "gemini-3.1-flash-lite-preview"},
+          {:amp, AmpRuntimeStub, "AMP_API_KEY", "amp-1"}
+        ] do
+      with_env(provider_env(env_key, "ambient-secret"), fn ->
+        provider = %{Provider.resolve!(provider_name) | sdk_runtime: runtime}
+
+        config = %{
+          provider: provider,
+          prompt: "hello",
+          provider_opts: [model: model],
+          execution_config: execution_config([]),
+          metadata: governed_runtime_metadata(provider_name)
+        }
+
+        assert {:error, error} = SDK.start_run(config)
+        assert error.kind == :config_invalid
+        assert error.message =~ "rejects unmanaged ambient provider auth environment"
+        assert error.cause.env_keys == [env_key]
+      end)
+    end
+  end
+
+  test "non-codex governed sdk backends reject env and command override smuggling" do
+    provider = %{Provider.resolve!(:claude) | sdk_runtime: ClaudeRuntimeStub}
+
+    config = %{
+      provider: provider,
+      prompt: "hello",
+      provider_opts: [
+        model: "sonnet",
+        env: %{"ANTHROPIC_API_KEY" => "secret"},
+        cli_path: "/tmp/claude"
+      ],
+      execution_config: execution_config([]),
+      metadata: governed_runtime_metadata(:claude)
+    }
+
+    assert {:error, error} = SDK.start_run(config)
+    assert error.kind == :config_invalid
+    assert error.message =~ "rejects provider auth"
+    assert :env in error.cause.keys
+    assert :cli_path in error.cause.keys
+  end
+
+  test "non-codex governed sdk backends fail closed without provider materialization" do
+    provider = %{Provider.resolve!(:gemini) | sdk_runtime: GeminiRuntimeStub}
+
+    with_env(provider_env(), fn ->
+      config = %{
+        provider: provider,
+        prompt: "hello",
+        provider_opts: [model: "gemini-3.1-flash-lite-preview"],
+        execution_config: execution_config([]),
+        metadata: governed_runtime_metadata(:gemini)
+      }
+
+      assert {:error, error} = SDK.start_run(config)
+      assert error.kind == :config_invalid
+      assert error.message =~ "requires verified provider-auth materialization"
+      assert error.message =~ "standalone env"
+    end)
+  end
+
   defp governed_runtime_metadata do
     "sdk-governed-runtime"
     |> ASM.RuntimeAuth.new!(:codex,
@@ -662,6 +728,22 @@ defmodule ASM.ProviderBackend.SDKTest do
       authority_ref: "citadel-authority://decision/sdk",
       credential_lease_ref: "jido-credential-lease://lease/sdk",
       native_auth_assertion_ref: "codex-native-auth://assertion/sdk"
+    )
+    |> ASM.RuntimeAuth.to_metadata()
+  end
+
+  defp governed_runtime_metadata(provider) when is_atom(provider) do
+    "sdk-governed-runtime-#{provider}"
+    |> ASM.RuntimeAuth.new!(provider,
+      runtime_auth_mode: :governed,
+      runtime_auth_scope: :governed,
+      execution_context_ref: "asm-execution-context://governed/sdk-#{provider}",
+      connector_instance_ref: "jido-connector-instance://#{provider}/sdk-instance",
+      connector_binding_ref: "jido-connector-binding://#{provider}/sdk-binding",
+      provider_account_ref: "provider-account://#{provider}/sdk-account",
+      authority_ref: "citadel-authority://decision/sdk-#{provider}",
+      credential_lease_ref: "jido-credential-lease://lease/sdk-#{provider}",
+      native_auth_assertion_ref: "native-auth://assertion/sdk-#{provider}"
     )
     |> ASM.RuntimeAuth.to_metadata()
   end
@@ -697,6 +779,54 @@ defmodule ASM.ProviderBackend.SDKTest do
       {key, value} -> System.put_env(key, value)
     end)
   end
+
+  defp with_env(env, fun) when is_map(env) and is_function(fun, 0) do
+    saved = Map.new(env, fn {key, _value} -> {key, System.get_env(key)} end)
+
+    try do
+      Enum.each(env, fn
+        {key, nil} -> System.delete_env(key)
+        {key, value} -> System.put_env(key, value)
+      end)
+
+      fun.()
+    after
+      restore_env(saved)
+    end
+  end
+
+  defp provider_env(key \\ nil, value \\ nil) do
+    [
+      "ANTHROPIC_API_KEY",
+      "ANTHROPIC_AUTH_TOKEN",
+      "ANTHROPIC_BASE_URL",
+      "ASM_AMP_MODEL",
+      "ASM_CLAUDE_MODEL",
+      "ASM_GEMINI_MODEL",
+      "CLAUDE_CLI_PATH",
+      "CLAUDE_CODE_OAUTH_TOKEN",
+      "CLAUDE_CONFIG_DIR",
+      "CLAUDE_HOME",
+      "CLAUDE_MODEL",
+      "GEMINI_API_KEY",
+      "GEMINI_CLI_CONFIG_HOME",
+      "GEMINI_CLI_PATH",
+      "GEMINI_MODEL",
+      "GOOGLE_API_KEY",
+      "GOOGLE_APPLICATION_CREDENTIALS",
+      "AMP_API_KEY",
+      "AMP_AUTH_TOKEN",
+      "AMP_BASE_URL",
+      "AMP_CLI_PATH",
+      "AMP_HOME",
+      "AMP_MODEL"
+    ]
+    |> Map.new(&{&1, nil})
+    |> maybe_put_env(key, value)
+  end
+
+  defp maybe_put_env(env, nil, _value), do: env
+  defp maybe_put_env(env, key, value), do: Map.put(env, key, value)
 
   defp codex_env_keys do
     ["CODEX_API_KEY", "OPENAI_API_KEY", "CODEX_HOME", "OPENAI_BASE_URL"]

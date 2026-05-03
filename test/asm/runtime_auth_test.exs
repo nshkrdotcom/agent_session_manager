@@ -187,6 +187,73 @@ defmodule ASM.RuntimeAuthTest do
     assert ASM.RuntimeAuth.governed_authority?(ASM.RuntimeAuth.to_metadata(runtime_auth))
   end
 
+  test "ambient env cannot fill governed runtime auth evidence for provider families" do
+    env = %{
+      "ASM_AUTHORITY_REF" => "citadel-authority://env/decision",
+      "ASM_CREDENTIAL_LEASE_REF" => "jido-credential-lease://env/lease",
+      "ASM_NATIVE_AUTH_ASSERTION_REF" => "native-auth://env/assertion",
+      "ASM_CONNECTOR_INSTANCE_REF" => "jido-connector-instance://env/instance",
+      "ASM_PROVIDER_ACCOUNT_REF" => "provider-account://env/account",
+      "ASM_TARGET_REF" => "execution-target://env/target"
+    }
+
+    with_env(env, fn ->
+      for provider <- [:codex, :claude, :gemini, :amp] do
+        assert {:error, error} =
+                 ASM.RuntimeAuth.new("runtime-auth-env-missing-" <> to_string(provider), provider,
+                   runtime_auth_mode: :governed,
+                   runtime_auth_scope: :governed
+                 )
+
+        assert error.kind == :config_invalid
+        assert error.message =~ "governed runtime_auth requires"
+        assert is_nil(Map.get(error.cause, :authority_ref))
+        assert is_nil(Map.get(error.cause, :credential_lease_ref))
+        assert is_nil(Map.get(error.cause, :native_auth_assertion_ref))
+        assert is_nil(Map.get(error.cause, :target_ref))
+      end
+    end)
+  end
+
+  test "ambient env cannot override explicit governed runtime auth refs" do
+    env = %{
+      "ASM_CONNECTOR_INSTANCE_REF" => "jido-connector-instance://env/instance",
+      "ASM_PROVIDER_ACCOUNT_REF" => "provider-account://env/account",
+      "ASM_TARGET_REF" => "execution-target://env/target",
+      "ASM_AUTHORITY_REF" => "citadel-authority://env/decision"
+    }
+
+    with_env(env, fn ->
+      for provider <- [:codex, :claude, :gemini, :amp] do
+        assert {:ok, runtime_auth} =
+                 ASM.RuntimeAuth.new("runtime-auth-explicit-" <> to_string(provider), provider,
+                   runtime_auth_mode: :governed,
+                   runtime_auth_scope: :governed,
+                   execution_context_ref: "asm-execution-context://governed/#{provider}",
+                   connector_instance_ref: "jido-connector-instance://#{provider}/explicit",
+                   connector_binding_ref: "jido-connector-binding://#{provider}/explicit",
+                   provider_account_ref: "provider-account://#{provider}/explicit",
+                   authority_ref: "citadel-authority://decision/#{provider}",
+                   credential_lease_ref: "jido-credential-lease://lease/#{provider}",
+                   native_auth_assertion_ref: "native-auth://assertion/#{provider}",
+                   target_ref: "execution-target://#{provider}/explicit"
+                 )
+
+        assert runtime_auth.connector_instance.ref ==
+                 "jido-connector-instance://#{provider}/explicit"
+
+        assert runtime_auth.provider_account_identity.ref ==
+                 "provider-account://#{provider}/explicit"
+
+        assert runtime_auth.connector_binding.target_ref ==
+                 "execution-target://#{provider}/explicit"
+
+        assert runtime_auth.connector_binding.authority_ref ==
+                 "citadel-authority://decision/#{provider}"
+      end
+    end)
+  end
+
   defp start_query_session(provider, opts) do
     assert {:ok, session} = ASM.start_session(Keyword.put(opts, :provider, provider))
 
@@ -200,5 +267,23 @@ defmodule ASM.RuntimeAuthTest do
   defp unique_suffix do
     System.unique_integer([:positive])
     |> Integer.to_string()
+  end
+
+  defp with_env(env, fun) when is_map(env) and is_function(fun, 0) do
+    saved = Map.new(env, fn {key, _value} -> {key, System.get_env(key)} end)
+
+    try do
+      Enum.each(env, fn
+        {key, nil} -> System.delete_env(key)
+        {key, value} -> System.put_env(key, value)
+      end)
+
+      fun.()
+    after
+      Enum.each(saved, fn
+        {key, nil} -> System.delete_env(key)
+        {key, value} -> System.put_env(key, value)
+      end)
+    end
   end
 end

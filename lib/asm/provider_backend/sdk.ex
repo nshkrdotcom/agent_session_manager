@@ -5,7 +5,7 @@ defmodule ASM.ProviderBackend.SDK do
 
   @behaviour ASM.ProviderBackend
 
-  alias ASM.{Error, Execution, HostTool, Options, Provider}
+  alias ASM.{Error, Execution, HostTool, Options, Provider, RuntimeAuth}
   alias ASM.ProviderBackend.Proxy
   alias ASM.ProviderBackend.SDK.CodexAppServer
   alias ASM.RuntimeAuth.CodexMaterialization
@@ -131,6 +131,7 @@ defmodule ASM.ProviderBackend.SDK do
              :claude,
              effective_provider_opts(config, Map.get(config, :execution_config))
            ),
+         :ok <- RuntimeAuth.authorize_governed_provider_runtime(:claude, config, provider_opts),
          config = Map.put(config, :provider_opts, provider_opts),
          model_payload = Keyword.fetch!(provider_opts, :model_payload),
          {:ok, options} <-
@@ -156,6 +157,7 @@ defmodule ASM.ProviderBackend.SDK do
              :gemini,
              effective_provider_opts(config, Map.get(config, :execution_config))
            ),
+         :ok <- RuntimeAuth.authorize_governed_provider_runtime(:gemini, config, provider_opts),
          config = Map.put(config, :provider_opts, provider_opts),
          model_payload = Keyword.fetch!(provider_opts, :model_payload),
          {:ok, options} <-
@@ -181,6 +183,7 @@ defmodule ASM.ProviderBackend.SDK do
              :amp,
              effective_provider_opts(config, Map.get(config, :execution_config))
            ),
+         :ok <- RuntimeAuth.authorize_governed_provider_runtime(:amp, config, provider_opts),
          config = Map.put(config, :provider_opts, provider_opts),
          model_payload = Keyword.fetch!(provider_opts, :model_payload),
          {:ok, options} <-

@@ -11,6 +11,7 @@ defmodule ASM.ProviderBackend.Core do
   alias ASM.Provider
   alias ASM.ProviderBackend.Proxy
   alias ASM.Remote.NodeConnector
+  alias ASM.RuntimeAuth
   alias ASM.RuntimeAuth.CodexMaterialization
   alias CliSubprocessCore.ProviderCLI.Error, as: ProviderCLIError
   alias CliSubprocessCore.RecoveryEnvelope
@@ -107,6 +108,8 @@ defmodule ASM.ProviderBackend.Core do
              provider.name,
              effective_provider_opts(config, execution_config)
            ),
+         :ok <-
+           RuntimeAuth.authorize_governed_provider_runtime(provider.name, config, provider_opts),
          {:ok, materialization} <-
            authorize_codex_materialization(provider, config, provider_opts) do
       provider_opts =

@@ -154,6 +154,8 @@ filesystem helpers remain in `codex_sdk` or the provider SDK extension seam.
 This is Codex-native behavior, not proof of all-provider ASM host-tool support.
 Generic ASM `tools:` must remain rejected or provider-native until the all-four
 host-tool admission checklist is complete.
+Host-tool declaration, request, and response metadata reject secret-shaped
+fields such as API-key, token, auth, credential, password, and bearer keys.
 
 ## Claude Backend-Specific Model Inputs
 
@@ -174,6 +176,11 @@ ASM does not validate Ollama models itself and does not build Ollama CLI env
 itself. It forwards those values to
 `CliSubprocessCore.ModelRegistry.build_arg_payload/3`, then passes the resolved
 payload to either the core Claude profile or `ClaudeAgentSDK.Options`.
+
+In governed ASM mode, Claude env/model defaults, native login state,
+`anthropic_auth_token`, command paths, cwd, session refs, and target refs cannot
+be reused as governed authority. Governed Claude starts fail closed until a
+verified provider-auth materializer supplies the launch envelope.
 
 ## Codex Backend-Specific Model Inputs
 
@@ -231,6 +238,11 @@ normalized payload instead of re-resolving over an explicit payload. Repo-local
 `GEMINI_MODEL` defaults remain fallback inputs only when the caller did not
 supply a payload.
 
+In governed ASM mode, Gemini model/env defaults cannot be promoted into
+provider-account, session, target, handoff, or credential authority. Governed
+Gemini starts fail closed until a verified provider-auth materializer supplies
+the launch envelope.
+
 ## Amp Backend-Specific Model Inputs
 
 Amp is intentionally payload-only for model input in the current stack.
@@ -243,3 +255,7 @@ Relevant Amp provider fields:
 shared-core model selection before the Amp SDK boundary, and `AmpSdk.Types.Options.validate!/1`
 only canonicalizes a supplied payload rather than inventing another resolution
 path inside the Amp repo.
+
+In governed ASM mode, Amp env/model defaults and native CLI auth remain
+standalone-only. Governed Amp starts fail closed until a verified provider-auth
+materializer supplies explicit launch authority.

@@ -17,6 +17,59 @@ defmodule ASM.RuntimeAuth do
   }
 
   @modes [:standalone, :governed]
+  @provider_auth_env_keys %{
+    claude: [
+      "ANTHROPIC_API_KEY",
+      "ANTHROPIC_AUTH_TOKEN",
+      "ANTHROPIC_BASE_URL",
+      "ASM_CLAUDE_MODEL",
+      "CLAUDE_CLI_PATH",
+      "CLAUDE_CODE_OAUTH_TOKEN",
+      "CLAUDE_CONFIG_DIR",
+      "CLAUDE_HOME",
+      "CLAUDE_MODEL"
+    ],
+    gemini: [
+      "ASM_GEMINI_MODEL",
+      "GEMINI_API_KEY",
+      "GEMINI_CLI_CONFIG_HOME",
+      "GEMINI_CLI_PATH",
+      "GEMINI_MODEL",
+      "GOOGLE_API_KEY",
+      "GOOGLE_APPLICATION_CREDENTIALS"
+    ],
+    amp: [
+      "AMP_API_KEY",
+      "AMP_AUTH_TOKEN",
+      "AMP_BASE_URL",
+      "AMP_CLI_PATH",
+      "AMP_HOME",
+      "AMP_MODEL",
+      "ASM_AMP_MODEL"
+    ]
+  }
+  @governed_provider_override_keys [
+    :api_key,
+    :auth_root,
+    :auth_token,
+    :base_url,
+    :cli_path,
+    :cmd,
+    :command,
+    :config_root,
+    :continue_conversation,
+    :continue_thread,
+    :cwd,
+    :env,
+    :path_to_claude_code_executable,
+    :process_env,
+    :provider_session_id,
+    :resume,
+    :token,
+    :working_directory,
+    :anthropic_auth_token,
+    :anthropic_base_url
+  ]
   @option_keys [
     :runtime_auth,
     :runtime_auth_mode,
@@ -338,6 +391,33 @@ defmodule ASM.RuntimeAuth do
 
   def governed_context?(_other), do: false
 
+  @spec authorize_governed_provider_runtime(atom(), map(), keyword()) ::
+          :ok | {:error, Error.t()}
+  def authorize_governed_provider_runtime(:codex, _config, _provider_opts), do: :ok
+
+  def authorize_governed_provider_runtime(provider, config, provider_opts)
+      when is_atom(provider) and is_map(config) and is_list(provider_opts) do
+    metadata = Map.get(config, :metadata, %{})
+    runtime_auth = Map.get(config, :runtime_auth, metadata)
+
+    if governed_context?(runtime_auth) or governed_context?(metadata) do
+      with :ok <- require_governed_runtime_authority(provider, runtime_auth, metadata),
+           :ok <- reject_governed_provider_overrides(provider, provider_opts),
+           :ok <- reject_governed_provider_env_values(provider, provider_opts),
+           :ok <- reject_unmanaged_provider_env(provider) do
+        {:error,
+         Error.new(
+           :config_invalid,
+           :config,
+           "governed #{provider} runtime requires verified provider-auth materialization; standalone env, native login, and provider defaults cannot satisfy governed authority",
+           provider: provider
+         )}
+      end
+    else
+      :ok
+    end
+  end
+
   defp governed_map_authority_evidence(metadata, runtime_auth, context, binding) do
     %{
       mode: map_value(metadata, :runtime_auth_mode) || map_value(runtime_auth, :mode),
@@ -366,6 +446,127 @@ defmodule ASM.RuntimeAuth do
       present?(evidence.authority_ref || evidence.authority_decision_ref) and
       present?(evidence.credential_lease_ref) and present?(evidence.native_auth_assertion_ref) and
       present?(evidence.connector_instance_ref) and present?(evidence.provider_account_ref)
+  end
+
+  defp require_governed_runtime_authority(provider, runtime_auth, metadata) do
+    if governed_authority?(runtime_auth) or governed_authority?(metadata) do
+      :ok
+    else
+      {:error,
+       Error.new(
+         :config_invalid,
+         :config,
+         "governed #{provider} runtime requires authority ref, credential lease ref, native auth assertion ref, connector instance ref, and provider account ref",
+         provider: provider,
+         cause: %{runtime_auth: runtime_auth, metadata: metadata}
+       )}
+    end
+  end
+
+  defp reject_governed_provider_overrides(provider, provider_opts) do
+    rejected =
+      @governed_provider_override_keys
+      |> Enum.filter(&present_option?(provider_opts, &1))
+      |> Enum.uniq()
+
+    if rejected == [] do
+      :ok
+    else
+      {:error,
+       Error.new(
+         :config_invalid,
+         :config,
+         "governed #{provider} runtime rejects provider auth, target, session, command, cwd, or env overrides outside the authority materializer",
+         provider: provider,
+         cause: %{keys: rejected}
+       )}
+    end
+  end
+
+  defp reject_governed_provider_env_values(provider, provider_opts) do
+    env_keys =
+      []
+      |> collect_env_keys(Keyword.get(provider_opts, :env))
+      |> collect_env_keys(Keyword.get(provider_opts, :process_env))
+      |> collect_model_payload_env_keys(Keyword.get(provider_opts, :model_payload))
+      |> Enum.map(&to_string/1)
+      |> Enum.filter(&(&1 in provider_env_keys(provider)))
+      |> Enum.uniq()
+
+    if env_keys == [] do
+      :ok
+    else
+      {:error,
+       Error.new(
+         :config_invalid,
+         :config,
+         "governed #{provider} runtime rejects provider auth env outside the authority materializer",
+         provider: provider,
+         cause: %{env_keys: env_keys}
+       )}
+    end
+  end
+
+  defp collect_env_keys(acc, nil), do: acc
+
+  defp collect_env_keys(acc, env) when is_map(env), do: acc ++ Map.keys(env)
+
+  defp collect_env_keys(acc, env) when is_list(env) do
+    if Keyword.keyword?(env), do: acc ++ Keyword.keys(env), else: acc
+  end
+
+  defp collect_env_keys(acc, _env), do: acc
+
+  defp collect_model_payload_env_keys(acc, nil), do: acc
+
+  defp collect_model_payload_env_keys(acc, model_payload) when is_map(model_payload) do
+    env_overrides =
+      map_value(model_payload, :env_overrides) ||
+        model_payload
+        |> map_value(:backend_metadata)
+        |> map_value(:env_overrides)
+
+    collect_env_keys(acc, env_overrides)
+  end
+
+  defp collect_model_payload_env_keys(acc, _model_payload), do: acc
+
+  defp reject_unmanaged_provider_env(provider) do
+    unmanaged =
+      provider
+      |> provider_env_keys()
+      |> Enum.filter(fn key ->
+        case System.get_env(key) do
+          nil -> false
+          "" -> false
+          _value -> true
+        end
+      end)
+
+    if unmanaged == [] do
+      :ok
+    else
+      {:error,
+       Error.new(
+         :config_invalid,
+         :config,
+         "governed #{provider} runtime rejects unmanaged ambient provider auth environment",
+         provider: provider,
+         cause: %{env_keys: unmanaged}
+       )}
+    end
+  end
+
+  defp provider_env_keys(provider), do: Map.get(@provider_auth_env_keys, provider, [])
+
+  defp present_option?(opts, key) when is_list(opts) do
+    case Keyword.get(opts, key) do
+      nil -> false
+      value when is_binary(value) -> String.trim(value) != ""
+      value when is_list(value) -> value != []
+      value when is_map(value) -> map_size(value) > 0
+      _value -> true
+    end
   end
 
   defp build(session_id, provider, run_id, opts) do

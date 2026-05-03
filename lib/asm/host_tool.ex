@@ -6,6 +6,42 @@ defmodule ASM.HostTool do
   dynamic tool JSON-RPC requests into `%Request{}` / `%Response{}` events.
   """
 
+  @sensitive_metadata_fragments [
+    "API_KEY",
+    "AUTH",
+    "BEARER",
+    "CREDENTIAL",
+    "PASSWORD",
+    "SECRET",
+    "TOKEN"
+  ]
+
+  @doc false
+  @spec normalize_metadata(term()) :: {:ok, map()} | {:error, term()}
+  def normalize_metadata(nil), do: {:ok, %{}}
+
+  def normalize_metadata(metadata) when is_map(metadata) do
+    sensitive_keys =
+      metadata
+      |> Map.keys()
+      |> Enum.map(&to_string/1)
+      |> Enum.filter(&sensitive_metadata_key?/1)
+      |> Enum.uniq()
+
+    if sensitive_keys == [] do
+      {:ok, metadata}
+    else
+      {:error, {:sensitive_host_tool_metadata_keys, sensitive_keys}}
+    end
+  end
+
+  def normalize_metadata(metadata), do: {:error, {:invalid_host_tool_metadata, metadata}}
+
+  defp sensitive_metadata_key?(key) do
+    normalized = String.upcase(key)
+    Enum.any?(@sensitive_metadata_fragments, &String.contains?(normalized, &1))
+  end
+
   defmodule Spec do
     @moduledoc "Host dynamic tool declaration."
 
@@ -31,14 +67,15 @@ defmodule ASM.HostTool do
       attrs = normalize_attrs(attrs)
 
       with {:ok, name} <- required_string(attrs, :name),
-           {:ok, input_schema} <- required_map(attrs, :input_schema) do
+           {:ok, input_schema} <- required_map(attrs, :input_schema),
+           {:ok, metadata} <- ASM.HostTool.normalize_metadata(Map.get(attrs, :metadata, %{})) do
         {:ok,
          %__MODULE__{
            name: name,
            description: optional_string(attrs, :description),
            input_schema: input_schema,
            output_schema: optional_map(attrs, :output_schema),
-           metadata: optional_map(attrs, :metadata) || %{}
+           metadata: metadata
          }}
       end
     end
@@ -170,7 +207,8 @@ defmodule ASM.HostTool do
            {:ok, session_id} <- required_string(attrs, :session_id),
            {:ok, run_id} <- required_string(attrs, :run_id),
            {:ok, provider} <- required_atom(attrs, :provider),
-           {:ok, tool_name} <- required_string(attrs, :tool_name) do
+           {:ok, tool_name} <- required_string(attrs, :tool_name),
+           {:ok, metadata} <- ASM.HostTool.normalize_metadata(Map.get(attrs, :metadata, %{})) do
         {:ok,
          %__MODULE__{
            id: id,
@@ -182,7 +220,7 @@ defmodule ASM.HostTool do
            tool_name: tool_name,
            arguments: Map.get(attrs, :arguments, %{}),
            raw: Map.get(attrs, :raw),
-           metadata: optional_map(attrs, :metadata)
+           metadata: metadata
          }}
       end
     end
@@ -223,13 +261,6 @@ defmodule ASM.HostTool do
         _other -> nil
       end
     end
-
-    defp optional_map(attrs, key) do
-      case Map.get(attrs, key) do
-        value when is_map(value) -> value
-        _other -> %{}
-      end
-    end
   end
 
   defmodule Response do
@@ -259,7 +290,8 @@ defmodule ASM.HostTool do
       attrs = normalize_attrs(attrs)
 
       with {:ok, request_id} <- required_id(attrs, :request_id),
-           {:ok, success?} <- required_boolean(attrs, :success?) do
+           {:ok, success?} <- required_boolean(attrs, :success?),
+           {:ok, metadata} <- ASM.HostTool.normalize_metadata(Map.get(attrs, :metadata, %{})) do
         {:ok,
          %__MODULE__{
            request_id: request_id,
@@ -267,7 +299,7 @@ defmodule ASM.HostTool do
            output: Map.get(attrs, :output),
            content_items: normalize_content_items(Map.get(attrs, :content_items, [])),
            error: Map.get(attrs, :error),
-           metadata: optional_map(attrs, :metadata)
+           metadata: metadata
          }}
       end
     end
@@ -335,13 +367,6 @@ defmodule ASM.HostTool do
     end
 
     defp normalize_content_items(_items), do: []
-
-    defp optional_map(attrs, key) do
-      case Map.get(attrs, key) do
-        value when is_map(value) -> value
-        _other -> %{}
-      end
-    end
 
     defp encode_output(nil), do: nil
     defp encode_output(output) when is_binary(output), do: output

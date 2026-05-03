@@ -5,8 +5,9 @@ defmodule ASM.Session.Supervisor do
 
   use DynamicSupervisor
 
-  alias ASM.{Provider, RuntimeAuth}
   alias ASM.Execution.Config
+  alias ASM.Provider
+  alias ASM.RuntimeAuth
 
   @registry :asm_sessions
 

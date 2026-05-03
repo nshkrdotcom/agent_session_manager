@@ -1,9 +1,9 @@
 defmodule ASM.RuntimeAuthCodexMaterializationTest do
   use ASM.TestCase
 
+  alias ASM.Options
   alias ASM.RuntimeAuth
   alias ASM.RuntimeAuth.CodexMaterialization
-  alias ASM.Options
   alias CliSubprocessCore.ExecutionSurface
 
   setup do

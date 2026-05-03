@@ -5,10 +5,13 @@ defmodule ASM.ProviderBackend.Core do
 
   @behaviour ASM.ProviderBackend
 
-  alias ASM.{Error, Execution, Options, Provider}
+  alias ASM.Error
+  alias ASM.Execution
+  alias ASM.Options
+  alias ASM.Provider
   alias ASM.ProviderBackend.Proxy
-  alias ASM.RuntimeAuth.CodexMaterialization
   alias ASM.Remote.NodeConnector
+  alias ASM.RuntimeAuth.CodexMaterialization
   alias CliSubprocessCore.ProviderCLI.Error, as: ProviderCLIError
   alias CliSubprocessCore.RecoveryEnvelope
   alias CliSubprocessCore.Session

@@ -17,6 +17,7 @@ defmodule ASM.RuntimeAuth do
   }
 
   @modes [:standalone, :governed]
+  @provider_account_statuses [:known, :asserted, :unknown, :unavailable, :revoked, :rotated]
   @provider_auth_env_keys %{
     claude: [
       "ANTHROPIC_API_KEY",
@@ -49,9 +50,11 @@ defmodule ASM.RuntimeAuth do
     ]
   }
   @governed_provider_override_keys [
+    :access_token,
     :api_key,
     :auth_root,
     :auth_token,
+    :authorization_header,
     :base_url,
     :cli_path,
     :cmd,
@@ -61,16 +64,34 @@ defmodule ASM.RuntimeAuth do
     :continue_thread,
     :cwd,
     :env,
+    :headers,
+    :oauth_token,
     :path_to_claude_code_executable,
+    :pat,
     :process_env,
     :provider_session_id,
+    :refresh_token,
     :resume,
     :token,
+    :token_file,
     :working_directory,
     :anthropic_auth_token,
     :anthropic_base_url,
     :default_client,
     :singleton_client
+  ]
+  @provider_account_evidence_forbidden_keys [
+    :api_key,
+    :auth_json,
+    :authorization_header,
+    :native_auth_file,
+    :provider_payload,
+    :raw_secret,
+    :raw_token,
+    :refresh_token,
+    :target_credentials,
+    :token,
+    :token_file
   ]
   @option_keys [
     :runtime_auth,
@@ -250,6 +271,9 @@ defmodule ASM.RuntimeAuth do
 
   @spec option_keys() :: [atom()]
   def option_keys, do: @option_keys
+
+  @spec provider_account_statuses() :: [atom()]
+  def provider_account_statuses, do: @provider_account_statuses
 
   @spec new(String.t(), atom(), keyword()) :: {:ok, t()} | {:error, Error.t()}
   def new(session_id, provider, opts \\ [])
@@ -667,7 +691,8 @@ defmodule ASM.RuntimeAuth do
           "provider-account://#{provider}/unknown"
         ),
       provider: provider,
-      identity_status: Keyword.get(opts, :provider_account_status, :unknown),
+      identity_status:
+        normalize_provider_account_status(Keyword.get(opts, :provider_account_status, :unknown)),
       redacted?: true,
       evidence: Map.put_new(evidence, :redacted, true)
     }
@@ -719,6 +744,35 @@ defmodule ASM.RuntimeAuth do
            cause: %{
              connector_instance_ref: runtime_auth.connector_instance.ref,
              provider_account_ref: runtime_auth.provider_account_identity.ref
+           }
+         )}
+
+      runtime_auth.provider_account_identity.identity_status not in @provider_account_statuses ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :config,
+           "provider_account_status must be known, asserted, unknown, unavailable, revoked, or rotated",
+           provider: runtime_auth.execution_context.provider,
+           cause: %{
+             provider_account_status: runtime_auth.provider_account_identity.identity_status,
+             allowed_statuses: @provider_account_statuses
+           }
+         )}
+
+      provider_account_evidence_forbidden_hits(runtime_auth.provider_account_identity.evidence) !=
+          [] ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :config,
+           "provider_account_evidence must be redacted and cannot contain raw credential or provider payload fields",
+           provider: runtime_auth.execution_context.provider,
+           cause: %{
+             keys:
+               provider_account_evidence_forbidden_hits(
+                 runtime_auth.provider_account_identity.evidence
+               )
            }
          )}
 
@@ -823,6 +877,17 @@ defmodule ASM.RuntimeAuth do
   defp context_source(:standalone), do: :asm_standalone
   defp context_source(:governed), do: :governed_context
 
+  defp normalize_provider_account_status(status) when is_atom(status), do: status
+
+  defp normalize_provider_account_status(status) when is_binary(status) do
+    case Enum.find(@provider_account_statuses, &(Atom.to_string(&1) == status)) do
+      nil -> status
+      atom -> atom
+    end
+  end
+
+  defp normalize_provider_account_status(status), do: status
+
   defp string_option(opts, key, default) do
     case Keyword.get(opts, key) do
       value when is_binary(value) and value != "" -> value
@@ -870,6 +935,15 @@ defmodule ASM.RuntimeAuth do
   defp map_value(map, key) when is_map(map) and is_atom(key) do
     Map.get(map, key) || Map.get(map, Atom.to_string(key))
   end
+
+  defp provider_account_evidence_forbidden_hits(evidence) when is_map(evidence) do
+    @provider_account_evidence_forbidden_keys
+    |> Enum.filter(fn key ->
+      Map.has_key?(evidence, key) or Map.has_key?(evidence, Atom.to_string(key))
+    end)
+  end
+
+  defp provider_account_evidence_forbidden_hits(_evidence), do: []
 
   defp governed_mode?(mode), do: mode in [:governed, "governed"]
   defp governed_scope?(scope), do: scope in [:governed, "governed"]

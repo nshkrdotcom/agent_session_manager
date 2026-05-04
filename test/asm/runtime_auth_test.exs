@@ -71,7 +71,7 @@ defmodule ASM.RuntimeAuthTest do
                connector_instance_ref: connector_ref,
                connector_runtime_ref: "codex-cli:///opt/shared/bin/codex",
                provider_account_ref: account_ref,
-               provider_account_status: :known_redacted,
+               provider_account_status: :known,
                provider_account_evidence: %{account_label: "redacted"}
              )
 
@@ -259,6 +259,70 @@ defmodule ASM.RuntimeAuthTest do
     assert error.message =~ "provider auth"
     assert :singleton_client in error.cause.keys
     assert :default_client in error.cause.keys
+  end
+
+  test "governed runtime rejects SDK local token options before provider account override" do
+    assert {:ok, runtime_auth} =
+             ASM.RuntimeAuth.new(
+               "runtime-auth-governed-token-options-" <> unique_suffix(),
+               :gemini,
+               runtime_auth_mode: :governed,
+               runtime_auth_scope: :governed,
+               execution_context_ref: "asm-execution-context://governed/token-options",
+               connector_instance_ref: "jido-connector-instance://gemini/instance-1",
+               connector_binding_ref: "jido-connector-binding://gemini/binding-1",
+               provider_account_ref: "provider-account://gemini/account-1",
+               provider_account_status: :asserted,
+               authority_ref: "citadel-authority://decision/gemini",
+               credential_lease_ref: "jido-credential-lease://lease/gemini",
+               native_auth_assertion_ref: "native-auth://assertion/gemini",
+               target_ref: "execution-target://gemini/target-1",
+               operation_policy_ref: "operation-policy://gemini/policy-1"
+             )
+
+    metadata = ASM.RuntimeAuth.to_metadata(runtime_auth)
+
+    assert {:error, error} =
+             ASM.RuntimeAuth.authorize_governed_provider_runtime(
+               :gemini,
+               %{metadata: metadata},
+               token_file: "/tmp/unmanaged-token",
+               oauth_token: "unmanaged-oauth-token",
+               authorization_header: "Bearer unmanaged-token"
+             )
+
+    assert error.kind == :config_invalid
+    assert error.message =~ "provider auth"
+    assert :token_file in error.cause.keys
+    assert :oauth_token in error.cause.keys
+    assert :authorization_header in error.cause.keys
+  end
+
+  test "provider account status and evidence are bounded and redacted" do
+    assert {:ok, runtime_auth} =
+             ASM.RuntimeAuth.new("runtime-auth-status-" <> unique_suffix(), :codex,
+               provider_account_status: "rotated",
+               provider_account_evidence: %{identity_introspection: :ref_only}
+             )
+
+    assert runtime_auth.provider_account_identity.identity_status == :rotated
+
+    assert {:error, status_error} =
+             ASM.RuntimeAuth.new("runtime-auth-bad-status-" <> unique_suffix(), :codex,
+               provider_account_status: :stale
+             )
+
+    assert status_error.kind == :config_invalid
+    assert status_error.message =~ "provider_account_status"
+
+    assert {:error, evidence_error} =
+             ASM.RuntimeAuth.new("runtime-auth-raw-evidence-" <> unique_suffix(), :codex,
+               provider_account_evidence: %{raw_token: "secret"}
+             )
+
+    assert evidence_error.kind == :config_invalid
+    assert evidence_error.message =~ "provider_account_evidence"
+    assert evidence_error.cause.keys == [:raw_token]
   end
 
   test "ambient env cannot fill governed runtime auth evidence for provider families" do

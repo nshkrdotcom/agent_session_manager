@@ -727,7 +727,9 @@ defmodule ASM.ProviderBackend.SDKTest do
       provider_account_ref: "provider-account://codex/sdk-account",
       authority_ref: "citadel-authority://decision/sdk",
       credential_lease_ref: "jido-credential-lease://lease/sdk",
-      native_auth_assertion_ref: "codex-native-auth://assertion/sdk"
+      native_auth_assertion_ref: "codex-native-auth://assertion/sdk",
+      target_ref: "execution-target://codex/sdk-target",
+      operation_policy_ref: "operation-policy://codex/sdk"
     )
     |> ASM.RuntimeAuth.to_metadata()
   end
@@ -743,7 +745,9 @@ defmodule ASM.ProviderBackend.SDKTest do
       provider_account_ref: "provider-account://#{provider}/sdk-account",
       authority_ref: "citadel-authority://decision/sdk-#{provider}",
       credential_lease_ref: "jido-credential-lease://lease/sdk-#{provider}",
-      native_auth_assertion_ref: "native-auth://assertion/sdk-#{provider}"
+      native_auth_assertion_ref: "native-auth://assertion/sdk-#{provider}",
+      target_ref: "execution-target://#{provider}/sdk-target",
+      operation_policy_ref: "operation-policy://#{provider}/sdk"
     )
     |> ASM.RuntimeAuth.to_metadata()
   end

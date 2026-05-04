@@ -145,7 +145,9 @@ defmodule ASM.RuntimeAuthCodexMaterializationTest do
       provider_account_ref: "provider-account://codex/account-1",
       authority_ref: "citadel-authority://decision/1",
       credential_lease_ref: "jido-credential-lease://lease/1",
-      native_auth_assertion_ref: "codex-native-auth://assertion/1"
+      native_auth_assertion_ref: "codex-native-auth://assertion/1",
+      target_ref: "execution-target://codex/target-1",
+      operation_policy_ref: "operation-policy://codex/policy-1"
     )
     |> RuntimeAuth.to_metadata()
   end

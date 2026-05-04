@@ -68,7 +68,9 @@ defmodule ASM.RuntimeAuth do
     :token,
     :working_directory,
     :anthropic_auth_token,
-    :anthropic_base_url
+    :anthropic_base_url,
+    :default_client,
+    :singleton_client
   ]
   @option_keys [
     :runtime_auth,
@@ -86,6 +88,7 @@ defmodule ASM.RuntimeAuth do
     :provider_account_evidence,
     :provider_account_status,
     :target_ref,
+    :operation_policy_ref,
     :tenant_ref,
     :installation_ref,
     :authority_ref,
@@ -198,6 +201,7 @@ defmodule ASM.RuntimeAuth do
       :connector_instance_ref,
       :provider_account_ref,
       :target_ref,
+      :operation_policy_ref,
       :authority_ref,
       :authority_decision_ref,
       :credential_lease_ref,
@@ -213,6 +217,7 @@ defmodule ASM.RuntimeAuth do
             connector_instance_ref: String.t(),
             provider_account_ref: String.t() | nil,
             target_ref: String.t() | nil,
+            operation_policy_ref: String.t() | nil,
             authority_ref: String.t() | nil,
             authority_decision_ref: String.t() | nil,
             credential_lease_ref: String.t() | nil,
@@ -298,6 +303,7 @@ defmodule ASM.RuntimeAuth do
           provider_account_status: runtime_auth.provider_account_identity.identity_status,
           provider_account_evidence: runtime_auth.provider_account_identity.evidence,
           target_ref: runtime_auth.connector_binding.target_ref,
+          operation_policy_ref: runtime_auth.connector_binding.operation_policy_ref,
           tenant_ref: runtime_auth.execution_context.tenant_ref,
           installation_ref: runtime_auth.execution_context.installation_ref,
           authority_ref: runtime_auth.connector_binding.authority_ref,
@@ -327,6 +333,8 @@ defmodule ASM.RuntimeAuth do
       connector_binding_ref: runtime_auth.connector_binding.ref,
       provider_account_identity: runtime_auth_map.provider_account_identity,
       provider_account_ref: runtime_auth.provider_account_identity.ref,
+      target_ref: runtime_auth.connector_binding.target_ref,
+      operation_policy_ref: runtime_auth.connector_binding.operation_policy_ref,
       provider_auth_backend: runtime_auth.provider_auth_backend,
       connector_invocation_evidence: runtime_auth.connector_invocation_evidence,
       governed_authority: governed_authority?(runtime_auth)
@@ -436,7 +444,10 @@ defmodule ASM.RuntimeAuth do
         map_value(metadata, :connector_instance_ref) ||
           map_value(binding, :connector_instance_ref),
       provider_account_ref:
-        map_value(metadata, :provider_account_ref) || map_value(binding, :provider_account_ref)
+        map_value(metadata, :provider_account_ref) || map_value(binding, :provider_account_ref),
+      target_ref: map_value(metadata, :target_ref) || map_value(binding, :target_ref),
+      operation_policy_ref:
+        map_value(metadata, :operation_policy_ref) || map_value(binding, :operation_policy_ref)
     }
   end
 
@@ -445,7 +456,8 @@ defmodule ASM.RuntimeAuth do
       governed_source?(evidence.source) and
       present?(evidence.authority_ref || evidence.authority_decision_ref) and
       present?(evidence.credential_lease_ref) and present?(evidence.native_auth_assertion_ref) and
-      present?(evidence.connector_instance_ref) and present?(evidence.provider_account_ref)
+      present?(evidence.connector_instance_ref) and present?(evidence.provider_account_ref) and
+      present?(evidence.target_ref) and present?(evidence.operation_policy_ref)
   end
 
   defp require_governed_runtime_authority(provider, runtime_auth, metadata) do
@@ -456,7 +468,7 @@ defmodule ASM.RuntimeAuth do
        Error.new(
          :config_invalid,
          :config,
-         "governed #{provider} runtime requires authority ref, credential lease ref, native auth assertion ref, connector instance ref, and provider account ref",
+         "governed #{provider} runtime requires authority ref, credential lease ref, native auth assertion ref, connector instance ref, provider account ref, target ref, and operation policy ref",
          provider: provider,
          cause: %{runtime_auth: runtime_auth, metadata: metadata}
        )}
@@ -673,6 +685,7 @@ defmodule ASM.RuntimeAuth do
       connector_instance_ref: connector.ref,
       provider_account_ref: account.ref,
       target_ref: optional_string(opts, :target_ref),
+      operation_policy_ref: optional_string(opts, :operation_policy_ref),
       authority_ref: optional_string(opts, :authority_ref),
       authority_decision_ref: optional_string(opts, :authority_decision_ref),
       credential_lease_ref: optional_string(opts, :credential_lease_ref),
@@ -714,7 +727,7 @@ defmodule ASM.RuntimeAuth do
          Error.new(
            :config_invalid,
            :config,
-           "governed runtime_auth requires governed context source, authority ref, credential lease ref, native auth assertion ref, connector instance ref, and provider account ref",
+           "governed runtime_auth requires governed context source, authority ref, credential lease ref, native auth assertion ref, connector instance ref, provider account ref, target ref, and operation policy ref",
            provider: runtime_auth.execution_context.provider,
            cause: governed_validation_cause(runtime_auth)
          )}
@@ -751,7 +764,8 @@ defmodule ASM.RuntimeAuth do
   defp governed_binding_evidence?(binding) do
     present?(binding.authority_ref || binding.authority_decision_ref) and
       present?(binding.credential_lease_ref) and present?(binding.native_auth_assertion_ref) and
-      present?(binding.connector_instance_ref) and present?(binding.provider_account_ref)
+      present?(binding.connector_instance_ref) and present?(binding.provider_account_ref) and
+      present?(binding.target_ref) and present?(binding.operation_policy_ref)
   end
 
   defp governed_identity_evidence?(%__MODULE__{} = runtime_auth) do
@@ -771,7 +785,9 @@ defmodule ASM.RuntimeAuth do
       credential_lease_ref: binding.credential_lease_ref,
       native_auth_assertion_ref: binding.native_auth_assertion_ref,
       connector_instance_ref: binding.connector_instance_ref,
-      provider_account_ref: binding.provider_account_ref
+      provider_account_ref: binding.provider_account_ref,
+      target_ref: binding.target_ref,
+      operation_policy_ref: binding.operation_policy_ref
     }
   end
 

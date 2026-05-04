@@ -81,7 +81,9 @@ defmodule ASM.ProviderBackend.CoreTest do
       provider_account_ref: "provider-account://codex/core-account",
       authority_ref: "citadel-authority://decision/core",
       credential_lease_ref: "jido-credential-lease://lease/core",
-      native_auth_assertion_ref: "codex-native-auth://assertion/core"
+      native_auth_assertion_ref: "codex-native-auth://assertion/core",
+      target_ref: "execution-target://codex/core-target",
+      operation_policy_ref: "operation-policy://codex/core"
     )
     |> ASM.RuntimeAuth.to_metadata()
   end
@@ -97,7 +99,9 @@ defmodule ASM.ProviderBackend.CoreTest do
       provider_account_ref: "provider-account://#{provider}/core-account",
       authority_ref: "citadel-authority://decision/core-#{provider}",
       credential_lease_ref: "jido-credential-lease://lease/core-#{provider}",
-      native_auth_assertion_ref: "native-auth://assertion/core-#{provider}"
+      native_auth_assertion_ref: "native-auth://assertion/core-#{provider}",
+      target_ref: "execution-target://#{provider}/core-target",
+      operation_policy_ref: "operation-policy://#{provider}/core"
     )
     |> ASM.RuntimeAuth.to_metadata()
   end

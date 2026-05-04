@@ -180,11 +180,85 @@ defmodule ASM.RuntimeAuthTest do
                provider_account_ref: "provider-account://codex/account-1",
                authority_ref: "citadel-authority://decision/1",
                credential_lease_ref: "jido-credential-lease://lease/1",
-               native_auth_assertion_ref: "codex-native-auth://assertion/1"
+               native_auth_assertion_ref: "codex-native-auth://assertion/1",
+               target_ref: "execution-target://codex/target-1",
+               operation_policy_ref: "operation-policy://codex/policy-1"
              )
 
     assert ASM.RuntimeAuth.governed_authority?(runtime_auth)
     assert ASM.RuntimeAuth.governed_authority?(ASM.RuntimeAuth.to_metadata(runtime_auth))
+  end
+
+  test "governed runtime auth requires target and operation policy refs" do
+    assert {:error, target_error} =
+             ASM.RuntimeAuth.new("runtime-auth-governed-no-target-" <> unique_suffix(), :claude,
+               runtime_auth_mode: :governed,
+               runtime_auth_scope: :governed,
+               execution_context_ref: "asm-execution-context://governed/no-target",
+               connector_instance_ref: "jido-connector-instance://claude/instance-1",
+               connector_binding_ref: "jido-connector-binding://claude/binding-1",
+               provider_account_ref: "provider-account://claude/account-1",
+               authority_ref: "citadel-authority://decision/claude",
+               credential_lease_ref: "jido-credential-lease://lease/claude",
+               native_auth_assertion_ref: "native-auth://assertion/claude",
+               operation_policy_ref: "operation-policy://claude/policy-1"
+             )
+
+    assert target_error.kind == :config_invalid
+    assert target_error.message =~ "target ref"
+    assert is_nil(target_error.cause.target_ref)
+
+    assert {:error, operation_error} =
+             ASM.RuntimeAuth.new(
+               "runtime-auth-governed-no-operation-policy-" <> unique_suffix(),
+               :gemini,
+               runtime_auth_mode: :governed,
+               runtime_auth_scope: :governed,
+               execution_context_ref: "asm-execution-context://governed/no-operation-policy",
+               connector_instance_ref: "jido-connector-instance://gemini/instance-1",
+               connector_binding_ref: "jido-connector-binding://gemini/binding-1",
+               provider_account_ref: "provider-account://gemini/account-1",
+               authority_ref: "citadel-authority://decision/gemini",
+               credential_lease_ref: "jido-credential-lease://lease/gemini",
+               native_auth_assertion_ref: "native-auth://assertion/gemini",
+               target_ref: "execution-target://gemini/target-1"
+             )
+
+    assert operation_error.kind == :config_invalid
+    assert operation_error.message =~ "operation policy ref"
+    assert is_nil(operation_error.cause.operation_policy_ref)
+  end
+
+  test "governed runtime rejects singleton and default provider auth overrides" do
+    assert {:ok, runtime_auth} =
+             ASM.RuntimeAuth.new("runtime-auth-governed-defaults-" <> unique_suffix(), :claude,
+               runtime_auth_mode: :governed,
+               runtime_auth_scope: :governed,
+               execution_context_ref: "asm-execution-context://governed/defaults",
+               connector_instance_ref: "jido-connector-instance://claude/instance-1",
+               connector_binding_ref: "jido-connector-binding://claude/binding-1",
+               provider_account_ref: "provider-account://claude/account-1",
+               authority_ref: "citadel-authority://decision/claude",
+               credential_lease_ref: "jido-credential-lease://lease/claude",
+               native_auth_assertion_ref: "native-auth://assertion/claude",
+               target_ref: "execution-target://claude/target-1",
+               operation_policy_ref: "operation-policy://claude/policy-1"
+             )
+
+    metadata = ASM.RuntimeAuth.to_metadata(runtime_auth)
+
+    assert {:error, error} =
+             ASM.RuntimeAuth.authorize_governed_provider_runtime(
+               :claude,
+               %{metadata: metadata},
+               singleton_client: :default,
+               default_client: :native_default
+             )
+
+    assert error.kind == :config_invalid
+    assert error.message =~ "provider auth"
+    assert :singleton_client in error.cause.keys
+    assert :default_client in error.cause.keys
   end
 
   test "ambient env cannot fill governed runtime auth evidence for provider families" do
@@ -211,6 +285,7 @@ defmodule ASM.RuntimeAuthTest do
         assert is_nil(Map.get(error.cause, :credential_lease_ref))
         assert is_nil(Map.get(error.cause, :native_auth_assertion_ref))
         assert is_nil(Map.get(error.cause, :target_ref))
+        assert is_nil(Map.get(error.cause, :operation_policy_ref))
       end
     end)
   end
@@ -236,7 +311,8 @@ defmodule ASM.RuntimeAuthTest do
                    authority_ref: "citadel-authority://decision/#{provider}",
                    credential_lease_ref: "jido-credential-lease://lease/#{provider}",
                    native_auth_assertion_ref: "native-auth://assertion/#{provider}",
-                   target_ref: "execution-target://#{provider}/explicit"
+                   target_ref: "execution-target://#{provider}/explicit",
+                   operation_policy_ref: "operation-policy://#{provider}/explicit"
                  )
 
         assert runtime_auth.connector_instance.ref ==
@@ -247,6 +323,9 @@ defmodule ASM.RuntimeAuthTest do
 
         assert runtime_auth.connector_binding.target_ref ==
                  "execution-target://#{provider}/explicit"
+
+        assert runtime_auth.connector_binding.operation_policy_ref ==
+                 "operation-policy://#{provider}/explicit"
 
         assert runtime_auth.connector_binding.authority_ref ==
                  "citadel-authority://decision/#{provider}"

@@ -261,6 +261,34 @@ defmodule ASM.RuntimeAuthTest do
     assert :default_client in error.cause.keys
   end
 
+  test "governed Codex runtime uses the common provider authority gate" do
+    assert {:ok, runtime_auth} =
+             ASM.RuntimeAuth.new("runtime-auth-governed-codex-common-" <> unique_suffix(), :codex,
+               runtime_auth_mode: :governed,
+               runtime_auth_scope: :governed,
+               execution_context_ref: "asm-execution-context://governed/codex-common",
+               connector_instance_ref: "jido-connector-instance://codex/instance-common",
+               connector_binding_ref: "jido-connector-binding://codex/binding-common",
+               provider_account_ref: "provider-account://codex/account-common",
+               authority_ref: "citadel-authority://decision/common",
+               credential_lease_ref: "jido-credential-lease://lease/common",
+               native_auth_assertion_ref: "codex-native-auth://assertion/common",
+               target_ref: "execution-target://codex/target-common",
+               operation_policy_ref: "operation-policy://codex/policy-common"
+             )
+
+    assert {:error, error} =
+             ASM.RuntimeAuth.authorize_governed_provider_runtime(
+               :codex,
+               %{metadata: ASM.RuntimeAuth.to_metadata(runtime_auth)},
+               env: %{"CODEX_API_KEY" => "ambient"}
+             )
+
+    assert error.kind == :config_invalid
+    assert error.message =~ "governed codex runtime rejects"
+    assert error.cause.keys == [:env]
+  end
+
   test "governed runtime rejects SDK local token options before provider account override" do
     assert {:ok, runtime_auth} =
              ASM.RuntimeAuth.new(

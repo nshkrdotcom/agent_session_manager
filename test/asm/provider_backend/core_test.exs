@@ -27,24 +27,31 @@ defmodule ASM.ProviderBackend.CoreTest do
     assert error.message =~ ":none"
   end
 
-  test "codex core backend rejects governed runs without materialized runtime" do
+  test "codex core backend rejects governed runs without provider-auth materialization" do
     execution_config = %Execution.Config{
       execution_mode: :local,
       transport_call_timeout_ms: 5_000,
       execution_environment: %Environment{}
     }
 
-    config = %{
-      provider: Provider.resolve!(:codex),
-      prompt: "hello",
-      provider_opts: [model: "gpt-5.4"],
-      execution_config: execution_config,
-      metadata: governed_runtime_metadata()
-    }
+    with_env(codex_provider_env(), fn ->
+      config = %{
+        provider: Provider.resolve!(:codex),
+        prompt: "hello",
+        provider_opts: [model: "gpt-5.4"],
+        execution_config: execution_config,
+        metadata: governed_runtime_metadata()
+      }
 
-    assert {:error, error} = Core.start_run(config)
-    assert error.kind == :config_invalid
-    assert error.message =~ "requires a materialized runtime"
+      assert {:error, error} = Core.start_run(config)
+      assert error.kind == :config_invalid
+
+      assert String.contains?(error.message, "requires verified provider-auth materialization") or
+               String.contains?(
+                 error.message,
+                 "rejects unmanaged ambient provider auth environment"
+               )
+    end)
   end
 
   test "non-codex governed core backend cannot fall through to standalone auth" do
@@ -135,6 +142,24 @@ defmodule ASM.ProviderBackend.CoreTest do
       "CLAUDE_CONFIG_DIR",
       "CLAUDE_HOME",
       "CLAUDE_MODEL"
+    ]
+    |> Map.new(&{&1, nil})
+  end
+
+  defp codex_provider_env do
+    [
+      "CODEX_API_KEY",
+      "CODEX_HOME",
+      "CODEX_MODEL",
+      "CODEX_MODEL_DEFAULT",
+      "CODEX_OLLAMA_BASE_URL",
+      "CODEX_OPENAI_BASE_URL",
+      "CODEX_OSS_PROVIDER",
+      "CODEX_PATH",
+      "CODEX_PROVIDER_BACKEND",
+      "OPENAI_API_KEY",
+      "OPENAI_BASE_URL",
+      "OPENAI_DEFAULT_MODEL"
     ]
     |> Map.new(&{&1, nil})
   end

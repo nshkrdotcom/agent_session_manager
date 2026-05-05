@@ -19,6 +19,20 @@ defmodule ASM.RuntimeAuth do
   @modes [:standalone, :governed]
   @provider_account_statuses [:known, :asserted, :unknown, :unavailable, :revoked, :rotated]
   @provider_auth_env_keys %{
+    codex: [
+      "CODEX_API_KEY",
+      "CODEX_HOME",
+      "CODEX_MODEL",
+      "CODEX_MODEL_DEFAULT",
+      "CODEX_OLLAMA_BASE_URL",
+      "CODEX_OPENAI_BASE_URL",
+      "CODEX_OSS_PROVIDER",
+      "CODEX_PATH",
+      "CODEX_PROVIDER_BACKEND",
+      "OPENAI_API_KEY",
+      "OPENAI_BASE_URL",
+      "OPENAI_DEFAULT_MODEL"
+    ],
     claude: [
       "ANTHROPIC_API_KEY",
       "ANTHROPIC_AUTH_TOKEN",
@@ -425,8 +439,6 @@ defmodule ASM.RuntimeAuth do
 
   @spec authorize_governed_provider_runtime(atom(), map(), keyword()) ::
           :ok | {:error, Error.t()}
-  def authorize_governed_provider_runtime(:codex, _config, _provider_opts), do: :ok
-
   def authorize_governed_provider_runtime(provider, config, provider_opts)
       when is_atom(provider) and is_map(config) and is_list(provider_opts) do
     metadata = Map.get(config, :metadata, %{})
@@ -451,37 +463,47 @@ defmodule ASM.RuntimeAuth do
   end
 
   defp governed_map_authority_evidence(metadata, runtime_auth, context, binding) do
+    sources = [metadata, binding]
+
     %{
-      mode: map_value(metadata, :runtime_auth_mode) || map_value(runtime_auth, :mode),
+      mode: first_present_map_value([metadata, runtime_auth], :runtime_auth_mode, :mode),
       scope: map_value(context, :scope),
       source: map_value(context, :source),
-      authority_ref: map_value(metadata, :authority_ref) || map_value(binding, :authority_ref),
-      authority_decision_ref:
-        map_value(metadata, :authority_decision_ref) ||
-          map_value(binding, :authority_decision_ref),
-      credential_lease_ref:
-        map_value(metadata, :credential_lease_ref) || map_value(binding, :credential_lease_ref),
-      native_auth_assertion_ref:
-        map_value(metadata, :native_auth_assertion_ref) ||
-          map_value(binding, :native_auth_assertion_ref),
-      connector_instance_ref:
-        map_value(metadata, :connector_instance_ref) ||
-          map_value(binding, :connector_instance_ref),
-      provider_account_ref:
-        map_value(metadata, :provider_account_ref) || map_value(binding, :provider_account_ref),
-      target_ref: map_value(metadata, :target_ref) || map_value(binding, :target_ref),
-      operation_policy_ref:
-        map_value(metadata, :operation_policy_ref) || map_value(binding, :operation_policy_ref)
+      authority_ref: first_present_map_value(sources, :authority_ref),
+      authority_decision_ref: first_present_map_value(sources, :authority_decision_ref),
+      credential_lease_ref: first_present_map_value(sources, :credential_lease_ref),
+      native_auth_assertion_ref: first_present_map_value(sources, :native_auth_assertion_ref),
+      connector_instance_ref: first_present_map_value(sources, :connector_instance_ref),
+      provider_account_ref: first_present_map_value(sources, :provider_account_ref),
+      target_ref: first_present_map_value(sources, :target_ref),
+      operation_policy_ref: first_present_map_value(sources, :operation_policy_ref)
     }
   end
 
   defp governed_authority_evidence?(evidence) do
+    governed_authority_context?(evidence) and
+      authority_decision_present?(evidence) and required_governed_refs_present?(evidence)
+  end
+
+  defp governed_authority_context?(evidence) do
     governed_mode?(evidence.mode) and governed_scope?(evidence.scope) and
-      governed_source?(evidence.source) and
-      present?(evidence.authority_ref || evidence.authority_decision_ref) and
-      present?(evidence.credential_lease_ref) and present?(evidence.native_auth_assertion_ref) and
-      present?(evidence.connector_instance_ref) and present?(evidence.provider_account_ref) and
-      present?(evidence.target_ref) and present?(evidence.operation_policy_ref)
+      governed_source?(evidence.source)
+  end
+
+  defp authority_decision_present?(evidence) do
+    present?(evidence.authority_ref) or present?(evidence.authority_decision_ref)
+  end
+
+  defp required_governed_refs_present?(evidence) do
+    [
+      :credential_lease_ref,
+      :native_auth_assertion_ref,
+      :connector_instance_ref,
+      :provider_account_ref,
+      :target_ref,
+      :operation_policy_ref
+    ]
+    |> Enum.all?(&present?(Map.fetch!(evidence, &1)))
   end
 
   defp require_governed_runtime_authority(provider, runtime_auth, metadata) do
@@ -928,6 +950,14 @@ defmodule ASM.RuntimeAuth do
     struct
     |> Map.from_struct()
     |> Enum.into(%{}, fn {key, value} -> {key, value} end)
+  end
+
+  defp first_present_map_value(sources, key) when is_list(sources) do
+    Enum.find_value(sources, &map_value(&1, key))
+  end
+
+  defp first_present_map_value([first_source, second_source], first_key, second_key) do
+    map_value(first_source, first_key) || map_value(second_source, second_key)
   end
 
   defp map_value(nil, _key), do: nil

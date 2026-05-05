@@ -169,7 +169,7 @@ defmodule ASM.ProviderBackend.Proxy do
   end
 
   def handle_info({:DOWN, ref, :process, _pid, reason}, %__MODULE__{session_ref: ref} = state) do
-    {:stop, reason, state}
+    {:stop, session_down_reason(reason), state}
   end
 
   def handle_info(_message, state), do: {:noreply, state}
@@ -251,6 +251,9 @@ defmodule ASM.ProviderBackend.Proxy do
   end
 
   defp normalize_subscribers(_subscribers), do: %{}
+
+  defp session_down_reason(:noproc), do: :normal
+  defp session_down_reason(reason), do: reason
 
   defp await_started_proxy(pid, reply_ref, timeout_ms \\ @proxy_start_timeout_ms) do
     receive do

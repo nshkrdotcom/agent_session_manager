@@ -17,8 +17,8 @@ ASM.Examples.Common.ensure_provider_sdk_loaded!(:gemini,
   cli_path: Keyword.get(config.session_opts, :cli_path)
 )
 
-gemini_sdk = Module.concat(["GeminiCliSdk"])
-settings_profiles = Module.concat(["GeminiCliSdk", "SettingsProfiles"])
+gemini_sdk = :"Elixir.GeminiCliSdk"
+settings_profiles = :"Elixir.GeminiCliSdk.SettingsProfiles"
 
 asm_common =
   Keyword.take(config.session_opts, [

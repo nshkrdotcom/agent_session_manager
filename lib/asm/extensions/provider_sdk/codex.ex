@@ -23,10 +23,10 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
   alias ASM.Extensions.ProviderSDK.{Derivation, Dispatch, Extension, SessionOptions}
 
   @sdk_app :codex_sdk
-  @sdk_module Module.concat(["Codex"])
-  @sdk_options_module Module.concat(["Codex", "Options"])
-  @thread_options_module Module.concat(["Codex", "Thread", "Options"])
-  @app_server_module Module.concat(["Codex", "AppServer"])
+  @sdk_module :"Elixir.Codex"
+  @sdk_options_module :"Elixir.Codex.Options"
+  @thread_options_module :"Elixir.Codex.Thread.Options"
+  @app_server_module :"Elixir.Codex.AppServer"
   @native_capabilities [:app_server, :mcp, :realtime, :voice]
   @asm_derived_codex_option_keys [
     :model,
@@ -53,9 +53,9 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
 
   @native_surface_modules [
     @app_server_module,
-    Module.concat(["Codex", "MCP", "Client"]),
-    Module.concat(["Codex", "Realtime"]),
-    Module.concat(["Codex", "Voice"])
+    :"Elixir.Codex.MCP.Client",
+    :"Elixir.Codex.Realtime",
+    :"Elixir.Codex.Voice"
   ]
 
   @spec extension() :: Extension.t()

@@ -27,8 +27,8 @@ ASM.PromotionPath.Common.assert_smoke_text!(
   "Hybrid ASM output"
 )
 
-gemini_sdk = Module.concat(["GeminiCliSdk"])
-settings_profiles = Module.concat(["GeminiCliSdk", "SettingsProfiles"])
+gemini_sdk = :"Elixir.GeminiCliSdk"
+settings_profiles = :"Elixir.GeminiCliSdk.SettingsProfiles"
 
 asm_common =
   config.session_opts
@@ -40,7 +40,9 @@ native_overrides = [
   skip_trust: true
 ]
 
-{:ok, gemini_options} = GeminiBridge.derive_options(asm_common, native_overrides: native_overrides)
+{:ok, gemini_options} =
+  GeminiBridge.derive_options(asm_common, native_overrides: native_overrides)
+
 {:ok, sdk_text} = apply(gemini_sdk, :run, ["Reply with exactly: HYBRID_SDK_OK", gemini_options])
 
 ASM.Examples.Common.assert_exact_text!(sdk_text, "HYBRID_SDK_OK",

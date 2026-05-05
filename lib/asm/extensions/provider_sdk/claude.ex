@@ -20,12 +20,12 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
   alias ASM.Extensions.ProviderSDK.{Derivation, Dispatch, Extension, SessionOptions}
 
   @sdk_app :claude_agent_sdk
-  @sdk_module Module.concat(["ClaudeAgentSDK"])
-  @sdk_client_module Module.concat(["ClaudeAgentSDK", "Client"])
-  @sdk_options_module Module.concat(["ClaudeAgentSDK", "Options"])
-  @hooks_module Module.concat(["ClaudeAgentSDK", "Hooks"])
-  @permission_module Module.concat(["ClaudeAgentSDK", "Permission"])
-  @control_protocol_module Module.concat(["ClaudeAgentSDK", "ControlProtocol", "Protocol"])
+  @sdk_module :"Elixir.ClaudeAgentSDK"
+  @sdk_client_module :"Elixir.ClaudeAgentSDK.Client"
+  @sdk_options_module :"Elixir.ClaudeAgentSDK.Options"
+  @hooks_module :"Elixir.ClaudeAgentSDK.Hooks"
+  @permission_module :"Elixir.ClaudeAgentSDK.Permission"
+  @control_protocol_module :"Elixir.ClaudeAgentSDK.ControlProtocol.Protocol"
   @asm_derived_sdk_option_keys [
     :cwd,
     :env,

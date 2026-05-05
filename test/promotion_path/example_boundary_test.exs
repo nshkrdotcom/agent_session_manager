@@ -76,53 +76,54 @@ defmodule PromotionPath.ExampleBoundaryTest do
   end
 
   defp collect_forbidden_references(ast, forbidden_modules) do
-    forbidden_parts = Enum.map(forbidden_modules, &Module.split/1)
+    forbidden_index = Map.new(forbidden_modules, &{Module.split(&1), &1})
+    forbidden_parts = Map.keys(forbidden_index)
 
     {_ast, violations} =
       Macro.prewalk(ast, [], fn node, acc ->
-        violations = references_for(node, forbidden_parts)
+        violations = references_for(node, forbidden_parts, forbidden_index)
         {node, violations ++ acc}
       end)
 
     Enum.reverse(violations)
   end
 
-  defp references_for({op, meta, [{:__aliases__, _, parts} | _rest]}, forbidden_parts)
+  defp references_for({op, meta, [{:__aliases__, _, parts} | _rest]}, forbidden_parts, index)
        when op in [:alias, :import, :require] do
-    violation(op, parts, meta, forbidden_parts)
+    violation(op, parts, meta, forbidden_parts, index)
   end
 
   defp references_for(
          {{:., meta, [{:__aliases__, _, parts}, function]}, _, _args},
-         forbidden_parts
+         forbidden_parts,
+         index
        ) do
-    violation(:remote_call, parts, meta, forbidden_parts, function)
+    violation(:remote_call, parts, meta, forbidden_parts, index, function)
   end
 
   defp references_for(
          {:apply, meta, [{:__aliases__, _, parts}, function, _args]},
-         forbidden_parts
+         forbidden_parts,
+         index
        ) do
-    violation(:apply, parts, meta, forbidden_parts, function)
+    violation(:apply, parts, meta, forbidden_parts, index, function)
   end
 
-  defp references_for({:__aliases__, meta, parts}, forbidden_parts) do
-    violation(:module_reference, parts, meta, forbidden_parts)
+  defp references_for({:__aliases__, meta, parts}, forbidden_parts, index) do
+    violation(:module_reference, parts, meta, forbidden_parts, index)
   end
 
-  defp references_for(_node, _forbidden_parts), do: []
+  defp references_for(_node, _forbidden_parts, _index), do: []
 
-  defp violation(kind, parts, meta, forbidden_parts, function \\ nil) do
+  defp violation(kind, parts, meta, forbidden_parts, index, function \\ nil) do
     module_parts = alias_parts(parts)
     forbidden = Enum.find(forbidden_parts, &prefix_match?(module_parts, &1))
 
     if forbidden do
-      module = Module.concat(forbidden)
-
       [
         %{
           kind: kind,
-          module: module,
+          module: Map.fetch!(index, forbidden),
           function: function,
           line: meta[:line]
         }

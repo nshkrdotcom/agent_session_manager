@@ -8,13 +8,13 @@ defmodule ASM.ProviderBackend.SDK.CodexAppServer do
   alias CliSubprocessCore.Event, as: CoreEvent
 
   @provider :codex
-  @turn_started Module.concat(["Codex", "Events", "TurnStarted"])
-  @dynamic_tool_call_requested Module.concat(["Codex", "Events", "DynamicToolCallRequested"])
-  @item_agent_message_delta Module.concat(["Codex", "Events", "ItemAgentMessageDelta"])
-  @item_completed Module.concat(["Codex", "Events", "ItemCompleted"])
-  @turn_completed Module.concat(["Codex", "Events", "TurnCompleted"])
-  @turn_failed Module.concat(["Codex", "Events", "TurnFailed"])
-  @agent_message Module.concat(["Codex", "Items", "AgentMessage"])
+  @turn_started :"Elixir.Codex.Events.TurnStarted"
+  @dynamic_tool_call_requested :"Elixir.Codex.Events.DynamicToolCallRequested"
+  @item_agent_message_delta :"Elixir.Codex.Events.ItemAgentMessageDelta"
+  @item_completed :"Elixir.Codex.Events.ItemCompleted"
+  @turn_completed :"Elixir.Codex.Events.TurnCompleted"
+  @turn_failed :"Elixir.Codex.Events.TurnFailed"
+  @agent_message :"Elixir.Codex.Items.AgentMessage"
 
   defstruct [
     :app_server_api,
@@ -191,12 +191,12 @@ defmodule ASM.ProviderBackend.SDK.CodexAppServer do
   end
 
   defp raw_events(stream) do
-    streaming_module = Module.concat(["Codex", "RunResultStreaming"])
+    streaming_module = :"Elixir.Codex.RunResultStreaming"
 
     if Code.ensure_loaded?(streaming_module) and
          function_exported?(streaming_module, :raw_events, 1) and
          match?(%{__struct__: ^streaming_module}, stream) do
-      streaming_module.raw_events(stream)
+      :erlang.apply(streaming_module, :raw_events, [stream])
     else
       stream
     end

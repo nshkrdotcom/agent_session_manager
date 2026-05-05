@@ -10,7 +10,7 @@ defmodule ASM.Extensions.PubSub.Adapters.Phoenix do
 
   alias ASM.Error
 
-  @default_pubsub_module Module.concat([Phoenix, PubSub])
+  @default_pubsub_module :"Elixir.Phoenix.PubSub"
 
   @type state :: %{name: atom(), pubsub_module: module()}
 

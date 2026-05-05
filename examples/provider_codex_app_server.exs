@@ -20,8 +20,8 @@ ASM.Examples.Common.ensure_provider_sdk_loaded!(:codex,
   cli_path: Keyword.get(config.session_opts, :cli_path)
 )
 
-codex_module = Module.concat(["Codex"])
-app_server_module = Module.concat(["Codex", "AppServer"])
+codex_module = :"Elixir.Codex"
+app_server_module = :"Elixir.Codex.AppServer"
 
 {:ok, conn} = CodexBridge.connect_app_server(sdk_bridge_opts, [], init_timeout_ms: 30_000)
 

@@ -256,10 +256,10 @@ defmodule ASM.ProviderFeatures do
   defp native_lane?(_provider, _lane), do: false
 
   defp native_namespaces(:codex),
-    do: [Module.concat(["ASM", "Extensions", "ProviderSDK", "Codex"])]
+    do: [ASM.Extensions.ProviderSDK.Codex]
 
   defp native_namespaces(:claude),
-    do: [Module.concat(["ASM", "Extensions", "ProviderSDK", "Claude"])]
+    do: [ASM.Extensions.ProviderSDK.Claude]
 
   defp native_namespaces(_provider), do: []
 

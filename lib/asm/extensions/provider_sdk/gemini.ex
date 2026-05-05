@@ -14,10 +14,10 @@ defmodule ASM.Extensions.ProviderSDK.Gemini do
   alias ASM.ProviderRegistry
 
   @sdk_app :gemini_cli_sdk
-  @sdk_module Module.concat(["GeminiCliSdk"])
-  @sdk_options_module Module.concat(["GeminiCliSdk", "Options"])
-  @settings_profiles_module Module.concat(["GeminiCliSdk", "SettingsProfiles"])
-  @runtime_module Module.concat(["GeminiCliSdk", "Runtime", "CLI"])
+  @sdk_module :"Elixir.GeminiCliSdk"
+  @sdk_options_module :"Elixir.GeminiCliSdk.Options"
+  @settings_profiles_module :"Elixir.GeminiCliSdk.SettingsProfiles"
+  @runtime_module :"Elixir.GeminiCliSdk.Runtime.CLI"
   @native_capabilities [:extensions, :settings_profiles, :trust_controls]
   @native_surface_modules [@settings_profiles_module, @runtime_module]
   @asm_derived_option_keys [

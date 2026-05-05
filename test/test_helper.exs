@@ -21,7 +21,7 @@ defmodule ASM.TestSupport.Capabilities do
         false
 
       :auto ->
-        node_name = :"asm_capability_probe_#{System.unique_integer([:positive])}"
+        node_name = :asm_capability_probe
 
         case Node.start(node_name, :shortnames) do
           {:ok, _pid} ->

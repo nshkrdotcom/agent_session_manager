@@ -15,8 +15,8 @@ ASM.Examples.Common.ensure_provider_sdk_loaded!(:amp,
   cli_path: Keyword.get(config.session_opts, :cli_path)
 )
 
-amp_sdk = Module.concat(["AmpSdk"])
-options_module = Module.concat(["AmpSdk", "Types", "Options"])
+amp_sdk = :"Elixir.AmpSdk"
+options_module = :"Elixir.AmpSdk.Types.Options"
 
 options =
   struct!(options_module, %{

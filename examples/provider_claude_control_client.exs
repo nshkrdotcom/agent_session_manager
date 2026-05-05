@@ -19,7 +19,7 @@ ASM.Examples.Common.ensure_provider_sdk_loaded!(:claude,
   cli_path: Keyword.get(config.session_opts, :cli_path)
 )
 
-client_module = Module.concat(["ClaudeAgentSDK", "Client"])
+client_module = :"Elixir.ClaudeAgentSDK.Client"
 
 {:ok, client} = ClaudeBridge.start_client(sdk_bridge_opts)
 

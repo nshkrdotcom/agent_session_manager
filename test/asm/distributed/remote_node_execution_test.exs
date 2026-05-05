@@ -240,7 +240,7 @@ defmodule ASM.Distributed.RemoteNodeExecutionTest do
       end) ++ [~c"-setcookie", cookie |> Atom.to_string() |> to_charlist()]
 
     :peer.start(%{
-      name: :"asm_remote_peer_#{System.unique_integer([:positive])}",
+      name: :asm_remote_peer,
       args: args
     })
   end
@@ -250,7 +250,7 @@ defmodule ASM.Distributed.RemoteNodeExecutionTest do
       :ok
     else
       _ = System.cmd("epmd", ["-daemon"])
-      node_name = :"asm_test_#{System.unique_integer([:positive])}"
+      node_name = :asm_test
       start_distribution(node_name, :shortnames)
     end
   end

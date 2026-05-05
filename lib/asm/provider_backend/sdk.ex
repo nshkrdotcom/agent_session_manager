@@ -9,15 +9,15 @@ defmodule ASM.ProviderBackend.SDK do
   alias ASM.ProviderBackend.Proxy
   alias ASM.ProviderBackend.SDK.CodexAppServer
   alias ASM.RuntimeAuth.CodexMaterialization
-  @claude_options_module Module.concat(["ClaudeAgentSDK", "Options"])
-  @gemini_options_module Module.concat(["GeminiCliSdk", "Options"])
-  @amp_options_module Module.concat(["AmpSdk", "Types", "Options"])
-  @codex_module Module.concat(["Codex"])
-  @codex_options_module Module.concat(["Codex", "Options"])
-  @codex_thread_options_module Module.concat(["Codex", "Thread", "Options"])
-  @codex_thread_runner_module Module.concat(["Codex", "Thread"])
-  @codex_exec_options_module Module.concat(["Codex", "Exec", "Options"])
-  @codex_app_server_module Module.concat(["Codex", "AppServer"])
+  @claude_options_module :"Elixir.ClaudeAgentSDK.Options"
+  @gemini_options_module :"Elixir.GeminiCliSdk.Options"
+  @amp_options_module :"Elixir.AmpSdk.Types.Options"
+  @codex_module :"Elixir.Codex"
+  @codex_options_module :"Elixir.Codex.Options"
+  @codex_thread_options_module :"Elixir.Codex.Thread.Options"
+  @codex_thread_runner_module :"Elixir.Codex.Thread"
+  @codex_exec_options_module :"Elixir.Codex.Exec.Options"
+  @codex_app_server_module :"Elixir.Codex.AppServer"
 
   @impl true
   def start_run(%{provider: %Provider{} = provider} = config) do

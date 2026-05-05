@@ -698,10 +698,10 @@ defmodule ASM.RuntimeAuth.CodexMaterialization do
   defp present?(value), do: not is_nil(value)
 
   defp default_codex_base_url do
-    module = Module.concat(["Codex", "Config", "BaseURL"])
+    module = :"Elixir.Codex.Config.BaseURL"
 
     if Code.ensure_loaded?(module) and function_exported?(module, :default, 0) do
-      module.default()
+      :erlang.apply(module, :default, [])
     else
       @default_openai_base_url
     end

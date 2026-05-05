@@ -14,10 +14,10 @@ defmodule ASM.Extensions.ProviderSDK.Amp do
   alias ASM.ProviderRegistry
 
   @sdk_app :amp_sdk
-  @sdk_module Module.concat(["AmpSdk"])
-  @sdk_options_module Module.concat(["AmpSdk", "Types", "Options"])
-  @runtime_module Module.concat(["AmpSdk", "Runtime", "CLI"])
-  @management_types_module Module.concat(["AmpSdk", "ManagementTypes"])
+  @sdk_module :"Elixir.AmpSdk"
+  @sdk_options_module :"Elixir.AmpSdk.Types.Options"
+  @runtime_module :"Elixir.AmpSdk.Runtime.CLI"
+  @management_types_module :"Elixir.AmpSdk.ManagementTypes"
   @native_capabilities [:mcp, :permissions, :skills, :threads]
   @native_surface_modules [@runtime_module, @management_types_module]
   @asm_derived_option_keys [

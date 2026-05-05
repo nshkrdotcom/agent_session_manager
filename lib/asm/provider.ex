@@ -182,7 +182,7 @@ defmodule ASM.Provider do
         name: :claude,
         display_name: "Claude CLI",
         core_profile: CliSubprocessCore.ProviderProfiles.Claude,
-        sdk_runtime: Module.concat(["ClaudeAgentSDK", "Runtime", "CLI"]),
+        sdk_runtime: :"Elixir.ClaudeAgentSDK.Runtime.CLI",
         example_support: %ExampleSupport{
           cli_command: "claude",
           cli_path_env: "CLAUDE_CLI_PATH",
@@ -205,7 +205,7 @@ defmodule ASM.Provider do
         name: :codex,
         display_name: "Codex CLI",
         core_profile: CliSubprocessCore.ProviderProfiles.Codex,
-        sdk_runtime: Module.concat(["Codex", "Runtime", "Exec"]),
+        sdk_runtime: :"Elixir.Codex.Runtime.Exec",
         example_support: %ExampleSupport{
           cli_command: "codex",
           cli_path_env: "CODEX_PATH",
@@ -230,7 +230,7 @@ defmodule ASM.Provider do
         name: :gemini,
         display_name: "Gemini CLI",
         core_profile: CliSubprocessCore.ProviderProfiles.Gemini,
-        sdk_runtime: Module.concat(["GeminiCliSdk", "Runtime", "CLI"]),
+        sdk_runtime: :"Elixir.GeminiCliSdk.Runtime.CLI",
         example_support: %ExampleSupport{
           cli_command: "gemini",
           cli_path_env: "GEMINI_CLI_PATH",
@@ -254,7 +254,7 @@ defmodule ASM.Provider do
         name: :amp,
         display_name: "Amp CLI",
         core_profile: CliSubprocessCore.ProviderProfiles.Amp,
-        sdk_runtime: Module.concat(["AmpSdk", "Runtime", "CLI"]),
+        sdk_runtime: :"Elixir.AmpSdk.Runtime.CLI",
         example_support: %ExampleSupport{
           cli_command: "amp",
           cli_path_env: "AMP_CLI_PATH",

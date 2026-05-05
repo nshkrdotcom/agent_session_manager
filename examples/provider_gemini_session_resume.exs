@@ -15,10 +15,10 @@ ASM.Examples.Common.ensure_provider_sdk_loaded!(:gemini,
   cli_path: Keyword.get(config.session_opts, :cli_path)
 )
 
-gemini_sdk = Module.concat(["GeminiCliSdk"])
-options_module = Module.concat(["GeminiCliSdk", "Options"])
-message_event_module = Module.concat(["GeminiCliSdk", "Types", "MessageEvent"])
-result_event_module = Module.concat(["GeminiCliSdk", "Types", "ResultEvent"])
+gemini_sdk = :"Elixir.GeminiCliSdk"
+options_module = :"Elixir.GeminiCliSdk.Options"
+message_event_module = :"Elixir.GeminiCliSdk.Types.MessageEvent"
+result_event_module = :"Elixir.GeminiCliSdk.Types.ResultEvent"
 
 provider_permission_mode = Keyword.get(config.provider_opts, :provider_permission_mode)
 

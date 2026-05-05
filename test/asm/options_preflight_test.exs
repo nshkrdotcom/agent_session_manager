@@ -206,7 +206,7 @@ defmodule ASM.OptionsPreflightTest do
   end
 
   test "preflight does not load optional provider SDK runtime modules" do
-    sdk_runtime = Module.concat(["GeminiCliSdk", "Runtime", "CLI"])
+    sdk_runtime = :"Elixir.GeminiCliSdk.Runtime.CLI"
 
     if :code.is_loaded(sdk_runtime) == false do
       assert {:ok, _result} = Options.preflight(:gemini, model: "fake-default", lane: :core)

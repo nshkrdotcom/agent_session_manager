@@ -128,6 +128,7 @@ defmodule ASM.RuntimeAuth do
     :installation_ref,
     :authority_ref,
     :authority_decision_ref,
+    :credential_handle_ref,
     :credential_lease_ref,
     :native_auth_assertion_ref
   ]
@@ -239,6 +240,7 @@ defmodule ASM.RuntimeAuth do
       :operation_policy_ref,
       :authority_ref,
       :authority_decision_ref,
+      :credential_handle_ref,
       :credential_lease_ref,
       :native_auth_assertion_ref
     ]
@@ -255,10 +257,123 @@ defmodule ASM.RuntimeAuth do
             operation_policy_ref: String.t() | nil,
             authority_ref: String.t() | nil,
             authority_decision_ref: String.t() | nil,
+            credential_handle_ref: String.t() | nil,
             credential_lease_ref: String.t() | nil,
             native_auth_assertion_ref: String.t() | nil
           }
   end
+
+  defmodule HandoffPacket do
+    @moduledoc """
+    Ref-only ASM handoff packet for governed session transfer.
+
+    The packet is intentionally a value contract. It carries refs that a
+    receiving agent must revalidate before materialization and never carries
+    provider payloads, raw tokens, local auth roots, command env, or target
+    credentials.
+    """
+
+    @enforce_keys [
+      :handoff_ref,
+      :provider,
+      :runtime_auth_mode,
+      :tenant_ref,
+      :installation_ref,
+      :execution_context_ref,
+      :connector_instance_ref,
+      :connector_binding_ref,
+      :provider_account_ref,
+      :credential_handle_ref,
+      :credential_lease_ref,
+      :native_auth_assertion_ref,
+      :target_ref,
+      :operation_policy_ref,
+      :trace_ref,
+      :idempotency_key
+    ]
+    defstruct [
+      :handoff_ref,
+      :provider,
+      :runtime_auth_mode,
+      :tenant_ref,
+      :installation_ref,
+      :execution_context_ref,
+      :connector_instance_ref,
+      :connector_binding_ref,
+      :provider_account_ref,
+      :provider_account_status,
+      :credential_handle_ref,
+      :credential_lease_ref,
+      :native_auth_assertion_ref,
+      :target_ref,
+      :operation_policy_ref,
+      :authority_ref,
+      :authority_decision_ref,
+      :trace_ref,
+      :idempotency_key,
+      redacted?: true
+    ]
+
+    @type t :: %__MODULE__{
+            handoff_ref: String.t(),
+            provider: atom(),
+            runtime_auth_mode: ASM.RuntimeAuth.mode(),
+            tenant_ref: String.t(),
+            installation_ref: String.t(),
+            execution_context_ref: String.t(),
+            connector_instance_ref: String.t(),
+            connector_binding_ref: String.t(),
+            provider_account_ref: String.t(),
+            provider_account_status: atom() | nil,
+            credential_handle_ref: String.t(),
+            credential_lease_ref: String.t(),
+            native_auth_assertion_ref: String.t(),
+            target_ref: String.t(),
+            operation_policy_ref: String.t(),
+            authority_ref: String.t() | nil,
+            authority_decision_ref: String.t() | nil,
+            trace_ref: String.t(),
+            idempotency_key: String.t(),
+            redacted?: true
+          }
+  end
+
+  @handoff_required_refs [
+    :handoff_ref,
+    :tenant_ref,
+    :installation_ref,
+    :execution_context_ref,
+    :connector_instance_ref,
+    :connector_binding_ref,
+    :provider_account_ref,
+    :credential_handle_ref,
+    :credential_lease_ref,
+    :native_auth_assertion_ref,
+    :target_ref,
+    :operation_policy_ref,
+    :trace_ref,
+    :idempotency_key
+  ]
+
+  @handoff_forbidden_keys [
+    :access_token,
+    :api_key,
+    :auth_root,
+    :auth_token,
+    :authorization_header,
+    :command,
+    :config_root,
+    :cwd,
+    :env,
+    :headers,
+    :oauth_token,
+    :provider_payload,
+    :raw_secret,
+    :raw_token,
+    :target_credentials,
+    :token,
+    :token_file
+  ]
 
   defmodule ProviderAccountIdentity do
     @moduledoc """
@@ -346,6 +461,7 @@ defmodule ASM.RuntimeAuth do
           installation_ref: runtime_auth.execution_context.installation_ref,
           authority_ref: runtime_auth.connector_binding.authority_ref,
           authority_decision_ref: runtime_auth.connector_binding.authority_decision_ref,
+          credential_handle_ref: runtime_auth.connector_binding.credential_handle_ref,
           credential_lease_ref: runtime_auth.connector_binding.credential_lease_ref,
           native_auth_assertion_ref: runtime_auth.connector_binding.native_auth_assertion_ref
         ]
@@ -373,6 +489,11 @@ defmodule ASM.RuntimeAuth do
       provider_account_ref: runtime_auth.provider_account_identity.ref,
       target_ref: runtime_auth.connector_binding.target_ref,
       operation_policy_ref: runtime_auth.connector_binding.operation_policy_ref,
+      credential_handle_ref: runtime_auth.connector_binding.credential_handle_ref,
+      credential_lease_ref: runtime_auth.connector_binding.credential_lease_ref,
+      native_auth_assertion_ref: runtime_auth.connector_binding.native_auth_assertion_ref,
+      authority_ref: runtime_auth.connector_binding.authority_ref,
+      authority_decision_ref: runtime_auth.connector_binding.authority_decision_ref,
       provider_auth_backend: runtime_auth.provider_auth_backend,
       connector_invocation_evidence: runtime_auth.connector_invocation_evidence,
       governed_authority: governed_authority?(runtime_auth)
@@ -390,6 +511,140 @@ defmodule ASM.RuntimeAuth do
       provider_auth_backend: runtime_auth.provider_auth_backend,
       connector_invocation_evidence: runtime_auth.connector_invocation_evidence
     }
+  end
+
+  @spec handoff_packet(t(), keyword()) :: {:ok, HandoffPacket.t()} | {:error, Error.t()}
+  def handoff_packet(%__MODULE__{} = runtime_auth, opts \\ []) when is_list(opts) do
+    attrs = %{
+      handoff_ref:
+        string_option(
+          opts,
+          :handoff_ref,
+          "asm-handoff://#{safe_ref_part(runtime_auth.execution_context.session_id)}"
+        ),
+      provider: runtime_auth.execution_context.provider,
+      runtime_auth_mode: runtime_auth.mode,
+      tenant_ref: runtime_auth.execution_context.tenant_ref || optional_string(opts, :tenant_ref),
+      installation_ref:
+        runtime_auth.execution_context.installation_ref ||
+          optional_string(opts, :installation_ref),
+      execution_context_ref: runtime_auth.execution_context.ref,
+      connector_instance_ref: runtime_auth.connector_instance.ref,
+      connector_binding_ref: runtime_auth.connector_binding.ref,
+      provider_account_ref: runtime_auth.provider_account_identity.ref,
+      provider_account_status: runtime_auth.provider_account_identity.identity_status,
+      credential_handle_ref:
+        runtime_auth.connector_binding.credential_handle_ref ||
+          optional_string(opts, :credential_handle_ref),
+      credential_lease_ref: runtime_auth.connector_binding.credential_lease_ref,
+      native_auth_assertion_ref: runtime_auth.connector_binding.native_auth_assertion_ref,
+      target_ref: runtime_auth.connector_binding.target_ref,
+      operation_policy_ref: runtime_auth.connector_binding.operation_policy_ref,
+      authority_ref: runtime_auth.connector_binding.authority_ref,
+      authority_decision_ref: runtime_auth.connector_binding.authority_decision_ref,
+      trace_ref: optional_string(opts, :trace_ref),
+      idempotency_key: optional_string(opts, :idempotency_key)
+    }
+
+    missing = missing_handoff_refs(attrs)
+
+    cond do
+      runtime_auth.provider_account_identity.identity_status in [:revoked, :rotated, :unavailable] ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :config,
+           "ASM handoff rejects revoked, rotated, or unavailable provider account authority",
+           provider: runtime_auth.execution_context.provider,
+           cause: %{
+             provider_account_ref: runtime_auth.provider_account_identity.ref,
+             provider_account_status: runtime_auth.provider_account_identity.identity_status
+           }
+         )}
+
+      missing != [] ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :config,
+           "ASM handoff requires tenant, installation, connector, provider account, credential, target, operation, trace, and idempotency refs",
+           provider: runtime_auth.execution_context.provider,
+           cause: %{missing_refs: missing}
+         )}
+
+      not governed_authority?(runtime_auth) ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :config,
+           "ASM governed handoff requires governed runtime authority before transfer",
+           provider: runtime_auth.execution_context.provider,
+           cause: governed_validation_cause(runtime_auth)
+         )}
+
+      true ->
+        {:ok, struct!(HandoffPacket, attrs)}
+    end
+  end
+
+  @spec accept_handoff(HandoffPacket.t() | map(), keyword()) :: {:ok, map()} | {:error, Error.t()}
+  def accept_handoff(packet, opts \\ []) when is_list(opts) do
+    packet = normalize_handoff_packet(packet)
+    forbidden = Enum.filter(@handoff_forbidden_keys, &Keyword.has_key?(opts, &1))
+    missing = missing_handoff_refs(packet)
+    mismatches = expected_handoff_mismatches(packet, opts)
+
+    cond do
+      forbidden != [] ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :config,
+           "ASM handoff accepts only refs and rejects raw provider, command, env, and target material",
+           provider: Map.get(packet, :provider),
+           cause: %{keys: forbidden}
+         )}
+
+      missing != [] ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :config,
+           "ASM handoff acceptance requires complete preserved refs",
+           provider: Map.get(packet, :provider),
+           cause: %{missing_refs: missing}
+         )}
+
+      Map.get(packet, :provider_account_status) in [:revoked, :rotated, :unavailable] ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :config,
+           "ASM handoff acceptance rejects revoked, rotated, or unavailable provider account authority",
+           provider: Map.get(packet, :provider),
+           cause: %{
+             provider_account_ref: Map.get(packet, :provider_account_ref),
+             provider_account_status: Map.get(packet, :provider_account_status)
+           }
+         )}
+
+      mismatches != [] ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :config,
+           "ASM handoff acceptance rejects stale or mismatched preserved refs",
+           provider: Map.get(packet, :provider),
+           cause: %{mismatches: mismatches}
+         )}
+
+      true ->
+        {:ok,
+         packet
+         |> Map.take(@handoff_required_refs ++ [:authority_ref, :authority_decision_ref])
+         |> Map.put(:handoff_status, :accepted)
+         |> Map.put(:redacted?, true)}
+    end
   end
 
   @spec governed_authority?(t() | map() | term()) :: boolean()
@@ -471,6 +726,7 @@ defmodule ASM.RuntimeAuth do
       source: map_value(context, :source),
       authority_ref: first_present_map_value(sources, :authority_ref),
       authority_decision_ref: first_present_map_value(sources, :authority_decision_ref),
+      credential_handle_ref: first_present_map_value(sources, :credential_handle_ref),
       credential_lease_ref: first_present_map_value(sources, :credential_lease_ref),
       native_auth_assertion_ref: first_present_map_value(sources, :native_auth_assertion_ref),
       connector_instance_ref: first_present_map_value(sources, :connector_instance_ref),
@@ -735,6 +991,7 @@ defmodule ASM.RuntimeAuth do
       operation_policy_ref: optional_string(opts, :operation_policy_ref),
       authority_ref: optional_string(opts, :authority_ref),
       authority_decision_ref: optional_string(opts, :authority_decision_ref),
+      credential_handle_ref: optional_string(opts, :credential_handle_ref),
       credential_lease_ref: optional_string(opts, :credential_lease_ref),
       native_auth_assertion_ref: optional_string(opts, :native_auth_assertion_ref)
     }
@@ -858,6 +1115,7 @@ defmodule ASM.RuntimeAuth do
       execution_context_source: runtime_auth.execution_context.source,
       authority_ref: binding.authority_ref,
       authority_decision_ref: binding.authority_decision_ref,
+      credential_handle_ref: binding.credential_handle_ref,
       credential_lease_ref: binding.credential_lease_ref,
       native_auth_assertion_ref: binding.native_auth_assertion_ref,
       connector_instance_ref: binding.connector_instance_ref,
@@ -924,6 +1182,57 @@ defmodule ASM.RuntimeAuth do
       _other -> nil
     end
   end
+
+  defp missing_handoff_refs(attrs) do
+    Enum.reject(@handoff_required_refs, &present?(Map.get(attrs, &1)))
+  end
+
+  defp normalize_handoff_packet(%HandoffPacket{} = packet), do: Map.from_struct(packet)
+  defp normalize_handoff_packet(packet) when is_map(packet), do: normalize_string_keys(packet)
+
+  defp normalize_handoff_packet(other) do
+    %{invalid_packet: other}
+  end
+
+  defp normalize_string_keys(map) do
+    Map.new(map, fn
+      {key, value} when is_binary(key) -> {handoff_key(key), value}
+      {key, value} -> {key, value}
+    end)
+  end
+
+  defp handoff_key(key) do
+    Enum.find(
+      @handoff_required_refs ++ [:authority_ref, :authority_decision_ref],
+      key,
+      fn field ->
+        Atom.to_string(field) == key
+      end
+    )
+  end
+
+  defp expected_handoff_mismatches(packet, opts) do
+    opts
+    |> Keyword.get(:expected_refs, %{})
+    |> normalize_expected_refs()
+    |> Enum.reduce([], fn {field, expected}, mismatches ->
+      actual = Map.get(packet, field)
+
+      if present?(expected) and present?(actual) and expected != actual do
+        mismatches ++ [{field, %{expected: expected, actual: actual}}]
+      else
+        mismatches
+      end
+    end)
+  end
+
+  defp normalize_expected_refs(expected) when is_list(expected),
+    do: expected |> Map.new() |> normalize_expected_refs()
+
+  defp normalize_expected_refs(expected) when is_map(expected),
+    do: normalize_string_keys(expected)
+
+  defp normalize_expected_refs(_expected), do: %{}
 
   defp safe_ref_part(value) when is_atom(value), do: value |> Atom.to_string() |> safe_ref_part()
 

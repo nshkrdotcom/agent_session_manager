@@ -485,6 +485,13 @@ command overrides, cwd overrides, session refs, target refs, or raw env maps as
 governed authority. Those values remain standalone/example compatibility knobs
 only.
 
+Phase 14 governed handoff uses `ASM.RuntimeAuth.handoff_packet/2` and
+`ASM.RuntimeAuth.accept_handoff/2`. The packet is ref-only and preserves
+tenant, installation, authority, connector, provider account, credential
+handle, credential lease, native-auth assertion, target, operation, trace, and
+idempotency refs. Acceptance rejects revoked, rotated, unavailable, stale, or
+raw-material handoffs before provider materialization.
+
 ASM intentionally stops at this normalized backend boundary. Rich
 provider-native control families such as Claude hooks/permission callbacks and
 Codex app-server remain in the provider SDK repos and stay out of ASM's core

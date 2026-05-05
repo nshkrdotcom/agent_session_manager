@@ -189,6 +189,106 @@ defmodule ASM.RuntimeAuthTest do
     assert ASM.RuntimeAuth.governed_authority?(ASM.RuntimeAuth.to_metadata(runtime_auth))
   end
 
+  test "governed handoff preserves refs and rejects stale or raw material acceptance" do
+    assert {:ok, runtime_auth} =
+             ASM.RuntimeAuth.new("runtime-auth-handoff-" <> unique_suffix(), :codex,
+               runtime_auth_mode: :governed,
+               runtime_auth_scope: :governed,
+               tenant_ref: "tenant://handoff/tenant-1",
+               installation_ref: "installation://handoff/tenant-1/app-1",
+               execution_context_ref: "asm-execution-context://governed/handoff",
+               connector_instance_ref: "jido-connector-instance://codex/handoff",
+               connector_binding_ref: "jido-connector-binding://codex/handoff",
+               provider_account_ref: "provider-account://codex/handoff",
+               provider_account_status: :known,
+               authority_ref: "citadel-authority://decision/handoff",
+               credential_handle_ref: "credential-handle://codex/handoff",
+               credential_lease_ref: "jido-credential-lease://lease/handoff",
+               native_auth_assertion_ref: "codex-native-auth://assertion/handoff",
+               target_ref: "execution-target://codex/handoff",
+               operation_policy_ref: "operation-policy://codex/handoff"
+             )
+
+    assert {:ok, packet} =
+             ASM.RuntimeAuth.handoff_packet(runtime_auth,
+               handoff_ref: "asm-handoff://codex/handoff",
+               trace_ref: "trace://codex/handoff",
+               idempotency_key: "handoff-idempotency-1"
+             )
+
+    assert packet.tenant_ref == "tenant://handoff/tenant-1"
+    assert packet.installation_ref == "installation://handoff/tenant-1/app-1"
+    assert packet.connector_instance_ref == "jido-connector-instance://codex/handoff"
+    assert packet.connector_binding_ref == "jido-connector-binding://codex/handoff"
+    assert packet.provider_account_ref == "provider-account://codex/handoff"
+    assert packet.credential_handle_ref == "credential-handle://codex/handoff"
+    assert packet.credential_lease_ref == "jido-credential-lease://lease/handoff"
+    assert packet.native_auth_assertion_ref == "codex-native-auth://assertion/handoff"
+    assert packet.target_ref == "execution-target://codex/handoff"
+    assert packet.operation_policy_ref == "operation-policy://codex/handoff"
+    assert packet.trace_ref == "trace://codex/handoff"
+    assert packet.idempotency_key == "handoff-idempotency-1"
+    refute inspect(packet) =~ "Bearer"
+
+    assert {:ok, accepted} =
+             ASM.RuntimeAuth.accept_handoff(packet,
+               expected_refs: %{
+                 tenant_ref: "tenant://handoff/tenant-1",
+                 target_ref: "execution-target://codex/handoff",
+                 idempotency_key: "handoff-idempotency-1"
+               }
+             )
+
+    assert accepted.handoff_status == :accepted
+    assert accepted.redacted?
+
+    assert {:error, mismatch_error} =
+             ASM.RuntimeAuth.accept_handoff(packet,
+               expected_refs: %{target_ref: "execution-target://codex/other"}
+             )
+
+    assert mismatch_error.kind == :config_invalid
+    assert mismatch_error.cause.mismatches != []
+
+    assert {:error, raw_error} =
+             ASM.RuntimeAuth.accept_handoff(packet, raw_token: "should-not-transfer")
+
+    assert raw_error.kind == :config_invalid
+    assert :raw_token in raw_error.cause.keys
+  end
+
+  test "governed handoff rejects revoked or rotated provider-account authority" do
+    for status <- [:revoked, :rotated] do
+      assert {:ok, runtime_auth} =
+               ASM.RuntimeAuth.new("runtime-auth-handoff-#{status}-" <> unique_suffix(), :claude,
+                 runtime_auth_mode: :governed,
+                 runtime_auth_scope: :governed,
+                 tenant_ref: "tenant://handoff/#{status}",
+                 installation_ref: "installation://handoff/#{status}",
+                 execution_context_ref: "asm-execution-context://governed/#{status}",
+                 connector_instance_ref: "jido-connector-instance://claude/#{status}",
+                 connector_binding_ref: "jido-connector-binding://claude/#{status}",
+                 provider_account_ref: "provider-account://claude/#{status}",
+                 provider_account_status: status,
+                 authority_ref: "citadel-authority://decision/#{status}",
+                 credential_handle_ref: "credential-handle://claude/#{status}",
+                 credential_lease_ref: "jido-credential-lease://lease/#{status}",
+                 native_auth_assertion_ref: "native-auth://assertion/#{status}",
+                 target_ref: "execution-target://claude/#{status}",
+                 operation_policy_ref: "operation-policy://claude/#{status}"
+               )
+
+      assert {:error, error} =
+               ASM.RuntimeAuth.handoff_packet(runtime_auth,
+                 trace_ref: "trace://claude/#{status}",
+                 idempotency_key: "handoff-idempotency-#{status}"
+               )
+
+      assert error.kind == :config_invalid
+      assert error.cause.provider_account_status == status
+    end
+  end
+
   test "governed runtime auth requires target and operation policy refs" do
     assert {:error, target_error} =
              ASM.RuntimeAuth.new("runtime-auth-governed-no-target-" <> unique_suffix(), :claude,

@@ -12,6 +12,22 @@ defmodule ASM.InferenceEndpoint do
   alias ASM.InferenceEndpoint.Server
   alias ASM.Provider
 
+  @authority_ref_key_by_name %{
+    "attach_grant_ref" => :attach_grant_ref,
+    "authority_decision_ref" => :authority_decision_ref,
+    "authority_ref" => :authority_ref,
+    "caller_trace_ref" => :caller_trace_ref,
+    "credential_lease_ref" => :credential_lease_ref,
+    "endpoint_ref" => :endpoint_ref,
+    "execution_context_ref" => :execution_context_ref,
+    "model_account_ref" => :model_account_ref,
+    "native_auth_assertion_ref" => :native_auth_assertion_ref,
+    "operation_policy_ref" => :operation_policy_ref,
+    "provider_account_ref" => :provider_account_ref,
+    "target_posture_ref" => :target_posture_ref,
+    "target_ref" => :target_ref
+  }
+
   @type ensure_result ::
           {:ok, EndpointDescriptor.t(), CompatibilityResult.t()}
           | {:error, {:incompatible, CompatibilityResult.t()}}
@@ -54,7 +70,8 @@ defmodule ASM.InferenceEndpoint do
              publication,
              backend_manifest,
              context,
-             base_url_root
+             base_url_root,
+             authority_refs(request, context)
            ),
          :ok <- LeaseStore.put(lease),
          endpoint <- endpoint_descriptor(lease) do
@@ -190,7 +207,8 @@ defmodule ASM.InferenceEndpoint do
          publication,
          backend_manifest,
          context,
-         base_url_root
+         base_url_root,
+         authority_refs
        ) do
     lease_ref = "lease_" <> ASM.Event.generate_id()
     endpoint_id = "endpoint_" <> ASM.Event.generate_id()
@@ -210,6 +228,7 @@ defmodule ASM.InferenceEndpoint do
       base_url: endpoint_base_url,
       health_ref: health_ref,
       source_runtime_ref: lease_ref,
+      authority_refs: authority_refs,
       endpoint_capabilities: %{
         streaming?: publication.cli_streaming_v1,
         tool_calling?: false
@@ -236,10 +255,42 @@ defmodule ASM.InferenceEndpoint do
       capabilities: lease.endpoint_capabilities,
       metadata: %{
         publication: lease.publication,
-        backend_manifest: Map.from_struct(lease.backend_manifest)
+        backend_manifest: Map.from_struct(lease.backend_manifest),
+        authority_refs: lease.authority_refs
       }
     )
   end
+
+  defp authority_refs(request, context) do
+    context
+    |> value(:authority_refs, %{})
+    |> normalize_ref_map()
+    |> Map.merge(request |> value(:authority_refs, %{}) |> normalize_ref_map())
+  end
+
+  defp normalize_ref_map(refs) when is_map(refs) do
+    refs
+    |> Enum.reduce(%{}, fn {key, value}, acc ->
+      normalized_key = normalize_ref_key(key)
+
+      if is_atom(normalized_key) and present_ref_value?(value) do
+        Map.put(acc, normalized_key, value)
+      else
+        acc
+      end
+    end)
+  end
+
+  defp normalize_ref_map(_refs), do: %{}
+
+  defp normalize_ref_key(key) when is_atom(key), do: key
+
+  defp normalize_ref_key(key) when is_binary(key), do: Map.get(@authority_ref_key_by_name, key)
+
+  defp normalize_ref_key(_key), do: nil
+
+  defp present_ref_value?(value) when is_binary(value), do: String.trim(value) != ""
+  defp present_ref_value?(_value), do: false
 
   defp normalize_map(%_{} = value), do: value |> Map.from_struct() |> Map.new()
   defp normalize_map(%{} = value), do: Map.new(value)

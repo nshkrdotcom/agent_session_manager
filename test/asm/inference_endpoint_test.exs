@@ -95,6 +95,39 @@ defmodule ASM.InferenceEndpointTest do
   end
 
   @tag skip: not @socket_capable? and "requires a socket-capable environment"
+  test "ensure_endpoint/3 carries governed inference authority refs in endpoint metadata" do
+    authority_refs = %{
+      authority_ref: "authority://inference/asm",
+      execution_context_ref: "execution-context://inference/asm",
+      provider_account_ref: "provider-account://gemini/governed",
+      credential_lease_ref: "credential-lease://gemini/governed",
+      native_auth_assertion_ref: "native-auth://gemini/governed",
+      target_ref: "target://inference/asm",
+      attach_grant_ref: "attach-grant://inference/asm",
+      operation_policy_ref: "operation-policy://inference/asm"
+    }
+
+    assert {:ok, endpoint, _compatibility} =
+             InferenceEndpoint.ensure_endpoint(
+               request(:gemini, "gemini-3.1-flash-lite-preview", authority_refs: authority_refs),
+               compatible_consumer_manifest(),
+               context(authority_refs: %{caller_trace_ref: "trace://inference/asm"})
+             )
+
+    assert endpoint.metadata.authority_refs.authority_ref == "authority://inference/asm"
+
+    assert endpoint.metadata.authority_refs.execution_context_ref ==
+             "execution-context://inference/asm"
+
+    assert endpoint.metadata.authority_refs.provider_account_ref ==
+             "provider-account://gemini/governed"
+
+    assert endpoint.metadata.authority_refs.attach_grant_ref == "attach-grant://inference/asm"
+    assert endpoint.metadata.authority_refs.caller_trace_ref == "trace://inference/asm"
+    refute inspect(endpoint.metadata.authority_refs) =~ "Bearer"
+  end
+
+  @tag skip: not @socket_capable? and "requires a socket-capable environment"
   test "the loopback route serves non-streaming OpenAI-compatible completions" do
     configure_fake_backend("ASM completion endpoint OK")
 

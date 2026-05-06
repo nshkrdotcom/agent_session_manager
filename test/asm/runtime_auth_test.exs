@@ -216,6 +216,7 @@ defmodule ASM.RuntimeAuthTest do
                idempotency_key: "handoff-idempotency-1",
                prompt_ref: "prompt://tenant-1/active",
                guard_chain_ref: "guard-chain://tenant-1/active",
+               replay_mode: :exact,
                memory_scope_refs: ["memory-scope://tenant-1/run-1"],
                context_budget_refs: ["context-budget://tenant-1/run-1"]
              )
@@ -234,6 +235,7 @@ defmodule ASM.RuntimeAuthTest do
     assert packet.idempotency_key == "handoff-idempotency-1"
     assert packet.prompt_ref == "prompt://tenant-1/active"
     assert packet.guard_chain_ref == "guard-chain://tenant-1/active"
+    assert packet.replay_mode == :exact
     assert packet.memory_scope_refs == ["memory-scope://tenant-1/run-1"]
     assert packet.context_budget_refs == ["context-budget://tenant-1/run-1"]
     refute String.contains?(inspect(packet), "Bearer")
@@ -246,6 +248,7 @@ defmodule ASM.RuntimeAuthTest do
                  idempotency_key: "handoff-idempotency-1",
                  prompt_ref: "prompt://tenant-1/active",
                  guard_chain_ref: "guard-chain://tenant-1/active",
+                 replay_mode: :exact,
                  memory_scope_refs: ["memory-scope://tenant-1/run-1"],
                  context_budget_refs: ["context-budget://tenant-1/run-1"]
                }
@@ -255,6 +258,7 @@ defmodule ASM.RuntimeAuthTest do
     assert accepted.redacted?
     assert accepted.prompt_ref == "prompt://tenant-1/active"
     assert accepted.guard_chain_ref == "guard-chain://tenant-1/active"
+    assert accepted.replay_mode == :exact
     assert accepted.memory_scope_refs == ["memory-scope://tenant-1/run-1"]
     assert accepted.context_budget_refs == ["context-budget://tenant-1/run-1"]
 
@@ -281,6 +285,14 @@ defmodule ASM.RuntimeAuthTest do
 
     assert guard_mismatch_error.kind == :config_invalid
     assert guard_mismatch_error.cause.mismatches != []
+
+    assert {:error, replay_mismatch_error} =
+             ASM.RuntimeAuth.accept_handoff(packet,
+               expected_refs: %{replay_mode: :guard_variant}
+             )
+
+    assert replay_mismatch_error.kind == :config_invalid
+    assert replay_mismatch_error.cause.mismatches != []
 
     assert {:error, raw_error} =
              ASM.RuntimeAuth.accept_handoff(packet, raw_token: "should-not-transfer")
@@ -319,6 +331,39 @@ defmodule ASM.RuntimeAuthTest do
       assert error.kind == :config_invalid
       assert error.cause.provider_account_status == status
     end
+  end
+
+  test "governed handoff rejects unknown replay mode" do
+    assert {:ok, runtime_auth} =
+             ASM.RuntimeAuth.new("runtime-auth-handoff-replay-" <> unique_suffix(), :codex,
+               runtime_auth_mode: :governed,
+               runtime_auth_scope: :governed,
+               tenant_ref: "tenant://handoff/replay",
+               installation_ref: "installation://handoff/replay",
+               execution_context_ref: "asm-execution-context://governed/replay",
+               connector_instance_ref: "jido-connector-instance://codex/replay",
+               connector_binding_ref: "jido-connector-binding://codex/replay",
+               provider_account_ref: "provider-account://codex/replay",
+               provider_account_status: :known,
+               authority_ref: "citadel-authority://decision/replay",
+               credential_handle_ref: "credential-handle://codex/replay",
+               credential_lease_ref: "jido-credential-lease://lease/replay",
+               native_auth_assertion_ref: "codex-native-auth://assertion/replay",
+               target_ref: "execution-target://codex/replay",
+               operation_policy_ref: "operation-policy://codex/replay"
+             )
+
+    assert {:error, error} =
+             ASM.RuntimeAuth.handoff_packet(runtime_auth,
+               trace_ref: "trace://codex/replay",
+               idempotency_key: "handoff-idempotency-replay",
+               prompt_ref: "prompt://tenant-1/active",
+               guard_chain_ref: "guard-chain://tenant-1/active",
+               replay_mode: :free_form
+             )
+
+    assert error.kind == :config_invalid
+    assert error.cause.replay_mode == :invalid_replay_mode
   end
 
   test "governed runtime auth requires target and operation policy refs" do

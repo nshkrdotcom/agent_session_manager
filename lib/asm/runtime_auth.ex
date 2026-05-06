@@ -132,7 +132,8 @@ defmodule ASM.RuntimeAuth do
     :credential_lease_ref,
     :native_auth_assertion_ref,
     :prompt_ref,
-    :guard_chain_ref
+    :guard_chain_ref,
+    :replay_mode
   ]
 
   @enforce_keys [
@@ -317,6 +318,7 @@ defmodule ASM.RuntimeAuth do
       :idempotency_key,
       :prompt_ref,
       :guard_chain_ref,
+      :replay_mode,
       :memory_scope_refs,
       :context_budget_refs,
       redacted?: true
@@ -344,6 +346,7 @@ defmodule ASM.RuntimeAuth do
             idempotency_key: String.t(),
             prompt_ref: String.t(),
             guard_chain_ref: String.t(),
+            replay_mode: atom() | nil,
             memory_scope_refs: [String.t()],
             context_budget_refs: [String.t()],
             redacted?: true
@@ -370,8 +373,18 @@ defmodule ASM.RuntimeAuth do
   ]
 
   @handoff_context_refs [
+    :replay_mode,
     :memory_scope_refs,
     :context_budget_refs
+  ]
+
+  @replay_modes [
+    :exact,
+    :prompt_variant,
+    :model_variant,
+    :policy_variant,
+    :guard_variant,
+    :memory_variant
   ]
 
   @handoff_forbidden_keys [
@@ -565,6 +578,7 @@ defmodule ASM.RuntimeAuth do
       idempotency_key: optional_string(opts, :idempotency_key),
       prompt_ref: optional_string(opts, :prompt_ref),
       guard_chain_ref: optional_string(opts, :guard_chain_ref),
+      replay_mode: replay_mode_option(opts),
       memory_scope_refs: ref_list_option(opts, :memory_scope_refs),
       context_budget_refs: ref_list_option(opts, :context_budget_refs)
     }
@@ -593,6 +607,16 @@ defmodule ASM.RuntimeAuth do
            "ASM handoff requires tenant, installation, connector, provider account, credential, target, operation, trace, and idempotency refs",
            provider: runtime_auth.execution_context.provider,
            cause: %{missing_refs: missing}
+         )}
+
+      invalid_replay_mode?(attrs) ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :config,
+           "ASM handoff replay_mode must use a bounded replay class",
+           provider: runtime_auth.execution_context.provider,
+           cause: %{replay_mode: attrs.replay_mode}
          )}
 
       not governed_authority?(runtime_auth) ->
@@ -659,6 +683,16 @@ defmodule ASM.RuntimeAuth do
            "ASM handoff acceptance rejects stale or mismatched preserved refs",
            provider: Map.get(packet, :provider),
            cause: %{mismatches: mismatches}
+         )}
+
+      invalid_replay_mode?(packet) ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :config,
+           "ASM handoff acceptance rejects unknown replay mode",
+           provider: Map.get(packet, :provider),
+           cause: %{replay_mode: Map.get(packet, :replay_mode)}
          )}
 
       true ->
@@ -1208,6 +1242,27 @@ defmodule ASM.RuntimeAuth do
       value when is_binary(value) and value != "" -> value
       _other -> nil
     end
+  end
+
+  defp replay_mode_option(opts) do
+    case Keyword.get(opts, :replay_mode) do
+      nil -> nil
+      replay_mode when replay_mode in @replay_modes -> replay_mode
+      replay_mode when is_binary(replay_mode) -> replay_mode_from_string(replay_mode)
+      _replay_mode -> :invalid_replay_mode
+    end
+  end
+
+  defp replay_mode_from_string(replay_mode) do
+    case Enum.find(@replay_modes, &(Atom.to_string(&1) == replay_mode)) do
+      nil -> :invalid_replay_mode
+      atom -> atom
+    end
+  end
+
+  defp invalid_replay_mode?(attrs) do
+    replay_mode = Map.get(attrs, :replay_mode)
+    not is_nil(replay_mode) and replay_mode not in @replay_modes
   end
 
   defp ref_list_option(opts, key) do

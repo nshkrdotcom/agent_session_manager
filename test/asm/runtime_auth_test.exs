@@ -121,7 +121,7 @@ defmodule ASM.RuntimeAuthTest do
 
     assert error.kind == :config_invalid
     assert error.domain == :config
-    assert error.message =~ "connector_instance_ref must be distinct"
+    assert String.contains?(error.message, "connector_instance_ref must be distinct")
   end
 
   test "standalone metadata cannot satisfy governed authority" do
@@ -150,7 +150,7 @@ defmodule ASM.RuntimeAuthTest do
              )
 
     assert error.kind == :config_invalid
-    assert error.message =~ "standalone runtime_auth cannot be upgraded"
+    assert String.contains?(error.message, "standalone runtime_auth cannot be upgraded")
   end
 
   test "governed runtime auth requires lease and native auth assertion evidence" do
@@ -166,7 +166,7 @@ defmodule ASM.RuntimeAuthTest do
              )
 
     assert error.kind == :config_invalid
-    assert error.message =~ "governed runtime_auth requires"
+    assert String.contains?(error.message, "governed runtime_auth requires")
   end
 
   test "complete governed runtime auth satisfies governed authority" do
@@ -214,6 +214,8 @@ defmodule ASM.RuntimeAuthTest do
                handoff_ref: "asm-handoff://codex/handoff",
                trace_ref: "trace://codex/handoff",
                idempotency_key: "handoff-idempotency-1",
+               prompt_ref: "prompt://tenant-1/active",
+               guard_chain_ref: "guard-chain://tenant-1/active",
                memory_scope_refs: ["memory-scope://tenant-1/run-1"],
                context_budget_refs: ["context-budget://tenant-1/run-1"]
              )
@@ -230,9 +232,11 @@ defmodule ASM.RuntimeAuthTest do
     assert packet.operation_policy_ref == "operation-policy://codex/handoff"
     assert packet.trace_ref == "trace://codex/handoff"
     assert packet.idempotency_key == "handoff-idempotency-1"
+    assert packet.prompt_ref == "prompt://tenant-1/active"
+    assert packet.guard_chain_ref == "guard-chain://tenant-1/active"
     assert packet.memory_scope_refs == ["memory-scope://tenant-1/run-1"]
     assert packet.context_budget_refs == ["context-budget://tenant-1/run-1"]
-    refute inspect(packet) =~ "Bearer"
+    refute String.contains?(inspect(packet), "Bearer")
 
     assert {:ok, accepted} =
              ASM.RuntimeAuth.accept_handoff(packet,
@@ -240,6 +244,8 @@ defmodule ASM.RuntimeAuthTest do
                  tenant_ref: "tenant://handoff/tenant-1",
                  target_ref: "execution-target://codex/handoff",
                  idempotency_key: "handoff-idempotency-1",
+                 prompt_ref: "prompt://tenant-1/active",
+                 guard_chain_ref: "guard-chain://tenant-1/active",
                  memory_scope_refs: ["memory-scope://tenant-1/run-1"],
                  context_budget_refs: ["context-budget://tenant-1/run-1"]
                }
@@ -247,6 +253,8 @@ defmodule ASM.RuntimeAuthTest do
 
     assert accepted.handoff_status == :accepted
     assert accepted.redacted?
+    assert accepted.prompt_ref == "prompt://tenant-1/active"
+    assert accepted.guard_chain_ref == "guard-chain://tenant-1/active"
     assert accepted.memory_scope_refs == ["memory-scope://tenant-1/run-1"]
     assert accepted.context_budget_refs == ["context-budget://tenant-1/run-1"]
 
@@ -265,6 +273,14 @@ defmodule ASM.RuntimeAuthTest do
 
     assert widened_scope_error.kind == :config_invalid
     assert widened_scope_error.cause.mismatches != []
+
+    assert {:error, guard_mismatch_error} =
+             ASM.RuntimeAuth.accept_handoff(packet,
+               expected_refs: %{guard_chain_ref: "guard-chain://tenant-1/other"}
+             )
+
+    assert guard_mismatch_error.kind == :config_invalid
+    assert guard_mismatch_error.cause.mismatches != []
 
     assert {:error, raw_error} =
              ASM.RuntimeAuth.accept_handoff(packet, raw_token: "should-not-transfer")
@@ -321,7 +337,7 @@ defmodule ASM.RuntimeAuthTest do
              )
 
     assert target_error.kind == :config_invalid
-    assert target_error.message =~ "target ref"
+    assert String.contains?(target_error.message, "target ref")
     assert is_nil(target_error.cause.target_ref)
 
     assert {:error, operation_error} =
@@ -341,7 +357,7 @@ defmodule ASM.RuntimeAuthTest do
              )
 
     assert operation_error.kind == :config_invalid
-    assert operation_error.message =~ "operation policy ref"
+    assert String.contains?(operation_error.message, "operation policy ref")
     assert is_nil(operation_error.cause.operation_policy_ref)
   end
 
@@ -372,7 +388,7 @@ defmodule ASM.RuntimeAuthTest do
              )
 
     assert error.kind == :config_invalid
-    assert error.message =~ "provider auth"
+    assert String.contains?(error.message, "provider auth")
     assert :singleton_client in error.cause.keys
     assert :default_client in error.cause.keys
   end
@@ -401,7 +417,7 @@ defmodule ASM.RuntimeAuthTest do
              )
 
     assert error.kind == :config_invalid
-    assert error.message =~ "governed codex runtime rejects"
+    assert String.contains?(error.message, "governed codex runtime rejects")
     assert error.cause.keys == [:env]
   end
 
@@ -436,7 +452,7 @@ defmodule ASM.RuntimeAuthTest do
              )
 
     assert error.kind == :config_invalid
-    assert error.message =~ "provider auth"
+    assert String.contains?(error.message, "provider auth")
     assert :token_file in error.cause.keys
     assert :oauth_token in error.cause.keys
     assert :authorization_header in error.cause.keys
@@ -457,7 +473,7 @@ defmodule ASM.RuntimeAuthTest do
              )
 
     assert status_error.kind == :config_invalid
-    assert status_error.message =~ "provider_account_status"
+    assert String.contains?(status_error.message, "provider_account_status")
 
     assert {:error, evidence_error} =
              ASM.RuntimeAuth.new("runtime-auth-raw-evidence-" <> unique_suffix(), :codex,
@@ -465,7 +481,7 @@ defmodule ASM.RuntimeAuthTest do
              )
 
     assert evidence_error.kind == :config_invalid
-    assert evidence_error.message =~ "provider_account_evidence"
+    assert String.contains?(evidence_error.message, "provider_account_evidence")
     assert evidence_error.cause.keys == [:raw_token]
   end
 
@@ -488,7 +504,7 @@ defmodule ASM.RuntimeAuthTest do
                  )
 
         assert error.kind == :config_invalid
-        assert error.message =~ "governed runtime_auth requires"
+        assert String.contains?(error.message, "governed runtime_auth requires")
         assert is_nil(Map.get(error.cause, :authority_ref))
         assert is_nil(Map.get(error.cause, :credential_lease_ref))
         assert is_nil(Map.get(error.cause, :native_auth_assertion_ref))

@@ -130,7 +130,9 @@ defmodule ASM.RuntimeAuth do
     :authority_decision_ref,
     :credential_handle_ref,
     :credential_lease_ref,
-    :native_auth_assertion_ref
+    :native_auth_assertion_ref,
+    :prompt_ref,
+    :guard_chain_ref
   ]
 
   @enforce_keys [
@@ -289,7 +291,9 @@ defmodule ASM.RuntimeAuth do
       :target_ref,
       :operation_policy_ref,
       :trace_ref,
-      :idempotency_key
+      :idempotency_key,
+      :prompt_ref,
+      :guard_chain_ref
     ]
     defstruct [
       :handoff_ref,
@@ -311,6 +315,8 @@ defmodule ASM.RuntimeAuth do
       :authority_decision_ref,
       :trace_ref,
       :idempotency_key,
+      :prompt_ref,
+      :guard_chain_ref,
       :memory_scope_refs,
       :context_budget_refs,
       redacted?: true
@@ -336,6 +342,8 @@ defmodule ASM.RuntimeAuth do
             authority_decision_ref: String.t() | nil,
             trace_ref: String.t(),
             idempotency_key: String.t(),
+            prompt_ref: String.t(),
+            guard_chain_ref: String.t(),
             memory_scope_refs: [String.t()],
             context_budget_refs: [String.t()],
             redacted?: true
@@ -356,7 +364,9 @@ defmodule ASM.RuntimeAuth do
     :target_ref,
     :operation_policy_ref,
     :trace_ref,
-    :idempotency_key
+    :idempotency_key,
+    :prompt_ref,
+    :guard_chain_ref
   ]
 
   @handoff_context_refs [
@@ -553,6 +563,8 @@ defmodule ASM.RuntimeAuth do
       authority_decision_ref: runtime_auth.connector_binding.authority_decision_ref,
       trace_ref: optional_string(opts, :trace_ref),
       idempotency_key: optional_string(opts, :idempotency_key),
+      prompt_ref: optional_string(opts, :prompt_ref),
+      guard_chain_ref: optional_string(opts, :guard_chain_ref),
       memory_scope_refs: ref_list_option(opts, :memory_scope_refs),
       context_budget_refs: ref_list_option(opts, :context_budget_refs)
     }

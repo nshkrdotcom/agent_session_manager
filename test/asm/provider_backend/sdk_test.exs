@@ -348,7 +348,7 @@ defmodule ASM.ProviderBackend.SDKTest do
     metadata = Keyword.fetch!(start_opts, :metadata)
     assert metadata[:codex_materialization].env_keys == ["CODEX_HOME"]
     assert metadata[:codex_materialization].command == :redacted_materialized_command
-    refute inspect(metadata[:codex_materialization]) =~ "/materialized/bin/codex"
+    refute String.contains?(inspect(metadata[:codex_materialization]), "/materialized/bin/codex")
   end
 
   test "codex sdk backend rejects governed provider auth option smuggling" do
@@ -369,7 +369,7 @@ defmodule ASM.ProviderBackend.SDKTest do
 
     assert {:error, error} = SDK.start_run(config)
     assert error.kind == :config_invalid
-    assert error.message =~ "governed Codex strict mode rejects"
+    assert String.contains?(error.message, "governed Codex strict mode rejects")
   end
 
   test "codex app-server backend applies governed materialized launch context" do
@@ -646,8 +646,8 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert {:error, error} = SDK.start_run(config)
     assert error.kind == :config_invalid
     assert error.domain == :config
-    assert error.message =~ "approval_posture"
-    assert error.message =~ ":none"
+    assert String.contains?(error.message, "approval_posture")
+    assert String.contains?(error.message, ":none")
   end
 
   test "non-codex governed sdk backends reject unmanaged ambient provider auth env" do
@@ -669,7 +669,12 @@ defmodule ASM.ProviderBackend.SDKTest do
 
         assert {:error, error} = SDK.start_run(config)
         assert error.kind == :config_invalid
-        assert error.message =~ "rejects unmanaged ambient provider auth environment"
+
+        assert String.contains?(
+                 error.message,
+                 "rejects unmanaged ambient provider auth environment"
+               )
+
         assert error.cause.env_keys == [env_key]
       end)
     end
@@ -692,7 +697,7 @@ defmodule ASM.ProviderBackend.SDKTest do
 
     assert {:error, error} = SDK.start_run(config)
     assert error.kind == :config_invalid
-    assert error.message =~ "rejects provider auth"
+    assert String.contains?(error.message, "rejects provider auth")
     assert :env in error.cause.keys
     assert :cli_path in error.cause.keys
   end
@@ -711,8 +716,8 @@ defmodule ASM.ProviderBackend.SDKTest do
 
       assert {:error, error} = SDK.start_run(config)
       assert error.kind == :config_invalid
-      assert error.message =~ "requires verified provider-auth materialization"
-      assert error.message =~ "standalone env"
+      assert String.contains?(error.message, "requires verified provider-auth materialization")
+      assert String.contains?(error.message, "standalone env")
     end)
   end
 

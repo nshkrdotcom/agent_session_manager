@@ -21,7 +21,7 @@ defmodule ASM.ProviderTest do
     support = Provider.example_support!(provider)
 
     assert support.cli_command == "amp"
-    assert support.install_hint =~ "@sourcegraph/amp"
+    assert String.contains?(support.install_hint, "@sourcegraph/amp")
   end
 
   test "resolve/1 accepts bounded provider strings and rejects unknown strings" do
@@ -30,7 +30,7 @@ defmodule ASM.ProviderTest do
 
     assert {:error, error} = Provider.resolve("unknown-provider")
     assert error.kind == :config_invalid
-    assert error.message =~ "Unknown provider"
+    assert String.contains?(error.message, "Unknown provider")
   end
 
   test "provider profiles use the schema-backed closed boundary" do
@@ -38,6 +38,6 @@ defmodule ASM.ProviderTest do
              Profile.new(max_concurrent_runs: 2, max_queued_runs: 4)
 
     assert {:error, error} = Profile.new(max_concurrent_runs: 1, future_flag: true)
-    assert error.message =~ "future_flag"
+    assert String.contains?(error.message, "future_flag")
   end
 end

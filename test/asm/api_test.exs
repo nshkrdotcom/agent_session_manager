@@ -128,7 +128,7 @@ defmodule ASM.APITest do
 
     assert error.kind == :tool_failed
     assert error.domain == :runtime
-    assert error.message =~ "nope"
+    assert String.contains?(error.message, "nope")
 
     assert :ok = ASM.stop_session(session)
   end
@@ -192,7 +192,7 @@ defmodule ASM.APITest do
 
     assert error.kind == :guardrail_blocked
     assert error.domain == :guardrail
-    assert error.message =~ "bash"
+    assert String.contains?(error.message, "bash")
   end
 
   test "health/1 and cost/1 reflect session process status" do

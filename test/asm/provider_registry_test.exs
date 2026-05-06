@@ -113,7 +113,7 @@ defmodule ASM.ProviderRegistryTest do
              ProviderRegistry.resolve(:codex, lane: :sdk, execution_mode: :remote_node)
 
     assert error.kind == :config_invalid
-    assert error.message =~ "sdk lane"
+    assert String.contains?(error.message, "sdk lane")
     assert %ASM.ProviderBackend.SdkUnavailableError{} = error.cause
     assert error.cause.provider == :codex
     assert error.cause.reason == :unsupported_execution_mode

@@ -57,7 +57,7 @@ defmodule ASM.Extensions.ProviderSDK.GeminiTest do
 
     assert error.kind == :config_invalid
     assert error.domain == :config
-    assert error.message =~ "native_overrides"
-    assert error.message =~ ":model"
+    assert String.contains?(error.message, "native_overrides")
+    assert String.contains?(error.message, ":model")
   end
 end

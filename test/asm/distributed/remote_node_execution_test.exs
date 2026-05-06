@@ -103,7 +103,7 @@ defmodule ASM.Distributed.RemoteNodeExecutionTest do
                ]
              )
 
-    assert error.message =~ "cookie_conflict"
+    assert String.contains?(error.message, "cookie_conflict")
     assert :ok = ASM.stop_session(session)
   end
 
@@ -217,7 +217,7 @@ defmodule ASM.Distributed.RemoteNodeExecutionTest do
              )
 
     assert error.kind == :config_invalid
-    assert error.message =~ "sdk lane"
+    assert String.contains?(error.message, "sdk lane")
     assert :ok = ASM.stop_session(session)
   end
 
@@ -281,12 +281,18 @@ defmodule ASM.Distributed.RemoteNodeExecutionTest do
   end
 
   defp codex_success_script(text) do
+    completed_event =
+      Jason.encode!(%{
+        type: "item.completed",
+        item: %{id: "item_1", type: "agent_message", text: text}
+      })
+
     """
     #!/usr/bin/env bash
     set -euo pipefail
     echo '{"type":"thread.started","thread_id":"thread-1"}'
     echo '{"type":"turn.started"}'
-    echo '{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"#{text}"}}'
+    echo '#{completed_event}'
     echo '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
     """
   end

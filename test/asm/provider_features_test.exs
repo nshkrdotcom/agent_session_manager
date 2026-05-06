@@ -128,14 +128,14 @@ defmodule ASM.ProviderFeaturesTest do
     assert {:error, error} = ProviderFeatures.require_capability(:amp, :sdk, :host_tools)
     assert error.kind == :config_invalid
     assert error.domain == :provider
-    assert error.message =~ ":amp"
-    assert error.message =~ ":sdk"
-    assert error.message =~ ":host_tools"
-    assert error.message =~ "unsupported"
+    assert String.contains?(error.message, ":amp")
+    assert String.contains?(error.message, ":sdk")
+    assert String.contains?(error.message, ":host_tools")
+    assert String.contains?(error.message, "unsupported")
 
     assert {:error, error} = ProviderFeatures.require_capability(:gemini, :sdk, :app_server)
-    assert error.message =~ ":gemini"
-    assert error.message =~ ":app_server"
+    assert String.contains?(error.message, ":gemini")
+    assert String.contains?(error.message, ":app_server")
   end
 
   test "ASM rejects normalized auto mode for Codex while preserving native feature discovery" do
@@ -144,7 +144,10 @@ defmodule ASM.ProviderFeaturesTest do
     assert {:error, error} =
              Options.validate([provider: :codex, permission_mode: :auto], schema)
 
-    assert error.message =~ "Permission mode :auto is not valid for provider :codex_exec"
+    assert String.contains?(
+             error.message,
+             "Permission mode :auto is not valid for provider :codex_exec"
+           )
 
     assert ProviderFeatures.permission_mode!(:codex, :yolo).cli_excerpt ==
              "--dangerously-bypass-approvals-and-sandbox"
@@ -207,7 +210,7 @@ defmodule ASM.ProviderFeaturesTest do
                schema
              )
 
-    assert error.message =~ "does not support the common Ollama surface"
+    assert String.contains?(error.message, "does not support the common Ollama surface")
   end
 
   test "ASM local provider-option schemas do not absorb foreign provider keys" do
@@ -248,7 +251,7 @@ defmodule ASM.ProviderFeaturesTest do
                output_schema: %{"type" => "object"}
              )
 
-    assert details.message =~ "output_schema"
+    assert String.contains?(details.message, "output_schema")
   end
 
   test "provider schemas allow system prompt only where the runtime surface supports it" do
@@ -306,7 +309,7 @@ defmodule ASM.ProviderFeaturesTest do
                amp_schema
              )
 
-    assert amp_error.message =~ "unknown options [:system_prompt]"
+    assert String.contains?(amp_error.message, "unknown options [:system_prompt]")
   end
 
   test "claude leaves max_turns unset by default and amp rejects it entirely" do
@@ -322,7 +325,7 @@ defmodule ASM.ProviderFeaturesTest do
     assert {:error, amp_error} =
              Options.validate([provider: :amp, model: "amp-1", max_turns: 2], amp_schema)
 
-    assert amp_error.message =~ "unknown options [:max_turns]"
+    assert String.contains?(amp_error.message, "unknown options [:max_turns]")
   end
 
   test "codex rejects conflicting model and ollama_model values" do
@@ -339,8 +342,8 @@ defmodule ASM.ProviderFeaturesTest do
                schema
              )
 
-    assert error.message =~ "conflicts with"
-    assert error.message =~ ":ollama_model"
+    assert String.contains?(error.message, "conflicts with")
+    assert String.contains?(error.message, ":ollama_model")
   end
 
   test "finalize_provider_opts rejects legacy transport-selector overrides" do
@@ -350,6 +353,9 @@ defmodule ASM.ProviderFeaturesTest do
                transport_module: LegacyTransportSelectorStub
              )
 
-    assert error.message =~ "no longer accepts legacy transport-selector overrides"
+    assert String.contains?(
+             error.message,
+             "no longer accepts legacy transport-selector overrides"
+           )
   end
 end

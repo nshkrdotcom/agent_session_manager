@@ -94,8 +94,8 @@ defmodule ASM.ProviderRuntimeProfileTest do
 
     assert error.kind == :config_invalid
     assert error.domain == :config
-    assert error.message =~ "sdk lane is unavailable"
-    assert error.message =~ "phase5prelim://asm/codex-no-sdk"
+    assert String.contains?(error.message, "sdk lane is unavailable")
+    assert String.contains?(error.message, "phase5prelim://asm/codex-no-sdk")
     assert %ASM.ProviderBackend.SdkUnavailableError{} = error.cause
     assert error.cause.provider == :codex
     assert error.cause.reason == :provider_runtime_profile
@@ -110,7 +110,7 @@ defmodule ASM.ProviderRuntimeProfileTest do
     assert error.kind == :config_invalid
     assert error.domain == :config
     assert error.provider == :claude
-    assert error.message =~ "provider runtime profile required"
+    assert String.contains?(error.message, "provider runtime profile required")
   end
 
   test "backend overrides cannot bypass an active runtime profile" do
@@ -130,8 +130,8 @@ defmodule ASM.ProviderRuntimeProfileTest do
 
     assert error.kind == :config_invalid
     assert error.domain == :config
-    assert error.message =~ "backend override"
-    assert error.message =~ "phase5prelim://asm/no-backend-override"
+    assert String.contains?(error.message, "backend override")
+    assert String.contains?(error.message, "phase5prelim://asm/no-backend-override")
   end
 
   defp provider_cases do

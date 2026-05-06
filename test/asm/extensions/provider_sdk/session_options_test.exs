@@ -60,7 +60,7 @@ defmodule ASM.Extensions.ProviderSDK.SessionOptionsTest do
              )
 
     assert error.kind == :config_invalid
-    assert error.message =~ "legacy execution-surface keys"
-    assert error.message =~ ":execution_surface"
+    assert String.contains?(error.message, "legacy execution-surface keys")
+    assert String.contains?(error.message, ":execution_surface")
   end
 end

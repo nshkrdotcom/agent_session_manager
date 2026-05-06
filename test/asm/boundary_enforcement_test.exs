@@ -53,6 +53,6 @@ defmodule ASM.BoundaryEnforcementTest do
 
   test "extension lifecycle stays outside core application child specs" do
     source = File.read!("lib/asm/application.ex")
-    refute source =~ "ASM.Extensions."
+    refute String.contains?(source, "ASM.Extensions.")
   end
 end

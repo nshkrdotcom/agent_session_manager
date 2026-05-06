@@ -34,7 +34,7 @@ defmodule ASM.RuntimeAuthCodexMaterializationTest do
     assert evidence.cwd == :redacted_materialized_cwd
     assert evidence.config_root == :redacted_materialized_config_root
     assert evidence.env_keys == ["CODEX_HOME"]
-    refute inspect(evidence) =~ "/materialized/bin/codex"
+    refute String.contains?(inspect(evidence), "/materialized/bin/codex")
   end
 
   test "governed Codex strict mode rejects provider option smuggling" do
@@ -57,7 +57,7 @@ defmodule ASM.RuntimeAuthCodexMaterializationTest do
                )
 
       assert error.kind == :config_invalid
-      assert error.message =~ "governed Codex strict mode rejects"
+      assert String.contains?(error.message, "governed Codex strict mode rejects")
     end
   end
 
@@ -82,7 +82,7 @@ defmodule ASM.RuntimeAuthCodexMaterializationTest do
                []
              )
 
-    assert transport_error.message =~ "materialized runtime override"
+    assert String.contains?(transport_error.message, "materialized runtime override")
 
     assert {:error, backend_error} =
              CodexMaterialization.authorize_config(
@@ -92,7 +92,7 @@ defmodule ASM.RuntimeAuthCodexMaterializationTest do
                []
              )
 
-    assert backend_error.message =~ "materialized runtime override"
+    assert String.contains?(backend_error.message, "materialized runtime override")
   end
 
   test "governed Codex strict mode rejects unmanaged ambient provider auth env" do
@@ -105,7 +105,7 @@ defmodule ASM.RuntimeAuthCodexMaterializationTest do
              )
 
     assert error.kind == :config_invalid
-    assert error.message =~ "unmanaged ambient provider auth"
+    assert String.contains?(error.message, "unmanaged ambient provider auth")
     assert error.cause.env_keys == ["CODEX_API_KEY"]
   end
 
@@ -120,7 +120,7 @@ defmodule ASM.RuntimeAuthCodexMaterializationTest do
              )
 
     assert error.kind == :config_invalid
-    assert error.message =~ "requires a materialized runtime"
+    assert String.contains?(error.message, "requires a materialized runtime")
   end
 
   test "standalone Codex compatibility does not require governed materialization" do

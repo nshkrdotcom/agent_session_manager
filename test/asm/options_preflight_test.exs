@@ -74,7 +74,7 @@ defmodule ASM.OptionsPreflightTest do
     assert error.key == :system_prompt
     assert error.provider == :gemini
     assert error.reason == :provider_native
-    assert error.migration =~ "provider SDK"
+    assert String.contains?(error.migration, "provider SDK")
   end
 
   test "strict common preflight keeps sandboxing on execution_surface, not provider flags" do
@@ -93,7 +93,7 @@ defmodule ASM.OptionsPreflightTest do
 
     assert error.key == :sandbox
     assert error.reason == :provider_native
-    assert error.migration =~ "provider SDK"
+    assert String.contains?(error.migration, "provider SDK")
   end
 
   test "strict common preflight rejects legacy permission and internal model payload keys" do
@@ -114,7 +114,7 @@ defmodule ASM.OptionsPreflightTest do
 
     assert error.key == :tools
     assert error.reason == :provider_native
-    assert error.migration =~ "provider SDK"
+    assert String.contains?(error.migration, "provider SDK")
   end
 
   test "strict common preflight rejects every host-tool admission key for every provider" do
@@ -130,7 +130,7 @@ defmodule ASM.OptionsPreflightTest do
       assert error.key == key
       assert error.provider == provider
       assert error.reason == :provider_native
-      assert error.migration =~ "provider SDK"
+      assert String.contains?(error.migration, "provider SDK")
     end
   end
 
@@ -181,7 +181,7 @@ defmodule ASM.OptionsPreflightTest do
 
     assert result.provider_native_legacy.env == %{"GEMINI_API_KEY" => "redacted"}
     assert [%Warning{key: :env, reason: :provider_native_env, message: message}] = result.warnings
-    assert message =~ "GEMINI_API_KEY"
+    assert String.contains?(message, "GEMINI_API_KEY")
   end
 
   test "strict common preflight rejects invalid lanes and unknown options" do

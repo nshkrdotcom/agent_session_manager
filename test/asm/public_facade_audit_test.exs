@@ -69,7 +69,7 @@ defmodule ASM.PublicFacadeAuditTest do
 
     assert error.kind == :config_invalid
     assert error.domain == :provider
-    assert error.message =~ "sdk runtime is unavailable"
+    assert String.contains?(error.message, "sdk runtime is unavailable")
   end
 
   test "partial session-control facades return stable errors for unknown runtime state" do

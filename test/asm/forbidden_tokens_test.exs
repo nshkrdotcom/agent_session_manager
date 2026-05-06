@@ -21,7 +21,7 @@ defmodule ASM.ForbiddenTokensTest do
         contents = File.read!(path)
 
         Enum.each(@forbidden_tokens, fn token ->
-          refute contents =~ token,
+          refute String.contains?(contents, token),
                  "unexpected forbidden token #{inspect(token)} in #{Path.relative_to(path, @project_root)}"
         end)
       end

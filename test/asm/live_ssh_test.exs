@@ -44,7 +44,7 @@ defmodule ASM.LiveSSHTest do
                stream_timeout_ms: 120_000
              )
 
-    assert result.text =~ "ASM_CORE_LIVE_SSH_OK"
+    assert String.contains?(result.text, "ASM_CORE_LIVE_SSH_OK")
     assert result.metadata.lane == :core
   end
 
@@ -58,7 +58,7 @@ defmodule ASM.LiveSSHTest do
                stream_timeout_ms: 120_000
              )
 
-    assert result.text =~ "ASM_SDK_LIVE_SSH_OK"
+    assert String.contains?(result.text, "ASM_SDK_LIVE_SSH_OK")
     assert result.metadata.lane == :sdk
   end
 
@@ -69,13 +69,14 @@ defmodule ASM.LiveSSHTest do
          ) do
       {:ok, result} ->
         assert result.metadata.lane == :sdk
-        assert result.text =~ "ASM_CLAUDE_LIVE_SSH_OK"
+        assert String.contains?(result.text, "ASM_CLAUDE_LIVE_SSH_OK")
 
       {:error, %Error{kind: :auth_error} = error} ->
-        assert error.message =~ "authentication" or error.message =~ "login"
+        assert String.contains?(error.message, "authentication") or
+                 String.contains?(error.message, "login")
 
       {:error, %Error{kind: :cli_not_found} = error} ->
-        assert error.message =~ "Claude CLI not found"
+        assert String.contains?(error.message, "Claude CLI not found")
     end
   end
 
@@ -87,10 +88,10 @@ defmodule ASM.LiveSSHTest do
         assert result.text != ""
 
       {:error, %Error{kind: :cli_not_found} = error} ->
-        assert error.message =~ "Gemini CLI not found"
+        assert String.contains?(error.message, "Gemini CLI not found")
 
       {:error, %Error{kind: :auth_error} = error} ->
-        assert error.message =~ "authentication"
+        assert String.contains?(error.message, "authentication")
     end
   end
 
@@ -102,10 +103,10 @@ defmodule ASM.LiveSSHTest do
         assert result.text != ""
 
       {:error, %Error{kind: :cli_not_found} = error} ->
-        assert error.message =~ "Amp CLI not found"
+        assert String.contains?(error.message, "Amp CLI not found")
 
       {:error, %Error{kind: :auth_error} = error} ->
-        assert error.message =~ "authentication"
+        assert String.contains?(error.message, "authentication")
     end
   end
 

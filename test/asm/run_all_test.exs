@@ -10,8 +10,12 @@ defmodule ASM.RunAllTest do
                stderr_to_stdout: true
              )
 
-    assert output =~ "run_all.sh only runs when you explicitly choose one or more providers"
-    assert output =~ "./examples/run_all.sh --provider claude"
+    assert String.contains?(
+             output,
+             "run_all.sh only runs when you explicitly choose one or more providers"
+           )
+
+    assert String.contains?(output, "./examples/run_all.sh --provider claude")
   end
 
   test "run_all.sh fans out providers and forwards extra flags" do
@@ -33,14 +37,20 @@ defmodule ASM.RunAllTest do
                stderr_to_stdout: true
              )
 
-    assert output =~ "== live_query.exs provider=codex =="
-    assert output =~ "== provider_codex_app_server.exs provider=codex =="
-    assert output =~ "== live_query.exs provider=amp =="
-    assert output =~ "== provider_amp_sdk_stream.exs provider=amp =="
-    assert output =~ "run --no-start examples/live_query.exs -- --provider codex --foo bar"
+    assert String.contains?(output, "== live_query.exs provider=codex ==")
+    assert String.contains?(output, "== provider_codex_app_server.exs provider=codex ==")
+    assert String.contains?(output, "== live_query.exs provider=amp ==")
+    assert String.contains?(output, "== provider_amp_sdk_stream.exs provider=amp ==")
 
-    assert output =~
+    assert String.contains?(
+             output,
+             "run --no-start examples/live_query.exs -- --provider codex --foo bar"
+           )
+
+    assert String.contains?(
+             output,
              "run --no-start examples/provider_amp_sdk_stream.exs -- --provider amp --foo bar"
+           )
   end
 
   test "run_all.sh rejects the common Ollama surface for unsupported providers" do
@@ -52,7 +62,7 @@ defmodule ASM.RunAllTest do
                stderr_to_stdout: true
              )
 
-    assert output =~ "provider amp does not support the ASM common Ollama surface"
-    assert output =~ "only valid for claude and codex"
+    assert String.contains?(output, "provider amp does not support the ASM common Ollama surface")
+    assert String.contains?(output, "only valid for claude and codex")
   end
 end

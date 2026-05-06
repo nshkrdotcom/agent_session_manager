@@ -87,7 +87,7 @@ defmodule ASM.Execution.ConfigTest do
     assert {:error, error} = Config.resolve([execution_mode: :somewhere], [])
     assert error.kind == :config_invalid
     assert error.domain == :config
-    assert error.message =~ "execution_mode"
+    assert String.contains?(error.message, "execution_mode")
   end
 
   test "resolve/2 preserves non-empty allowed_tools and explicit approval_posture :none" do
@@ -159,7 +159,7 @@ defmodule ASM.Execution.ConfigTest do
              )
 
     assert error.kind == :config_invalid
-    assert error.message =~ "remote_cookie"
+    assert String.contains?(error.message, "remote_cookie")
   end
 
   test "resolve/2 rejects legacy execution-surface keys" do
@@ -167,7 +167,7 @@ defmodule ASM.Execution.ConfigTest do
              Config.resolve([surface_kind: :ssh_exec], [])
 
     assert error.kind == :config_invalid
-    assert error.message =~ "legacy execution-surface keys"
-    assert error.message =~ ":execution_surface"
+    assert String.contains?(error.message, "legacy execution-surface keys")
+    assert String.contains?(error.message, ":execution_surface")
   end
 end

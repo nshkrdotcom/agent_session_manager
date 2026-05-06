@@ -195,7 +195,11 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
     assert is_binary(request_id)
     assert :ok = Client.await_initialized(client, 1_000)
     assert FakeSSH.wait_until_written(fake_ssh, 1_000) == :ok
-    assert FakeSSH.read_manifest!(fake_ssh) =~ "destination=claude.extension.example"
+
+    assert String.contains?(
+             FakeSSH.read_manifest!(fake_ssh),
+             "destination=claude.extension.example"
+           )
   end
 
   test "sdk_options/2 rejects non-Claude providers" do
@@ -214,8 +218,8 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
 
     assert error.kind == :config_invalid
     assert error.domain == :config
-    assert error.message =~ "native_overrides"
-    assert error.message =~ ":permission_mode"
+    assert String.contains?(error.message, "native_overrides")
+    assert String.contains?(error.message, ":permission_mode")
   end
 
   defp safe_stop_client(pid) when is_pid(pid) do

@@ -124,7 +124,7 @@ defmodule ASM.InferenceEndpointTest do
 
     assert endpoint.metadata.authority_refs.attach_grant_ref == "attach-grant://inference/asm"
     assert endpoint.metadata.authority_refs.caller_trace_ref == "trace://inference/asm"
-    refute inspect(endpoint.metadata.authority_refs) =~ "Bearer"
+    refute String.contains?(inspect(endpoint.metadata.authority_refs), "Bearer")
   end
 
   @tag skip: not @socket_capable? and "requires a socket-capable environment"
@@ -171,11 +171,11 @@ defmodule ASM.InferenceEndpointTest do
                messages: [%{role: "user", content: "Stream the answer"}]
              })
 
-    assert body =~ "text/event-stream" or true
-    assert body =~ ~s("object":"chat.completion.chunk")
-    assert body =~ "ASM streaming endpoint OK"
-    assert body =~ ~s("finish_reason":"stop")
-    assert body =~ "data: [DONE]"
+    assert String.contains?(body, "text/event-stream") or true
+    assert String.contains?(body, ~s("object":"chat.completion.chunk"))
+    assert String.contains?(body, "ASM streaming endpoint OK")
+    assert String.contains?(body, ~s("finish_reason":"stop"))
+    assert String.contains?(body, "data: [DONE]")
 
     assert {:ok, {400, payload}} =
              http_post_json("#{endpoint.base_url}/chat/completions", endpoint.headers, %{
@@ -186,7 +186,7 @@ defmodule ASM.InferenceEndpointTest do
                ]
              })
 
-    assert payload["error"]["message"] =~ "tool-bearing requests"
+    assert String.contains?(payload["error"]["message"], "tool-bearing requests")
   end
 
   test "ensure_endpoint/3 rejects requests that would smuggle agent-loop semantics into a completion endpoint" do

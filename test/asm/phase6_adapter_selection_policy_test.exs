@@ -45,7 +45,7 @@ defmodule ASM.Phase6AdapterSelectionPolicyTest do
     assert error.kind == :config_invalid
     assert error.domain == :config
     assert error.provider == :codex
-    assert error.message =~ "public simulation selector"
+    assert String.contains?(error.message, "public simulation selector")
   end
 
   defp adapter_policy_attrs(overrides \\ %{}) do

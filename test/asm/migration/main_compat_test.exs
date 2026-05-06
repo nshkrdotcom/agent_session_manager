@@ -22,14 +22,14 @@ defmodule ASM.Migration.MainCompatTest do
 
       assert amp_error.kind == :config_invalid
       assert amp_error.domain == :config
-      assert amp_error.message =~ "Amp"
-      assert amp_error.message =~ "unsupported"
+      assert String.contains?(amp_error.message, "Amp")
+      assert String.contains?(amp_error.message, "unsupported")
 
       assert {:error, shell_error} = MainCompat.resolve_provider(:shell)
       assert shell_error.kind == :config_invalid
       assert shell_error.domain == :config
-      assert shell_error.message =~ "Shell"
-      assert shell_error.message =~ "unsupported"
+      assert String.contains?(shell_error.message, "Shell")
+      assert String.contains?(shell_error.message, "unsupported")
     end
   end
 
@@ -58,7 +58,7 @@ defmodule ASM.Migration.MainCompatTest do
       assert {:error, error} = MainCompat.input_to_prompt(%{messages: []})
       assert error.kind == :config_invalid
       assert error.domain == :config
-      assert error.message =~ "input"
+      assert String.contains?(error.message, "input")
     end
   end
 
@@ -81,7 +81,10 @@ defmodule ASM.Migration.MainCompatTest do
 
       assert {:error, error} = MainCompat.build_query(:codex, input, opts)
 
-      assert error.message =~ "Permission mode :auto is not valid for provider :codex_exec"
+      assert String.contains?(
+               error.message,
+               "Permission mode :auto is not valid for provider :codex_exec"
+             )
     end
 
     test "returns explicit unsupported error for unsupported main options" do
@@ -90,8 +93,8 @@ defmodule ASM.Migration.MainCompatTest do
 
       assert error.kind == :config_invalid
       assert error.domain == :config
-      assert error.message =~ "continuation"
-      assert error.message =~ "unsupported"
+      assert String.contains?(error.message, "continuation")
+      assert String.contains?(error.message, "unsupported")
     end
   end
 

@@ -55,7 +55,7 @@ defmodule ASM.Extensions.ProviderSDK.AmpTest do
 
     assert error.kind == :config_invalid
     assert error.domain == :config
-    assert error.message =~ "native_overrides"
-    assert error.message =~ ":cwd"
+    assert String.contains?(error.message, "native_overrides")
+    assert String.contains?(error.message, ":cwd")
   end
 end

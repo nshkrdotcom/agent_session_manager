@@ -143,7 +143,10 @@ defmodule ASM.Examples.CommonTest do
                @default_prompt
              )
 
-    assert output =~ "--danger-full-access is the example alias for --permission-mode bypass"
+    assert String.contains?(
+             output,
+             "--danger-full-access is the example alias for --permission-mode bypass"
+           )
   end
 
   test "common example parser accepts the Ollama surface" do
@@ -198,7 +201,12 @@ defmodule ASM.Examples.CommonTest do
     assert execution_surface.transport_options[:destination] == "example.internal"
     assert execution_surface.transport_options[:ssh_user] == "builder"
     assert execution_surface.transport_options[:port] == 2222
-    assert execution_surface.transport_options[:identity_file] =~ "/tmp/id_ed25519"
+
+    assert String.contains?(
+             execution_surface.transport_options[:identity_file],
+             "/tmp/id_ed25519"
+           )
+
     assert execution_surface.transport_options[:ssh_options]["BatchMode"] == "yes"
     assert execution_surface.transport_options[:ssh_options]["ConnectTimeout"] == 10
   end
@@ -212,7 +220,7 @@ defmodule ASM.Examples.CommonTest do
                @default_prompt
              )
 
-    assert output =~ "SSH example flags require --ssh-host"
+    assert String.contains?(output, "SSH example flags require --ssh-host")
   end
 
   test "common example parser accepts the Codex Ollama surface for arbitrary local models" do
@@ -269,8 +277,12 @@ defmodule ASM.Examples.CommonTest do
 
     refute Common.exact_output_smoke_target?(config)
 
-    assert Common.exact_output_smoke_skip_reason(config) =~ "llama3.2"
-    assert Common.exact_output_smoke_skip_reason(config) =~ "runtime_validated_only"
+    assert String.contains?(Common.exact_output_smoke_skip_reason(config), "llama3.2")
+
+    assert String.contains?(
+             Common.exact_output_smoke_skip_reason(config),
+             "runtime_validated_only"
+           )
   end
 
   test "sdk lane resolves SDK root from provider env" do
@@ -311,8 +323,8 @@ defmodule ASM.Examples.CommonTest do
     assert {:usage, 0, output} =
              Common.build_example_config([], @script_name, @description, @default_prompt)
 
-    assert output =~ "did not run because no provider was selected"
-    assert output =~ "--provider claude|gemini|codex|amp"
+    assert String.contains?(output, "did not run because no provider was selected")
+    assert String.contains?(output, "--provider claude|gemini|codex|amp")
   end
 
   test "unsupported provider returns usage error" do
@@ -324,8 +336,8 @@ defmodule ASM.Examples.CommonTest do
                @default_prompt
              )
 
-    assert output =~ "unsupported provider"
-    assert output =~ "Usage:"
+    assert String.contains?(output, "unsupported provider")
+    assert String.contains?(output, "Usage:")
   end
 
   test "invalid lane returns usage error instead of halting the caller" do
@@ -337,8 +349,8 @@ defmodule ASM.Examples.CommonTest do
                @default_prompt
              )
 
-    assert output =~ "unsupported lane"
-    assert output =~ "Usage:"
+    assert String.contains?(output, "unsupported lane")
+    assert String.contains?(output, "Usage:")
   end
 
   test "sdk_bridge_opts drops orchestration-only lane metadata" do

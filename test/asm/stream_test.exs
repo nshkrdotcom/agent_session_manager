@@ -69,7 +69,7 @@ defmodule ASM.StreamTest do
 
     assert {:error, error} = ASM.query(session, "hello", execution_mode: :invalid)
     assert error.kind == :config_invalid
-    assert error.message =~ "execution_mode"
+    assert String.contains?(error.message, "execution_mode")
 
     assert :ok = ASM.stop_session(session)
   end

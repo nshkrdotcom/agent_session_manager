@@ -120,8 +120,8 @@ defmodule ASM.LaneIntegrationTest do
 
         assert error.kind == :cli_not_found
         assert error.domain == :provider
-        assert error.message =~ "Codex CLI launcher"
-        assert error.message =~ "stable executable"
+        assert String.contains?(error.message, "Codex CLI launcher")
+        assert String.contains?(error.message, "stable executable")
       end)
     after
       assert :ok = ASM.stop_session(session)
@@ -168,7 +168,11 @@ defmodule ASM.LaneIntegrationTest do
     assert result.metadata.execution_mode == :local
     assert result.metadata.backend == ASM.ProviderBackend.SDK
     assert FakeSSH.wait_until_written(fake_ssh, 1_000) == :ok
-    assert FakeSSH.read_manifest!(fake_ssh) =~ "destination=sdk-static-ssh.example"
+
+    assert String.contains?(
+             FakeSSH.read_manifest!(fake_ssh),
+             "destination=sdk-static-ssh.example"
+           )
 
     assert :ok = ASM.stop_session(session)
   end
@@ -212,7 +216,11 @@ defmodule ASM.LaneIntegrationTest do
     assert result.metadata.execution_mode == :local
     assert result.metadata.backend == ASM.ProviderBackend.SDK
     assert FakeSSH.wait_until_written(fake_ssh, 1_000) == :ok
-    assert FakeSSH.read_manifest!(fake_ssh) =~ "destination=sdk-leased-ssh.example"
+
+    assert String.contains?(
+             FakeSSH.read_manifest!(fake_ssh),
+             "destination=sdk-leased-ssh.example"
+           )
 
     assert :ok = ASM.stop_session(session)
   end
@@ -234,12 +242,18 @@ defmodule ASM.LaneIntegrationTest do
   end
 
   defp codex_success_script(text) do
+    completed_event =
+      Jason.encode!(%{
+        type: "item.completed",
+        item: %{id: "item_1", type: "agent_message", text: text}
+      })
+
     """
     #!/usr/bin/env bash
     set -euo pipefail
     echo '{"type":"thread.started","thread_id":"thread-1"}'
     echo '{"type":"turn.started"}'
-    echo '{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"#{text}"}}'
+    echo '#{completed_event}'
     echo '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
     """
   end

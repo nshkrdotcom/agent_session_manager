@@ -129,7 +129,10 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
                permission_mode: :auto
              )
 
-    assert error.message =~ "Permission mode :auto is not valid for provider :codex_exec"
+    assert String.contains?(
+             error.message,
+             "Permission mode :auto is not valid for provider :codex_exec"
+           )
   end
 
   test "Codex bridges accept the ASM common Ollama surface" do
@@ -301,7 +304,11 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
 
     assert :ok == Connection.await_ready(conn, 1_000)
     assert FakeSSH.wait_until_written(fake_ssh, 1_000) == :ok
-    assert FakeSSH.read_manifest!(fake_ssh) =~ "destination=codex.extension.example"
+
+    assert String.contains?(
+             FakeSSH.read_manifest!(fake_ssh),
+             "destination=codex.extension.example"
+           )
   end
 
   test "thread_options/2 accepts app-server transport as a Codex-native override" do
@@ -335,8 +342,8 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
 
     assert error.kind == :config_invalid
     assert error.domain == :config
-    assert error.message =~ "native_overrides"
-    assert error.message =~ ":model"
+    assert String.contains?(error.message, "native_overrides")
+    assert String.contains?(error.message, ":model")
   end
 
   test "native overrides may not redefine ASM-derived Codex thread fields" do
@@ -348,8 +355,8 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
 
     assert error.kind == :config_invalid
     assert error.domain == :config
-    assert error.message =~ "native_overrides"
-    assert error.message =~ ":working_directory"
+    assert String.contains?(error.message, "native_overrides")
+    assert String.contains?(error.message, ":working_directory")
   end
 
   test "thread_options/2 returns a struct that can seed Codex.start_thread/2" do

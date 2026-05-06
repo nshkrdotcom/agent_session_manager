@@ -23,8 +23,8 @@ defmodule ASM.ProviderBackend.CoreTest do
     assert {:error, error} = Core.start_run(config)
     assert error.kind == :config_invalid
     assert error.domain == :config
-    assert error.message =~ "approval_posture"
-    assert error.message =~ ":none"
+    assert String.contains?(error.message, "approval_posture")
+    assert String.contains?(error.message, ":none")
   end
 
   test "codex core backend rejects governed runs without provider-auth materialization" do
@@ -72,8 +72,8 @@ defmodule ASM.ProviderBackend.CoreTest do
 
       assert {:error, error} = Core.start_run(config)
       assert error.kind == :config_invalid
-      assert error.message =~ "requires verified provider-auth materialization"
-      assert error.message =~ "standalone env"
+      assert String.contains?(error.message, "requires verified provider-auth materialization")
+      assert String.contains?(error.message, "standalone env")
     end)
   end
 

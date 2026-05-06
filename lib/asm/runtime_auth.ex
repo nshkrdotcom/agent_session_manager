@@ -311,6 +311,8 @@ defmodule ASM.RuntimeAuth do
       :authority_decision_ref,
       :trace_ref,
       :idempotency_key,
+      :memory_scope_refs,
+      :context_budget_refs,
       redacted?: true
     ]
 
@@ -334,6 +336,8 @@ defmodule ASM.RuntimeAuth do
             authority_decision_ref: String.t() | nil,
             trace_ref: String.t(),
             idempotency_key: String.t(),
+            memory_scope_refs: [String.t()],
+            context_budget_refs: [String.t()],
             redacted?: true
           }
   end
@@ -353,6 +357,11 @@ defmodule ASM.RuntimeAuth do
     :operation_policy_ref,
     :trace_ref,
     :idempotency_key
+  ]
+
+  @handoff_context_refs [
+    :memory_scope_refs,
+    :context_budget_refs
   ]
 
   @handoff_forbidden_keys [
@@ -543,7 +552,9 @@ defmodule ASM.RuntimeAuth do
       authority_ref: runtime_auth.connector_binding.authority_ref,
       authority_decision_ref: runtime_auth.connector_binding.authority_decision_ref,
       trace_ref: optional_string(opts, :trace_ref),
-      idempotency_key: optional_string(opts, :idempotency_key)
+      idempotency_key: optional_string(opts, :idempotency_key),
+      memory_scope_refs: ref_list_option(opts, :memory_scope_refs),
+      context_budget_refs: ref_list_option(opts, :context_budget_refs)
     }
 
     missing = missing_handoff_refs(attrs)
@@ -641,7 +652,11 @@ defmodule ASM.RuntimeAuth do
       true ->
         {:ok,
          packet
-         |> Map.take(@handoff_required_refs ++ [:authority_ref, :authority_decision_ref])
+         |> Map.take(
+           @handoff_required_refs ++
+             [:authority_ref, :authority_decision_ref] ++
+             @handoff_context_refs
+         )
          |> Map.put(:handoff_status, :accepted)
          |> Map.put(:redacted?, true)}
     end
@@ -1183,6 +1198,13 @@ defmodule ASM.RuntimeAuth do
     end
   end
 
+  defp ref_list_option(opts, key) do
+    opts
+    |> Keyword.get(key, [])
+    |> List.wrap()
+    |> Enum.filter(&present?/1)
+  end
+
   defp missing_handoff_refs(attrs) do
     Enum.reject(@handoff_required_refs, &present?(Map.get(attrs, &1)))
   end
@@ -1203,7 +1225,7 @@ defmodule ASM.RuntimeAuth do
 
   defp handoff_key(key) do
     Enum.find(
-      @handoff_required_refs ++ [:authority_ref, :authority_decision_ref],
+      @handoff_required_refs ++ [:authority_ref, :authority_decision_ref] ++ @handoff_context_refs,
       key,
       fn field ->
         Atom.to_string(field) == key
@@ -1218,7 +1240,7 @@ defmodule ASM.RuntimeAuth do
     |> Enum.reduce([], fn {field, expected}, mismatches ->
       actual = Map.get(packet, field)
 
-      if present?(expected) and present?(actual) and expected != actual do
+      if present?(expected) and expected != actual do
         mismatches ++ [{field, %{expected: expected, actual: actual}}]
       else
         mismatches

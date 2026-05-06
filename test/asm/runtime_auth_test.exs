@@ -213,7 +213,9 @@ defmodule ASM.RuntimeAuthTest do
              ASM.RuntimeAuth.handoff_packet(runtime_auth,
                handoff_ref: "asm-handoff://codex/handoff",
                trace_ref: "trace://codex/handoff",
-               idempotency_key: "handoff-idempotency-1"
+               idempotency_key: "handoff-idempotency-1",
+               memory_scope_refs: ["memory-scope://tenant-1/run-1"],
+               context_budget_refs: ["context-budget://tenant-1/run-1"]
              )
 
     assert packet.tenant_ref == "tenant://handoff/tenant-1"
@@ -228,6 +230,8 @@ defmodule ASM.RuntimeAuthTest do
     assert packet.operation_policy_ref == "operation-policy://codex/handoff"
     assert packet.trace_ref == "trace://codex/handoff"
     assert packet.idempotency_key == "handoff-idempotency-1"
+    assert packet.memory_scope_refs == ["memory-scope://tenant-1/run-1"]
+    assert packet.context_budget_refs == ["context-budget://tenant-1/run-1"]
     refute inspect(packet) =~ "Bearer"
 
     assert {:ok, accepted} =
@@ -235,12 +239,16 @@ defmodule ASM.RuntimeAuthTest do
                expected_refs: %{
                  tenant_ref: "tenant://handoff/tenant-1",
                  target_ref: "execution-target://codex/handoff",
-                 idempotency_key: "handoff-idempotency-1"
+                 idempotency_key: "handoff-idempotency-1",
+                 memory_scope_refs: ["memory-scope://tenant-1/run-1"],
+                 context_budget_refs: ["context-budget://tenant-1/run-1"]
                }
              )
 
     assert accepted.handoff_status == :accepted
     assert accepted.redacted?
+    assert accepted.memory_scope_refs == ["memory-scope://tenant-1/run-1"]
+    assert accepted.context_budget_refs == ["context-budget://tenant-1/run-1"]
 
     assert {:error, mismatch_error} =
              ASM.RuntimeAuth.accept_handoff(packet,
@@ -249,6 +257,14 @@ defmodule ASM.RuntimeAuthTest do
 
     assert mismatch_error.kind == :config_invalid
     assert mismatch_error.cause.mismatches != []
+
+    assert {:error, widened_scope_error} =
+             ASM.RuntimeAuth.accept_handoff(packet,
+               expected_refs: %{memory_scope_refs: ["memory-scope://tenant-1/other"]}
+             )
+
+    assert widened_scope_error.kind == :config_invalid
+    assert widened_scope_error.cause.mismatches != []
 
     assert {:error, raw_error} =
              ASM.RuntimeAuth.accept_handoff(packet, raw_token: "should-not-transfer")

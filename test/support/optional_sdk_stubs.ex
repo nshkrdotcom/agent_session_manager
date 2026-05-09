@@ -391,6 +391,22 @@ unless Code.ensure_loaded?(Codex.Events.TurnCompleted) do
   end
 end
 
+unless Code.ensure_loaded?(Codex.Events.ThreadTokenUsageUpdated) do
+  defmodule Codex.Events.ThreadTokenUsageUpdated do
+    @moduledoc false
+
+    defstruct thread_id: nil, turn_id: nil, usage: %{}, delta: nil, rate_limits: nil
+  end
+end
+
+unless Code.ensure_loaded?(Codex.Events.AccountRateLimitsUpdated) do
+  defmodule Codex.Events.AccountRateLimitsUpdated do
+    @moduledoc false
+
+    defstruct rate_limits: %{}, thread_id: nil, turn_id: nil
+  end
+end
+
 unless Code.ensure_loaded?(Codex.Events.ItemAgentMessageDelta) do
   defmodule Codex.Events.ItemAgentMessageDelta do
     @moduledoc false
@@ -415,6 +431,27 @@ unless Code.ensure_loaded?(Codex.Events.TurnFailed) do
   end
 end
 
+unless Code.ensure_loaded?(Codex.Events.TurnAborted) do
+  defmodule Codex.Events.TurnAborted do
+    @moduledoc false
+
+    defstruct thread_id: nil, turn_id: nil, reason: nil
+  end
+end
+
+unless Code.ensure_loaded?(Codex.Events.Error) do
+  defmodule Codex.Events.Error do
+    @moduledoc false
+
+    defstruct message: nil,
+              thread_id: nil,
+              turn_id: nil,
+              additional_details: nil,
+              codex_error_info: nil,
+              will_retry: nil
+  end
+end
+
 unless Code.ensure_loaded?(Codex.Events.DynamicToolCallRequested) do
   defmodule Codex.Events.DynamicToolCallRequested do
     @moduledoc false
@@ -425,6 +462,45 @@ unless Code.ensure_loaded?(Codex.Events.DynamicToolCallRequested) do
               call_id: nil,
               tool_name: nil,
               arguments: %{}
+  end
+end
+
+unless Code.ensure_loaded?(Codex.Events.RequestUserInput) do
+  defmodule Codex.Events.RequestUserInput do
+    @moduledoc false
+
+    defstruct id: nil, thread_id: nil, turn_id: nil, item_id: nil, questions: []
+  end
+end
+
+unless Code.ensure_loaded?(Codex.Events.CommandApprovalRequested) do
+  defmodule Codex.Events.CommandApprovalRequested do
+    @moduledoc false
+
+    defstruct id: nil,
+              thread_id: nil,
+              turn_id: nil,
+              item_id: nil,
+              approval_id: nil,
+              reason: nil,
+              command: nil,
+              cwd: nil
+  end
+end
+
+unless Code.ensure_loaded?(Codex.Events.FileApprovalRequested) do
+  defmodule Codex.Events.FileApprovalRequested do
+    @moduledoc false
+
+    defstruct id: nil, thread_id: nil, turn_id: nil, item_id: nil, reason: nil, grant_root: nil
+  end
+end
+
+unless Code.ensure_loaded?(Codex.Events.PermissionsApprovalRequested) do
+  defmodule Codex.Events.PermissionsApprovalRequested do
+    @moduledoc false
+
+    defstruct id: nil, thread_id: nil, turn_id: nil, item_id: nil, reason: nil, permissions: nil
   end
 end
 

@@ -6,15 +6,29 @@ defmodule ASM.ProviderBackend.SDK.CodexAppServer do
   alias ASM.HostTool
   alias ASM.ProviderBackend.{Event, Info}
   alias CliSubprocessCore.Event, as: CoreEvent
+  alias CliSubprocessCore.Payload
 
   @provider :codex
   @turn_started :"Elixir.Codex.Events.TurnStarted"
+  @thread_token_usage_updated :"Elixir.Codex.Events.ThreadTokenUsageUpdated"
+  @account_rate_limits_updated :"Elixir.Codex.Events.AccountRateLimitsUpdated"
   @dynamic_tool_call_requested :"Elixir.Codex.Events.DynamicToolCallRequested"
   @item_agent_message_delta :"Elixir.Codex.Events.ItemAgentMessageDelta"
   @item_completed :"Elixir.Codex.Events.ItemCompleted"
   @turn_completed :"Elixir.Codex.Events.TurnCompleted"
   @turn_failed :"Elixir.Codex.Events.TurnFailed"
+  @turn_aborted :"Elixir.Codex.Events.TurnAborted"
+  @codex_error :"Elixir.Codex.Events.Error"
+  @request_user_input :"Elixir.Codex.Events.RequestUserInput"
+  @command_approval_requested :"Elixir.Codex.Events.CommandApprovalRequested"
+  @file_approval_requested :"Elixir.Codex.Events.FileApprovalRequested"
+  @permissions_approval_requested :"Elixir.Codex.Events.PermissionsApprovalRequested"
   @agent_message :"Elixir.Codex.Items.AgentMessage"
+  @approval_request_events [
+    @command_approval_requested,
+    @file_approval_requested,
+    @permissions_approval_requested
+  ]
 
   defstruct [
     :app_server_api,
@@ -221,6 +235,63 @@ defmodule ASM.ProviderBackend.SDK.CodexAppServer do
 
   defp handle_codex_event(
          %__MODULE__{} = state,
+         %{__struct__: @thread_token_usage_updated} = event
+       ) do
+    publish_core(
+      state,
+      CoreEvent.new(:raw,
+        provider: @provider,
+        provider_session_id: Map.get(event, :thread_id),
+        payload:
+          Payload.Raw.new(
+            stream: :codex_usage,
+            content: raw_event_content(event),
+            metadata: %{
+              usage_scope: "absolute",
+              delta_usage_present?: not is_nil(Map.get(event, :delta)),
+              rate_limits_present?: not is_nil(Map.get(event, :rate_limits))
+            }
+          ),
+        metadata:
+          event_metadata(state, event, %{
+            codex_event_type: "thread_token_usage_updated",
+            usage_scope: "absolute",
+            aggregate_tokens?: false
+          })
+      )
+    )
+
+    state
+  end
+
+  defp handle_codex_event(
+         %__MODULE__{} = state,
+         %{__struct__: @account_rate_limits_updated} = event
+       ) do
+    publish_core(
+      state,
+      CoreEvent.new(:raw,
+        provider: @provider,
+        provider_session_id: Map.get(event, :thread_id),
+        payload:
+          Payload.Raw.new(
+            stream: :codex_rate_limit,
+            content: raw_event_content(event),
+            metadata: %{rate_limits: Map.get(event, :rate_limits)}
+          ),
+        metadata:
+          event_metadata(state, event, %{
+            codex_event_type: "account_rate_limits_updated",
+            rate_limits: Map.get(event, :rate_limits)
+          })
+      )
+    )
+
+    state
+  end
+
+  defp handle_codex_event(
+         %__MODULE__{} = state,
          %{__struct__: @dynamic_tool_call_requested} = event
        ) do
     request = host_tool_request(state, event)
@@ -291,6 +362,12 @@ defmodule ASM.ProviderBackend.SDK.CodexAppServer do
   end
 
   defp handle_codex_event(%__MODULE__{} = state, %{__struct__: @turn_completed} = event) do
+    metadata =
+      event_metadata(state, event, %{
+        usage_scope: usage_scope(event.usage),
+        response_id: Map.get(event, :response_id)
+      })
+
     publish_core(
       state,
       CoreEvent.new(:result,
@@ -302,7 +379,7 @@ defmodule ASM.ProviderBackend.SDK.CodexAppServer do
           output: %{text: final_response_text(event.final_response), usage: event.usage},
           metadata: %{provider_turn_id: event.turn_id}
         },
-        metadata: Map.merge(state.metadata, %{provider_turn_id: event.turn_id})
+        metadata: metadata
       )
     )
 
@@ -310,24 +387,125 @@ defmodule ASM.ProviderBackend.SDK.CodexAppServer do
   end
 
   defp handle_codex_event(%__MODULE__{} = state, %{__struct__: @turn_failed} = event) do
+    error = Map.get(event, :error)
+
     publish_core(
       state,
       CoreEvent.new(:error,
         provider: @provider,
         provider_session_id: event.thread_id,
         payload: %{
-          message: inspect(event.error),
-          code: "turn_failed",
+          message: codex_error_message(error, "turn failed"),
+          code: codex_error_code(error, "turn_failed"),
           metadata: %{provider_turn_id: event.turn_id}
         },
-        metadata: Map.merge(state.metadata, %{provider_turn_id: event.turn_id})
+        metadata: event_metadata(state, event, %{codex_event_type: "turn_failed"})
       )
     )
 
     state
   end
 
-  defp handle_codex_event(%__MODULE__{} = state, _event), do: state
+  defp handle_codex_event(%__MODULE__{} = state, %{__struct__: @turn_aborted} = event) do
+    publish_core(
+      state,
+      CoreEvent.new(:error,
+        provider: @provider,
+        provider_session_id: Map.get(event, :thread_id),
+        payload: %{
+          message: "turn aborted: #{inspect(Map.get(event, :reason))}",
+          code: abort_code(Map.get(event, :reason)),
+          metadata: %{provider_turn_id: Map.get(event, :turn_id)}
+        },
+        metadata: event_metadata(state, event, %{codex_event_type: "turn_aborted"})
+      )
+    )
+
+    state
+  end
+
+  defp handle_codex_event(%__MODULE__{} = state, %{__struct__: @codex_error} = event) do
+    publish_core(
+      state,
+      CoreEvent.new(:error,
+        provider: @provider,
+        provider_session_id: Map.get(event, :thread_id),
+        payload: %{
+          message: Map.get(event, :message) || "Codex provider error",
+          code: codex_error_code(Map.get(event, :codex_error_info), "provider_error"),
+          severity: if(Map.get(event, :will_retry), do: :warning, else: :error),
+          metadata: %{
+            provider_turn_id: Map.get(event, :turn_id),
+            additional_details: Map.get(event, :additional_details),
+            will_retry: Map.get(event, :will_retry)
+          }
+        },
+        metadata: event_metadata(state, event, %{codex_event_type: "error"})
+      )
+    )
+
+    state
+  end
+
+  defp handle_codex_event(%__MODULE__{} = state, %{__struct__: module} = event)
+       when module in @approval_request_events do
+    publish_core(state, approval_requested_event(state, event))
+    state
+  end
+
+  defp handle_codex_event(%__MODULE__{} = state, %{__struct__: @request_user_input} = event) do
+    publish_core(state, user_input_requested_event(state, event))
+
+    case auto_answer_user_input(event) do
+      {:ok, response} ->
+        _ = state.app_server_api.respond(state.conn, Map.get(event, :id), response)
+        publish_core(state, user_input_resolved_event(state, event, response))
+
+      {:error, reason} ->
+        publish_core(
+          state,
+          CoreEvent.new(:error,
+            provider: @provider,
+            provider_session_id: Map.get(event, :thread_id),
+            payload: %{
+              message: "Codex requested headless user input that cannot be auto-answered",
+              code: "user_input_required",
+              metadata: %{reason: inspect(reason), provider_turn_id: Map.get(event, :turn_id)}
+            },
+            metadata:
+              event_metadata(state, event, %{
+                codex_event_type: "request_user_input",
+                user_input_auto_answered?: false
+              })
+          )
+        )
+    end
+
+    state
+  end
+
+  defp handle_codex_event(%__MODULE__{} = state, event) do
+    publish_core(
+      state,
+      CoreEvent.new(:raw,
+        provider: @provider,
+        provider_session_id: event_thread_id(event),
+        payload:
+          Payload.Raw.new(
+            stream: :codex_event,
+            content: raw_event_content(event),
+            metadata: %{codex_event_type: codex_event_type(event)}
+          ),
+        metadata:
+          Map.merge(state.metadata, %{
+            codex_event_type: codex_event_type(event),
+            malformed?: not is_map(event)
+          })
+      )
+    )
+
+    state
+  end
 
   defp host_tool_request(
          %__MODULE__{} = state,
@@ -440,6 +618,229 @@ defmodule ASM.ProviderBackend.SDK.CodexAppServer do
         })
     )
   end
+
+  defp approval_requested_event(%__MODULE__{} = state, event) do
+    CoreEvent.new(:approval_requested,
+      provider: @provider,
+      provider_session_id: Map.get(event, :thread_id),
+      payload:
+        Payload.ApprovalRequested.new(
+          approval_id: approval_id(event),
+          subject: approval_subject(event),
+          details: %{
+            "tool_input" => approval_details(event),
+            "codex_event" => raw_event_content(event)
+          },
+          metadata: %{provider_turn_id: Map.get(event, :turn_id)}
+        ),
+      metadata:
+        event_metadata(state, event, %{
+          codex_event_type: codex_event_type(event),
+          approval_kind: approval_subject(event)
+        })
+    )
+  end
+
+  defp user_input_requested_event(%__MODULE__{} = state, event) do
+    CoreEvent.new(:approval_requested,
+      provider: @provider,
+      provider_session_id: Map.get(event, :thread_id),
+      payload:
+        Payload.ApprovalRequested.new(
+          approval_id: request_id(event),
+          subject: "codex.user_input",
+          details: %{
+            "tool_input" => %{"questions" => encode_questions(Map.get(event, :questions, []))},
+            "codex_event" => raw_event_content(event)
+          },
+          metadata: %{provider_turn_id: Map.get(event, :turn_id)}
+        ),
+      metadata:
+        event_metadata(state, event, %{
+          codex_event_type: "request_user_input",
+          user_input_auto_answered?: true
+        })
+    )
+  end
+
+  defp user_input_resolved_event(%__MODULE__{} = state, event, response) do
+    CoreEvent.new(:approval_resolved,
+      provider: @provider,
+      provider_session_id: Map.get(event, :thread_id),
+      payload:
+        Payload.ApprovalResolved.new(
+          approval_id: request_id(event),
+          decision: :allow,
+          reason: "auto_answered",
+          metadata: %{provider_turn_id: Map.get(event, :turn_id), response: response}
+        ),
+      metadata:
+        event_metadata(state, event, %{
+          codex_event_type: "request_user_input",
+          user_input_auto_answered?: true
+        })
+    )
+  end
+
+  defp auto_answer_user_input(event) do
+    questions = List.wrap(Map.get(event, :questions, []))
+
+    if Enum.all?(questions, &auto_answerable_question?/1) do
+      answers =
+        questions
+        |> Enum.map(fn question ->
+          {question_id(question), %{"answers" => [question_answer(question)]}}
+        end)
+        |> Enum.reject(fn {id, _answer} -> is_nil(id) or id == "" end)
+        |> Map.new()
+
+      {:ok, %{"answers" => answers}}
+    else
+      {:error, :secret_or_unanswerable_question}
+    end
+  end
+
+  defp auto_answerable_question?(question),
+    do: not truthy?(field(question, [:is_secret, "isSecret"]))
+
+  defp question_id(question), do: field(question, [:id, "id"])
+
+  defp question_answer(question) do
+    question
+    |> field([:options, "options"])
+    |> List.wrap()
+    |> case do
+      [first | _rest] -> field(first, [:label, "label"]) || "acknowledged"
+      [] -> "acknowledged"
+    end
+  end
+
+  defp encode_questions(questions) do
+    Enum.map(List.wrap(questions), &raw_event_content/1)
+  end
+
+  defp approval_id(event),
+    do: field(event, [:approval_id, "approval_id", :id, "id"]) || request_id(event)
+
+  defp request_id(event), do: event |> field([:id, "id"]) |> to_string()
+
+  defp approval_subject(%{__struct__: @command_approval_requested}), do: "codex.command_approval"
+  defp approval_subject(%{__struct__: @file_approval_requested}), do: "codex.file_approval"
+
+  defp approval_subject(%{__struct__: @permissions_approval_requested}),
+    do: "codex.permissions_approval"
+
+  defp approval_subject(_event), do: "codex.approval"
+
+  defp approval_details(event) do
+    event
+    |> raw_event_content()
+    |> Map.drop(["thread_id", "threadId", "turn_id", "turnId"])
+  end
+
+  defp event_metadata(%__MODULE__{} = state, event, extra) when is_map(extra) do
+    provider_turn_id = field(event, [:turn_id, "turn_id", "turnId"])
+
+    state.metadata
+    |> maybe_put(:provider_turn_id, provider_turn_id)
+    |> Map.merge(extra)
+  end
+
+  defp usage_scope(%{} = usage) do
+    usage_kind =
+      field(usage, [:usage_kind, "usage_kind", :usage_scope, "usage_scope", :kind, "kind"])
+
+    if usage_kind in [:delta, "delta", :delta_only, "delta_only", :incremental, "incremental"] do
+      "delta"
+    else
+      "absolute"
+    end
+  end
+
+  defp usage_scope(nil), do: nil
+  defp usage_scope(_usage), do: "absolute"
+
+  defp codex_error_message(%{} = error, _default) do
+    field(error, [:message, "message", :reason, "reason", :error, "error"]) || inspect(error)
+  end
+
+  defp codex_error_message(error, _default) when is_binary(error), do: error
+  defp codex_error_message(nil, default), do: default
+  defp codex_error_message(error, _default), do: inspect(error)
+
+  defp codex_error_code(%{} = error, default) do
+    error
+    |> field([:code, "code", :kind, "kind", :type, "type", :error_type, "error_type"])
+    |> normalize_error_code(default)
+  end
+
+  defp codex_error_code(error, default) when is_binary(error),
+    do: normalize_error_code(error, default)
+
+  defp codex_error_code(_error, default), do: default
+
+  defp abort_code(reason) when reason in [:timeout, "timeout", :timed_out, "timed_out"],
+    do: "timeout"
+
+  defp abort_code(_reason), do: "user_cancelled"
+
+  defp normalize_error_code(nil, default), do: default
+
+  defp normalize_error_code(code, default) do
+    code
+    |> to_string()
+    |> String.trim()
+    |> case do
+      "" -> default
+      value -> value |> String.downcase() |> String.replace("-", "_")
+    end
+  end
+
+  defp raw_event_content(%{__struct__: _struct} = event) do
+    codex_events = :"Elixir.Codex.Events"
+
+    if Code.ensure_loaded?(codex_events) and function_exported?(codex_events, :to_map, 1) do
+      :erlang.apply(codex_events, :to_map, [event])
+    else
+      struct_to_map(event)
+    end
+  rescue
+    _error -> struct_to_map(event)
+  end
+
+  defp raw_event_content(%{} = event), do: event
+  defp raw_event_content(event), do: inspect(event)
+
+  defp struct_to_map(%{__struct__: struct} = event) do
+    event
+    |> Map.from_struct()
+    |> Enum.map(fn {key, value} -> {Atom.to_string(key), raw_event_content(value)} end)
+    |> Map.new()
+    |> Map.put("struct", inspect(struct))
+  end
+
+  defp event_thread_id(event), do: field(event, [:thread_id, "thread_id", "threadId"])
+
+  defp codex_event_type(%{__struct__: struct}) do
+    struct
+    |> Module.split()
+    |> List.last()
+    |> Macro.underscore()
+  end
+
+  defp codex_event_type(_event), do: "malformed"
+
+  defp field(value, keys) when is_list(keys) do
+    Enum.find_value(keys, &field(value, &1))
+  end
+
+  defp field(%{} = map, key) when is_atom(key) or is_binary(key), do: Map.get(map, key)
+  defp field(_value, _key), do: nil
+
+  defp truthy?(value), do: value in [true, "true", "1", 1]
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
   defp publish_core(%__MODULE__{} = state, %CoreEvent{} = event) do
     Enum.each(state.subscribers, fn

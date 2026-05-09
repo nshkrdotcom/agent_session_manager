@@ -4,7 +4,8 @@ defmodule ASM.ProviderBackend.SDKTest do
   alias ASM.{Execution, Provider}
   alias ASM.Execution.Environment
   alias ASM.ProviderBackend.SDK
-  alias CliSubprocessCore.ExecutionSurface
+  alias CliSubprocessCore.{ExecutionSurface, Payload}
+  alias CliSubprocessCore.Event, as: CoreEvent
 
   defmodule ClaudeRuntimeStub do
     @moduledoc false
@@ -81,12 +82,7 @@ defmodule ASM.ProviderBackend.SDKTest do
         send(pid, {:codex_app_server_connect_opts, connect_opts})
       end
 
-      conn =
-        spawn_link(fn ->
-          receive do
-            :disconnect -> :ok
-          end
-        end)
+      conn = spawn_link(fn -> connection_loop(Keyword.get(connect_opts, :test_pid)) end)
 
       {:ok, conn}
     end
@@ -100,6 +96,19 @@ defmodule ASM.ProviderBackend.SDKTest do
       send(conn, :disconnect)
       :ok
     end
+
+    defp connection_loop(test_pid) do
+      receive do
+        {:dynamic_tool_response, request_id, response} ->
+          if is_pid(test_pid),
+            do: send(test_pid, {:codex_app_server_response, request_id, response})
+
+          connection_loop(test_pid)
+
+        :disconnect ->
+          :ok
+      end
+    end
   end
 
   defmodule CodexThreadRunnerStub do
@@ -107,30 +116,32 @@ defmodule ASM.ProviderBackend.SDKTest do
 
     def run_streamed(thread, prompt, opts) do
       send(opts[:test_pid], {:codex_app_server_run_streamed, thread, prompt, opts})
+      {:ok, Keyword.get(opts, :codex_events, default_events())}
+    end
 
-      {:ok,
-       [
-         %Codex.Events.TurnStarted{thread_id: "thread-app-1", turn_id: "turn-1"},
-         %Codex.Events.DynamicToolCallRequested{
-           id: "jsonrpc-1",
-           thread_id: "thread-app-1",
-           turn_id: "turn-1",
-           call_id: "call-1",
-           tool_name: "echo_json",
-           arguments: %{"message" => "hello"}
-         },
-         %Codex.Events.ItemAgentMessageDelta{
-           thread_id: "thread-app-1",
-           turn_id: "turn-1",
-           item: %{"text" => "done"}
-         },
-         %Codex.Events.TurnCompleted{
-           thread_id: "thread-app-1",
-           turn_id: "turn-1",
-           status: "completed",
-           final_response: %Codex.Items.AgentMessage{text: "done"}
-         }
-       ]}
+    defp default_events do
+      [
+        %Codex.Events.TurnStarted{thread_id: "thread-app-1", turn_id: "turn-1"},
+        %Codex.Events.DynamicToolCallRequested{
+          id: "jsonrpc-1",
+          thread_id: "thread-app-1",
+          turn_id: "turn-1",
+          call_id: "call-1",
+          tool_name: "echo_json",
+          arguments: %{"message" => "hello"}
+        },
+        %Codex.Events.ItemAgentMessageDelta{
+          thread_id: "thread-app-1",
+          turn_id: "turn-1",
+          item: %{"text" => "done"}
+        },
+        %Codex.Events.TurnCompleted{
+          thread_id: "thread-app-1",
+          turn_id: "turn-1",
+          status: "completed",
+          final_response: %Codex.Items.AgentMessage{text: "done"}
+        }
+      ]
     end
   end
 
@@ -514,6 +525,227 @@ defmodule ASM.ProviderBackend.SDKTest do
                    50
   end
 
+  test "codex app-server backend normalizes lifecycle, approval, user-input, usage, and raw events" do
+    provider = %{Provider.resolve!(:codex) | sdk_runtime: CodexRuntimeStub}
+    subscription_ref = make_ref()
+
+    codex_events = [
+      %Codex.Events.TurnStarted{thread_id: "thread-app-2", turn_id: "turn-2"},
+      %Codex.Events.ThreadTokenUsageUpdated{
+        thread_id: "thread-app-2",
+        turn_id: "turn-2",
+        usage: %{"input_tokens" => 10, "output_tokens" => 4},
+        delta: %{"input_tokens" => 1},
+        rate_limits: %{"requests" => %{"remaining" => 8}}
+      },
+      %Codex.Events.AccountRateLimitsUpdated{
+        thread_id: "thread-app-2",
+        turn_id: "turn-2",
+        rate_limits: %{"requests" => %{"remaining" => 7}}
+      },
+      %Codex.Events.CommandApprovalRequested{
+        id: "approval-jsonrpc-1",
+        thread_id: "thread-app-2",
+        turn_id: "turn-2",
+        item_id: "item-command-1",
+        approval_id: "approval-1",
+        command: "mix test",
+        cwd: "/workspace/project"
+      },
+      %Codex.Events.RequestUserInput{
+        id: "input-jsonrpc-1",
+        thread_id: "thread-app-2",
+        turn_id: "turn-2",
+        item_id: "item-input-1",
+        questions: [
+          %{
+            "id" => "choice",
+            "header" => "Mode",
+            "question" => "Continue?",
+            "options" => [%{"label" => "Continue", "description" => "Proceed"}]
+          }
+        ]
+      },
+      %Codex.Events.Error{
+        message: "diagnostic: retrying",
+        thread_id: "thread-app-2",
+        turn_id: "turn-2",
+        codex_error_info: %{"code" => "rate-limit"},
+        will_retry: true
+      },
+      %Codex.Events.TurnFailed{
+        thread_id: "thread-app-2",
+        turn_id: "turn-2",
+        error: %{"message" => "tool timed out", "code" => "timeout"}
+      },
+      %Codex.Events.TurnAborted{turn_id: "turn-2", reason: :cancelled},
+      {:bad, :codex_event},
+      %Codex.Events.TurnCompleted{
+        thread_id: "thread-app-2",
+        turn_id: "turn-2",
+        status: "completed",
+        final_response: %Codex.Items.AgentMessage{text: "done"},
+        usage: %{"input_tokens" => 10, "output_tokens" => 4}
+      }
+    ]
+
+    config = %{
+      provider: provider,
+      prompt: "exercise app-server events",
+      execution_config: execution_config([]),
+      provider_opts: [app_server: true, model: "gpt-5.4"],
+      backend_opts: [
+        codex_app_server_module: CodexAppServerStub,
+        codex_thread_runner_module: CodexThreadRunnerStub,
+        connect_opts: [test_pid: self()],
+        run_opts: [test_pid: self(), codex_events: codex_events]
+      ],
+      subscriber_pid: self(),
+      subscription_ref: subscription_ref,
+      metadata: %{test_pid: self(), run_id: "run-events", session_id: "session-events"}
+    }
+
+    assert {:ok, session, _info} = SDK.start_run(config)
+    on_exit(fn -> SDK.close(session) end)
+
+    assert_receive {:codex_app_server_run_streamed, _thread, "exercise app-server events", _opts}
+
+    assert %CoreEvent{kind: :run_started, provider_session_id: "thread-app-2"} =
+             assert_core_event(subscription_ref, :run_started)
+
+    assert %CoreEvent{kind: :raw, payload: %Payload.Raw{stream: :codex_usage} = usage} =
+             assert_core_event(subscription_ref, :raw)
+
+    assert get_in(usage.content, ["usage", "input_tokens"]) == 10
+    assert usage.metadata.usage_scope == "absolute"
+
+    assert %CoreEvent{kind: :raw, payload: %Payload.Raw{stream: :codex_rate_limit} = rate_limits} =
+             assert_core_event(subscription_ref, :raw)
+
+    assert get_in(rate_limits.content, ["rate_limits", "requests", "remaining"]) == 7
+
+    assert %CoreEvent{kind: :approval_requested, payload: %Payload.ApprovalRequested{} = approval} =
+             assert_core_event(subscription_ref, :approval_requested)
+
+    assert approval.approval_id == "approval-1"
+    assert approval.subject == "codex.command_approval"
+
+    assert %CoreEvent{kind: :approval_requested, payload: %Payload.ApprovalRequested{} = input} =
+             assert_core_event(subscription_ref, :approval_requested)
+
+    assert input.approval_id == "input-jsonrpc-1"
+    assert input.subject == "codex.user_input"
+
+    assert_receive {:codex_app_server_response, "input-jsonrpc-1",
+                    %{"answers" => %{"choice" => %{"answers" => ["Continue"]}}}}
+
+    assert %CoreEvent{kind: :approval_resolved, payload: %Payload.ApprovalResolved{} = resolved} =
+             assert_core_event(subscription_ref, :approval_resolved)
+
+    assert resolved.approval_id == "input-jsonrpc-1"
+    assert resolved.decision == :allow
+    assert resolved.reason == "auto_answered"
+
+    assert %CoreEvent{
+             kind: :error,
+             payload: %Payload.Error{code: "rate_limit", severity: :warning}
+           } =
+             assert_core_event(subscription_ref, :error)
+
+    assert %CoreEvent{kind: :error, payload: %Payload.Error{code: "timeout"}} =
+             assert_core_event(subscription_ref, :error)
+
+    assert %CoreEvent{kind: :error, payload: %Payload.Error{code: "user_cancelled"}} =
+             assert_core_event(subscription_ref, :error)
+
+    assert %CoreEvent{
+             kind: :raw,
+             payload: %Payload.Raw{metadata: %{codex_event_type: "malformed"}}
+           } =
+             assert_core_event(subscription_ref, :raw)
+
+    assert %CoreEvent{kind: :result, payload: %Payload.Result{} = result} =
+             assert_core_event(subscription_ref, :result)
+
+    assert result.output.usage == %{"input_tokens" => 10, "output_tokens" => 4}
+  end
+
+  test "codex app-server backend reports denied and failed dynamic host tools without stalling" do
+    provider = %{Provider.resolve!(:codex) | sdk_runtime: CodexRuntimeStub}
+    subscription_ref = make_ref()
+
+    codex_events = [
+      %Codex.Events.TurnStarted{thread_id: "thread-app-3", turn_id: "turn-3"},
+      %Codex.Events.DynamicToolCallRequested{
+        id: "jsonrpc-denied",
+        thread_id: "thread-app-3",
+        turn_id: "turn-3",
+        call_id: "call-denied",
+        tool_name: "missing_tool",
+        arguments: %{}
+      },
+      %Codex.Events.DynamicToolCallRequested{
+        id: "jsonrpc-failed",
+        thread_id: "thread-app-3",
+        turn_id: "turn-3",
+        call_id: "call-failed",
+        tool_name: "echo_json",
+        arguments: %{"message" => "fail"}
+      },
+      %Codex.Events.TurnCompleted{
+        thread_id: "thread-app-3",
+        turn_id: "turn-3",
+        status: "completed",
+        final_response: %Codex.Items.AgentMessage{text: "continued"}
+      }
+    ]
+
+    config = %{
+      provider: provider,
+      prompt: "exercise dynamic host tool denials",
+      execution_config: execution_config([]),
+      provider_opts: [
+        app_server: true,
+        host_tools: [
+          %{
+            name: "echo_json",
+            input_schema: %{"type" => "object"},
+            description: "Echo JSON"
+          }
+        ]
+      ],
+      backend_opts: [
+        codex_app_server_module: CodexAppServerStub,
+        codex_thread_runner_module: CodexThreadRunnerStub,
+        connect_opts: [test_pid: self()],
+        run_opts: [test_pid: self(), codex_events: codex_events]
+      ],
+      tools: %{"echo_json" => fn _args -> {:error, :boom} end},
+      subscriber_pid: self(),
+      subscription_ref: subscription_ref,
+      metadata: %{test_pid: self()}
+    }
+
+    assert {:ok, session, _info} = SDK.start_run(config)
+    on_exit(fn -> SDK.close(session) end)
+
+    assert_receive {:codex_app_server_run_streamed, _thread, "exercise dynamic host tool denials",
+                    _opts}
+
+    assert_asm_event(subscription_ref, :host_tool_requested)
+
+    assert %ASM.Event{payload: %ASM.HostTool.Response{request_id: "jsonrpc-denied"}} =
+             assert_asm_event(subscription_ref, :host_tool_denied)
+
+    assert_asm_event(subscription_ref, :host_tool_requested)
+
+    assert %ASM.Event{payload: %ASM.HostTool.Response{request_id: "jsonrpc-failed"}} =
+             assert_asm_event(subscription_ref, :host_tool_failed)
+
+    assert %CoreEvent{kind: :result, provider_session_id: "thread-app-3"} =
+             assert_core_event(subscription_ref, :result)
+  end
+
   test "amp sdk backend maps ASM bypass mode to dangerously_allow_all and keeps safe defaults" do
     provider = %{Provider.resolve!(:amp) | sdk_runtime: AmpRuntimeStub}
 
@@ -863,5 +1095,23 @@ defmodule ASM.ProviderBackend.SDKTest do
       provider_permission_mode: Keyword.get(attrs, :provider_permission_mode),
       remote: Keyword.get(attrs, :remote)
     )
+  end
+
+  defp assert_core_event(subscription_ref, kind) do
+    assert_receive %ASM.ProviderBackend.Event{
+      subscription_ref: ^subscription_ref,
+      core_event: %CoreEvent{kind: ^kind} = event
+    }
+
+    event
+  end
+
+  defp assert_asm_event(subscription_ref, kind) do
+    assert_receive %ASM.ProviderBackend.Event{
+      subscription_ref: ^subscription_ref,
+      asm_event: %ASM.Event{kind: ^kind} = event
+    }
+
+    event
   end
 end

@@ -18,3 +18,12 @@
 - Run `mix credo --strict`.
 - Run `mix dialyzer`.
 - Run `mix docs --warnings-as-errors`.
+
+## Live Provider Checks
+
+For live provider checks, use `~/scripts/with_bash_secrets <command>`. It sources
+`~/.bash/bash_secrets` and execs the command. Do not print secret values. Pipe
+`LINEAR_API_KEY` via stdin for Linear examples. GitHub live examples use `gh auth`
+or `GH_TOKEN`/`GITHUB_TOKEN` from the wrapper. Codex SDK examples use the existing
+Codex/OpenAI machine auth through the wrapper. Live provider smoke is not product
+acceptance unless it runs the product-owned Extravaganza command path.

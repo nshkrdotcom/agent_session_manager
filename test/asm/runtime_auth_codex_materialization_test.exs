@@ -1,5 +1,5 @@
 defmodule ASM.RuntimeAuthCodexMaterializationTest do
-  use ASM.TestCase
+  use ASM.SerialTestCase
 
   alias ASM.Options
   alias ASM.RuntimeAuth
@@ -96,7 +96,7 @@ defmodule ASM.RuntimeAuthCodexMaterializationTest do
   end
 
   test "governed Codex strict mode rejects unmanaged ambient provider auth env" do
-    System.put_env("CODEX_API_KEY", "ambient-secret")
+    ASM.Env.put("CODEX_API_KEY", "ambient-secret")
 
     assert {:error, error} =
              CodexMaterialization.authorize_config(
@@ -179,17 +179,17 @@ defmodule ASM.RuntimeAuthCodexMaterializationTest do
   end
 
   defp capture_codex_env do
-    Map.new(codex_env_keys(), &{&1, System.get_env(&1)})
+    Map.new(codex_env_keys(), &{&1, ASM.Env.get(&1)})
   end
 
   defp clear_codex_env do
-    Enum.each(codex_env_keys(), &System.delete_env/1)
+    Enum.each(codex_env_keys(), &ASM.Env.delete/1)
   end
 
   defp restore_env(saved) do
     Enum.each(saved, fn
-      {key, nil} -> System.delete_env(key)
-      {key, value} -> System.put_env(key, value)
+      {key, nil} -> ASM.Env.delete(key)
+      {key, value} -> ASM.Env.put(key, value)
     end)
   end
 

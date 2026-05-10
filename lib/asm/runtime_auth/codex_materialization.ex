@@ -312,7 +312,7 @@ defmodule ASM.RuntimeAuth.CodexMaterialization do
   defp reject_unmanaged_process_env(%__MODULE__{} = materialization) do
     unmanaged =
       Enum.filter(@ambient_env_keys, fn key ->
-        case System.get_env(key) do
+        case ASM.Env.get(key) do
           nil -> false
           "" -> false
           value -> Map.get(materialization.env, key) != value

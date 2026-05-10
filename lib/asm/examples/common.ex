@@ -474,7 +474,7 @@ defmodule ASM.Examples.Common do
         |> put_opt(
           :model,
           Keyword.get(opts, :model) ||
-            System.get_env(example_support.model_env) ||
+            ASM.Env.get(example_support.model_env) ||
             example_support.example_default_model
         )
         |> put_opt(:permission_mode, permission_mode)
@@ -502,8 +502,8 @@ defmodule ASM.Examples.Common do
       Keyword.get(opts, :danger_full_access, false) ->
         {:ok, {:bypass, :danger_full_access_flag}}
 
-      present_option?(System.get_env("ASM_PERMISSION_MODE")) ->
-        {:ok, {System.get_env("ASM_PERMISSION_MODE"), :env}}
+      present_option?(ASM.Env.get("ASM_PERMISSION_MODE")) ->
+        {:ok, {ASM.Env.get("ASM_PERMISSION_MODE"), :env}}
 
       true ->
         {:ok, {:bypass, :example_default_bypass}}
@@ -744,7 +744,7 @@ defmodule ASM.Examples.Common do
     provider
     |> Provider.example_support!()
     |> Map.fetch!(:sdk_root_env)
-    |> System.get_env()
+    |> ASM.Env.get()
     |> case do
       nil -> nil
       "" -> nil
@@ -811,7 +811,7 @@ defmodule ASM.Examples.Common do
   defp export_sdk_cli_env!(provider, cli_path) when is_binary(cli_path) and cli_path != "" do
     case Provider.example_support!(provider).sdk_cli_env do
       nil -> :ok
-      env_name -> System.put_env(env_name, cli_path)
+      env_name -> ASM.Env.put(env_name, cli_path)
     end
   end
 

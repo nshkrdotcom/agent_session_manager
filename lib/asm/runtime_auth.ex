@@ -911,7 +911,7 @@ defmodule ASM.RuntimeAuth do
       provider
       |> provider_env_keys()
       |> Enum.filter(fn key ->
-        case System.get_env(key) do
+        case ASM.Env.get(key) do
           nil -> false
           "" -> false
           _value -> true

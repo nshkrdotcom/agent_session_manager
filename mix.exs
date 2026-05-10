@@ -1,3 +1,7 @@
+unless Code.ensure_loaded?(DependencySources) do
+  Code.require_file("build_support/dependency_sources.exs", __DIR__)
+end
+
 defmodule AgentSessionManager.MixProject do
   use Mix.Project
 
@@ -6,7 +10,6 @@ defmodule AgentSessionManager.MixProject do
   @source_url "https://github.com/nshkrdotcom/agent_session_manager"
   @homepage_url "https://hex.pm/packages/agent_session_manager"
   @docs_url "https://hexdocs.pm/agent_session_manager"
-  @cli_subprocess_core_version "~> 0.1.0"
 
   def project do
     [
@@ -52,7 +55,7 @@ defmodule AgentSessionManager.MixProject do
 
   defp deps do
     [
-      cli_subprocess_core_dep(),
+      DependencySources.dep(:cli_subprocess_core),
       {:boundary, "~> 0.10.4", runtime: false},
       {:jason, "~> 1.4"},
       {:nimble_options, "~> 1.1"},
@@ -66,28 +69,6 @@ defmodule AgentSessionManager.MixProject do
       {:mox, "~> 1.2", only: :test},
       {:supertester, "~> 0.6.0", only: :test}
     ]
-  end
-
-  defp cli_subprocess_core_dep do
-    case local_dep_path("../cli_subprocess_core") do
-      nil -> {:cli_subprocess_core, @cli_subprocess_core_version}
-      path -> {:cli_subprocess_core, path: path}
-    end
-  end
-
-  defp local_dep_path(relative_path) do
-    if local_workspace_deps?() do
-      path = Path.expand(relative_path, __DIR__)
-      if File.dir?(path), do: path
-    end
-  end
-
-  defp local_workspace_deps? do
-    not hex_packaging_task?() and not Enum.member?(Path.split(__DIR__), "deps")
-  end
-
-  defp hex_packaging_task? do
-    Enum.any?(System.argv(), &(&1 in ["hex.build", "hex.publish"]))
   end
 
   defp boundary_checks_enabled? do
@@ -122,7 +103,8 @@ defmodule AgentSessionManager.MixProject do
     [
       name: "agent_session_manager",
       description: description(),
-      files: ~w(lib assets mix.exs README.md CHANGELOG.md LICENSE .formatter.exs guides),
+      files:
+        ~w(lib assets build_support mix.exs README.md CHANGELOG.md LICENSE .formatter.exs guides),
       licenses: ["MIT"],
       maintainers: ["nshkrdotcom"],
       links: %{

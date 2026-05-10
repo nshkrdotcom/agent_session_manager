@@ -29,13 +29,13 @@ defmodule ASM.Examples.CommonTest do
 
     original =
       Map.new(env_vars, fn key ->
-        {key, System.get_env(key)}
+        {key, ASM.Env.get(key)}
       end)
 
     on_exit(fn ->
       Enum.each(original, fn
-        {key, nil} -> System.delete_env(key)
-        {key, value} -> System.put_env(key, value)
+        {key, nil} -> ASM.Env.delete(key)
+        {key, value} -> ASM.Env.put(key, value)
       end)
     end)
 
@@ -44,7 +44,7 @@ defmodule ASM.Examples.CommonTest do
 
   test "core-lane common examples do not resolve SDK roots" do
     sdk_root = Path.expand("../../../codex_sdk", __DIR__)
-    System.put_env("CODEX_SDK_ROOT", sdk_root)
+    ASM.Env.put("CODEX_SDK_ROOT", sdk_root)
 
     assert {:ok, config} =
              Common.build_example_config(
@@ -61,7 +61,7 @@ defmodule ASM.Examples.CommonTest do
   end
 
   test "provider CLI env remains resolver-owned for common examples" do
-    System.put_env("GEMINI_CLI_PATH", "gemini")
+    ASM.Env.put("GEMINI_CLI_PATH", "gemini")
 
     assert {:ok, config} =
              Common.build_example_config(
@@ -287,7 +287,7 @@ defmodule ASM.Examples.CommonTest do
 
   test "sdk lane resolves SDK root from provider env" do
     sdk_root = Path.expand("../../../codex_sdk", __DIR__)
-    System.put_env("CODEX_SDK_ROOT", sdk_root)
+    ASM.Env.put("CODEX_SDK_ROOT", sdk_root)
 
     assert {:ok, config} =
              Common.build_example_config(
@@ -303,7 +303,7 @@ defmodule ASM.Examples.CommonTest do
 
   test "provider-native examples resolve SDK roots even on core lane" do
     sdk_root = Path.expand("../../../gemini_cli_sdk", __DIR__)
-    System.put_env("GEMINI_CLI_SDK_ROOT", sdk_root)
+    ASM.Env.put("GEMINI_CLI_SDK_ROOT", sdk_root)
 
     assert {:ok, config} =
              Common.build_example_config(

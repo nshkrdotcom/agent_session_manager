@@ -27,3 +27,5 @@ agent_session_manager-*.tar
 /examples/tmp/
 
 /_legacy/
+
+.dependency_sources.local.exs

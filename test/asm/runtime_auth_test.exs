@@ -1,5 +1,5 @@
 defmodule ASM.RuntimeAuthTest do
-  use ASM.TestCase
+  use ASM.SerialTestCase
 
   alias ASM.TestSupport.FakeBackend
 
@@ -618,19 +618,19 @@ defmodule ASM.RuntimeAuthTest do
   end
 
   defp with_env(env, fun) when is_map(env) and is_function(fun, 0) do
-    saved = Map.new(env, fn {key, _value} -> {key, System.get_env(key)} end)
+    saved = Map.new(env, fn {key, _value} -> {key, ASM.Env.get(key)} end)
 
     try do
       Enum.each(env, fn
-        {key, nil} -> System.delete_env(key)
-        {key, value} -> System.put_env(key, value)
+        {key, nil} -> ASM.Env.delete(key)
+        {key, value} -> ASM.Env.put(key, value)
       end)
 
       fun.()
     after
       Enum.each(saved, fn
-        {key, nil} -> System.delete_env(key)
-        {key, value} -> System.put_env(key, value)
+        {key, nil} -> ASM.Env.delete(key)
+        {key, value} -> ASM.Env.put(key, value)
       end)
     end
   end

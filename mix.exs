@@ -55,7 +55,7 @@ defmodule AgentSessionManager.MixProject do
 
   defp deps do
     [
-      DependencySources.dep(:cli_subprocess_core),
+      DependencySources.dep(:cli_subprocess_core, __DIR__),
       {:boundary, "~> 0.10.4", runtime: false},
       {:jason, "~> 1.4"},
       {:nimble_options, "~> 1.1"},

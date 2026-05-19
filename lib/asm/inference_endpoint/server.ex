@@ -8,6 +8,7 @@ defmodule ASM.InferenceEndpoint.Server do
   @recv_timeout 5_000
 
   alias ASM.InferenceEndpoint.LeaseStore
+  alias ASM.InferenceEndpoint.RuntimeConfig
   alias ASM.Migration.MainCompat
 
   @spec start_link(keyword()) :: GenServer.on_start()
@@ -224,7 +225,7 @@ defmodule ASM.InferenceEndpoint.Server do
   end
 
   defp runtime_override_opts do
-    Application.get_env(:agent_session_manager, ASM.InferenceEndpoint, [])
+    RuntimeConfig.current()
   end
 
   defp validate_model(payload, lease) do

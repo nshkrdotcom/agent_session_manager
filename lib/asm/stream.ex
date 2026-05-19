@@ -221,9 +221,6 @@ defmodule ASM.Stream do
       {:asm_run_done, run_id} when run_id == state.run_id ->
         await_session_cleanup(state.session, state.run_id, state.timeout_ms)
         {:halt, %{state | done?: true}}
-
-      _other ->
-        next_event(state)
     after
       timeout ->
         raise timeout_error(state)

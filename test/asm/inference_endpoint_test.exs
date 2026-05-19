@@ -2,6 +2,7 @@ defmodule ASM.InferenceEndpointTest do
   use ExUnit.Case, async: false
 
   alias ASM.InferenceEndpoint
+  alias ASM.InferenceEndpoint.RuntimeConfig
   alias CliSubprocessCore.Payload
 
   @socket_capable? (case :gen_tcp.listen(0, [
@@ -25,14 +26,12 @@ defmodule ASM.InferenceEndpointTest do
     Application.ensure_all_started(:inets)
     Application.ensure_all_started(:ssl)
 
-    original = Application.get_env(:agent_session_manager, ASM.InferenceEndpoint)
+    original = RuntimeConfig.current()
+    :ok = RuntimeConfig.reset()
 
     on_exit(fn ->
-      if is_nil(original) do
-        Application.delete_env(:agent_session_manager, ASM.InferenceEndpoint)
-      else
-        Application.put_env(:agent_session_manager, ASM.InferenceEndpoint, original)
-      end
+      :ok = RuntimeConfig.reset()
+      :ok = RuntimeConfig.configure!(original)
     end)
 
     :ok
@@ -229,9 +228,7 @@ defmodule ASM.InferenceEndpointTest do
   end
 
   defp configure_fake_backend(text) do
-    Application.put_env(
-      :agent_session_manager,
-      ASM.InferenceEndpoint,
+    RuntimeConfig.configure!(
       backend_module: ASM.TestSupport.FakeBackend,
       backend_opts: [
         script: [

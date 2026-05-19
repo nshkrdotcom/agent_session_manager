@@ -482,8 +482,8 @@ defmodule ASM.Run.Server do
   defp fanout_to_subscriber(_state, _event), do: :ok
 
   defp finish_run(state) do
-    notify_done(state)
     _ = maybe_close_backend(state)
+    notify_done(state)
     _ = ASM.Telemetry.run_completed(state.session_id, state.run_id, state.provider, state.status)
     {:stop, :normal, state}
   end

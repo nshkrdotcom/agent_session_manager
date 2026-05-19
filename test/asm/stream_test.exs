@@ -5,6 +5,86 @@ defmodule ASM.StreamTest do
   alias ASM.TestSupport.FakeBackend
   alias CliSubprocessCore.Payload
 
+  defmodule CleanupMessageBackend do
+    @moduledoc false
+    use GenServer
+
+    @behaviour ASM.ProviderBackend
+
+    alias ASM.ProviderBackend.Event, as: BackendEvent
+    alias ASM.ProviderBackend.Info
+    alias CliSubprocessCore.Payload
+
+    @impl true
+    def start_run(config) when is_map(config) do
+      with {:ok, pid} <- GenServer.start_link(__MODULE__, config) do
+        {:ok, pid,
+         Info.new(
+           provider: config.provider.name,
+           lane: :core,
+           backend: __MODULE__,
+           runtime: __MODULE__,
+           capabilities: []
+         )}
+      end
+    end
+
+    @impl true
+    def send_input(_pid, _input, _opts \\ []), do: :ok
+
+    @impl true
+    def end_input(_pid), do: :ok
+
+    @impl true
+    def interrupt(_pid), do: :ok
+
+    @impl true
+    def close(pid) when is_pid(pid) do
+      GenServer.call(pid, :close)
+    catch
+      :exit, _reason -> :ok
+    end
+
+    @impl true
+    def subscribe(pid, subscriber, ref)
+        when is_pid(pid) and is_pid(subscriber) and is_reference(ref) do
+      GenServer.call(pid, {:subscribe, subscriber, ref})
+    end
+
+    @impl true
+    def info(_pid), do: Info.new(provider: :claude, lane: :core, backend: __MODULE__)
+
+    @impl true
+    def init(config), do: {:ok, %{config: config, subscriber: nil, ref: nil}}
+
+    @impl true
+    def handle_call({:subscribe, subscriber, ref}, _from, state) do
+      state = %{state | subscriber: subscriber, ref: ref}
+      send_event(state, :run_started, Payload.RunStarted.new(command: "cleanup-probe"))
+      send_event(state, :assistant_delta, Payload.AssistantDelta.new(content: "cleanup"))
+      send_event(state, :result, Payload.Result.new(status: :completed, stop_reason: :end_turn))
+      {:reply, :ok, state}
+    end
+
+    def handle_call(:close, _from, state) do
+      if test_pid = Keyword.get(state.config.backend_opts, :test_pid) do
+        send(test_pid, {:cleanup_message_backend_closed, self()})
+      end
+
+      {:stop, :normal, :ok, state}
+    end
+
+    defp send_event(%{subscriber: subscriber, ref: ref, config: config}, kind, payload) do
+      event =
+        CliSubprocessCore.Event.new(kind,
+          provider: config.provider.name,
+          payload: payload
+        )
+
+      send(subscriber, BackendEvent.new(ref, event))
+    end
+  end
+
   defmodule ContinuationRunProbe do
     @moduledoc false
     use GenServer
@@ -59,6 +139,23 @@ defmodule ASM.StreamTest do
     result = Stream.final_result(events)
     assert result.session_id == session_id
     assert result.text == "hello"
+
+    assert :ok = ASM.stop_session(session)
+  end
+
+  test "create/3 preserves non-stream mailbox messages emitted before run done" do
+    session_id = "stream-cleanup-" <> Integer.to_string(System.unique_integer([:positive]))
+    assert {:ok, session} = ASM.start_session(session_id: session_id, provider: :claude)
+
+    events =
+      ASM.stream(session, "hello",
+        backend_module: CleanupMessageBackend,
+        backend_opts: [test_pid: self()]
+      )
+      |> Enum.to_list()
+
+    assert Stream.final_result(events).text == "cleanup"
+    assert_receive {:cleanup_message_backend_closed, _pid}
 
     assert :ok = ASM.stop_session(session)
   end

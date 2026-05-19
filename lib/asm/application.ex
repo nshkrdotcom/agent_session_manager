@@ -13,6 +13,7 @@ defmodule ASM.Application do
       {ASM.Remote.BackendSupervisor, []},
       {ASM.Session.Supervisor, []},
       {ASM.InferenceEndpoint.LeaseStore, []},
+      {ASM.InferenceEndpoint.RuntimeConfig, []},
       {ASM.InferenceEndpoint.Server, []}
     ]
 

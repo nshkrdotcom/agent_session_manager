@@ -7,7 +7,7 @@ defmodule ASM.Schema.ProviderOptions do
   alias ASM.Schema
   alias CliSubprocessCore.Schema.Conventions
 
-  @providers [:amp, :claude, :codex, :codex_exec, :cursor, :gemini]
+  @providers [:amp, :antigravity, :claude, :codex, :codex_exec, :cursor, :gemini]
   @permission_modes [:default, :auto, :bypass, :plan]
   @overflow_policies [:fail_run, :drop_oldest, :block]
 
@@ -99,6 +99,17 @@ defmodule ASM.Schema.ProviderOptions do
     tools: Zoi.array(Conventions.trimmed_string() |> Zoi.min(1))
   }
 
+  @antigravity_fields %{
+    model: Conventions.optional_trimmed_string(),
+    sandbox: Zoi.boolean(),
+    dangerously_skip_permissions: Zoi.boolean(),
+    conversation: Conventions.optional_trimmed_string(),
+    continue: Zoi.boolean(),
+    add_dirs: Zoi.array(Conventions.trimmed_string() |> Zoi.min(1)),
+    print_timeout: Conventions.optional_trimmed_string(),
+    log_file: Conventions.optional_trimmed_string()
+  }
+
   @cursor_fields %{
     model: Conventions.optional_trimmed_string(),
     mode: Conventions.optional_any(),
@@ -166,6 +177,9 @@ defmodule ASM.Schema.ProviderOptions do
 
   defp schema_for(:amp),
     do: Zoi.map(Map.merge(@common_fields, @amp_fields), unrecognized_keys: :error)
+
+  defp schema_for(:antigravity),
+    do: Zoi.map(Map.merge(@common_fields, @antigravity_fields), unrecognized_keys: :error)
 
   defp schema_for(:cursor),
     do: Zoi.map(Map.merge(@common_fields, @cursor_fields), unrecognized_keys: :error)

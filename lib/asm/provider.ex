@@ -30,10 +30,12 @@ defmodule ASM.Provider do
     metadata: %{}
   ]
 
-  @type provider_name :: :amp | :claude | :codex | :codex_exec | :cursor | :gemini | atom()
+  @type provider_name ::
+          :amp | :antigravity | :claude | :codex | :codex_exec | :cursor | :gemini | atom()
 
   @provider_names_by_string %{
     "amp" => :amp,
+    "antigravity" => :antigravity,
     "claude" => :claude,
     "codex" => :codex,
     "codex_exec" => :codex,
@@ -293,6 +295,30 @@ defmodule ASM.Provider do
         },
         options_schema: ASM.Options.Cursor.schema(),
         feature_manifest: feature_manifest_for(:cursor),
+        profile:
+          Profile.new!(
+            max_concurrent_runs: 1,
+            max_queued_runs: 10
+          )
+      },
+      antigravity: %__MODULE__{
+        name: :antigravity,
+        display_name: "Antigravity CLI",
+        core_profile: CliSubprocessCore.ProviderProfiles.Antigravity,
+        sdk_runtime: :"Elixir.AntigravityCliSdk.Runtime.CLI",
+        example_support: %ExampleSupport{
+          cli_command: "agy",
+          cli_path_env: "ANTIGRAVITY_CLI_PATH",
+          install_hint: "Install the Antigravity CLI agent binary",
+          model_env: "ASM_ANTIGRAVITY_MODEL",
+          example_default_model: nil,
+          sdk_app: :antigravity_cli_sdk,
+          sdk_repo_dir: "antigravity_cli_sdk",
+          sdk_root_env: "ANTIGRAVITY_CLI_SDK_ROOT",
+          sdk_cli_env: "ANTIGRAVITY_CLI_PATH"
+        },
+        options_schema: ASM.Options.Antigravity.schema(),
+        feature_manifest: feature_manifest_for(:antigravity),
         profile:
           Profile.new!(
             max_concurrent_runs: 1,

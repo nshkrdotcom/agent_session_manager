@@ -16,6 +16,7 @@ defmodule ASM.Examples.CommonTest do
       "AMP_CLI_PATH",
       "ASM_PERMISSION_MODE",
       "ASM_AMP_MODEL",
+      "ASM_ANTIGRAVITY_MODEL",
       "ASM_CLAUDE_MODEL",
       "ASM_CODEX_MODEL",
       "ASM_CURSOR_MODEL",
@@ -26,6 +27,8 @@ defmodule ASM.Examples.CommonTest do
       "CODEX_PATH",
       "CURSOR_CLI_PATH",
       "CURSOR_CLI_SDK_ROOT",
+      "ANTIGRAVITY_CLI_PATH",
+      "ANTIGRAVITY_CLI_SDK_ROOT",
       "GEMINI_CLI_PATH",
       "GEMINI_CLI_SDK_ROOT"
     ]
@@ -105,6 +108,26 @@ defmodule ASM.Examples.CommonTest do
     assert config.lane == :core
     assert config.sdk_root == nil
     assert config.session_opts[:model] == "composer-2.5-fast"
+    refute Keyword.has_key?(config.session_opts, :cli_path)
+    assert config.provider_opts[:provider_permission_mode] == :bypass
+  end
+
+  test "antigravity examples stay on the core lane and read Antigravity-owned env names" do
+    ASM.Env.put("ANTIGRAVITY_CLI_PATH", "agy")
+    ASM.Env.put("ASM_ANTIGRAVITY_MODEL", "default")
+
+    assert {:ok, config} =
+             Common.build_example_config(
+               ["--provider", "antigravity"],
+               @script_name,
+               @description,
+               @default_prompt
+             )
+
+    assert config.provider == :antigravity
+    assert config.lane == :core
+    assert config.sdk_root == nil
+    assert config.session_opts[:model] == "default"
     refute Keyword.has_key?(config.session_opts, :cli_path)
     assert config.provider_opts[:provider_permission_mode] == :bypass
   end
@@ -347,7 +370,7 @@ defmodule ASM.Examples.CommonTest do
              Common.build_example_config([], @script_name, @description, @default_prompt)
 
     assert String.contains?(output, "did not run because no provider was selected")
-    assert String.contains?(output, "--provider claude|gemini|codex|amp")
+    assert String.contains?(output, "--provider claude|gemini|codex|amp|cursor|antigravity")
   end
 
   test "unsupported provider returns usage error" do

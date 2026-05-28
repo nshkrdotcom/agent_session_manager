@@ -13,6 +13,7 @@ defmodule ASM.ProviderBackend.SDK do
   @gemini_options_module :"Elixir.GeminiCliSdk.Options"
   @amp_options_module :"Elixir.AmpSdk.Types.Options"
   @cursor_options_module :"Elixir.CursorCliSdk.Options"
+  @antigravity_options_module :"Elixir.AntigravityCliSdk.Options"
   @codex_module :"Elixir.Codex"
   @codex_options_module :"Elixir.Codex.Options"
   @codex_thread_options_module :"Elixir.Codex.Thread.Options"
@@ -224,6 +225,33 @@ defmodule ASM.ProviderBackend.SDK do
          prompt: Map.fetch!(config, :prompt),
          options: options,
          metadata: %{lane: :sdk, asm_provider: :cursor}
+       )}
+    end
+  end
+
+  defp build_start_opts(%Provider{name: :antigravity, sdk_runtime: runtime}, config) do
+    execution_surface = Map.fetch!(config, :execution_surface)
+
+    with {:ok, provider_opts} <-
+           Options.finalize_provider_opts(
+             :antigravity,
+             effective_provider_opts(config, Map.get(config, :execution_config))
+           ),
+         :ok <-
+           RuntimeAuth.authorize_governed_provider_runtime(:antigravity, config, provider_opts),
+         config = Map.put(config, :provider_opts, provider_opts),
+         model_payload = Keyword.fetch!(provider_opts, :model_payload),
+         {:ok, options} <-
+           build_sdk_struct(
+             @antigravity_options_module,
+             antigravity_option_attrs(config, model_payload, execution_surface),
+             "antigravity"
+           ) do
+      {:ok,
+       sdk_start_opts(runtime, config,
+         prompt: Map.fetch!(config, :prompt),
+         options: options,
+         metadata: %{lane: :sdk, asm_provider: :antigravity}
        )}
     end
   end
@@ -512,6 +540,27 @@ defmodule ASM.ProviderBackend.SDK do
     |> drop_nil_values()
   end
 
+  defp antigravity_option_attrs(config, model_payload, execution_surface) do
+    [
+      execution_surface: execution_surface,
+      model_payload: model_payload,
+      model: model_payload_value(model_payload, :resolved_model),
+      cli_command: kw(config, :cli_path),
+      cwd: kw(config, :cwd),
+      env: kw(config, :env, %{}),
+      sandbox: kw(config, :sandbox, false),
+      dangerously_skip_permissions: antigravity_skip_permissions?(config),
+      conversation: kw(config, :conversation, continuation_resume_id(config)),
+      continue: kw(config, :continue, antigravity_continue?(config)),
+      add_dirs: kw(config, :add_dirs, []),
+      print_timeout: kw(config, :print_timeout),
+      log_file: kw(config, :log_file),
+      timeout_ms: kw(config, :transport_timeout_ms),
+      max_stderr_buffer_bytes: kw(config, :max_stderr_buffer_bytes)
+    ]
+    |> drop_nil_values()
+  end
+
   defp codex_option_attrs(config, model_payload, execution_surface) do
     materialization = Map.get(config, :codex_materialization)
 
@@ -705,6 +754,14 @@ defmodule ASM.ProviderBackend.SDK do
 
   defp cursor_continue?(%{continuation: %{strategy: :latest}}), do: true
   defp cursor_continue?(_config), do: nil
+
+  defp antigravity_continue?(%{continuation: %{strategy: :latest}}), do: true
+  defp antigravity_continue?(_config), do: nil
+
+  defp antigravity_skip_permissions?(config) do
+    kw(config, :dangerously_skip_permissions, false) or
+      kw(config, :provider_permission_mode) == :bypass
+  end
 
   defp maybe_put(provider_opts, _key, nil), do: provider_opts
   defp maybe_put(provider_opts, key, value), do: Keyword.put(provider_opts, key, value)

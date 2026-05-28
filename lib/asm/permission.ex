@@ -12,7 +12,16 @@ defmodule ASM.Permission do
 
   alias ASM.Error
 
-  @type provider :: :amp | :claude | :codex | :codex_exec | :cursor | :gemini | :shell | atom()
+  @type provider ::
+          :amp
+          | :antigravity
+          | :claude
+          | :codex
+          | :codex_exec
+          | :cursor
+          | :gemini
+          | :shell
+          | atom()
   @type normalized_mode :: :default | :auto | :bypass | :plan
   @type native_mode :: atom()
   @type normalization :: %{normalized: normalized_mode(), native: native_mode()}
@@ -31,7 +40,8 @@ defmodule ASM.Permission do
     "auto_edit" => :auto_edit,
     "yolo" => :yolo,
     "force" => :bypass,
-    "dangerously_allow_all" => :dangerously_allow_all
+    "dangerously_allow_all" => :dangerously_allow_all,
+    "dangerously_skip_permissions" => :dangerously_skip_permissions
   }
 
   @spec normalized_modes() :: [normalized_mode()]
@@ -144,6 +154,14 @@ defmodule ASM.Permission do
       bypass: %{normalized: :bypass, native: :dangerously_allow_all},
       dangerously_allow_all: %{normalized: :bypass, native: :dangerously_allow_all},
       plan: %{normalized: :plan, native: :plan}
+    }
+  end
+
+  defp provider_mode_map(:antigravity) do
+    %{
+      default: %{normalized: :default, native: :default},
+      bypass: %{normalized: :bypass, native: :bypass},
+      dangerously_skip_permissions: %{normalized: :bypass, native: :bypass}
     }
   end
 

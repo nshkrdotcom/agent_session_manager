@@ -4,8 +4,8 @@ These examples cover two surfaces:
 
 - three provider-agnostic live examples on ASM's common API
 - one offline inference-endpoint publication proof
-- eleven provider-focused examples covering SDK-native surfaces and Cursor's
-  core and SDK provider paths
+- twelve provider-focused examples covering SDK-native surfaces, Cursor's core
+  and SDK provider paths, and Antigravity's core provider path
 
 Nothing runs by default. The live CLI examples require `--provider`.
 
@@ -21,6 +21,8 @@ Nothing runs by default. The live CLI examples require `--provider`.
   publication, OpenAI-compatible HTTP completion/streaming call, and lease
   release
 - `provider_amp_sdk_stream.exs`: direct `AmpSdk.execute/2`
+- `provider_antigravity_core_stream.exs`: Antigravity CLI through ASM's core
+  `cli_subprocess_core` lane
 - `provider_claude_control_client.exs`: `ASM.Extensions.ProviderSDK.Claude`
   control-client bridge
 - `provider_codex_app_server.exs`: `ASM.Extensions.ProviderSDK.Codex`
@@ -134,6 +136,8 @@ mix run --no-start examples/live_query.exs -- --provider claude --ollama --model
 mix run --no-start examples/live_query.exs -- --provider codex --ollama --ollama-model gpt-oss:20b
 mix run --no-start examples/live_query.exs -- --provider amp --lane sdk --sdk-root ../amp_sdk
 mix run --no-start examples/live_query.exs -- --provider cursor
+mix run --no-start examples/live_query.exs -- --provider antigravity
+mix run --no-start examples/provider_antigravity_core_stream.exs -- --provider antigravity
 mix run --no-start examples/provider_cursor_core_stream.exs -- --provider cursor
 mix run --no-start examples/provider_cursor_sdk_stream.exs -- --provider cursor --lane sdk
 mix run --no-start examples/live_query.exs -- --provider codex --ssh-host example.internal
@@ -176,6 +180,7 @@ instead of blocking on password or connection prompts.
 ./examples/run_all.sh --provider claude --provider codex --ollama --ollama-model llama3.2
 ./examples/run_all.sh --provider amp --lane sdk --sdk-root ../amp_sdk
 ./examples/run_all.sh --provider cursor
+./examples/run_all.sh --provider antigravity
 ./examples/run_all.sh --provider codex --ssh-host example.internal
 ./examples/run_all.sh --provider codex --ssh-host example.internal --danger-full-access
 ./examples/run_all.sh --provider claude --provider codex --ssh-host builder@example.internal --ssh-port 2222

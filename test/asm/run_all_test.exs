@@ -31,7 +31,13 @@ defmodule ASM.RunAllTest do
     assert {output, 0} =
              System.cmd(
                "bash",
-               ["examples/run_all.sh", "--provider", "codex,amp,cursor", "--foo", "bar"],
+               [
+                 "examples/run_all.sh",
+                 "--provider",
+                 "codex,amp,cursor,antigravity",
+                 "--foo",
+                 "bar"
+               ],
                cd: @project_root,
                env: [{"PATH", path}],
                stderr_to_stdout: true
@@ -43,6 +49,12 @@ defmodule ASM.RunAllTest do
     assert String.contains?(output, "== provider_amp_sdk_stream.exs provider=amp ==")
     assert String.contains?(output, "== live_query.exs provider=cursor ==")
     assert String.contains?(output, "== provider_cursor_core_stream.exs provider=cursor ==")
+    assert String.contains?(output, "== live_query.exs provider=antigravity ==")
+
+    assert String.contains?(
+             output,
+             "== provider_antigravity_core_stream.exs provider=antigravity =="
+           )
 
     assert String.contains?(
              output,
@@ -57,6 +69,11 @@ defmodule ASM.RunAllTest do
     assert String.contains?(
              output,
              "run --no-start examples/provider_cursor_core_stream.exs -- --provider cursor --foo bar"
+           )
+
+    assert String.contains?(
+             output,
+             "run --no-start examples/provider_antigravity_core_stream.exs -- --provider antigravity --foo bar"
            )
   end
 

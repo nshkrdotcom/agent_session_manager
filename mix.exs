@@ -237,6 +237,7 @@ defmodule AgentSessionManager.MixProject do
         ASM.ProviderRuntimeProfile,
         ASM.Options,
         ASM.Options.Amp,
+        ASM.Options.Antigravity,
         ASM.Options.Claude,
         ASM.Options.Codex,
         ASM.Options.Cursor,

@@ -9,7 +9,8 @@ defmodule ASM.Cost.Models do
     claude: %{input_rate: 0.000003, output_rate: 0.000015},
     gemini: %{input_rate: 0.0000015, output_rate: 0.000006},
     codex_exec: %{input_rate: 0.000001, output_rate: 0.000004},
-    amp: %{input_rate: 0.0000018, output_rate: 0.0000072}
+    amp: %{input_rate: 0.0000018, output_rate: 0.0000072},
+    antigravity: %{input_rate: 0.000002, output_rate: 0.000008}
   }
 
   @model_rates %{
@@ -19,7 +20,8 @@ defmodule ASM.Cost.Models do
     {:gemini, "gemini-2.5-flash"} => %{input_rate: 0.000001, output_rate: 0.000004},
     {:codex_exec, "gpt-5.4"} => %{input_rate: 0.000001, output_rate: 0.000004},
     {:codex_exec, "gpt-5-codex"} => %{input_rate: 0.000001, output_rate: 0.000004},
-    {:amp, "amp-1"} => %{input_rate: 0.0000015, output_rate: 0.000006}
+    {:amp, "amp-1"} => %{input_rate: 0.0000015, output_rate: 0.000006},
+    {:antigravity, "default"} => %{input_rate: 0.000002, output_rate: 0.000008}
   }
 
   @spec lookup(atom(), String.t() | nil) :: rates()

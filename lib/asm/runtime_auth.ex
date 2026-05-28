@@ -62,6 +62,13 @@ defmodule ASM.RuntimeAuth do
       "AMP_MODEL",
       "ASM_AMP_MODEL"
     ],
+    antigravity: [
+      "ANTIGRAVITY_API_KEY",
+      "ANTIGRAVITY_CLI_PATH",
+      "ASM_ANTIGRAVITY_MODEL",
+      "ANTIGRAVITY_MODEL",
+      "ANTIGRAVITY_LOG_FILE"
+    ],
     cursor: [
       "ASM_CURSOR_MODEL",
       "CURSOR_API_KEY",
@@ -443,6 +450,9 @@ defmodule ASM.RuntimeAuth do
 
   @spec provider_account_statuses() :: [atom()]
   def provider_account_statuses, do: @provider_account_statuses
+
+  @spec provider_auth_env_keys(atom()) :: [String.t()]
+  def provider_auth_env_keys(provider) when is_atom(provider), do: provider_env_keys(provider)
 
   @spec new(String.t(), atom(), keyword()) :: {:ok, t()} | {:error, Error.t()}
   def new(session_id, provider, opts \\ [])

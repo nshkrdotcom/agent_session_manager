@@ -28,7 +28,7 @@ defmodule ASM.Examples.Common do
           permission_source: :cli_flag | :danger_full_access_flag | :env | :example_default_bypass
         }
 
-  @providers [:claude, :gemini, :codex, :amp, :cursor]
+  @providers [:claude, :gemini, :codex, :amp, :cursor, :antigravity]
   @cli_probe_prompt "__ASM_EXAMPLE_CLI_PREFLIGHT__"
   @example_ssh_options %{
     "BatchMode" => "yes",
@@ -435,6 +435,7 @@ defmodule ASM.Examples.Common do
 
     case provider do
       "amp" -> {:ok, :amp}
+      "antigravity" -> {:ok, :antigravity}
       "claude" -> {:ok, :claude}
       "codex" -> {:ok, :codex}
       "cursor" -> {:ok, :cursor}
@@ -484,10 +485,18 @@ defmodule ASM.Examples.Common do
         |> put_opt(:ollama_base_url, Keyword.get(opts, :ollama_base_url))
         |> put_opt(:ollama_http, Keyword.get(opts, :ollama_http))
         |> put_opt(:ollama_timeout_ms, Keyword.get(opts, :ollama_timeout_ms))
+        |> maybe_put_antigravity_workspace(provider, Keyword.get(opts, :cwd))
 
       {:ok, {session_opts, permission_source}}
     end
   end
+
+  defp maybe_put_antigravity_workspace(opts, :antigravity, cwd)
+       when is_binary(cwd) and cwd != "" do
+    Keyword.put_new(opts, :add_dirs, [cwd])
+  end
+
+  defp maybe_put_antigravity_workspace(opts, _provider, _cwd), do: opts
 
   defp resolve_permission_mode(opts) when is_list(opts) do
     cond do
@@ -1026,7 +1035,7 @@ defmodule ASM.Examples.Common do
     #{script_name} did not run because no provider was selected.
     #{description}
 
-    Choose one provider with `--provider claude|gemini|codex|amp|cursor`.
+    Choose one provider with `--provider #{Enum.join(@providers, "|")}`.
     Example:
       mix run --no-start examples/#{script_name} -- --provider claude
 

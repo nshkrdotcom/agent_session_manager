@@ -23,6 +23,7 @@ defmodule ASM.ProviderRegistryTest do
     assert {:ok, :gemini} = ProviderRegistry.core_profile_id(:gemini)
     assert {:ok, :amp} = ProviderRegistry.core_profile_id(:amp)
     assert {:ok, :cursor} = ProviderRegistry.core_profile_id(:cursor)
+    assert {:ok, :antigravity} = ProviderRegistry.core_profile_id(:antigravity)
   end
 
   test "provider_info/1 exposes provider and lane discovery metadata" do
@@ -49,6 +50,22 @@ defmodule ASM.ProviderRegistryTest do
     assert info.sdk_runtime == CursorCliSdk.Runtime.CLI
     assert info.sdk_available? == true
     assert info.available_lanes == [:core, :sdk]
+  end
+
+  test "antigravity exposes core lane and stable SDK runtime metadata" do
+    put_runtime_loader(fn
+      :"Elixir.AntigravityCliSdk.Runtime.CLI" -> false
+      runtime -> Code.ensure_loaded?(runtime)
+    end)
+
+    assert {:ok, info} = ProviderRegistry.provider_info(:antigravity)
+
+    assert info.provider.name == :antigravity
+    assert info.core_profile_id == :antigravity
+    assert info.core_profile == CliSubprocessCore.ProviderProfiles.Antigravity
+    assert info.sdk_runtime == :"Elixir.AntigravityCliSdk.Runtime.CLI"
+    assert info.sdk_available? == false
+    assert info.available_lanes == [:core]
   end
 
   test "lane_info/2 resolves lane preference independently from execution mode" do

@@ -14,6 +14,7 @@ defmodule ASM.ProviderFeaturesTest do
     gemini = ProviderFeatures.manifest!(:gemini)
     amp = ProviderFeatures.manifest!(:amp)
     cursor = ProviderFeatures.manifest!(:cursor)
+    antigravity = ProviderFeatures.manifest!(:antigravity)
 
     assert claude.common_features.ollama.supported? == true
 
@@ -48,9 +49,12 @@ defmodule ASM.ProviderFeaturesTest do
 
     assert cursor.common_features.ollama.supported? == false
     assert cursor.permission_modes.bypass.cli_excerpt == "--force"
+
+    assert antigravity.common_features.ollama.supported? == false
+    assert antigravity.permission_modes.bypass.cli_excerpt == "--dangerously-skip-permissions"
   end
 
-  test "provider lane capability manifests use support states across all five SDK providers" do
+  test "provider lane capability manifests use support states across all SDK providers" do
     assert ProviderFeatures.support_states() == [
              :common,
              :native,
@@ -84,7 +88,7 @@ defmodule ASM.ProviderFeaturesTest do
     assert claude_sdk.capabilities.app_server.support_state == :unsupported
     refute :dynamic_tools in claude_sdk.capabilities.host_tools.provider_native_option_keys
 
-    for provider <- [:amp, :gemini, :cursor] do
+    for provider <- [:amp, :gemini, :cursor, :antigravity] do
       manifest = ProviderFeatures.lane_manifest!(provider, :sdk)
 
       assert manifest.composition_mode == :common_surface_only
@@ -106,7 +110,7 @@ defmodule ASM.ProviderFeaturesTest do
   end
 
   test "host tools are not admitted as an all-provider common ASM capability" do
-    for provider <- [:claude, :codex, :gemini, :amp, :cursor],
+    for provider <- [:claude, :codex, :gemini, :amp, :cursor, :antigravity],
         lane <- Map.keys(ProviderFeatures.manifest!(provider).lanes) do
       manifest = ProviderFeatures.lane_manifest!(provider, lane)
       host_tools = manifest.capabilities.host_tools
@@ -124,7 +128,7 @@ defmodule ASM.ProviderFeaturesTest do
   end
 
   test "sandbox policy discovery does not expose a common ASM sandbox control" do
-    for provider <- [:claude, :codex, :gemini, :amp, :cursor],
+    for provider <- [:claude, :codex, :gemini, :amp, :cursor, :antigravity],
         lane <- Map.keys(ProviderFeatures.manifest!(provider).lanes) do
       manifest = ProviderFeatures.lane_manifest!(provider, lane)
       sandbox_policy = manifest.capabilities.sandbox_policy

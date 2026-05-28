@@ -11,6 +11,7 @@ npm install -g @anthropic-ai/claude-code
 npm install -g @google/gemini-cli
 npm install -g @openai/codex
 npm install -g @sourcegraph/amp
+# Install Cursor Agent CLI using Cursor's current CLI documentation.
 ```
 
 Optional explicit binary paths:
@@ -19,6 +20,7 @@ Optional explicit binary paths:
 - `GEMINI_CLI_PATH`
 - `CODEX_PATH`
 - `AMP_CLI_PATH`
+- `CURSOR_CLI_PATH`
 
 ## Example Behavior
 
@@ -43,6 +45,8 @@ mix run --no-start examples/live_query.exs -- --provider claude
 mix run --no-start examples/live_stream.exs -- --provider gemini
 mix run --no-start examples/live_session_lifecycle.exs -- --provider codex
 mix run --no-start examples/live_stream.exs -- --provider amp --prompt "Reply with exactly: AMP_STREAM_OK"
+mix run --no-start examples/live_stream.exs -- --provider cursor
+mix run --no-start examples/provider_cursor_sdk_stream.exs -- --provider cursor --lane sdk
 ```
 
 ## Run every example for selected providers
@@ -54,6 +58,7 @@ mix run --no-start examples/live_stream.exs -- --provider amp --prompt "Reply wi
 ./examples/run_all.sh --provider codex --ssh-host example.internal --danger-full-access
 ./examples/run_all.sh --provider claude --ollama --ollama-model llama3.2
 ./examples/run_all.sh --provider codex --ollama --ollama-model llama3.2
+./examples/run_all.sh --provider cursor
 ```
 
 `run_all.sh` forwards extra flags to each example, so common overrides such as
@@ -83,8 +88,8 @@ targets.
 ## Useful environment knobs
 
 - `ASM_PERMISSION_MODE` (`default`, `auto`, `bypass`, `plan`)
-- `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL`, `ASM_AMP_MODEL`
-- `CLAUDE_CLI_PATH`, `GEMINI_CLI_PATH`, `CODEX_PATH`, `AMP_CLI_PATH`
+- `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL`, `ASM_AMP_MODEL`, `ASM_CURSOR_MODEL`
+- `CLAUDE_CLI_PATH`, `GEMINI_CLI_PATH`, `CODEX_PATH`, `AMP_CLI_PATH`, `CURSOR_CLI_PATH`
 
 ## Remote SSH Smoke Tests
 
@@ -113,6 +118,7 @@ providers that actually support it.
 
 - Claude: supported
 - Codex: supported
+- Cursor: unsupported
 - Gemini: unsupported
 - Amp: unsupported
 

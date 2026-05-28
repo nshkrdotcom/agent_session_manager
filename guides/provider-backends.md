@@ -124,9 +124,9 @@ provider-native surfaces such as Claude control semantics, Codex app-server,
 Gemini settings profiles, and Amp permissions/MCP remain explicit optional
 seams above the kernel.
 
-All five providers now have explicit extension namespaces. Gemini, Amp, and Cursor start
-with limited strict `derive_options/2` helpers; those helpers derive only common
-placement/session data and require provider-native settings in
+All five providers now have explicit extension namespaces. Gemini, Amp, and
+Cursor start with strict `derive_options/2` helpers; those helpers derive only
+common placement/session data and require provider-native settings in
 `native_overrides`.
 
 For Claude specifically, `ASM.Extensions.ProviderSDK.Claude` can bridge ASM
@@ -152,8 +152,8 @@ Broader Codex app-server APIs such as MCP, realtime, voice, plugin, and
 filesystem helpers remain in `codex_sdk` or the provider SDK extension seam.
 
 This is Codex-native behavior, not proof of all-provider ASM host-tool support.
-Generic ASM `tools:` must remain rejected or provider-native until the all-four
-host-tool admission checklist is complete.
+Generic ASM `tools:` must remain rejected or provider-native until the
+five-provider host-tool admission checklist is complete.
 Host-tool declaration, request, and response metadata reject secret-shaped
 fields such as API-key, token, auth, credential, password, and bearer keys.
 
@@ -259,3 +259,45 @@ path inside the Amp repo.
 In governed ASM mode, Amp env/model defaults and native CLI auth remain
 standalone-only. Governed Amp starts fail closed until a verified provider-auth
 materializer supplies explicit launch authority.
+
+## Cursor Backend-Specific Inputs
+
+Cursor runs on both ASM lanes:
+
+- `:core` -> `CliSubprocessCore.ProviderProfiles.Cursor`
+- `:sdk` -> `CursorCliSdk.Runtime.CLI` when `cursor_cli_sdk` is installed
+
+Relevant Cursor provider fields:
+
+- `:model`
+- `:mode`
+- `:sandbox`
+- `:approve_mcps`
+- `:worktree`
+- `:worktree_base`
+- `:skip_worktree_setup`
+- `:plugin_dirs`
+- `:headers`
+
+ASM common `:cwd` is the only workspace placement key. The Cursor core profile
+and SDK both render it as Cursor `--workspace <cwd>` while also using it as the
+process cwd. There is no ASM `:workspace` option.
+
+Permission mapping:
+
+- ASM `:default` -> Cursor `:default` -> no extra permission flag
+- ASM `:bypass` -> Cursor `:bypass` -> `--force`
+- ASM `:plan` -> Cursor `:plan` -> `--mode plan`
+
+Cursor `:ask` is `ASM.Options.Cursor` `mode: :ask`, not an ASM permission mode.
+
+Auth and command path ownership:
+
+- `CURSOR_API_KEY`
+- `CURSOR_CLI_PATH`
+- `ASM_CURSOR_MODEL`
+
+In governed ASM mode, Cursor follows the same fail-closed family as
+Claude/Gemini/Amp. Provider auth, command, cwd, env, execution surface, and
+target authority must be materialized by the owner boundary; ASM does not
+promote local Cursor login state into governed authority.

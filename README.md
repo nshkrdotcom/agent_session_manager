@@ -136,6 +136,7 @@ Optional explicit CLI paths:
 - `GEMINI_CLI_PATH`
 - `CODEX_PATH`
 - `AMP_CLI_PATH`
+- `CURSOR_CLI_PATH`
 
 ## Quick Start
 
@@ -180,6 +181,7 @@ profiles:
 
 - Codex
 - Claude
+- Cursor
 - Gemini
 - Amp
 
@@ -188,7 +190,10 @@ the landed provider profiles and runtime tiers, but the endpoint path only
 exposes completion and streaming. Tool-bearing or agent-loop-shaped requests
 are rejected on that endpoint seam.
 
-Gemini and Amp remain common-surface-only for inference endpoint publication.
+Cursor, Gemini, and Amp remain common-surface-only for inference endpoint
+publication.
+Cursor's SDK lane remains a provider-native runtime lane, not an endpoint
+contract expansion.
 Their provider SDK extension namespaces are explicit homes for provider-native
 settings, but those namespaces do not widen the endpoint contract.
 They explicitly report Codex-style host dynamic tools and app-server control as
@@ -571,9 +576,11 @@ Optional-loading rules:
 - rich provider-native APIs still live in the owning provider SDKs
 - ASM does not normalize those richer APIs into `ASM`, `ASM.Stream`, or
   `ASM.ProviderRegistry`
-- Gemini and Amp extension helpers start deliberately narrow. They derive only
-  common placement/session data and require explicit `native_overrides` for
-  Gemini settings/trust controls or Amp permissions/MCP/skills/thread behavior.
+- Gemini, Amp, and Cursor extension helpers start deliberately narrow. They
+  derive only common placement/session data and require explicit
+  `native_overrides` for Gemini settings/trust controls, Amp
+  permissions/MCP/skills/thread behavior, or Cursor mode/sandbox/MCP/plugin
+  settings.
 
 The Claude namespace now exposes an explicit bridge into the SDK-local control
 family:

@@ -34,6 +34,7 @@ ASM publishes the built-in CLI providers:
 
 - `:codex`
 - `:claude`
+- `:cursor`
 - `:gemini`
 - `:amp`
 
@@ -91,7 +92,8 @@ projection path that ordinary session/query callers already consume.
 
 ## Provider Boundaries
 
-Gemini and Amp remain common-surface-only providers.
+Cursor, Gemini, and Amp remain common-surface-only providers on this endpoint
+publication seam.
 
 They can publish:
 

@@ -104,14 +104,14 @@ Activation-aware discovery follows a separate rule:
 - `available_provider_extensions/1` reports the active native-extension subset
   for one provider
 - `provider_report/1` and `capability_report/0` always include all ASM
-  providers, including Gemini and Amp, and show whether each provider SDK
-  runtime is available plus any active native namespace inventory
+  providers, including Cursor, Gemini, and Amp, and show whether each provider
+  SDK runtime is available plus any active native namespace inventory
 - `registered_namespaces` and `registered_extensions` keep the static catalog
   visible even when a provider currently composes only through the common
   surface
-- Gemini and Amp start with limited derivation helpers. They still have explicit
-  namespaces so Gemini settings/trust controls and Amp permissions/MCP/skills
-  have one provider-native home.
+- Cursor, Gemini, and Amp start with strict derivation helpers. They still have
+  explicit namespaces so Cursor mode/MCP/plugin settings, Gemini settings/trust
+  controls, and Amp permissions/MCP/skills have one provider-native home.
 
 Every namespace exposes `derive_options/2` for the strict common path:
 
@@ -265,6 +265,37 @@ with a `.codex` artifact. Keep ASM's Codex bridge on `:default` or `:bypass`,
 or use `codex_sdk` directly when you explicitly need provider-native
 workspace-write behavior.
 
+Cursor exposes the same strict derivation shape for `cursor_cli_sdk`:
+
+```elixir
+alias ASM.Extensions.ProviderSDK.Cursor
+
+asm_common = [
+  provider: :cursor,
+  model: "composer-2.5-fast",
+  cwd: File.cwd!(),
+  execution_surface: [surface_kind: :local_subprocess]
+]
+
+native_overrides = [
+  mode: :ask,
+  approve_mcps: true,
+  plugin_dirs: ["priv/cursor/plugins"]
+]
+
+{:ok, cursor_options} =
+  Cursor.derive_options(asm_common, native_overrides: native_overrides)
+```
+
+The resulting struct is `%CursorCliSdk.Options{}`. The SDK lane uses
+`CursorCliSdk.Runtime.CLI`; the core lane remains
+`CliSubprocessCore.ProviderProfiles.Cursor`.
+
+Cursor-native settings such as `:mode`, `:sandbox`, `:approve_mcps`, worktree
+controls, plugin dirs, and headers belong in `native_overrides`. ASM-derived
+fields such as `:model`, `:cwd`, `:execution_surface`, `:timeout_ms`, and
+launch auth placement stay in ASM config.
+
 ## Optional-Loading Rules
 
 - discovery calls are always available from ASM
@@ -288,6 +319,8 @@ workspace-write behavior.
 - the Codex bridge is intentionally useful at the app-server entry seam; ASM
   only promotes host dynamic tools into the backend, while the broader
   app-server, MCP, realtime, and voice APIs remain in `codex_sdk`
+- the Cursor bridge derives `CursorCliSdk.Options`; Cursor-native settings
+  stay in `native_overrides`
 
 ## Current Native Capability Inventory
 
@@ -318,17 +351,25 @@ Amp namespace:
 - `:skills`
 - `:threads`
 
+Cursor namespace:
+
+- `:mcp`
+- `:plugins`
+- `:worktrees`
+
 These are capability labels for discovery and documentation only in this
 foundation slice. They are not new normalized kernel APIs.
 ## Session-Control Extensions
 
-Provider SDK extensions may now publish optional callbacks and capability markers for:
+Provider SDK extensions may now publish optional callbacks and capability
+markers for:
 
 - session history listing
 - exact or latest-session resume
 - pause
 - operator intervention
 
-Those extensions are only valid when the provider runtime can back them with a real native surface.
-ASM now keeps the provider-native recovery handles in session/run state so a caller can choose exact
-resume before it falls back to replaying prompts.
+Those extensions are only valid when the provider runtime can back them with a
+real native surface. ASM now keeps the provider-native recovery handles in
+session/run state so a caller can choose exact resume before it falls back to
+replaying prompts.

@@ -67,8 +67,8 @@ iex> ASM.ProviderFeatures.lane_manifest!(:codex, :core).capabilities.host_tools.
 :event_only
 ```
 
-Amp and Gemini have explicit provider SDK extension namespaces, but they still
-do not claim Codex app-server or host dynamic-tool semantics:
+Amp, Gemini, and Cursor have explicit provider SDK extension namespaces, but
+they still do not claim Codex app-server or host dynamic-tool semantics:
 
 ```elixir
 iex> ASM.ProviderFeatures.require_capability(:gemini, :sdk, :host_tools)
@@ -83,7 +83,7 @@ request/response loop is implemented and tested.
 provider tool-use events. It is not host-executable tool registration, and it
 does not change the host-tool admission decision: generic ASM `tools:`,
 `host_tools:`, and `dynamic_tools:` remain rejected from strict common paths
-until the all-four host-tool proof matrix is complete.
+until the five-provider host-tool proof matrix is complete.
 
 ## Sandboxing And Placement
 
@@ -92,17 +92,17 @@ isolation and target placement are represented by `execution_surface`, including
 surface kind, transport options, boundary class, and observability metadata.
 
 Provider CLI sandbox flags remain provider-native. For example, Gemini's
-`sandbox` flag and Codex's sandbox/app-server settings belong in the owning
-provider SDK or explicit provider-native extension path. They are not the same
-as Execution Plane isolation, and strict common ASM preflight rejects them.
+`sandbox` flag, Cursor's `sandbox` flag, and Codex's sandbox/app-server
+settings belong in the owning provider SDK or explicit provider-native
+extension path. They are not the same as Execution Plane isolation, and strict
+common ASM preflight rejects them.
 
-## Permission Mode Compatibility
+## Permission Mode Mapping
 
-Historically ASM kept a public knob normalized as `:permission_mode`, then
-mapped it to the provider-native form during validation. That behavior remains
-available for compatibility, but new strict-common integrations should treat
-permission controls as partial/provider-native until all-four safety semantics
-are proven.
+ASM exposes one normalized public knob, `:permission_mode`, and maps it to the
+provider-native form during validation. Strict-common integrations should treat
+permission controls as partial/provider-native until five-provider safety
+semantics are proven.
 
 Examples:
 
@@ -110,6 +110,7 @@ Examples:
 - Gemini `:bypass` -> `:yolo`
 - Codex `:bypass` -> `:yolo`
 - Amp `:bypass` -> `:dangerously_allow_all`
+- Cursor `:bypass` -> `:bypass` -> `--force`
 
 Codex exception:
 
@@ -119,7 +120,7 @@ Codex exception:
 - use Codex `:default` or `:bypass` through ASM, or use `codex_sdk` directly
   when you explicitly want provider-native auto-edit behavior
 
-This is only the compatibility normalized approval/edit posture.
+This is only the normalized approval/edit posture.
 
 It is not a promise that every provider exposes the same lower-level controls.
 For example:
@@ -127,12 +128,14 @@ For example:
 - Codex also has provider-specific thread options such as
   `ask_for_approval`
 - Gemini also has a provider-native `sandbox` CLI flag
+- Cursor also has provider-native `mode`, `sandbox`, `approve_mcps`,
+  worktree, plugin directory, and header flags
 - those provider-specific knobs are not implied by ASM's common
   `:permission_mode`
 
 `ASM.Options.preflight(provider, opts)` rejects permission aliases in strict
-common mode. Compatibility mode classifies them separately from `common` and
-returns structured warning metadata.
+common mode. Non-common permission aliases are classified separately from
+`common` and return structured warning metadata.
 
 If you need to present the native term:
 
@@ -143,6 +146,14 @@ iex> ASM.ProviderFeatures.permission_mode!(:amp, :dangerously_allow_all)
   cli_args: ["--dangerously-allow-all"],
   cli_excerpt: "--dangerously-allow-all",
   label: "dangerously_allow_all"
+}
+
+iex> ASM.ProviderFeatures.permission_mode!(:cursor, :bypass)
+%{
+  native_mode: :bypass,
+  cli_args: ["--force"],
+  cli_excerpt: "--force",
+  label: "force"
 }
 ```
 
@@ -165,6 +176,7 @@ Supported today:
 
 Not supported today:
 
+- Cursor
 - Gemini
 - Amp
 
@@ -221,11 +233,10 @@ standing in:
 - ASM execution environment
   - strict common/runtime knobs such as `model`, `lane`,
     `execution_surface`, `cwd`, and runtime timeout or queue settings
-  - compatibility-only knobs such as `permission_mode` while all-four safety
-    semantics remain unproven
+  - normalized permission knobs such as `permission_mode` while five-provider
+    safety semantics remain partial
 - ASM provider feature discovery
-  - provider-native names and CLI spellings for compatibility or
-    partial/discovery knobs
+  - provider-native names and CLI spellings for partial/discovery knobs
 - provider SDK or provider CLI layer
   - extra provider-specific knobs that do not exist in ASM's common contract
 

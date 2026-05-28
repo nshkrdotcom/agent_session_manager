@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cursor Agent CLI is registered as the fifth ASM provider on the core
   `cli_subprocess_core` lane, with Cursor options, permission mapping,
   extension metadata, examples, and live smoke tests.
+- Cursor SDK lane documentation now covers backend selection, strict
+  `ProviderSDK.Cursor` derivation, live examples, and endpoint publication
+  boundaries.
 - `ASM.HostTool` specs, requests, and responses plus ASM-local host-tool event
   kinds for Codex app-server dynamic tool request/response flows.
 - A Codex SDK app-server backend path that advertises `dynamicTools`, executes

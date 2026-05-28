@@ -82,6 +82,7 @@ Examples:
 - Codex: `:bypass` -> `:yolo` -> `--dangerously-bypass-approvals-and-sandbox`
 - Amp: `:bypass` -> `:dangerously_allow_all` -> `--dangerously-allow-all`
 - Cursor: `:bypass` -> `:bypass` -> `--force`
+- Antigravity: `:bypass` -> `:bypass` -> `--dangerously-skip-permissions`
 
 ## Common Ollama Surface
 
@@ -105,6 +106,7 @@ Unsupported:
 - Gemini
 - Amp
 - Cursor
+- Antigravity
 
 `run_all.sh` rejects `--ollama*` flags immediately for unsupported providers.
 
@@ -137,6 +139,7 @@ mix run --no-start examples/live_query.exs -- --provider codex --ollama --ollama
 mix run --no-start examples/live_query.exs -- --provider amp --lane sdk --sdk-root ../amp_sdk
 mix run --no-start examples/live_query.exs -- --provider cursor
 mix run --no-start examples/live_query.exs -- --provider antigravity
+mix run --no-start examples/live_query.exs -- --provider antigravity --lane sdk --sdk-root ../antigravity_cli_sdk
 mix run --no-start examples/provider_antigravity_core_stream.exs -- --provider antigravity
 mix run --no-start examples/provider_cursor_core_stream.exs -- --provider cursor
 mix run --no-start examples/provider_cursor_sdk_stream.exs -- --provider cursor --lane sdk
@@ -181,6 +184,7 @@ instead of blocking on password or connection prompts.
 ./examples/run_all.sh --provider amp --lane sdk --sdk-root ../amp_sdk
 ./examples/run_all.sh --provider cursor
 ./examples/run_all.sh --provider antigravity
+./examples/run_all.sh --provider antigravity --lane sdk --sdk-root ../antigravity_cli_sdk
 ./examples/run_all.sh --provider codex --ssh-host example.internal
 ./examples/run_all.sh --provider codex --ssh-host example.internal --danger-full-access
 ./examples/run_all.sh --provider claude --provider codex --ssh-host builder@example.internal --ssh-port 2222
@@ -237,9 +241,10 @@ from result/checkpoint metadata and sends the second turn with
 - `GEMINI_CLI_PATH`, `ASM_GEMINI_MODEL`
 - `CODEX_PATH`, `ASM_CODEX_MODEL`
 - `AMP_CLI_PATH`, `ASM_AMP_MODEL`
+- `ANTIGRAVITY_CLI_PATH`, `ASM_ANTIGRAVITY_MODEL`
 - `ASM_PERMISSION_MODE`
 - `CLAUDE_AGENT_SDK_ROOT`, `CODEX_SDK_ROOT`, `GEMINI_CLI_SDK_ROOT`,
-  `AMP_SDK_ROOT`
+  `AMP_SDK_ROOT`, `ANTIGRAVITY_CLI_SDK_ROOT`
 
 The examples preflight the selected CLI before they start a session and print an
 install hint if it is missing.

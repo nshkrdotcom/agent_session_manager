@@ -1,6 +1,6 @@
 # Common And Partial Provider Features
 
-ASM exposes a single common session API across five providers, but not every
+ASM exposes a single common session API across six providers, but not every
 provider supports every feature.
 
 `ASM.ProviderFeatures` is the public discovery surface for that reality.
@@ -67,8 +67,8 @@ iex> ASM.ProviderFeatures.lane_manifest!(:codex, :core).capabilities.host_tools.
 :event_only
 ```
 
-Amp, Gemini, and Cursor have explicit provider SDK extension namespaces, but
-they still do not claim Codex app-server or host dynamic-tool semantics:
+Amp, Gemini, Cursor, and Antigravity have SDK runtime lanes, but they still do
+not claim Codex app-server or host dynamic-tool semantics:
 
 ```elixir
 iex> ASM.ProviderFeatures.require_capability(:gemini, :sdk, :host_tools)
@@ -83,7 +83,7 @@ request/response loop is implemented and tested.
 provider tool-use events. It is not host-executable tool registration, and it
 does not change the host-tool admission decision: generic ASM `tools:`,
 `host_tools:`, and `dynamic_tools:` remain rejected from strict common paths
-until the five-provider host-tool proof matrix is complete.
+until the all-provider host-tool proof matrix is complete.
 
 ## Sandboxing And Placement
 
@@ -92,16 +92,16 @@ isolation and target placement are represented by `execution_surface`, including
 surface kind, transport options, boundary class, and observability metadata.
 
 Provider CLI sandbox flags remain provider-native. For example, Gemini's
-`sandbox` flag, Cursor's `sandbox` flag, and Codex's sandbox/app-server
-settings belong in the owning provider SDK or explicit provider-native
-extension path. They are not the same as Execution Plane isolation, and strict
-common ASM preflight rejects them.
+`sandbox` flag, Cursor's `sandbox` flag, Antigravity's `sandbox` flag, and
+Codex's sandbox/app-server settings belong in the owning provider SDK or
+explicit provider-native extension path. They are not the same as Execution
+Plane isolation, and strict common ASM preflight rejects them.
 
 ## Permission Mode Mapping
 
 ASM exposes one normalized public knob, `:permission_mode`, and maps it to the
 provider-native form during validation. Strict-common integrations should treat
-permission controls as partial/provider-native until five-provider safety
+permission controls as partial/provider-native until all-provider safety
 semantics are proven.
 
 Examples:
@@ -111,6 +111,7 @@ Examples:
 - Codex `:bypass` -> `:yolo`
 - Amp `:bypass` -> `:dangerously_allow_all`
 - Cursor `:bypass` -> `:bypass` -> `--force`
+- Antigravity `:bypass` -> `:bypass` -> `--dangerously-skip-permissions`
 
 Codex exception:
 
@@ -130,6 +131,8 @@ For example:
 - Gemini also has a provider-native `sandbox` CLI flag
 - Cursor also has provider-native `mode`, `sandbox`, `approve_mcps`,
   worktree, plugin directory, and header flags
+- Antigravity also has provider-native `sandbox`, `conversation`, `continue`,
+  `add_dirs`, `print_timeout`, and `log_file` flags
 - those provider-specific knobs are not implied by ASM's common
   `:permission_mode`
 
@@ -155,6 +158,14 @@ iex> ASM.ProviderFeatures.permission_mode!(:cursor, :bypass)
   cli_excerpt: "--force",
   label: "force"
 }
+
+iex> ASM.ProviderFeatures.permission_mode!(:antigravity, :bypass)
+%{
+  native_mode: :bypass,
+  cli_args: ["--dangerously-skip-permissions"],
+  cli_excerpt: "--dangerously-skip-permissions",
+  label: "dangerously-skip-permissions"
+}
 ```
 
 ## Common Ollama Surface
@@ -179,6 +190,7 @@ Not supported today:
 - Cursor
 - Gemini
 - Amp
+- Antigravity
 
 Unsupported providers fail validation immediately instead of silently ignoring
 the common Ollama knobs.
@@ -233,7 +245,7 @@ standing in:
 - ASM execution environment
   - strict common/runtime knobs such as `model`, `lane`,
     `execution_surface`, `cwd`, and runtime timeout or queue settings
-  - normalized permission knobs such as `permission_mode` while five-provider
+  - normalized permission knobs such as `permission_mode` while all-provider
     safety semantics remain partial
 - ASM provider feature discovery
   - provider-native names and CLI spellings for partial/discovery knobs

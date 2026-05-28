@@ -20,8 +20,8 @@ driver/parser stacks.
 - preserves the same normalized execution-surface contract as the core backend
   for local subprocess and SSH lanes
 - never becomes a required dependency for ASM itself
-- may exist without any separate ASM provider-native namespace, as with Gemini
-  and Amp today
+- may exist without any separate ASM provider-native namespace, as with
+  Antigravity today
 - promotes the Codex app-server host-tool lane when Codex provider options
   request `app_server: true`, `host_tools: [...]`, or `dynamic_tools: [...]`
 
@@ -121,13 +121,19 @@ Provider-native capability reporting now lives under
 
 That keeps backend discovery focused on `:core` versus `:sdk`, while
 provider-native surfaces such as Claude control semantics, Codex app-server,
-Gemini settings profiles, and Amp permissions/MCP remain explicit optional
-seams above the kernel.
+Gemini settings profiles, Amp permissions/MCP, Cursor mode/worktree controls,
+and Antigravity runtime options remain explicit optional seams above the
+kernel.
 
-All five providers now have explicit extension namespaces. Gemini, Amp, and
-Cursor start with strict `derive_options/2` helpers; those helpers derive only
-common placement/session data and require provider-native settings in
-`native_overrides`.
+Five providers currently have explicit extension namespaces: Claude, Codex,
+Gemini, Amp, and Cursor. Gemini, Amp, and Cursor start with strict
+`derive_options/2` helpers; those helpers derive only common placement/session
+data and require provider-native settings in `native_overrides`.
+
+Antigravity is the sixth first-party provider. It has a core profile and
+optional `antigravity_cli_sdk` runtime lane, but no separate
+`ASM.Extensions.ProviderSDK.Antigravity` namespace yet. Provider SDK reports
+therefore include `:antigravity` with an empty `registered_namespaces` list.
 
 For Claude specifically, `ASM.Extensions.ProviderSDK.Claude` can bridge ASM
 config into `ClaudeAgentSDK.Client`, but the resulting control calls still live
@@ -153,7 +159,7 @@ filesystem helpers remain in `codex_sdk` or the provider SDK extension seam.
 
 This is Codex-native behavior, not proof of all-provider ASM host-tool support.
 Generic ASM `tools:` must remain rejected or provider-native until the
-five-provider host-tool admission checklist is complete.
+all-provider host-tool admission checklist is complete.
 Host-tool declaration, request, and response metadata reject secret-shaped
 fields such as API-key, token, auth, credential, password, and bearer keys.
 
@@ -259,6 +265,45 @@ path inside the Amp repo.
 In governed ASM mode, Amp env/model defaults and native CLI auth remain
 standalone-only. Governed Amp starts fail closed until a verified provider-auth
 materializer supplies explicit launch authority.
+
+## Antigravity Backend-Specific Inputs
+
+Antigravity runs on both ASM lanes:
+
+- `:core` -> `CliSubprocessCore.ProviderProfiles.Antigravity`
+- `:sdk` -> `AntigravityCliSdk.Runtime.CLI` when `antigravity_cli_sdk` is
+  installed
+
+Relevant Antigravity provider fields:
+
+- `:model`
+- `:sandbox`
+- `:dangerously_skip_permissions`
+- `:conversation`
+- `:continue`
+- `:add_dirs`
+- `:print_timeout`
+- `:log_file`
+
+ASM common `:cwd` remains the workspace placement key. The Antigravity core
+profile and SDK lane render the prompt with `agy --print <prompt>`. The CLI's
+plain-text stdout is normalized into assistant deltas and final result text by
+the core/SDK runtime layers.
+
+Permission mapping:
+
+- ASM `:default` -> Antigravity `:default` -> no extra permission flag
+- ASM `:bypass` -> Antigravity `:bypass` -> `--dangerously-skip-permissions`
+
+Auth and command path ownership:
+
+- `ANTIGRAVITY_CLI_PATH`
+- `ASM_ANTIGRAVITY_MODEL`
+
+In governed ASM mode, Antigravity follows the same fail-closed family as
+Claude/Gemini/Amp/Cursor. Provider auth, command, cwd, env, execution surface,
+and target authority must be materialized by the owner boundary; ASM does not
+promote local Antigravity login state into governed authority.
 
 ## Cursor Backend-Specific Inputs
 

@@ -30,13 +30,16 @@ It returns:
 
 ## Publication Rules
 
-ASM publishes the built-in CLI providers:
+ASM publishes the current endpoint-ready CLI providers:
 
 - `:codex`
 - `:claude`
-- `:cursor`
 - `:gemini`
 - `:amp`
+
+`:cursor` and `:antigravity` are first-party ASM runtime providers, but they
+are not published through `ASM.InferenceEndpoint` until this endpoint contract
+is deliberately expanded and tested for those providers.
 
 Capability publication is derived from the landed core provider profiles rather
 than handwritten declarations.
@@ -92,10 +95,11 @@ projection path that ordinary session/query callers already consume.
 
 ## Provider Boundaries
 
-Cursor, Gemini, and Amp remain common-surface-only providers on this endpoint
-publication seam.
+Gemini and Amp remain common-surface-only providers on this endpoint
+publication seam. Cursor and Antigravity remain outside this endpoint
+publication contract in the current implementation.
 
-They can publish:
+Gemini and Amp can publish:
 
 - `cli_completion_v1`
 - `cli_streaming_v1`

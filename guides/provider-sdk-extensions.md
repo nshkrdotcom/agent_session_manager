@@ -36,8 +36,8 @@ ASM keeps `cli_subprocess_core` required and all provider SDK packages
 optional.
 
 - depending only on `:agent_session_manager` gives you the common ASM surface
-- adding any provider SDK activates the matching SDK lane and the matching
-  provider-native namespace when it is loadable locally
+- adding any provider SDK activates the matching SDK lane and, when one is
+  registered, the matching provider-native namespace
 - declaring the optional dependency is the only client-app activation step;
   ASM performs discovery and activation automatically
 
@@ -90,13 +90,19 @@ Current built-in namespaces:
 These root modules are the namespace anchors for optional provider-native
 helpers.
 
+Antigravity is a first-party provider with core and optional SDK runtime lanes,
+but it does not currently register an
+`ASM.Extensions.ProviderSDK.Antigravity` namespace. Direct SDK-lane execution
+uses `AntigravityCliSdk.Runtime.CLI`, and direct SDK ownership remains in the
+`antigravity_cli_sdk` package.
+
 `ASM.Extensions.ProviderSDK.Cursor` is backed by `cursor_cli_sdk` when that
 dependency is present. Cursor also keeps the common core lane through
 `cli_subprocess_core`.
 
 Activation-aware discovery follows a separate rule:
 
-- `extensions/0` is the static all-provider native-extension catalog
+- `extensions/0` is the static registered native-extension catalog
 - `provider_extensions/1` is the static native-extension catalog for one
   provider
 - `available_extensions/0` reports which of those namespaces are active for the
@@ -104,14 +110,17 @@ Activation-aware discovery follows a separate rule:
 - `available_provider_extensions/1` reports the active native-extension subset
   for one provider
 - `provider_report/1` and `capability_report/0` always include all ASM
-  providers, including Cursor, Gemini, and Amp, and show whether each provider
-  SDK runtime is available plus any active native namespace inventory
+  providers, including Cursor, Gemini, Amp, and Antigravity, and show whether
+  each provider SDK runtime is available plus any active native namespace
+  inventory
 - `registered_namespaces` and `registered_extensions` keep the static catalog
   visible even when a provider currently composes only through the common
   surface
 - Cursor, Gemini, and Amp start with strict derivation helpers. They still have
   explicit namespaces so Cursor mode/MCP/plugin settings, Gemini settings/trust
   controls, and Amp permissions/MCP/skills have one provider-native home.
+  Antigravity has no derivation helper in this namespace layer yet; its SDK
+  lane is available through the runtime kit when installed.
 
 Every namespace exposes `derive_options/2` for the strict common path:
 
@@ -305,6 +314,8 @@ launch auth placement stay in ASM config.
   current dependency set
 - richer provider-native APIs still live in the provider SDK repos
 - ASM does not re-model those richer APIs in the kernel
+- Antigravity reports as an ASM provider in `capability_report/0` with
+  `registered_namespaces: []` until a real native-extension namespace lands
 - the Claude bridge keeps ASM config and Claude-native config in separate
   arguments on purpose
 - local `:core` and local `:sdk` lanes preserve the same normalized
@@ -356,6 +367,11 @@ Cursor namespace:
 - `:mcp`
 - `:plugins`
 - `:worktrees`
+
+Antigravity currently has no ProviderSDK namespace capability inventory. Its
+core and SDK runtime capability surfaces are reported through
+`ASM.ProviderFeatures` and `ASM.ProviderRegistry`, not through this native
+extension catalog.
 
 These are capability labels for discovery and documentation only in this
 foundation slice. They are not new normalized kernel APIs.

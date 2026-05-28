@@ -12,14 +12,17 @@ defmodule ASM.Extensions.ProviderSDK do
   Discovery is intentionally split into registered-versus-active views:
 
   - `extensions/0` and `provider_extensions/1` return the static native
-    extension catalog that ASM knows about for all five providers
+    extension catalog that ASM currently registers for providers with
+    provider-native namespaces
   - `available_extensions/0` and `available_provider_extensions/1` return only
     the active subset for the currently installed optional deps
   - `provider_report/1` and `capability_report/0` expose both views through
     `registered_namespaces` versus `namespaces`
 
-  Gemini, Amp, and Cursor start with limited derivation helpers, but they still have
-  explicit namespaces so provider-native behavior has one clear home.
+  Gemini, Amp, and Cursor start with limited derivation helpers, but they still
+  have explicit namespaces so provider-native behavior has one clear home.
+  Antigravity is reported as a first-party provider with core and SDK runtime
+  lanes, but it has no registered ProviderSDK namespace yet.
   """
 
   use Boundary,

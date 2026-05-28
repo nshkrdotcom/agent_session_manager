@@ -25,6 +25,7 @@ Supported providers:
 - Codex CLI (`exec` mode plus SDK app-server host tools when requested)
 - Amp CLI
 - Cursor Agent CLI
+- Antigravity CLI
 
 ## Documentation Menu
 
@@ -81,6 +82,10 @@ provider-native namespace:
   availability and `ASM.Extensions.ProviderSDK.Amp`
 - `{:cursor_cli_sdk, "~> 0.1.0", optional: true}` for Cursor SDK
   lane/runtime-kit availability and `ASM.Extensions.ProviderSDK.Cursor`
+- `{:antigravity_cli_sdk, "~> 0.1.0", optional: true}` for Antigravity SDK
+  lane/runtime-kit availability. Antigravity currently composes through the
+  common ASM provider surface and SDK runtime kit; it does not register a
+  separate `ASM.Extensions.ProviderSDK.Antigravity` namespace.
 
 Declaring the optional dependency is the only client-side activation step. No
 extra ASM wiring is required. ASM always keeps the common surface available
@@ -102,6 +107,7 @@ npm install -g @google/gemini-cli
 npm install -g @openai/codex
 npm install -g @sourcegraph/amp
 # Install Cursor Agent CLI using Cursor's current CLI documentation.
+# Install the Antigravity CLI agent binary (`agy`) using its current CLI documentation.
 ```
 
 Authenticate each CLI with its native flow before using ASM.
@@ -137,6 +143,7 @@ Optional explicit CLI paths:
 - `CODEX_PATH`
 - `AMP_CLI_PATH`
 - `CURSOR_CLI_PATH`
+- `ANTIGRAVITY_CLI_PATH`
 
 ## Quick Start
 
@@ -176,28 +183,34 @@ The stable northbound API is:
 - `ASM.InferenceEndpoint.ensure_endpoint/3`
 - `ASM.InferenceEndpoint.release_endpoint/1`
 
-The built-in CLI provider set is published honestly from the landed provider
-profiles:
+The endpoint publication set is published honestly from the landed endpoint
+contract:
 
 - Codex
 - Claude
-- Cursor
 - Gemini
 - Amp
+
+Cursor and Antigravity are first-party ASM runtime providers, but the current
+endpoint publication contract does not publish them through
+`ASM.InferenceEndpoint`.
 
 ASM derives `cli_completion_v1`, `cli_streaming_v1`, and `cli_agent_v2` from
 the landed provider profiles and runtime tiers, but the endpoint path only
 exposes completion and streaming. Tool-bearing or agent-loop-shaped requests
 are rejected on that endpoint seam.
 
-Cursor, Gemini, and Amp remain common-surface-only for inference endpoint
-publication.
-Cursor's SDK lane remains a provider-native runtime lane, not an endpoint
-contract expansion.
-Their provider SDK extension namespaces are explicit homes for provider-native
-settings, but those namespaces do not widen the endpoint contract.
-They explicitly report Codex-style host dynamic tools and app-server control as
-unsupported, even when their SDK runtime kits are installed.
+Gemini and Amp remain common-surface-only for inference endpoint publication.
+Cursor and Antigravity remain runtime providers outside this endpoint contract
+until the endpoint seam is deliberately expanded and tested for those providers.
+Cursor's SDK lane and Antigravity's SDK lane remain provider-native runtime
+lanes, not endpoint contract expansions.
+Cursor's provider SDK extension namespace is an explicit home for
+provider-native settings. Antigravity currently has SDK runtime availability
+without a separate provider SDK extension namespace. Neither widens the endpoint
+contract. Gemini, Amp, Cursor, and Antigravity explicitly report Codex-style
+host dynamic tools and app-server control as unsupported, even when their SDK
+runtime kits are installed.
 
 See `guides/inference-endpoints.md` and
 `examples/inference_endpoint_http.exs` for the published descriptor contract
@@ -360,8 +373,8 @@ ASM-side rules:
 
 Provider-side alignment in the current stack is:
 
-- Claude, Codex, and Gemini SDK repos consume the shared mixed-input normalizer
-  before backend execution
+- Claude, Codex, Gemini, Cursor, and Antigravity SDK repos consume the shared
+  mixed-input normalizer before backend execution
 - Amp exposes a payload-only model contract rather than a second raw model
   surface
 - ASM always runs after that normalization boundary and passes finalized
@@ -549,6 +562,12 @@ report.claude.sdk_available?
 
 gemini_report.namespaces
 # [] or [ASM.Extensions.ProviderSDK.Gemini]
+
+report.antigravity.sdk_available?
+# true | false
+
+report.antigravity.registered_namespaces
+# []
 ```
 
 Current built-in namespaces:
@@ -558,6 +577,12 @@ Current built-in namespaces:
 - `ASM.Extensions.ProviderSDK.Codex`
 - `ASM.Extensions.ProviderSDK.Cursor`
 - `ASM.Extensions.ProviderSDK.Gemini`
+
+Antigravity is intentionally absent from that native-extension namespace list.
+It is still present in `ProviderSDK.capability_report/0` because ASM supports
+Antigravity as a provider with core and optional SDK runtime lanes. Its report
+has `registered_namespaces: []` until a real native-extension namespace is
+added deliberately.
 
 Optional-loading rules:
 
@@ -581,6 +606,8 @@ Optional-loading rules:
   `native_overrides` for Gemini settings/trust controls, Amp
   permissions/MCP/skills/thread behavior, or Cursor mode/sandbox/MCP/plugin
   settings.
+  Antigravity does not yet have an extension helper; direct SDK-lane execution
+  uses `AntigravityCliSdk.Runtime.CLI`.
 
 The Claude namespace now exposes an explicit bridge into the SDK-local control
 family:

@@ -79,9 +79,8 @@ provider-native namespace:
   availability and `ASM.Extensions.ProviderSDK.Gemini`
 - `{:amp_sdk, "~> 0.5.0", optional: true}` for Amp SDK lane/runtime-kit
   availability and `ASM.Extensions.ProviderSDK.Amp`
-- `cursor_cli_sdk` is intentionally not a dependency in this phase. ASM
-  registers `ASM.Extensions.ProviderSDK.Cursor` for discovery while Cursor
-  execution runs through the core `cli_subprocess_core` lane.
+- `{:cursor_cli_sdk, "~> 0.1.0", optional: true}` for Cursor SDK
+  lane/runtime-kit availability and `ASM.Extensions.ProviderSDK.Cursor`
 
 Declaring the optional dependency is the only client-side activation step. No
 extra ASM wiring is required. ASM always keeps the common surface available
@@ -532,7 +531,7 @@ Enum.map(catalog, & &1.provider)
 # [:amp, :claude, :codex, :cursor, :gemini]
 
 Enum.map(active_extensions, & &1.provider)
-# subset of [:amp, :claude, :codex, :gemini]; Cursor remains core-only until cursor_cli_sdk is wired
+# subset of [:amp, :claude, :codex, :cursor, :gemini]
 
 Enum.map(active_claude_extensions, & &1.namespace)
 # [] or [ASM.Extensions.ProviderSDK.Claude]

@@ -1,10 +1,31 @@
 defmodule ASM.Extensions.ProviderSDK.CursorTest do
-  use ASM.TestCase
+  use ASM.SerialTestCase
 
   alias ASM.Extensions.ProviderSDK.Cursor
   alias ASM.Options.{ProviderMismatchError, ProviderNativeOptionError}
+  alias ASM.TestSupport.OptionalSDK
 
-  test "extension metadata is registered before the SDK dependency is wired" do
+  setup do
+    original = Application.get_env(:agent_session_manager, ASM.ProviderRegistry)
+
+    Application.put_env(
+      :agent_session_manager,
+      ASM.ProviderRegistry,
+      runtime_loader: OptionalSDK.loaded_runtime_loader([:cursor])
+    )
+
+    on_exit(fn ->
+      if is_nil(original) do
+        Application.delete_env(:agent_session_manager, ASM.ProviderRegistry)
+      else
+        Application.put_env(:agent_session_manager, ASM.ProviderRegistry, original)
+      end
+    end)
+
+    :ok
+  end
+
+  test "extension metadata is registered with the SDK dependency wired" do
     extension = Cursor.extension()
 
     assert extension.id == :cursor
@@ -12,7 +33,7 @@ defmodule ASM.Extensions.ProviderSDK.CursorTest do
     assert extension.namespace == Cursor
     assert extension.sdk_app == :cursor_cli_sdk
     assert extension.sdk_module == CursorCliSdk
-    refute extension.sdk_available?
+    assert extension.sdk_available?
     assert :mcp in extension.native_capabilities
     assert CursorCliSdk.Runtime.CLI in extension.native_surface_modules
   end
@@ -44,15 +65,14 @@ defmodule ASM.Extensions.ProviderSDK.CursorTest do
     assert String.contains?(error.message, ":cwd")
   end
 
-  test "derive_options/2 reports unavailable SDK after strict common validation succeeds" do
-    assert {:error, error} =
+  test "derive_options/2 builds CursorCliSdk.Options after strict common validation succeeds" do
+    assert {:ok, %CursorCliSdk.Options{} = options} =
              Cursor.derive_options([cwd: "/tmp/asm-cursor-extension"],
                native_overrides: [mode: :ask, approve_mcps: true]
              )
 
-    assert error.kind == :config_invalid
-    assert error.domain == :provider
-    assert String.contains?(error.message, "Cursor")
-    assert String.contains?(error.message, "unavailable")
+    assert options.cwd == "/tmp/asm-cursor-extension"
+    assert options.mode == :ask
+    assert options.approve_mcps == true
   end
 end

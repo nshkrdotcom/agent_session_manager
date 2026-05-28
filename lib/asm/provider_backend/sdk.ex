@@ -12,6 +12,7 @@ defmodule ASM.ProviderBackend.SDK do
   @claude_options_module :"Elixir.ClaudeAgentSDK.Options"
   @gemini_options_module :"Elixir.GeminiCliSdk.Options"
   @amp_options_module :"Elixir.AmpSdk.Types.Options"
+  @cursor_options_module :"Elixir.CursorCliSdk.Options"
   @codex_module :"Elixir.Codex"
   @codex_options_module :"Elixir.Codex.Options"
   @codex_thread_options_module :"Elixir.Codex.Thread.Options"
@@ -197,6 +198,32 @@ defmodule ASM.ProviderBackend.SDK do
          input: Map.fetch!(config, :prompt),
          options: options,
          metadata: %{lane: :sdk, asm_provider: :amp}
+       )}
+    end
+  end
+
+  defp build_start_opts(%Provider{name: :cursor, sdk_runtime: runtime}, config) do
+    execution_surface = Map.fetch!(config, :execution_surface)
+
+    with {:ok, provider_opts} <-
+           Options.finalize_provider_opts(
+             :cursor,
+             effective_provider_opts(config, Map.get(config, :execution_config))
+           ),
+         :ok <- RuntimeAuth.authorize_governed_provider_runtime(:cursor, config, provider_opts),
+         config = Map.put(config, :provider_opts, provider_opts),
+         model_payload = Keyword.fetch!(provider_opts, :model_payload),
+         {:ok, options} <-
+           new_sdk_struct(
+             @cursor_options_module,
+             cursor_option_attrs(config, model_payload, execution_surface),
+             "cursor"
+           ) do
+      {:ok,
+       sdk_start_opts(runtime, config,
+         prompt: Map.fetch!(config, :prompt),
+         options: options,
+         metadata: %{lane: :sdk, asm_provider: :cursor}
        )}
     end
   end
@@ -461,6 +488,30 @@ defmodule ASM.ProviderBackend.SDK do
     |> drop_nil_values()
   end
 
+  defp cursor_option_attrs(config, model_payload, execution_surface) do
+    [
+      execution_surface: execution_surface,
+      model_payload: model_payload,
+      model: model_payload_value(model_payload, :resolved_model),
+      cli_command: kw(config, :cli_path),
+      cwd: kw(config, :cwd),
+      mode: kw(config, :mode, :agent),
+      permission_mode: kw(config, :provider_permission_mode, :default),
+      sandbox: kw(config, :sandbox),
+      approve_mcps: kw(config, :approve_mcps, false),
+      worktree: kw(config, :worktree),
+      worktree_base: kw(config, :worktree_base),
+      skip_worktree_setup: kw(config, :skip_worktree_setup, false),
+      plugin_dirs: kw(config, :plugin_dirs, []),
+      headers: kw(config, :headers, []),
+      resume: continuation_resume_id(config),
+      continue: cursor_continue?(config),
+      timeout_ms: kw(config, :transport_timeout_ms),
+      max_stderr_buffer_bytes: kw(config, :max_stderr_buffer_bytes)
+    ]
+    |> drop_nil_values()
+  end
+
   defp codex_option_attrs(config, model_payload, execution_surface) do
     materialization = Map.get(config, :codex_materialization)
 
@@ -651,6 +702,9 @@ defmodule ASM.ProviderBackend.SDK do
 
   defp amp_continue_thread(%{continuation: %{strategy: :latest}}), do: true
   defp amp_continue_thread(config), do: continuation_resume_id(config)
+
+  defp cursor_continue?(%{continuation: %{strategy: :latest}}), do: true
+  defp cursor_continue?(_config), do: nil
 
   defp maybe_put(provider_opts, _key, nil), do: provider_opts
   defp maybe_put(provider_opts, key, value), do: Keyword.put(provider_opts, key, value)

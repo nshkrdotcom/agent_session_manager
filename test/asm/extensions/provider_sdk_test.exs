@@ -1,5 +1,5 @@
 defmodule ASM.Extensions.ProviderSDKTest do
-  use ASM.TestCase
+  use ASM.SerialTestCase
 
   alias ASM.Extensions.ProviderSDK
   alias ASM.ProviderRegistry

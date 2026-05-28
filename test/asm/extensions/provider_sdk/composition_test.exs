@@ -6,7 +6,7 @@ defmodule ASM.Extensions.ProviderSDK.CompositionTest do
   alias ASM.ProviderRegistry
 
   @providers [:amp, :claude, :codex, :cursor, :gemini]
-  @runtime_backed_providers [:amp, :claude, :codex, :gemini]
+  @runtime_backed_providers [:amp, :claude, :codex, :cursor, :gemini]
 
   setup do
     original = Application.get_env(:agent_session_manager, ASM.ProviderRegistry)
@@ -126,6 +126,7 @@ defmodule ASM.Extensions.ProviderSDK.CompositionTest do
              :amp,
              :claude,
              :codex,
+             :cursor,
              :gemini
            ]
 
@@ -143,9 +144,10 @@ defmodule ASM.Extensions.ProviderSDK.CompositionTest do
     assert report.amp.namespaces == [ASM.Extensions.ProviderSDK.Amp]
     assert report.amp.native_capabilities == [:mcp, :permissions, :skills, :threads]
 
-    assert report.cursor.sdk_available? == false
+    assert report.cursor.sdk_available? == true
     assert report.cursor.registered_namespaces == [ASM.Extensions.ProviderSDK.Cursor]
-    assert report.cursor.namespaces == []
+    assert report.cursor.namespaces == [ASM.Extensions.ProviderSDK.Cursor]
+    assert report.cursor.native_capabilities == [:mcp, :plugins, :worktrees]
   end
 
   test "provider-native extension activation reports only active namespaces while preserving the static catalog" do

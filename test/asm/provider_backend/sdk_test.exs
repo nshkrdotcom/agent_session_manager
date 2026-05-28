@@ -178,6 +178,39 @@ defmodule ASM.ProviderBackend.SDKTest do
     end
   end
 
+  defmodule CursorRuntimeStub do
+    @moduledoc false
+
+    def start_session(opts) when is_list(opts) do
+      metadata = Keyword.get(opts, :metadata, %{})
+
+      if is_pid(metadata[:test_pid]) do
+        send(metadata[:test_pid], {:cursor_runtime_start_opts, opts})
+      end
+
+      session =
+        spawn_link(fn ->
+          receive do
+            :stop -> :ok
+          end
+        end)
+
+      {:ok, session, %{runtime: :cursor_stub}}
+    end
+
+    def send_input(_session, _input, _opts), do: :ok
+    def end_input(_session), do: :ok
+    def interrupt(_session), do: :ok
+    def subscribe(_session, _pid, _ref), do: :ok
+    def info(_session), do: %{runtime: :cursor_stub}
+    def capabilities, do: [:streaming, :mcp, :plugins, :worktrees]
+
+    def close(session) when is_pid(session) do
+      send(session, :stop)
+      :ok
+    end
+  end
+
   defmodule GeminiRuntimeStub do
     @moduledoc false
 
@@ -792,6 +825,59 @@ defmodule ASM.ProviderBackend.SDKTest do
     metadata = Keyword.fetch!(start_opts, :metadata)
     assert metadata[:lane] == :sdk
     assert metadata[:asm_provider] == :amp
+  end
+
+  test "cursor sdk backend maps ASM options into CursorCliSdk.Options" do
+    provider = %{Provider.resolve!(:cursor) | sdk_runtime: CursorRuntimeStub}
+
+    config = %{
+      provider: provider,
+      prompt: "hello",
+      execution_config:
+        execution_config(
+          surface_kind: :ssh_exec,
+          transport_options: [destination: "cursor.sdk.example"],
+          boundary_class: :workspace
+        ),
+      continuation: %{strategy: :exact, provider_session_id: "cursor-session-123"},
+      provider_opts: [
+        model: "composer-2.5-fast",
+        mode: :ask,
+        permission_mode: :bypass,
+        provider_permission_mode: :bypass,
+        approve_mcps: true,
+        plugin_dirs: ["plugins/cursor"]
+      ],
+      metadata: %{test_pid: self()}
+    }
+
+    assert {:ok, proxy, info} = SDK.start_run(config)
+    on_exit(fn -> SDK.close(proxy) end)
+
+    assert info.lane == :sdk
+    assert info.provider == :cursor
+
+    assert_receive {:cursor_runtime_start_opts, start_opts}
+
+    assert %CursorCliSdk.Options{} = options = Keyword.fetch!(start_opts, :options)
+
+    assert %CliSubprocessCore.ExecutionSurface{} =
+             execution_surface = Keyword.fetch!(start_opts, :execution_surface)
+
+    assert execution_surface.surface_kind == :ssh_exec
+    assert execution_surface.transport_options[:destination] == "cursor.sdk.example"
+    assert execution_surface.boundary_class == :workspace
+    assert options.execution_surface == execution_surface
+    assert options.mode == :ask
+    assert options.permission_mode == :bypass
+    assert options.approve_mcps == true
+    assert options.plugin_dirs == ["plugins/cursor"]
+    assert options.resume == "cursor-session-123"
+    assert Keyword.fetch!(start_opts, :prompt) == "hello"
+
+    metadata = Keyword.fetch!(start_opts, :metadata)
+    assert metadata[:lane] == :sdk
+    assert metadata[:asm_provider] == :cursor
   end
 
   test "gemini sdk backend propagates execution surface into the runtime options" do

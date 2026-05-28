@@ -35,15 +35,20 @@ defmodule ASM.ProviderRegistryTest do
     assert info.sdk_runtime == Codex.Runtime.Exec
   end
 
-  test "cursor is core-only until cursor_cli_sdk is wired in Phase 3" do
+  test "cursor exposes core and sdk lanes after cursor_cli_sdk is wired in Phase 3" do
+    put_runtime_loader(fn
+      CursorCliSdk.Runtime.CLI -> true
+      runtime -> Code.ensure_loaded?(runtime)
+    end)
+
     assert {:ok, info} = ProviderRegistry.provider_info(:cursor)
 
     assert info.provider.name == :cursor
     assert info.core_profile_id == :cursor
     assert info.core_profile == CliSubprocessCore.ProviderProfiles.Cursor
-    assert info.sdk_runtime == nil
-    assert info.sdk_available? == false
-    assert info.available_lanes == [:core]
+    assert info.sdk_runtime == CursorCliSdk.Runtime.CLI
+    assert info.sdk_available? == true
+    assert info.available_lanes == [:core, :sdk]
   end
 
   test "lane_info/2 resolves lane preference independently from execution mode" do

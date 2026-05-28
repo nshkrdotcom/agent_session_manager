@@ -4,8 +4,8 @@ These examples cover two surfaces:
 
 - three provider-agnostic live examples on ASM's common API
 - one offline inference-endpoint publication proof
-- nine provider-focused examples covering SDK-native surfaces and Cursor's
-  core-lane provider path
+- eleven provider-focused examples covering SDK-native surfaces and Cursor's
+  core and SDK provider paths
 
 Nothing runs by default. The live CLI examples require `--provider`.
 
@@ -27,6 +27,8 @@ Nothing runs by default. The live CLI examples require `--provider`.
   app-server bridge
 - `provider_cursor_core_stream.exs`: Cursor Agent CLI through ASM's core
   `cli_subprocess_core` lane
+- `provider_cursor_sdk_stream.exs`: Cursor Agent CLI through ASM's SDK lane
+  backed by `cursor_cli_sdk`
 - `provider_gemini_hybrid_plain_response.exs`:
   `ASM.Extensions.ProviderSDK.Gemini` strict common derivation plus
   SDK-native plain-response settings
@@ -133,6 +135,7 @@ mix run --no-start examples/live_query.exs -- --provider codex --ollama --ollama
 mix run --no-start examples/live_query.exs -- --provider amp --lane sdk --sdk-root ../amp_sdk
 mix run --no-start examples/live_query.exs -- --provider cursor
 mix run --no-start examples/provider_cursor_core_stream.exs -- --provider cursor
+mix run --no-start examples/provider_cursor_sdk_stream.exs -- --provider cursor --lane sdk
 mix run --no-start examples/live_query.exs -- --provider codex --ssh-host example.internal
 mix run --no-start examples/live_query.exs -- --provider codex --ssh-host example.internal --danger-full-access
 mix run --no-start examples/live_query.exs -- --provider claude --ssh-host builder@example.internal --ssh-port 2222

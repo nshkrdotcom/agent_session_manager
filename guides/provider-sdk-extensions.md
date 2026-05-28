@@ -90,9 +90,9 @@ Current built-in namespaces:
 These root modules are the namespace anchors for optional provider-native
 helpers.
 
-`ASM.Extensions.ProviderSDK.Cursor` is registered before the `cursor_cli_sdk`
-dependency is wired. Its discovery metadata is present, while live Cursor
-execution uses the core `cli_subprocess_core` lane.
+`ASM.Extensions.ProviderSDK.Cursor` is backed by `cursor_cli_sdk` when that
+dependency is present. Cursor also keeps the common core lane through
+`cli_subprocess_core`.
 
 Activation-aware discovery follows a separate rule:
 

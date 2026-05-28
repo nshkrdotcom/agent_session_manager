@@ -3,9 +3,8 @@ defmodule ASM.Extensions.ProviderSDK.Cursor do
   Discovery metadata and strict derivation helpers for the optional
   Cursor-native ASM extension namespace.
 
-  During Phase 2 this namespace is registered for discovery, but the
-  `cursor_cli_sdk` runtime is not a dependency yet. Core-lane Cursor execution
-  remains owned by `CliSubprocessCore.ProviderProfiles.Cursor`.
+  Cursor's SDK lane is enabled once `cursor_cli_sdk` is present. Core-lane
+  Cursor execution remains owned by `CliSubprocessCore.ProviderProfiles.Cursor`.
   """
 
   alias ASM.Extensions.ProviderSDK.{Derivation, Extension}
@@ -57,7 +56,7 @@ defmodule ASM.Extensions.ProviderSDK.Cursor do
   def native_surface_modules, do: @native_surface_modules
 
   @doc """
-  Derives future `CursorCliSdk.Options` from strict common ASM options.
+  Derives `CursorCliSdk.Options` from strict common ASM options.
 
   Cursor-native controls such as `:mode`, `:sandbox`, `:approve_mcps`,
   worktree flags, plugin directories, and headers belong in `:native_overrides`.

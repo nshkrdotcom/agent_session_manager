@@ -29,12 +29,13 @@ defmodule ASM.Extensions.ProviderSDKTest do
   test "extensions/0 exposes the built-in provider-native namespaces" do
     extensions = ProviderSDK.extensions()
 
-    assert Enum.map(extensions, & &1.provider) == [:amp, :claude, :codex, :gemini]
+    assert Enum.map(extensions, & &1.provider) == [:amp, :claude, :codex, :cursor, :gemini]
 
     assert Enum.map(extensions, & &1.namespace) == [
              ASM.Extensions.ProviderSDK.Amp,
              ASM.Extensions.ProviderSDK.Claude,
              ASM.Extensions.ProviderSDK.Codex,
+             ASM.Extensions.ProviderSDK.Cursor,
              ASM.Extensions.ProviderSDK.Gemini
            ]
   end
@@ -57,6 +58,11 @@ defmodule ASM.Extensions.ProviderSDKTest do
     assert {:ok, gemini} = ProviderSDK.extension(:gemini)
     assert gemini.namespace == ASM.Extensions.ProviderSDK.Gemini
     assert gemini.native_capabilities == [:extensions, :settings_profiles, :trust_controls]
+
+    assert {:ok, cursor} = ProviderSDK.extension(:cursor)
+    assert cursor.namespace == ASM.Extensions.ProviderSDK.Cursor
+    assert cursor.native_capabilities == [:mcp, :plugins, :worktrees]
+    refute cursor.sdk_available?
   end
 
   test "provider_extensions/1 resolves provider aliases and preserves kernel/provider split" do
@@ -118,6 +124,10 @@ defmodule ASM.Extensions.ProviderSDKTest do
     assert report.amp.sdk_available? == true
     assert report.amp.namespaces == [ASM.Extensions.ProviderSDK.Amp]
     assert report.amp.native_capabilities == [:mcp, :permissions, :skills, :threads]
+
+    assert report.cursor.sdk_available? == false
+    assert report.cursor.namespaces == []
+    assert report.cursor.registered_namespaces == [ASM.Extensions.ProviderSDK.Cursor]
   end
 
   test "available?/1 reflects optional sdk loading without widening the kernel export list" do

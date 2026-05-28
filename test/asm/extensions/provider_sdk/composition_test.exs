@@ -5,7 +5,8 @@ defmodule ASM.Extensions.ProviderSDK.CompositionTest do
   alias ASM.Provider
   alias ASM.ProviderRegistry
 
-  @providers [:amp, :claude, :codex, :gemini]
+  @providers [:amp, :claude, :codex, :cursor, :gemini]
+  @runtime_backed_providers [:amp, :claude, :codex, :gemini]
 
   setup do
     original = Application.get_env(:agent_session_manager, ASM.ProviderRegistry)
@@ -67,6 +68,11 @@ defmodule ASM.Extensions.ProviderSDK.CompositionTest do
     assert gemini_report.composition_mode == :common_surface_only
     assert gemini_report.registered_namespaces == [ASM.Extensions.ProviderSDK.Gemini]
     assert Enum.map(gemini_report.registered_extensions, & &1.provider) == [:gemini]
+
+    assert {:ok, cursor_report} = ProviderSDK.provider_report(:cursor)
+    assert cursor_report.composition_mode == :common_surface_only
+    assert cursor_report.registered_namespaces == [ASM.Extensions.ProviderSDK.Cursor]
+    assert Enum.map(cursor_report.registered_extensions, & &1.provider) == [:cursor]
   end
 
   test "a single optional provider dependency activates only its matching native extension" do
@@ -106,10 +112,13 @@ defmodule ASM.Extensions.ProviderSDK.CompositionTest do
 
     assert report.amp.sdk_available? == false
     assert report.amp.namespaces == []
+
+    assert report.cursor.sdk_available? == false
+    assert report.cursor.namespaces == []
   end
 
   test "all optional provider dependencies compose through explicit provider namespaces" do
-    put_loaded_providers(@providers)
+    put_loaded_providers(@runtime_backed_providers)
 
     report = ProviderSDK.capability_report()
 
@@ -133,6 +142,10 @@ defmodule ASM.Extensions.ProviderSDK.CompositionTest do
     assert report.amp.sdk_available? == true
     assert report.amp.namespaces == [ASM.Extensions.ProviderSDK.Amp]
     assert report.amp.native_capabilities == [:mcp, :permissions, :skills, :threads]
+
+    assert report.cursor.sdk_available? == false
+    assert report.cursor.registered_namespaces == [ASM.Extensions.ProviderSDK.Cursor]
+    assert report.cursor.namespaces == []
   end
 
   test "provider-native extension activation reports only active namespaces while preserving the static catalog" do
@@ -142,6 +155,7 @@ defmodule ASM.Extensions.ProviderSDK.CompositionTest do
              :amp,
              :claude,
              :codex,
+             :cursor,
              :gemini
            ]
 
@@ -162,6 +176,8 @@ defmodule ASM.Extensions.ProviderSDK.CompositionTest do
     assert report.gemini.namespaces == []
     assert report.amp.registered_namespaces == [ASM.Extensions.ProviderSDK.Amp]
     assert report.amp.namespaces == []
+    assert report.cursor.registered_namespaces == [ASM.Extensions.ProviderSDK.Cursor]
+    assert report.cursor.namespaces == []
   end
 
   defp put_loaded_providers(providers) when is_list(providers) do
@@ -169,6 +185,7 @@ defmodule ASM.Extensions.ProviderSDK.CompositionTest do
       providers
       |> Enum.map(&Provider.resolve!/1)
       |> Enum.map(& &1.sdk_runtime)
+      |> Enum.reject(&is_nil/1)
       |> MapSet.new()
 
     Application.put_env(

@@ -28,7 +28,7 @@ defmodule ASM.Examples.Common do
           permission_source: :cli_flag | :danger_full_access_flag | :env | :example_default_bypass
         }
 
-  @providers [:claude, :gemini, :codex, :amp]
+  @providers [:claude, :gemini, :codex, :amp, :cursor]
   @cli_probe_prompt "__ASM_EXAMPLE_CLI_PREFLIGHT__"
   @example_ssh_options %{
     "BatchMode" => "yes",
@@ -437,6 +437,7 @@ defmodule ASM.Examples.Common do
       "amp" -> {:ok, :amp}
       "claude" -> {:ok, :claude}
       "codex" -> {:ok, :codex}
+      "cursor" -> {:ok, :cursor}
       "gemini" -> {:ok, :gemini}
       _ -> {:error, "unsupported provider #{inspect(provider_name)}"}
     end
@@ -1025,7 +1026,7 @@ defmodule ASM.Examples.Common do
     #{script_name} did not run because no provider was selected.
     #{description}
 
-    Choose one provider with `--provider claude|gemini|codex|amp`.
+    Choose one provider with `--provider claude|gemini|codex|amp|cursor`.
     Example:
       mix run --no-start examples/#{script_name} -- --provider claude
 

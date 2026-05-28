@@ -541,7 +541,7 @@ defmodule ASM.RuntimeAuthTest do
     }
 
     with_env(env, fn ->
-      for provider <- [:codex, :claude, :gemini, :amp] do
+      for provider <- [:codex, :claude, :gemini, :amp, :cursor] do
         assert {:error, error} =
                  ASM.RuntimeAuth.new("runtime-auth-env-missing-" <> to_string(provider), provider,
                    runtime_auth_mode: :governed,

@@ -30,13 +30,14 @@ defmodule ASM.Provider do
     metadata: %{}
   ]
 
-  @type provider_name :: :amp | :claude | :codex | :codex_exec | :gemini | atom()
+  @type provider_name :: :amp | :claude | :codex | :codex_exec | :cursor | :gemini | atom()
 
   @provider_names_by_string %{
     "amp" => :amp,
     "claude" => :claude,
     "codex" => :codex,
     "codex_exec" => :codex,
+    "cursor" => :cursor,
     "gemini" => :gemini
   }
 
@@ -268,6 +269,30 @@ defmodule ASM.Provider do
         },
         options_schema: ASM.Options.Amp.schema(),
         feature_manifest: feature_manifest_for(:amp),
+        profile:
+          Profile.new!(
+            max_concurrent_runs: 1,
+            max_queued_runs: 10
+          )
+      },
+      cursor: %__MODULE__{
+        name: :cursor,
+        display_name: "Cursor Agent CLI",
+        core_profile: CliSubprocessCore.ProviderProfiles.Cursor,
+        sdk_runtime: nil,
+        example_support: %ExampleSupport{
+          cli_command: "agent",
+          cli_path_env: "CURSOR_CLI_PATH",
+          install_hint: "https://cursor.com/docs/cli/overview",
+          model_env: "ASM_CURSOR_MODEL",
+          example_default_model: nil,
+          sdk_app: :cursor_cli_sdk,
+          sdk_repo_dir: "cursor_cli_sdk",
+          sdk_root_env: "CURSOR_CLI_SDK_ROOT",
+          sdk_cli_env: "CURSOR_CLI_PATH"
+        },
+        options_schema: ASM.Options.Cursor.schema(),
+        feature_manifest: feature_manifest_for(:cursor),
         profile:
           Profile.new!(
             max_concurrent_runs: 1,

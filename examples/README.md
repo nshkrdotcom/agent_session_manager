@@ -4,8 +4,8 @@ These examples cover two surfaces:
 
 - three provider-agnostic live examples on ASM's common API
 - one offline inference-endpoint publication proof
-- eight provider-specific examples that intentionally cross into one provider's
-  SDK-native surface
+- nine provider-focused examples covering SDK-native surfaces and Cursor's
+  core-lane provider path
 
 Nothing runs by default. The live CLI examples require `--provider`.
 
@@ -25,6 +25,8 @@ Nothing runs by default. The live CLI examples require `--provider`.
   control-client bridge
 - `provider_codex_app_server.exs`: `ASM.Extensions.ProviderSDK.Codex`
   app-server bridge
+- `provider_cursor_core_stream.exs`: Cursor Agent CLI through ASM's core
+  `cli_subprocess_core` lane
 - `provider_gemini_hybrid_plain_response.exs`:
   `ASM.Extensions.ProviderSDK.Gemini` strict common derivation plus
   SDK-native plain-response settings
@@ -75,6 +77,7 @@ Examples:
 - Gemini: `:bypass` -> `:yolo` -> `--yolo`
 - Codex: `:bypass` -> `:yolo` -> `--dangerously-bypass-approvals-and-sandbox`
 - Amp: `:bypass` -> `:dangerously_allow_all` -> `--dangerously-allow-all`
+- Cursor: `:bypass` -> `:bypass` -> `--force`
 
 ## Common Ollama Surface
 
@@ -97,6 +100,7 @@ Unsupported:
 
 - Gemini
 - Amp
+- Cursor
 
 `run_all.sh` rejects `--ollama*` flags immediately for unsupported providers.
 
@@ -127,6 +131,8 @@ mix run --no-start examples/inference_endpoint_http.exs -- --provider gemini --s
 mix run --no-start examples/live_query.exs -- --provider claude --ollama --model haiku --ollama-model llama3.2
 mix run --no-start examples/live_query.exs -- --provider codex --ollama --ollama-model gpt-oss:20b
 mix run --no-start examples/live_query.exs -- --provider amp --lane sdk --sdk-root ../amp_sdk
+mix run --no-start examples/live_query.exs -- --provider cursor
+mix run --no-start examples/provider_cursor_core_stream.exs -- --provider cursor
 mix run --no-start examples/live_query.exs -- --provider codex --ssh-host example.internal
 mix run --no-start examples/live_query.exs -- --provider codex --ssh-host example.internal --danger-full-access
 mix run --no-start examples/live_query.exs -- --provider claude --ssh-host builder@example.internal --ssh-port 2222
@@ -166,6 +172,7 @@ instead of blocking on password or connection prompts.
 ./examples/run_all.sh --provider codex --ollama --ollama-model gpt-oss:20b
 ./examples/run_all.sh --provider claude --provider codex --ollama --ollama-model llama3.2
 ./examples/run_all.sh --provider amp --lane sdk --sdk-root ../amp_sdk
+./examples/run_all.sh --provider cursor
 ./examples/run_all.sh --provider codex --ssh-host example.internal
 ./examples/run_all.sh --provider codex --ssh-host example.internal --danger-full-access
 ./examples/run_all.sh --provider claude --provider codex --ssh-host builder@example.internal --ssh-port 2222

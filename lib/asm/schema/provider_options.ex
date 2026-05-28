@@ -7,7 +7,7 @@ defmodule ASM.Schema.ProviderOptions do
   alias ASM.Schema
   alias CliSubprocessCore.Schema.Conventions
 
-  @providers [:amp, :claude, :codex, :codex_exec, :gemini]
+  @providers [:amp, :claude, :codex, :codex_exec, :cursor, :gemini]
   @permission_modes [:default, :auto, :bypass, :plan]
   @overflow_policies [:fail_run, :drop_oldest, :block]
 
@@ -99,6 +99,18 @@ defmodule ASM.Schema.ProviderOptions do
     tools: Zoi.array(Conventions.trimmed_string() |> Zoi.min(1))
   }
 
+  @cursor_fields %{
+    model: Conventions.optional_trimmed_string(),
+    mode: Conventions.optional_any(),
+    sandbox: Conventions.optional_any(),
+    approve_mcps: Zoi.boolean(),
+    worktree: Conventions.optional_any(),
+    worktree_base: Conventions.optional_trimmed_string(),
+    skip_worktree_setup: Zoi.boolean(),
+    plugin_dirs: Zoi.array(Conventions.trimmed_string() |> Zoi.min(1)),
+    headers: Zoi.array(Conventions.optional_any())
+  }
+
   @spec validate(keyword() | map()) ::
           {:ok, keyword() | map()}
           | {:error, {:invalid_provider_options, CliSubprocessCore.Schema.error_detail()}}
@@ -154,4 +166,7 @@ defmodule ASM.Schema.ProviderOptions do
 
   defp schema_for(:amp),
     do: Zoi.map(Map.merge(@common_fields, @amp_fields), unrecognized_keys: :error)
+
+  defp schema_for(:cursor),
+    do: Zoi.map(Map.merge(@common_fields, @cursor_fields), unrecognized_keys: :error)
 end

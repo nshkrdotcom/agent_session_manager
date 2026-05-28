@@ -77,6 +77,32 @@ defmodule ASM.ProviderBackend.CoreTest do
     end)
   end
 
+  test "cursor governed core backend rejects provider auth and command overrides" do
+    execution_config = %Execution.Config{
+      execution_mode: :local,
+      transport_call_timeout_ms: 5_000,
+      execution_environment: %Environment{}
+    }
+
+    config = %{
+      provider: Provider.resolve!(:cursor),
+      prompt: "hello",
+      provider_opts: [
+        model: "composer-2.5-fast",
+        api_key: "secret",
+        command: "/tmp/agent"
+      ],
+      execution_config: execution_config,
+      metadata: governed_runtime_metadata(:cursor)
+    }
+
+    assert {:error, error} = Core.start_run(config)
+    assert error.kind == :config_invalid
+    assert String.contains?(error.message, "rejects provider auth")
+    assert :api_key in error.cause.keys
+    assert :command in error.cause.keys
+  end
+
   defp governed_runtime_metadata do
     "core-governed-runtime"
     |> ASM.RuntimeAuth.new!(:codex,

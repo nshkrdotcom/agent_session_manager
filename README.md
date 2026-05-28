@@ -24,6 +24,7 @@ Supported providers:
 - Gemini CLI
 - Codex CLI (`exec` mode plus SDK app-server host tools when requested)
 - Amp CLI
+- Cursor Agent CLI
 
 ## Documentation Menu
 
@@ -78,6 +79,9 @@ provider-native namespace:
   availability and `ASM.Extensions.ProviderSDK.Gemini`
 - `{:amp_sdk, "~> 0.5.0", optional: true}` for Amp SDK lane/runtime-kit
   availability and `ASM.Extensions.ProviderSDK.Amp`
+- `cursor_cli_sdk` is intentionally not a dependency in this phase. ASM
+  registers `ASM.Extensions.ProviderSDK.Cursor` for discovery while Cursor
+  execution runs through the core `cli_subprocess_core` lane.
 
 Declaring the optional dependency is the only client-side activation step. No
 extra ASM wiring is required. ASM always keeps the common surface available
@@ -98,6 +102,7 @@ npm install -g @anthropic-ai/claude-code
 npm install -g @google/gemini-cli
 npm install -g @openai/codex
 npm install -g @sourcegraph/amp
+# Install Cursor Agent CLI using Cursor's current CLI documentation.
 ```
 
 Authenticate each CLI with its native flow before using ASM.
@@ -524,10 +529,10 @@ claude_extension.namespace
 # ASM.Extensions.ProviderSDK.Claude
 
 Enum.map(catalog, & &1.provider)
-# [:amp, :claude, :codex, :gemini]
+# [:amp, :claude, :codex, :cursor, :gemini]
 
 Enum.map(active_extensions, & &1.provider)
-# subset of [:amp, :claude, :codex, :gemini], depending on installed optional deps
+# subset of [:amp, :claude, :codex, :gemini]; Cursor remains core-only until cursor_cli_sdk is wired
 
 Enum.map(active_claude_extensions, & &1.namespace)
 # [] or [ASM.Extensions.ProviderSDK.Claude]
@@ -547,6 +552,7 @@ Current built-in namespaces:
 - `ASM.Extensions.ProviderSDK.Amp`
 - `ASM.Extensions.ProviderSDK.Claude`
 - `ASM.Extensions.ProviderSDK.Codex`
+- `ASM.Extensions.ProviderSDK.Cursor`
 - `ASM.Extensions.ProviderSDK.Gemini`
 
 Optional-loading rules:
@@ -964,13 +970,16 @@ mix run --no-start examples/live_query.exs -- --provider claude
 mix run --no-start examples/live_stream.exs -- --provider gemini
 mix run --no-start examples/live_session_lifecycle.exs -- --provider codex
 ./examples/run_all.sh --provider amp
+./examples/run_all.sh --provider cursor
 ```
 
 Environment knobs used by examples:
 
-- `CLAUDE_CLI_PATH`, `GEMINI_CLI_PATH`, `CODEX_PATH`, `AMP_CLI_PATH`
+- `CLAUDE_CLI_PATH`, `GEMINI_CLI_PATH`, `CODEX_PATH`, `AMP_CLI_PATH`,
+  `CURSOR_CLI_PATH`
 - `ASM_PERMISSION_MODE` (`default`, `auto`, `bypass`, `plan`)
-- `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL`, `ASM_AMP_MODEL`
+- `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL`, `ASM_AMP_MODEL`,
+  `ASM_CURSOR_MODEL`
 
 These knobs are read by examples and standalone compatibility helpers. They do
 not satisfy governed runtime-auth, provider-account, target, session, handoff,

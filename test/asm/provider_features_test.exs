@@ -13,6 +13,7 @@ defmodule ASM.ProviderFeaturesTest do
     codex = ProviderFeatures.manifest!(:codex)
     gemini = ProviderFeatures.manifest!(:gemini)
     amp = ProviderFeatures.manifest!(:amp)
+    cursor = ProviderFeatures.manifest!(:cursor)
 
     assert claude.common_features.ollama.supported? == true
 
@@ -44,9 +45,12 @@ defmodule ASM.ProviderFeaturesTest do
 
     assert amp.common_features.ollama.supported? == false
     assert amp.permission_modes.dangerously_allow_all.cli_excerpt == "--dangerously-allow-all"
+
+    assert cursor.common_features.ollama.supported? == false
+    assert cursor.permission_modes.bypass.cli_excerpt == "--force"
   end
 
-  test "provider lane capability manifests use support states across all four SDK providers" do
+  test "provider lane capability manifests use support states across all five SDK providers" do
     assert ProviderFeatures.support_states() == [
              :common,
              :native,
@@ -80,7 +84,7 @@ defmodule ASM.ProviderFeaturesTest do
     assert claude_sdk.capabilities.app_server.support_state == :unsupported
     refute :dynamic_tools in claude_sdk.capabilities.host_tools.provider_native_option_keys
 
-    for provider <- [:amp, :gemini] do
+    for provider <- [:amp, :gemini, :cursor] do
       manifest = ProviderFeatures.lane_manifest!(provider, :sdk)
 
       assert manifest.composition_mode == :common_surface_only
@@ -91,10 +95,18 @@ defmodule ASM.ProviderFeaturesTest do
       assert manifest.capabilities.sandbox_policy.support_state in [:unsupported, :sdk_local]
       refute :dynamic_tools in manifest.capabilities.host_tools.provider_native_option_keys
     end
+
+    cursor_core = ProviderFeatures.lane_manifest!(:cursor, :core)
+    assert cursor_core.capabilities.session_resume.support_state == :common
+    assert cursor_core.capabilities.sandbox_policy.support_state == :sdk_local
+    assert cursor_core.capabilities.sandbox_policy.provider_native_option_keys == [:sandbox]
+    assert cursor_core.capabilities.approvals.support_state == :sdk_local
+    assert :mode in cursor_core.capabilities.approvals.provider_native_option_keys
+    assert cursor_core.capabilities.workspace_context.asm_option_keys == [:cwd]
   end
 
   test "host tools are not admitted as an all-provider common ASM capability" do
-    for provider <- [:claude, :codex, :gemini, :amp],
+    for provider <- [:claude, :codex, :gemini, :amp, :cursor],
         lane <- Map.keys(ProviderFeatures.manifest!(provider).lanes) do
       manifest = ProviderFeatures.lane_manifest!(provider, lane)
       host_tools = manifest.capabilities.host_tools
@@ -112,7 +124,7 @@ defmodule ASM.ProviderFeaturesTest do
   end
 
   test "sandbox policy discovery does not expose a common ASM sandbox control" do
-    for provider <- [:claude, :codex, :gemini, :amp],
+    for provider <- [:claude, :codex, :gemini, :amp, :cursor],
         lane <- Map.keys(ProviderFeatures.manifest!(provider).lanes) do
       manifest = ProviderFeatures.lane_manifest!(provider, lane)
       sandbox_policy = manifest.capabilities.sandbox_policy
@@ -259,6 +271,7 @@ defmodule ASM.ProviderFeaturesTest do
     codex_schema = Provider.resolve!(:codex).options_schema
     gemini_schema = Provider.resolve!(:gemini).options_schema
     amp_schema = Provider.resolve!(:amp).options_schema
+    cursor_schema = Provider.resolve!(:cursor).options_schema
 
     assert {:ok, claude_validated} =
              Options.validate(
@@ -310,6 +323,14 @@ defmodule ASM.ProviderFeaturesTest do
              )
 
     assert String.contains?(amp_error.message, "unknown options [:system_prompt]")
+
+    assert {:error, cursor_error} =
+             Options.validate(
+               [provider: :cursor, model: "composer-2.5-fast", system_prompt: "Unsupported"],
+               cursor_schema
+             )
+
+    assert String.contains?(cursor_error.message, "unknown options [:system_prompt]")
   end
 
   test "claude leaves max_turns unset by default and amp rejects it entirely" do

@@ -12,13 +12,13 @@ defmodule ASM.Extensions.ProviderSDK do
   Discovery is intentionally split into registered-versus-active views:
 
   - `extensions/0` and `provider_extensions/1` return the static native
-    extension catalog that ASM knows about for all four providers
+    extension catalog that ASM knows about for all five providers
   - `available_extensions/0` and `available_provider_extensions/1` return only
     the active subset for the currently installed optional deps
   - `provider_report/1` and `capability_report/0` expose both views through
     `registered_namespaces` versus `namespaces`
 
-  Gemini and Amp start with limited derivation helpers, but they still have
+  Gemini, Amp, and Cursor start with limited derivation helpers, but they still have
   explicit namespaces so provider-native behavior has one clear home.
   """
 
@@ -29,6 +29,7 @@ defmodule ASM.Extensions.ProviderSDK do
       Extension,
       Claude,
       Codex,
+      Cursor,
       Gemini
     ]
 
@@ -39,6 +40,7 @@ defmodule ASM.Extensions.ProviderSDK do
     ASM.Extensions.ProviderSDK.Amp,
     ASM.Extensions.ProviderSDK.Claude,
     ASM.Extensions.ProviderSDK.Codex,
+    ASM.Extensions.ProviderSDK.Cursor,
     ASM.Extensions.ProviderSDK.Gemini
   ]
 

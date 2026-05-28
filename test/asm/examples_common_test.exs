@@ -18,11 +18,14 @@ defmodule ASM.Examples.CommonTest do
       "ASM_AMP_MODEL",
       "ASM_CLAUDE_MODEL",
       "ASM_CODEX_MODEL",
+      "ASM_CURSOR_MODEL",
       "ASM_GEMINI_MODEL",
       "CLAUDE_AGENT_SDK_ROOT",
       "CLAUDE_CLI_PATH",
       "CODEX_SDK_ROOT",
       "CODEX_PATH",
+      "CURSOR_CLI_PATH",
+      "CURSOR_CLI_SDK_ROOT",
       "GEMINI_CLI_PATH",
       "GEMINI_CLI_SDK_ROOT"
     ]
@@ -84,6 +87,26 @@ defmodule ASM.Examples.CommonTest do
              )
 
     assert config.session_opts[:model] == "gemini-3.1-flash-lite-preview"
+  end
+
+  test "cursor examples stay on the core lane and read Cursor-owned env names" do
+    ASM.Env.put("CURSOR_CLI_PATH", "agent")
+    ASM.Env.put("ASM_CURSOR_MODEL", "composer-2.5-fast")
+
+    assert {:ok, config} =
+             Common.build_example_config(
+               ["--provider", "cursor"],
+               @script_name,
+               @description,
+               @default_prompt
+             )
+
+    assert config.provider == :cursor
+    assert config.lane == :core
+    assert config.sdk_root == nil
+    assert config.session_opts[:model] == "composer-2.5-fast"
+    refute Keyword.has_key?(config.session_opts, :cli_path)
+    assert config.provider_opts[:provider_permission_mode] == :bypass
   end
 
   test "examples default to bypass mode with provider-native permission metadata" do

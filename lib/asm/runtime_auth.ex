@@ -61,6 +61,14 @@ defmodule ASM.RuntimeAuth do
       "AMP_HOME",
       "AMP_MODEL",
       "ASM_AMP_MODEL"
+    ],
+    cursor: [
+      "ASM_CURSOR_MODEL",
+      "CURSOR_API_KEY",
+      "CURSOR_CLI_PATH",
+      "CURSOR_CONFIG_DIR",
+      "CURSOR_HOME",
+      "CURSOR_MODEL"
     ]
   }
   @governed_provider_override_keys [

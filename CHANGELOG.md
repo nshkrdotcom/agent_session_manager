@@ -10,8 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Provider/lane capability manifests with support states for Codex, Claude,
-  Amp, and Gemini, including explicit unsupported capability errors for
-  Codex-style host dynamic tools on Amp/Gemini.
+  Amp, Gemini, and Cursor, including explicit unsupported capability errors for
+  Codex-style host dynamic tools on Amp/Gemini/Cursor.
+- Cursor Agent CLI is registered as the fifth ASM provider on the core
+  `cli_subprocess_core` lane, with Cursor options, permission mapping,
+  extension metadata, examples, and live smoke tests.
 - `ASM.HostTool` specs, requests, and responses plus ASM-local host-tool event
   kinds for Codex app-server dynamic tool request/response flows.
 - A Codex SDK app-server backend path that advertises `dynamicTools`, executes

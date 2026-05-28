@@ -22,6 +22,7 @@ defmodule ASM.ProviderRegistryTest do
     assert {:ok, :codex} = ProviderRegistry.core_profile_id(:codex)
     assert {:ok, :gemini} = ProviderRegistry.core_profile_id(:gemini)
     assert {:ok, :amp} = ProviderRegistry.core_profile_id(:amp)
+    assert {:ok, :cursor} = ProviderRegistry.core_profile_id(:cursor)
   end
 
   test "provider_info/1 exposes provider and lane discovery metadata" do
@@ -32,6 +33,17 @@ defmodule ASM.ProviderRegistryTest do
     assert info.default_lane == :auto
     assert :core in info.available_lanes
     assert info.sdk_runtime == Codex.Runtime.Exec
+  end
+
+  test "cursor is core-only until cursor_cli_sdk is wired in Phase 3" do
+    assert {:ok, info} = ProviderRegistry.provider_info(:cursor)
+
+    assert info.provider.name == :cursor
+    assert info.core_profile_id == :cursor
+    assert info.core_profile == CliSubprocessCore.ProviderProfiles.Cursor
+    assert info.sdk_runtime == nil
+    assert info.sdk_available? == false
+    assert info.available_lanes == [:core]
   end
 
   test "lane_info/2 resolves lane preference independently from execution mode" do

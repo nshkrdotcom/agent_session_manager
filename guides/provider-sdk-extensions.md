@@ -84,10 +84,15 @@ Current built-in namespaces:
 - `ASM.Extensions.ProviderSDK.Amp`
 - `ASM.Extensions.ProviderSDK.Claude`
 - `ASM.Extensions.ProviderSDK.Codex`
+- `ASM.Extensions.ProviderSDK.Cursor`
 - `ASM.Extensions.ProviderSDK.Gemini`
 
 These root modules are the namespace anchors for optional provider-native
 helpers.
+
+`ASM.Extensions.ProviderSDK.Cursor` is registered before the `cursor_cli_sdk`
+dependency is wired. Its discovery metadata is present, while live Cursor
+execution uses the core `cli_subprocess_core` lane.
 
 Activation-aware discovery follows a separate rule:
 

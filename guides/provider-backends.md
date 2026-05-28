@@ -124,7 +124,7 @@ provider-native surfaces such as Claude control semantics, Codex app-server,
 Gemini settings profiles, and Amp permissions/MCP remain explicit optional
 seams above the kernel.
 
-All four providers now have explicit extension namespaces. Gemini and Amp start
+All five providers now have explicit extension namespaces. Gemini, Amp, and Cursor start
 with limited strict `derive_options/2` helpers; those helpers derive only common
 placement/session data and require provider-native settings in
 `native_overrides`.

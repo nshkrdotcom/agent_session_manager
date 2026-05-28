@@ -1,6 +1,6 @@
 # Common And Partial Provider Features
 
-ASM exposes a single common session API across four providers, but not every
+ASM exposes a single common session API across five providers, but not every
 provider supports every feature.
 
 `ASM.ProviderFeatures` is the public discovery surface for that reality.

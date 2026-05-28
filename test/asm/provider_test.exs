@@ -16,6 +16,27 @@ defmodule ASM.ProviderTest do
     assert support.sdk_cli_env == "CODEX_PATH"
   end
 
+  test "cursor resolves as the fifth core-lane provider" do
+    assert :cursor in Provider.supported_providers()
+    assert {:ok, provider} = Provider.resolve("cursor")
+
+    assert provider.name == :cursor
+    assert provider.display_name == "Cursor Agent CLI"
+    assert provider.core_profile == CliSubprocessCore.ProviderProfiles.Cursor
+    assert provider.sdk_runtime == nil
+    assert provider.options_schema == ASM.Options.Cursor.schema()
+
+    support = Provider.example_support!(provider)
+
+    assert support.cli_command == "agent"
+    assert support.cli_path_env == "CURSOR_CLI_PATH"
+    assert support.model_env == "ASM_CURSOR_MODEL"
+    assert support.sdk_app == :cursor_cli_sdk
+    assert support.sdk_repo_dir == "cursor_cli_sdk"
+    assert support.sdk_root_env == "CURSOR_CLI_SDK_ROOT"
+    assert support.sdk_cli_env == "CURSOR_CLI_PATH"
+  end
+
   test "example_support!/1 accepts a resolved provider struct" do
     provider = Provider.resolve!(:amp)
     support = Provider.example_support!(provider)

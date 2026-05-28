@@ -42,7 +42,7 @@ defmodule AgentSessionManager.MixProject do
   end
 
   def cli do
-    []
+    [preferred_envs: ["test.live": :test]]
   end
 
   defp project_compilers do
@@ -95,7 +95,8 @@ defmodule AgentSessionManager.MixProject do
         "credo",
         "cmd env MIX_ENV=test mix test",
         "dialyzer"
-      ]
+      ],
+      "test.live": ["test --include live"]
     ]
   end
 
@@ -237,6 +238,7 @@ defmodule AgentSessionManager.MixProject do
         ASM.Options.Amp,
         ASM.Options.Claude,
         ASM.Options.Codex,
+        ASM.Options.Cursor,
         ASM.Options.Gemini,
         ASM.Options.PartialFeatureUnsupportedError,
         ASM.Options.ProviderMismatchError,
@@ -360,6 +362,7 @@ defmodule AgentSessionManager.MixProject do
         ASM.Extensions.ProviderSDK.Amp,
         ASM.Extensions.ProviderSDK.Claude,
         ASM.Extensions.ProviderSDK.Codex,
+        ASM.Extensions.ProviderSDK.Cursor,
         ASM.Extensions.ProviderSDK.Derivation,
         ASM.Extensions.ProviderSDK.Dispatch,
         ASM.Extensions.ProviderSDK.Extension,

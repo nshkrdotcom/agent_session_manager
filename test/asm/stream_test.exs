@@ -143,6 +143,75 @@ defmodule ASM.StreamTest do
     assert :ok = ASM.stop_session(session)
   end
 
+  test "create/3 runs Cursor through the core backend option path" do
+    session_id = "stream-cursor-" <> Integer.to_string(System.unique_integer([:positive]))
+
+    assert {:ok, session} =
+             ASM.start_session(
+               session_id: session_id,
+               provider: :cursor,
+               lane: :core,
+               permission_mode: :bypass,
+               mode: :ask,
+               approve_mcps: true
+             )
+
+    events =
+      ASM.stream(session, "cursor core",
+        backend_module: FakeBackend,
+        model: "composer-2.5-fast"
+      )
+      |> Enum.to_list()
+
+    assert Enum.any?(events, &(&1.provider == :cursor))
+    result = Stream.final_result(events)
+    assert result.session_id == session_id
+    assert result.text == "composer-2.5-fast"
+
+    assert :ok = ASM.stop_session(session)
+  end
+
+  test "final_result/1 does not duplicate Cursor final assistant snapshots" do
+    events = [
+      Event.new(
+        :assistant_delta,
+        Payload.AssistantDelta.new(content: "CURSOR", metadata: %{source: :cursor_partial}),
+        run_id: "run-cursor-snapshot",
+        session_id: "session-cursor-snapshot",
+        provider: :cursor
+      ),
+      Event.new(
+        :assistant_delta,
+        Payload.AssistantDelta.new(content: "_OK", metadata: %{source: :cursor_partial}),
+        run_id: "run-cursor-snapshot",
+        session_id: "session-cursor-snapshot",
+        provider: :cursor
+      ),
+      Event.new(
+        :assistant_message,
+        Payload.AssistantMessage.new(
+          content: [%{"type" => "text", "text" => "CURSOR_OK"}],
+          metadata: %{source: :cursor_final_snapshot}
+        ),
+        run_id: "run-cursor-snapshot",
+        session_id: "session-cursor-snapshot",
+        provider: :cursor
+      ),
+      Event.new(
+        :result,
+        Payload.Result.new(status: :completed, stop_reason: :end_turn),
+        run_id: "run-cursor-snapshot",
+        session_id: "session-cursor-snapshot",
+        provider: :cursor
+      )
+    ]
+
+    result = Stream.final_result(events)
+
+    assert result.text == "CURSOR_OK"
+    assert Enum.count(result.messages, &match?(%ASM.Message.Assistant{}, &1)) == 1
+  end
+
   test "create/3 preserves non-stream mailbox messages emitted before run done" do
     session_id = "stream-cleanup-" <> Integer.to_string(System.unique_integer([:positive]))
     assert {:ok, session} = ASM.start_session(session_id: session_id, provider: :claude)

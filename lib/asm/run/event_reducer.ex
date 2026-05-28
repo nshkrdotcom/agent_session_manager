@@ -103,13 +103,27 @@ defmodule ASM.Run.EventReducer do
     %{state | status: :running, metadata: metadata}
   end
 
-  defp apply_semantics(state, %Event{} = event)
-       when event.kind in [:assistant_delta, :assistant_message] do
+  defp apply_semantics(state, %Event{kind: :assistant_delta} = event) do
     legacy = Event.legacy_payload(event)
 
     state
     |> append_message(legacy)
     |> append_text(Event.assistant_text(event))
+  end
+
+  defp apply_semantics(
+         state,
+         %Event{kind: :assistant_message, payload: %Payload.AssistantMessage{} = payload} =
+           event
+       ) do
+    legacy = Event.legacy_payload(event)
+    state = append_message(state, legacy)
+
+    if final_snapshot?(payload.metadata) do
+      state
+    else
+      append_text(state, Event.assistant_text(event))
+    end
   end
 
   defp apply_semantics(state, %Event{kind: :result, timestamp: finished_at} = event) do
@@ -219,6 +233,13 @@ defmodule ASM.Run.EventReducer do
   defp error_from_payload(payload, _raw_payload) do
     error_from_message(payload)
   end
+
+  defp final_snapshot?(metadata) when is_map(metadata) do
+    Map.get(metadata, :source) == :cursor_final_snapshot or
+      Map.get(metadata, "source") in [:cursor_final_snapshot, "cursor_final_snapshot"]
+  end
+
+  defp final_snapshot?(_metadata), do: false
 
   defp error_domain(metadata) when is_map(metadata) do
     metadata

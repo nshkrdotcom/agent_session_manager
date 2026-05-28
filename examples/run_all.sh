@@ -12,6 +12,7 @@ declare -A PROVIDER_SPECIFIC_EXAMPLE=(
   [amp]="provider_amp_sdk_stream.exs"
   [claude]="provider_claude_control_client.exs"
   [codex]="provider_codex_app_server.exs"
+  [cursor]="provider_cursor_core_stream.exs"
   [gemini]="provider_gemini_session_resume.exs"
 )
 
@@ -27,6 +28,7 @@ Usage:
   ./examples/run_all.sh --provider codex --ollama --ollama-model gpt-oss:20b
   ./examples/run_all.sh --provider claude --provider codex --ollama --ollama-model llama3.2
   ./examples/run_all.sh --provider claude --provider gemini
+  ./examples/run_all.sh --provider cursor
   ./examples/run_all.sh --provider amp --lane sdk --sdk-root ../amp_sdk
   ./examples/run_all.sh --provider codex --ssh-host example.internal
   ./examples/run_all.sh --provider claude --ssh-host builder@example.internal --ssh-port 2222
@@ -100,7 +102,7 @@ for raw in "${providers[@]}"; do
     provider="${provider// /}"
 
     case "$provider" in
-      claude|gemini|codex|amp)
+      claude|gemini|codex|amp|cursor)
         if [[ -z "${seen[$provider]:-}" ]]; then
           seen["$provider"]=1
           selected_providers+=("$provider")

@@ -430,6 +430,31 @@ defmodule ASM.ProviderFeatures do
     }
   end
 
+  defp capability_map(:cursor, lane) do
+    %{
+      app_server: unsupported(lane),
+      host_tools: unsupported(lane),
+      session_resume:
+        capability_manifest(:common, lane,
+          common_surface?: true,
+          asm_option_keys: [:continuation]
+        ),
+      sandbox_policy:
+        capability_manifest(:sdk_local, lane,
+          provider_native?: true,
+          provider_native_option_keys: [:sandbox]
+        ),
+      approvals:
+        capability_manifest(:sdk_local, lane,
+          provider_native?: true,
+          provider_native_option_keys: [:mode, :approve_mcps, :permission_mode],
+          event_kinds: [:approval_requested, :approval_resolved]
+        ),
+      workspace_context:
+        capability_manifest(:common, lane, common_surface?: true, asm_option_keys: [:cwd])
+    }
+  end
+
   defp capability_manifest(state, lane, opts) when state in @support_states do
     %{
       supported?: state in [:common, :native],

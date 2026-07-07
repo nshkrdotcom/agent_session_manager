@@ -177,6 +177,9 @@ The relevant Claude provider fields are:
 - `:model`
 - `:allow_unknown_model` (default `false`) — pass a Claude model newer than the
   shared registry straight through to the CLI `--model` instead of erroring.
+  Common across every provider (`:codex`, `:gemini`, `:amp`, `:antigravity`,
+  `:cursor` accept the same option with the same behavior), not
+  Claude-specific.
 
 Those values are still treated as value carriers only.
 

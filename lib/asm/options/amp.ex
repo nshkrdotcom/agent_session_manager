@@ -11,7 +11,10 @@ defmodule ASM.Options.Amp do
       include_thinking: [type: :boolean, default: false],
       permissions: [type: {:or, [:map, nil]}, default: nil],
       mcp_config: [type: {:or, [:map, nil]}, default: nil],
-      tools: [type: {:list, :string}, default: []]
+      tools: [type: {:list, :string}, default: []],
+      # Allow an Amp model newer than the shared registry to pass through to
+      # the CLI `--model` (default false = require a registered model).
+      allow_unknown_model: [type: :boolean, default: false]
     ]
   end
 end

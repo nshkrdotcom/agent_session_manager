@@ -53,7 +53,13 @@ defmodule ASM.Schema.ProviderOptions do
     max_stderr_buffer_bytes: Zoi.integer() |> Zoi.min(1),
     max_concurrent_runs: Zoi.integer() |> Zoi.min(1),
     max_queued_runs: Zoi.integer() |> Zoi.min(0),
-    debug: Zoi.boolean()
+    debug: Zoi.boolean(),
+    # Allow a model newer than the shared cli_subprocess_core registry to
+    # pass through to the CLI as-is (default false = require a registered
+    # model). Common across every provider since ASM.Options.normalize_model_input/3
+    # threads this to the shared registry's `allow_unknown` resolution
+    # regardless of provider.
+    allow_unknown_model: Zoi.optional(Zoi.nullish(Zoi.boolean()))
   }
 
   @claude_fields %{
@@ -65,7 +71,6 @@ defmodule ASM.Schema.ProviderOptions do
     anthropic_base_url: Conventions.optional_trimmed_string(),
     anthropic_auth_token: Conventions.optional_trimmed_string(),
     include_thinking: Zoi.boolean(),
-    allow_unknown_model: Zoi.optional(Zoi.nullish(Zoi.boolean())),
     max_turns: Zoi.optional(Zoi.nullish(Zoi.integer() |> Zoi.min(1)))
   }
 

@@ -13,7 +13,11 @@ defmodule ASM.Options.Antigravity do
       continue: [type: :boolean, default: false],
       add_dirs: [type: {:list, :string}, default: []],
       print_timeout: [type: {:or, [:string, nil]}, default: nil],
-      log_file: [type: {:or, [:string, nil]}, default: nil]
+      log_file: [type: {:or, [:string, nil]}, default: nil],
+      # Allow an Antigravity model newer than the shared registry to pass
+      # through to the CLI `--model` (default false = require a registered
+      # model).
+      allow_unknown_model: [type: :boolean, default: false]
     ]
   end
 end

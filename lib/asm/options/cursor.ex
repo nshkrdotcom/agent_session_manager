@@ -20,7 +20,10 @@ defmodule ASM.Options.Cursor do
       headers: [
         type: {:custom, ASM.Options, :validate_passthrough_list, [:headers]},
         default: []
-      ]
+      ],
+      # Allow a Cursor model newer than the shared registry to pass through
+      # to the CLI `--model` (default false = require a registered model).
+      allow_unknown_model: [type: :boolean, default: false]
     ]
   end
 end

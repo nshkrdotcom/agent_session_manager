@@ -32,7 +32,10 @@ defmodule ASM.Options.Codex do
         type: {:custom, ASM.Options, :validate_passthrough_map, [:output_schema]},
         default: nil
       ],
-      additional_directories: [type: {:list, :string}, default: []]
+      additional_directories: [type: {:list, :string}, default: []],
+      # Allow a Codex model newer than the shared registry to pass through to
+      # the CLI `--model` (default false = require a registered model).
+      allow_unknown_model: [type: :boolean, default: false]
     ]
   end
 end

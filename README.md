@@ -399,7 +399,11 @@ Relevant Claude provider opts:
 - `:allow_unknown_model` — when `true`, a Claude model id that is not in the
   shared registry is passed through to the CLI `--model` as-is (with a warning)
   instead of erroring. Use it to run a Claude model newer than the registry.
-  Defaults to `false` (registered models only).
+  Defaults to `false` (registered models only). This is a common provider
+  option, not Claude-specific - every ASM-supported provider (`:codex`,
+  `:gemini`, `:amp`, `:antigravity`, `:cursor`) accepts the same flag with the
+  same behavior, since model resolution flows through one shared
+  `ASM.Options.normalize_model_input/3` regardless of provider.
 
 Example:
 

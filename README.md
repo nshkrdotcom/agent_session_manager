@@ -396,6 +396,10 @@ Relevant Claude provider opts:
 - `:anthropic_base_url`
 - `:anthropic_auth_token`
 - `:model`
+- `:allow_unknown_model` — when `true`, a Claude model id that is not in the
+  shared registry is passed through to the CLI `--model` as-is (with a warning)
+  instead of erroring. Use it to run a Claude model newer than the registry.
+  Defaults to `false` (registered models only).
 
 Example:
 

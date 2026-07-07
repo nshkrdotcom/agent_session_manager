@@ -51,6 +51,7 @@ defmodule ASM.Options do
   @preflight_lanes [:core, :sdk, :auto]
   @preflight_common_keys [
     :model,
+    :allow_unknown_model,
     :cli_path,
     :cwd,
     :execution_surface,
@@ -778,12 +779,44 @@ defmodule ASM.Options do
 
   defp normalize_model_input(provider, provider_opts, opts)
        when is_atom(provider) and is_list(provider_opts) and is_list(opts) do
+    provider_opts = translate_allow_unknown_model(provider_opts)
+
     strip_keys =
-      [:ollama, :ollama_model]
+      [:ollama, :ollama_model, :allow_unknown, :allow_unknown_model]
       |> Kernel.++(Keyword.get(opts, :strip_keys, []))
       |> Enum.uniq()
 
-    ModelInput.normalize(provider, provider_opts, strip_keys: strip_keys)
+    case ModelInput.normalize(provider, provider_opts, strip_keys: strip_keys) do
+      {:ok, normalized} = ok ->
+        maybe_warn_unregistered_model(provider, normalized.selection)
+        ok
+
+      other ->
+        other
+    end
+  end
+
+  defp maybe_warn_unregistered_model(provider, %{extra: extra, resolved_model: model}) do
+    if Map.get(extra, "unregistered") == true do
+      require Logger
+
+      Logger.warning(
+        "#{inspect(provider)} model #{inspect(model)} is not in the shared model " <>
+          "registry; passing it through to the CLI as-is (allow_unknown_model)."
+      )
+    end
+
+    :ok
+  end
+
+  # Map the ASM-facing `:allow_unknown_model` option onto the shared registry's
+  # `:allow_unknown` resolution attr so a model newer than the catalog passes
+  # through instead of erroring (parity with the claude_agent_sdk override).
+  defp translate_allow_unknown_model(provider_opts) do
+    case Keyword.pop(provider_opts, :allow_unknown_model) do
+      {nil, provider_opts} -> provider_opts
+      {value, provider_opts} -> Keyword.put(provider_opts, :allow_unknown, value)
+    end
   end
 
   defp reject_legacy_transport_surface(provider, provider_opts) do

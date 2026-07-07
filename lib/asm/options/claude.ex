@@ -17,6 +17,9 @@ defmodule ASM.Options.Claude do
       anthropic_base_url: [type: {:or, [:string, nil]}, default: nil],
       anthropic_auth_token: [type: {:or, [:string, nil]}, default: nil],
       include_thinking: [type: :boolean, default: false],
+      # Allow a Claude model newer than the shared registry to pass through to
+      # the CLI `--model` (default false = require a registered model).
+      allow_unknown_model: [type: :boolean, default: false],
       max_turns: [type: {:or, [:pos_integer, nil]}, default: nil]
     ]
   end

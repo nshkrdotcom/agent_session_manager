@@ -175,6 +175,8 @@ The relevant Claude provider fields are:
 - `:anthropic_base_url`
 - `:anthropic_auth_token`
 - `:model`
+- `:allow_unknown_model` (default `false`) — pass a Claude model newer than the
+  shared registry straight through to the CLI `--model` instead of erroring.
 
 Those values are still treated as value carriers only.
 

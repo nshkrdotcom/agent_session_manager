@@ -65,6 +65,7 @@ defmodule ASM.Schema.ProviderOptions do
     anthropic_base_url: Conventions.optional_trimmed_string(),
     anthropic_auth_token: Conventions.optional_trimmed_string(),
     include_thinking: Zoi.boolean(),
+    allow_unknown_model: Zoi.optional(Zoi.nullish(Zoi.boolean())),
     max_turns: Zoi.optional(Zoi.nullish(Zoi.integer() |> Zoi.min(1)))
   }
 

@@ -13,6 +13,7 @@ defmodule ASM.CodexCustomModelTest do
   use ExUnit.Case, async: true
 
   alias ASM.Options
+  alias ASM.Options.{Amp, Antigravity, Codex, Cursor, Gemini}
 
   describe "finalize_provider_opts/3 model resolution" do
     test "allow_unknown_model passes an unregistered Codex model through" do
@@ -51,16 +52,16 @@ defmodule ASM.CodexCustomModelTest do
 
   describe "provider options schema" do
     test "allow_unknown_model is a recognized Codex provider option" do
-      assert Keyword.has_key?(ASM.Options.Codex.schema(), :allow_unknown_model)
+      assert Keyword.has_key?(Codex.schema(), :allow_unknown_model)
     end
 
     test "allow_unknown_model is recognized for every ASM provider schema" do
       for {provider_mod, provider} <- [
-            {ASM.Options.Codex, :codex},
-            {ASM.Options.Gemini, :gemini},
-            {ASM.Options.Amp, :amp},
-            {ASM.Options.Antigravity, :antigravity},
-            {ASM.Options.Cursor, :cursor}
+            {Codex, :codex},
+            {Gemini, :gemini},
+            {Amp, :amp},
+            {Antigravity, :antigravity},
+            {Cursor, :cursor}
           ] do
         assert Keyword.has_key?(provider_mod.schema(), :allow_unknown_model),
                "expected #{inspect(provider)} provider schema to declare allow_unknown_model"

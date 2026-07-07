@@ -8,6 +8,7 @@ defmodule ASM.ClaudeCustomModelTest do
   use ExUnit.Case, async: true
 
   alias ASM.Options
+  alias ASM.Options.Claude
 
   describe "finalize_provider_opts/3 model resolution" do
     test "allow_unknown_model passes an unregistered Claude model through" do
@@ -46,7 +47,7 @@ defmodule ASM.ClaudeCustomModelTest do
 
   describe "provider options schema" do
     test "allow_unknown_model is a recognized Claude provider option" do
-      assert Keyword.has_key?(ASM.Options.Claude.schema(), :allow_unknown_model)
+      assert Keyword.has_key?(Claude.schema(), :allow_unknown_model)
     end
   end
 end

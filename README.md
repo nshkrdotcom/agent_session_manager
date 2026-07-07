@@ -403,7 +403,7 @@ Relevant Claude provider opts:
   option, not Claude-specific - every ASM-supported provider (`:codex`,
   `:gemini`, `:amp`, `:antigravity`, `:cursor`) accepts the same flag with the
   same behavior, since model resolution flows through one shared
-  `ASM.Options.normalize_model_input/3` regardless of provider.
+  ASM model-normalization path regardless of provider.
 
 Example:
 

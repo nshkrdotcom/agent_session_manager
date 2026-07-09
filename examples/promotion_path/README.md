@@ -31,13 +31,13 @@ Inference-via-ASM proof remains owned by the inference repo:
 ```bash
 mix run --no-start examples/promotion_path/asm_core_lane.exs -- \
   --provider codex \
-  --model gpt-5.4 \
+  --model gpt-5.6-sol \
   --prompt "Reply with exactly: ASM_CORE_LANE_OK"
 
 mix run --no-start examples/promotion_path/asm_sdk_backed_lane.exs -- \
   --provider codex \
   --lane sdk \
-  --model gpt-5.4 \
+  --model gpt-5.6-sol \
   --sdk-root ../codex_sdk \
   --prompt "Reply with exactly: ASM_SDK_LANE_OK"
 

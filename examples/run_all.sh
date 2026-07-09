@@ -23,7 +23,7 @@ run_all.sh only runs when you explicitly choose one or more providers.
 
 Usage:
   ./examples/run_all.sh --provider claude
-  ./examples/run_all.sh --provider codex --model gpt-5.4
+  ./examples/run_all.sh --provider codex --model gpt-5.6-sol
   ./examples/run_all.sh --provider codex --ssh-host example.internal --danger-full-access
   ./examples/run_all.sh --provider claude --ollama --model haiku --ollama-model llama3.2
   ./examples/run_all.sh --provider codex --ollama --ollama-model gpt-oss:20b

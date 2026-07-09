@@ -233,8 +233,8 @@ alias Codex, as: CodexSDK
   Codex.connect_app_server(
     [
       provider: :codex,
-      model: "gpt-5.4",
-      reasoning_effort: :high,
+      model: "gpt-5.6-sol",
+      reasoning_effort: :max,
       execution_environment: [permission_mode: :default],
       execution_surface: [
         surface_kind: :ssh_exec,
@@ -261,7 +261,7 @@ alias Codex, as: CodexSDK
 
 {:ok, codex_opts} =
   Codex.codex_options(
-    [provider: :codex, model: "gpt-5.4"],
+    [provider: :codex, model: "gpt-5.6-sol"],
     model_personality: :pragmatic
   )
 

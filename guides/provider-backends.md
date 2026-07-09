@@ -208,6 +208,12 @@ Relevant Codex provider fields:
 - `:model`
 - `:reasoning_effort`
 
+The current shared catalog exposes `gpt-5.5` as the live default plus
+`gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.4`, and
+`gpt-5.4-mini`. ASM does not add a `gpt-5.6` alias. Sol and Terra admit
+`:max` and `:ultra`; Luna admits `:max` but rejects `:ultra` through the shared
+registry contract.
+
 For the current local Ollama path, ASM callers should use:
 
 - `provider_backend: :oss`

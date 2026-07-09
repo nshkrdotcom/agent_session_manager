@@ -56,7 +56,7 @@ Supported providers:
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.9.2"}
+    {:agent_session_manager, "~> 0.10.0"}
   ]
 end
 ```
@@ -74,7 +74,7 @@ provider-native namespace:
 
 - `{:claude_agent_sdk, "~> 0.17.0", optional: true}` for Claude control-protocol
   helpers and `ASM.Extensions.ProviderSDK.Claude`
-- `{:codex_sdk, "~> 0.16.0", optional: true}` for Codex app-server, MCP,
+- `{:codex_sdk, "~> 0.17.0", optional: true}` for Codex app-server, MCP,
   realtime, voice helpers, and `ASM.Extensions.ProviderSDK.Codex`
 - `{:gemini_cli_sdk, "~> 0.2.0", optional: true}` for Gemini SDK lane/runtime-kit
   availability and `ASM.Extensions.ProviderSDK.Gemini`
@@ -667,8 +667,8 @@ alias Codex, as: CodexSDK
     [
       provider: :codex,
       cli_path: "/usr/local/bin/codex",
-      model: "gpt-5.4",
-      reasoning_effort: :high
+      model: "gpt-5.6-sol",
+      reasoning_effort: :max
     ],
     [model_personality: :pragmatic],
     experimental_api: true
@@ -689,7 +689,7 @@ alias Codex, as: CodexSDK
 
 {:ok, codex_opts} =
   Codex.codex_options(
-    [provider: :codex, model: "gpt-5.4"],
+    [provider: :codex, model: "gpt-5.6-sol"],
     model_personality: :pragmatic
   )
 

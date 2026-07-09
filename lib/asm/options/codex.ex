@@ -9,7 +9,9 @@ defmodule ASM.Options.Codex do
       model: [type: :string],
       system_prompt: [type: {:or, [:string, nil]}, default: nil],
       reasoning_effort: [
-        type: {:or, [{:in, [:none, :minimal, :low, :medium, :high, :xhigh]}, :string, nil]},
+        type:
+          {:or,
+           [{:in, [:none, :minimal, :low, :medium, :high, :xhigh, :max, :ultra]}, :string, nil]},
         default: nil
       ],
       provider_backend: [

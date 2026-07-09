@@ -37,16 +37,47 @@ defmodule ASM.CodexCustomModelTest do
                Options.finalize_provider_opts(:codex, model: "gpt-5.9-not-yet-released")
     end
 
-    test "known Codex aliases still resolve normally" do
-      assert {:ok, attrs} =
+    test "current GPT-5.6 Codex models resolve without compatibility aliases" do
+      for model <- ~w(gpt-5.6-sol gpt-5.6-terra gpt-5.6-luna) do
+        assert {:ok, attrs} =
+                 Options.finalize_provider_opts(:codex,
+                   model: model,
+                   allow_unknown_model: true
+                 )
+
+        payload = Keyword.fetch!(attrs, :model_payload)
+        assert payload.resolved_model == model
+        refute Map.get(payload.extra, "unregistered")
+      end
+
+      assert {:error, %ASM.Error{}} =
+               Options.finalize_provider_opts(:codex, model: "gpt-5.6")
+    end
+
+    test "delegates GPT-5.6 max and ultra boundaries to the shared core" do
+      assert {:ok, sol} =
                Options.finalize_provider_opts(:codex,
-                 model: "gpt-5.4",
-                 allow_unknown_model: true
+                 model: "gpt-5.6-sol",
+                 reasoning_effort: :max
                )
 
-      payload = Keyword.fetch!(attrs, :model_payload)
-      assert payload.resolved_model == "gpt-5.4"
-      refute Map.get(payload.extra, "unregistered")
+      assert Keyword.fetch!(sol, :model_payload).reasoning == "max"
+
+      assert {:ok, terra} =
+               Options.finalize_provider_opts(:codex,
+                 model: "gpt-5.6-terra",
+                 reasoning_effort: :ultra
+               )
+
+      assert Keyword.fetch!(terra, :model_payload).reasoning == "ultra"
+
+      assert {:error, %ASM.Error{message: message}} =
+               Options.finalize_provider_opts(:codex,
+                 model: "gpt-5.6-luna",
+                 reasoning_effort: :ultra
+               )
+
+      assert message =~ "invalid_reasoning_effort"
     end
   end
 
@@ -65,6 +96,18 @@ defmodule ASM.CodexCustomModelTest do
           ] do
         assert Keyword.has_key?(provider_mod.schema(), :allow_unknown_model),
                "expected #{inspect(provider)} provider schema to declare allow_unknown_model"
+      end
+    end
+
+    test "Codex schema admits the current max and ultra effort atoms" do
+      for effort <- [:max, :ultra] do
+        assert {:ok, validated} =
+                 Options.validate(
+                   [provider: :codex, model: "gpt-5.6-sol", reasoning_effort: effort],
+                   Codex.schema()
+                 )
+
+        assert validated[:reasoning_effort] == effort
       end
     end
   end

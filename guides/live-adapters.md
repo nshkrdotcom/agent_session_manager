@@ -54,7 +54,7 @@ mix run --no-start examples/provider_cursor_sdk_stream.exs -- --provider cursor 
 ```bash
 ./examples/run_all.sh --provider claude
 ./examples/run_all.sh --provider claude --provider gemini
-./examples/run_all.sh --provider codex --model gpt-5.4
+./examples/run_all.sh --provider codex --model gpt-5.6-sol
 ./examples/run_all.sh --provider codex --ssh-host example.internal --danger-full-access
 ./examples/run_all.sh --provider claude --ollama --ollama-model llama3.2
 ./examples/run_all.sh --provider codex --ollama --ollama-model llama3.2

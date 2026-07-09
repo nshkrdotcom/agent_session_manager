@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-07-09
+
 ### Added
 
+- Current GPT-5.6 Sol, Terra, and Luna model selection through the shared core,
+  including Codex `:max` and `:ultra` schema inputs with model-specific
+  validation delegated to `CliSubprocessCore.ModelRegistry`.
 - Provider/lane capability manifests with support states for Codex, Claude,
   Amp, Gemini, and Cursor, including explicit unsupported capability errors for
   Codex-style host dynamic tools on Amp/Gemini/Cursor.
@@ -28,6 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Codex examples and provider guides now use current GPT-5.6 model IDs and the
+  `codex_sdk` 0.17.0 extension surface.
+- Refreshed compatible dependencies, including Zoi 0.18.5.
 - Renamed the provider adapter-selection policy contract from the old
   `ExecutionPlane.*` namespace to the ASM-owned
   `ASM.AdapterSelectionPolicy.v1` vocabulary.
@@ -720,7 +728,8 @@ See `guides/migrating_to_v0.8.md` for migration details.
 - Basic project structure with mix.exs configuration
 - Project logo and assets
 
-[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.9.2...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.8.0...v0.9.0

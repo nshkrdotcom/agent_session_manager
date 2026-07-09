@@ -132,7 +132,7 @@ smoke-test targets.
 ```bash
 mix run --no-start examples/live_query.exs -- --provider claude
 mix run --no-start examples/live_stream.exs -- --provider gemini
-mix run --no-start examples/live_session_lifecycle.exs -- --provider codex --model gpt-5.4
+mix run --no-start examples/live_session_lifecycle.exs -- --provider codex --model gpt-5.6-sol
 mix run --no-start examples/inference_endpoint_http.exs -- --provider gemini --stream
 mix run --no-start examples/live_query.exs -- --provider claude --ollama --model haiku --ollama-model llama3.2
 mix run --no-start examples/live_query.exs -- --provider codex --ollama --ollama-model gpt-oss:20b
@@ -177,7 +177,7 @@ instead of blocking on password or connection prompts.
 
 ```bash
 ./examples/run_all.sh --provider claude
-./examples/run_all.sh --provider codex --model gpt-5.4
+./examples/run_all.sh --provider codex --model gpt-5.6-sol
 ./examples/run_all.sh --provider claude --ollama --model haiku --ollama-model llama3.2
 ./examples/run_all.sh --provider codex --ollama --ollama-model gpt-oss:20b
 ./examples/run_all.sh --provider claude --provider codex --ollama --ollama-model llama3.2

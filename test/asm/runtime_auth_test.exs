@@ -388,17 +388,17 @@ defmodule ASM.RuntimeAuthTest do
     assert {:error, operation_error} =
              ASM.RuntimeAuth.new(
                "runtime-auth-governed-no-operation-policy-" <> unique_suffix(),
-               :gemini,
+               :antigravity,
                runtime_auth_mode: :governed,
                runtime_auth_scope: :governed,
                execution_context_ref: "asm-execution-context://governed/no-operation-policy",
-               connector_instance_ref: "jido-connector-instance://gemini/instance-1",
-               connector_binding_ref: "jido-connector-binding://gemini/binding-1",
-               provider_account_ref: "provider-account://gemini/account-1",
-               authority_ref: "citadel-authority://decision/gemini",
-               credential_lease_ref: "jido-credential-lease://lease/gemini",
-               native_auth_assertion_ref: "native-auth://assertion/gemini",
-               target_ref: "execution-target://gemini/target-1"
+               connector_instance_ref: "jido-connector-instance://antigravity/instance-1",
+               connector_binding_ref: "jido-connector-binding://antigravity/binding-1",
+               provider_account_ref: "provider-account://antigravity/account-1",
+               authority_ref: "citadel-authority://decision/antigravity",
+               credential_lease_ref: "jido-credential-lease://lease/antigravity",
+               native_auth_assertion_ref: "native-auth://assertion/antigravity",
+               target_ref: "execution-target://antigravity/target-1"
              )
 
     assert operation_error.kind == :config_invalid
@@ -470,26 +470,26 @@ defmodule ASM.RuntimeAuthTest do
     assert {:ok, runtime_auth} =
              ASM.RuntimeAuth.new(
                "runtime-auth-governed-token-options-" <> unique_suffix(),
-               :gemini,
+               :antigravity,
                runtime_auth_mode: :governed,
                runtime_auth_scope: :governed,
                execution_context_ref: "asm-execution-context://governed/token-options",
-               connector_instance_ref: "jido-connector-instance://gemini/instance-1",
-               connector_binding_ref: "jido-connector-binding://gemini/binding-1",
-               provider_account_ref: "provider-account://gemini/account-1",
+               connector_instance_ref: "jido-connector-instance://antigravity/instance-1",
+               connector_binding_ref: "jido-connector-binding://antigravity/binding-1",
+               provider_account_ref: "provider-account://antigravity/account-1",
                provider_account_status: :asserted,
-               authority_ref: "citadel-authority://decision/gemini",
-               credential_lease_ref: "jido-credential-lease://lease/gemini",
-               native_auth_assertion_ref: "native-auth://assertion/gemini",
-               target_ref: "execution-target://gemini/target-1",
-               operation_policy_ref: "operation-policy://gemini/policy-1"
+               authority_ref: "citadel-authority://decision/antigravity",
+               credential_lease_ref: "jido-credential-lease://lease/antigravity",
+               native_auth_assertion_ref: "native-auth://assertion/antigravity",
+               target_ref: "execution-target://antigravity/target-1",
+               operation_policy_ref: "operation-policy://antigravity/policy-1"
              )
 
     metadata = ASM.RuntimeAuth.to_metadata(runtime_auth)
 
     assert {:error, error} =
              ASM.RuntimeAuth.authorize_governed_provider_runtime(
-               :gemini,
+               :antigravity,
                %{metadata: metadata},
                token_file: "/tmp/unmanaged-token",
                oauth_token: "unmanaged-oauth-token",
@@ -541,7 +541,7 @@ defmodule ASM.RuntimeAuthTest do
     }
 
     with_env(env, fn ->
-      for provider <- [:codex, :claude, :gemini, :amp, :cursor] do
+      for provider <- [:codex, :claude, :antigravity, :amp, :cursor] do
         assert {:error, error} =
                  ASM.RuntimeAuth.new("runtime-auth-env-missing-" <> to_string(provider), provider,
                    runtime_auth_mode: :governed,
@@ -568,7 +568,7 @@ defmodule ASM.RuntimeAuthTest do
     }
 
     with_env(env, fn ->
-      for provider <- [:codex, :claude, :gemini, :amp] do
+      for provider <- [:codex, :claude, :antigravity, :amp] do
         assert {:ok, runtime_auth} =
                  ASM.RuntimeAuth.new("runtime-auth-explicit-" <> to_string(provider), provider,
                    runtime_auth_mode: :governed,

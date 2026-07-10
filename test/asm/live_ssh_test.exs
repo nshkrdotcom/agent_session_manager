@@ -23,7 +23,7 @@ defmodule ASM.LiveSSHTest do
       Keyword.put(
         original,
         :runtime_loader,
-        OptionalSDK.loaded_runtime_loader([:amp, :claude, :codex, :gemini])
+        OptionalSDK.loaded_runtime_loader([:amp, :claude, :codex])
       )
     )
 
@@ -77,21 +77,6 @@ defmodule ASM.LiveSSHTest do
 
       {:error, %Error{kind: :cli_not_found} = error} ->
         assert String.contains?(error.message, "Claude CLI not found")
-    end
-  end
-
-  test "live SSH: ASM.query/3 surfaces remote Gemini CLI misses as structured sdk errors" do
-    case asm_query(:gemini, "Reply with exactly: ASM_GEMINI_LIVE_SSH_OK", lane: :sdk) do
-      {:ok, result} ->
-        assert result.metadata.lane == :sdk
-        assert is_binary(result.text)
-        assert result.text != ""
-
-      {:error, %Error{kind: :cli_not_found} = error} ->
-        assert String.contains?(error.message, "Gemini CLI not found")
-
-      {:error, %Error{kind: :auth_error} = error} ->
-        assert String.contains?(error.message, "authentication")
     end
   end
 

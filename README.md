@@ -21,7 +21,6 @@
 Supported providers:
 
 - Claude CLI
-- Gemini CLI
 - Codex CLI (`exec` mode plus SDK app-server host tools when requested)
 - Amp CLI
 - Cursor Agent CLI
@@ -76,8 +75,6 @@ provider-native namespace:
   helpers and `ASM.Extensions.ProviderSDK.Claude`
 - `{:codex_sdk, "~> 0.17.0", optional: true}` for Codex app-server, MCP,
   realtime, voice helpers, and `ASM.Extensions.ProviderSDK.Codex`
-- `{:gemini_cli_sdk, "~> 0.2.0", optional: true}` for Gemini SDK lane/runtime-kit
-  availability and `ASM.Extensions.ProviderSDK.Gemini`
 - `{:amp_sdk, "~> 0.5.0", optional: true}` for Amp SDK lane/runtime-kit
   availability and `ASM.Extensions.ProviderSDK.Amp`
 - `{:cursor_cli_sdk, "~> 0.1.0", optional: true}` for Cursor SDK
@@ -103,7 +100,6 @@ Install provider CLIs you plan to use:
 
 ```bash
 npm install -g @anthropic-ai/claude-code
-npm install -g @google/gemini-cli
 npm install -g @openai/codex
 npm install -g @sourcegraph/amp
 # Install Cursor Agent CLI using Cursor's current CLI documentation.
@@ -139,7 +135,6 @@ attached `model_payload` instead of re-resolving model/backend intent locally.
 Optional explicit CLI paths:
 
 - `CLAUDE_CLI_PATH`
-- `GEMINI_CLI_PATH`
 - `CODEX_PATH`
 - `AMP_CLI_PATH`
 - `CURSOR_CLI_PATH`
@@ -169,7 +164,7 @@ end
 Provider atom form for one-off queries:
 
 ```elixir
-{:ok, result} = ASM.query(:gemini, "Say hello")
+{:ok, result} = ASM.query(:antigravity, "Say hello")
 ```
 
 ## CLI Inference Endpoint Publication
@@ -188,7 +183,6 @@ contract:
 
 - Codex
 - Claude
-- Gemini
 - Amp
 
 Cursor and Antigravity are first-party ASM runtime providers, but the current
@@ -200,7 +194,7 @@ the landed provider profiles and runtime tiers, but the endpoint path only
 exposes completion and streaming. Tool-bearing or agent-loop-shaped requests
 are rejected on that endpoint seam.
 
-Gemini and Amp remain common-surface-only for inference endpoint publication.
+Amp remains common-surface-only for inference endpoint publication.
 Cursor and Antigravity remain runtime providers outside this endpoint contract
 until the endpoint seam is deliberately expanded and tested for those providers.
 Cursor's SDK lane and Antigravity's SDK lane remain provider-native runtime
@@ -208,7 +202,7 @@ lanes, not endpoint contract expansions.
 Cursor's provider SDK extension namespace is an explicit home for
 provider-native settings. Antigravity currently has SDK runtime availability
 without a separate provider SDK extension namespace. Neither widens the endpoint
-contract. Gemini, Amp, Cursor, and Antigravity explicitly report Codex-style
+contract. Amp, Cursor, and Antigravity explicitly report Codex-style
 host dynamic tools and app-server control as unsupported, even when their SDK
 runtime kits are installed.
 
@@ -373,7 +367,7 @@ ASM-side rules:
 
 Provider-side alignment in the current stack is:
 
-- Claude, Codex, Gemini, Cursor, and Antigravity SDK repos consume the shared
+- Claude, Codex, Cursor, and Antigravity SDK repos consume the shared
   mixed-input normalizer before backend execution
 - Amp exposes a payload-only model contract rather than a second raw model
   surface
@@ -401,7 +395,7 @@ Relevant Claude provider opts:
   instead of erroring. Use it to run a Claude model newer than the registry.
   Defaults to `false` (registered models only). This is a common provider
   option, not Claude-specific - every ASM-supported provider (`:codex`,
-  `:gemini`, `:amp`, `:antigravity`, `:cursor`) accepts the same flag with the
+  `:amp`, `:antigravity`, `:cursor`) accepts the same flag with the
   same behavior, since model resolution flows through one shared
   ASM model-normalization path regardless of provider.
 
@@ -508,7 +502,7 @@ config-root, auth-root, API-key, or base-URL smuggling before a Codex backend ca
 start. Default tests exercise this deterministically without live provider
 credentials; live Codex smoke is separate from ASM CI.
 
-Governed Claude, Gemini, and Amp starts are fail-closed in ASM until their
+Governed Claude and Amp starts are fail-closed in ASM until their
 provider-auth materializers are available. Complete runtime-auth evidence is not
 enough to reuse standalone CLI env, native login state, provider defaults,
 command overrides, cwd overrides, session refs, target refs, or raw env maps as
@@ -546,7 +540,6 @@ active_extensions = ProviderSDK.available_extensions()
 {:ok, active_claude_extensions} = ProviderSDK.available_provider_extensions(:claude)
 {:ok, claude_extension} = ProviderSDK.extension(:claude)
 {:ok, codex_native_caps} = ProviderSDK.provider_capabilities(:codex)
-{:ok, gemini_report} = ProviderSDK.provider_report(:gemini)
 
 report = ProviderSDK.capability_report()
 
@@ -554,10 +547,10 @@ claude_extension.namespace
 # ASM.Extensions.ProviderSDK.Claude
 
 Enum.map(catalog, & &1.provider)
-# [:amp, :claude, :codex, :cursor, :gemini]
+# [:amp, :claude, :codex, :cursor]
 
 Enum.map(active_extensions, & &1.provider)
-# subset of [:amp, :claude, :codex, :cursor, :gemini]
+# subset of [:amp, :claude, :codex, :cursor]
 
 Enum.map(active_claude_extensions, & &1.namespace)
 # [] or [ASM.Extensions.ProviderSDK.Claude]
@@ -567,9 +560,6 @@ codex_native_caps
 
 report.claude.sdk_available?
 # true | false
-
-gemini_report.namespaces
-# [] or [ASM.Extensions.ProviderSDK.Gemini]
 
 report.antigravity.sdk_available?
 # true | false
@@ -584,7 +574,6 @@ Current built-in namespaces:
 - `ASM.Extensions.ProviderSDK.Claude`
 - `ASM.Extensions.ProviderSDK.Codex`
 - `ASM.Extensions.ProviderSDK.Cursor`
-- `ASM.Extensions.ProviderSDK.Gemini`
 
 Antigravity is intentionally absent from that native-extension namespace list.
 It is still present in `ProviderSDK.capability_report/0` because ASM supports
@@ -609,10 +598,9 @@ Optional-loading rules:
 - rich provider-native APIs still live in the owning provider SDKs
 - ASM does not normalize those richer APIs into `ASM`, `ASM.Stream`, or
   `ASM.ProviderRegistry`
-- Gemini, Amp, and Cursor extension helpers start deliberately narrow. They
+- Amp and Cursor extension helpers start deliberately narrow. They
   derive only common placement/session data and require explicit
-  `native_overrides` for Gemini settings/trust controls, Amp
-  permissions/MCP/skills/thread behavior, or Cursor mode/sandbox/MCP/plugin
+  `native_overrides` for Amp permissions/MCP/skills/thread behavior or Cursor mode/sandbox/MCP/plugin
   settings.
   Antigravity does not yet have an extension helper; direct SDK-lane execution
   uses `AntigravityCliSdk.Runtime.CLI`.
@@ -736,7 +724,6 @@ The current partial common feature is the ASM Ollama surface:
 
 - Claude: supported
 - Codex: supported
-- Gemini: unsupported
 - Amp: unsupported
 
 See [Common And Partial Provider Features](guides/common-and-partial-provider-features.md)
@@ -746,7 +733,7 @@ Important boundary:
 
 - `permission_mode` is ASM's normalized public execution knob
 - provider-native flags such as Codex `:yolo`, Claude
-  `:bypass_permissions`, Gemini `--yolo`, or Amp
+  `:bypass_permissions`, or Amp
   `--dangerously-allow-all` are downstream renderings of that one normalized
   concept
 - provider-specific knobs that are not part of ASM's normalized execution
@@ -758,8 +745,6 @@ Important boundary:
 
 Examples:
 
-- Gemini `sandbox` is provider-native and not part of ASM's normalized
-  execution environment contract
 - Codex `ask_for_approval` is a `codex_sdk` thread option, not an ASM common
   execution-environment field
 - `allowed_tools` is an ASM policy allowlist for observed provider tool-use
@@ -961,7 +946,7 @@ Strict common/session options include:
 `ASM.query/3` takes the provider positionally:
 
 ```elixir
-ASM.query(:gemini, "Say hello", model: selected_model, lane: :core)
+ASM.query(:antigravity, "Say hello", model: selected_model, lane: :core)
 ```
 
 Here `selected_model` should come from the host application's explicit config
@@ -989,7 +974,6 @@ owning SDK or in an explicit provider-native extension.
 Provider-specific examples:
 
 - Claude: `model`, `include_thinking`, `max_turns`
-- Gemini: `model`, `sandbox`, `extensions`
 - Codex: `model`, `reasoning_effort`, `output_schema`
 - Amp: `model`, `mode`, `include_thinking`, `tools`
 
@@ -1008,7 +992,7 @@ They only run when you explicitly choose a provider with `--provider`.
 
 ```bash
 mix run --no-start examples/live_query.exs -- --provider claude
-mix run --no-start examples/live_stream.exs -- --provider gemini
+mix run --no-start examples/live_stream.exs -- --provider antigravity
 mix run --no-start examples/live_session_lifecycle.exs -- --provider codex
 ./examples/run_all.sh --provider amp
 ./examples/run_all.sh --provider cursor
@@ -1016,10 +1000,10 @@ mix run --no-start examples/live_session_lifecycle.exs -- --provider codex
 
 Environment knobs used by examples:
 
-- `CLAUDE_CLI_PATH`, `GEMINI_CLI_PATH`, `CODEX_PATH`, `AMP_CLI_PATH`,
+- `CLAUDE_CLI_PATH`, `CODEX_PATH`, `AMP_CLI_PATH`,
   `CURSOR_CLI_PATH`
 - `ASM_PERMISSION_MODE` (`default`, `auto`, `bypass`, `plan`)
-- `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL`, `ASM_AMP_MODEL`,
+- `ASM_CLAUDE_MODEL`, `ASM_CODEX_MODEL`, `ASM_AMP_MODEL`,
   `ASM_CURSOR_MODEL`
 
 These knobs are read by examples and standalone compatibility helpers. They do
@@ -1080,7 +1064,7 @@ specific escape hatches.
 - ASM session/run state now retains provider-native checkpoint data so upper callers can attempt an
   exact session resume before replaying work
 - provider option validation now honestly reflects runtime support for recovery-related prompt
-  controls: Claude, Codex, and Gemini accept supported prompt surfaces, while Amp rejects
+  controls: Claude and Codex accept supported prompt surfaces, while Amp rejects
   unsupported prompt controls such as `system_prompt` and `max_turns` instead of silently
   dropping them
 

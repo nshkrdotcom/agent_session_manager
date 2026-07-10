@@ -11,7 +11,6 @@ defmodule ASM.ProviderFeaturesTest do
   test "provider manifest exposes ollama support as a common partial feature" do
     claude = ProviderFeatures.manifest!(:claude)
     codex = ProviderFeatures.manifest!(:codex)
-    gemini = ProviderFeatures.manifest!(:gemini)
     amp = ProviderFeatures.manifest!(:amp)
     cursor = ProviderFeatures.manifest!(:cursor)
     antigravity = ProviderFeatures.manifest!(:antigravity)
@@ -40,9 +39,6 @@ defmodule ASM.ProviderFeaturesTest do
 
     assert codex.common_features.ollama.compatibility.validated_models == ["gpt-oss:20b"]
     assert codex.permission_modes.yolo.cli_excerpt == "--dangerously-bypass-approvals-and-sandbox"
-
-    assert gemini.common_features.ollama.supported? == false
-    assert gemini.permission_modes.yolo.cli_excerpt == "--yolo"
 
     assert amp.common_features.ollama.supported? == false
     assert amp.permission_modes.dangerously_allow_all.cli_excerpt == "--dangerously-allow-all"
@@ -88,7 +84,7 @@ defmodule ASM.ProviderFeaturesTest do
     assert claude_sdk.capabilities.app_server.support_state == :unsupported
     refute :dynamic_tools in claude_sdk.capabilities.host_tools.provider_native_option_keys
 
-    for provider <- [:amp, :gemini, :cursor, :antigravity] do
+    for provider <- [:amp, :cursor, :antigravity] do
       manifest = ProviderFeatures.lane_manifest!(provider, :sdk)
 
       assert manifest.composition_mode == :common_surface_only
@@ -110,7 +106,7 @@ defmodule ASM.ProviderFeaturesTest do
   end
 
   test "host tools are not admitted as an all-provider common ASM capability" do
-    for provider <- [:claude, :codex, :gemini, :amp, :cursor, :antigravity],
+    for provider <- [:claude, :codex, :amp, :cursor, :antigravity],
         lane <- Map.keys(ProviderFeatures.manifest!(provider).lanes) do
       manifest = ProviderFeatures.lane_manifest!(provider, lane)
       host_tools = manifest.capabilities.host_tools
@@ -128,7 +124,7 @@ defmodule ASM.ProviderFeaturesTest do
   end
 
   test "sandbox policy discovery does not expose a common ASM sandbox control" do
-    for provider <- [:claude, :codex, :gemini, :amp, :cursor, :antigravity],
+    for provider <- [:claude, :codex, :amp, :cursor, :antigravity],
         lane <- Map.keys(ProviderFeatures.manifest!(provider).lanes) do
       manifest = ProviderFeatures.lane_manifest!(provider, lane)
       sandbox_policy = manifest.capabilities.sandbox_policy
@@ -149,8 +145,10 @@ defmodule ASM.ProviderFeaturesTest do
     assert String.contains?(error.message, ":host_tools")
     assert String.contains?(error.message, "unsupported")
 
-    assert {:error, error} = ProviderFeatures.require_capability(:gemini, :sdk, :app_server)
-    assert String.contains?(error.message, ":gemini")
+    assert {:error, error} =
+             ProviderFeatures.require_capability(:antigravity, :sdk, :app_server)
+
+    assert String.contains?(error.message, ":antigravity")
     assert String.contains?(error.message, ":app_server")
   end
 
@@ -214,12 +212,12 @@ defmodule ASM.ProviderFeaturesTest do
   end
 
   test "common ollama surface rejects unsupported providers" do
-    schema = Provider.resolve!(:gemini).options_schema
+    schema = Provider.resolve!(:amp).options_schema
 
     assert {:error, error} =
              Options.validate(
                [
-                 provider: :gemini,
+                 provider: :amp,
                  ollama: true,
                  ollama_model: "llama3.2"
                ],
@@ -273,7 +271,6 @@ defmodule ASM.ProviderFeaturesTest do
   test "provider schemas allow system prompt only where the runtime surface supports it" do
     claude_schema = Provider.resolve!(:claude).options_schema
     codex_schema = Provider.resolve!(:codex).options_schema
-    gemini_schema = Provider.resolve!(:gemini).options_schema
     amp_schema = Provider.resolve!(:amp).options_schema
     cursor_schema = Provider.resolve!(:cursor).options_schema
 
@@ -307,18 +304,6 @@ defmodule ASM.ProviderFeaturesTest do
              )
 
     assert codex_validated[:system_prompt] == "Respect repository instructions."
-
-    assert {:ok, gemini_validated} =
-             Options.validate(
-               [
-                 provider: :gemini,
-                 model: "gemini-3.1-flash-lite-preview",
-                 system_prompt: "Be concise."
-               ],
-               gemini_schema
-             )
-
-    assert gemini_validated[:system_prompt] == "Be concise."
 
     assert {:error, amp_error} =
              Options.validate(

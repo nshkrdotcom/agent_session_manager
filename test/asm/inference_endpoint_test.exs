@@ -44,7 +44,7 @@ defmodule ASM.InferenceEndpointTest do
     assert consumer_manifest.accepted_runtime_kinds == [:task]
     assert consumer_manifest.accepted_management_modes == [:jido_managed]
 
-    for provider <- [:codex, :claude, :gemini, :amp] do
+    for provider <- [:codex, :claude, :amp] do
       assert {:error, {:incompatible, compatibility}} =
                InferenceEndpoint.ensure_endpoint(
                  request(provider, "model-for-#{provider}",
@@ -60,7 +60,7 @@ defmodule ASM.InferenceEndpointTest do
       assert publication.cli_completion_v1 == true
       assert publication.cli_streaming_v1 == true
       assert publication.cli_agent_v2 == provider in [:codex, :claude]
-      assert compatibility.metadata.common_surface_only? == provider in [:gemini, :amp]
+      assert compatibility.metadata.common_surface_only? == provider in [:amp]
       refute compatibility.compatible?
     end
   end
@@ -69,7 +69,7 @@ defmodule ASM.InferenceEndpointTest do
   test "ensure_endpoint/3 publishes a loopback descriptor and release_endpoint/1 retires it" do
     assert {:ok, endpoint, compatibility} =
              InferenceEndpoint.ensure_endpoint(
-               request(:gemini, "gemini-3.1-flash-lite-preview"),
+               request(:amp, "amp-1"),
                compatible_consumer_manifest(),
                context(boundary_ref: "boundary-cli-1")
              )
@@ -78,8 +78,8 @@ defmodule ASM.InferenceEndpointTest do
     assert endpoint.management_mode == :jido_managed
     assert endpoint.target_class == :cli_endpoint
     assert endpoint.protocol == :openai_chat_completions
-    assert endpoint.provider_identity == :gemini
-    assert endpoint.model_identity == "gemini-3.1-flash-lite-preview"
+    assert endpoint.provider_identity == :amp
+    assert endpoint.model_identity == "amp-1"
     assert endpoint.source_runtime == :agent_session_manager
     assert endpoint.source_runtime_ref == endpoint.lease_ref
     assert endpoint.boundary_ref == "boundary-cli-1"
@@ -98,9 +98,9 @@ defmodule ASM.InferenceEndpointTest do
     authority_refs = %{
       authority_ref: "authority://inference/asm",
       execution_context_ref: "execution-context://inference/asm",
-      provider_account_ref: "provider-account://gemini/governed",
-      credential_lease_ref: "credential-lease://gemini/governed",
-      native_auth_assertion_ref: "native-auth://gemini/governed",
+      provider_account_ref: "provider-account://amp/governed",
+      credential_lease_ref: "credential-lease://amp/governed",
+      native_auth_assertion_ref: "native-auth://amp/governed",
       target_ref: "target://inference/asm",
       attach_grant_ref: "attach-grant://inference/asm",
       operation_policy_ref: "operation-policy://inference/asm"
@@ -108,7 +108,7 @@ defmodule ASM.InferenceEndpointTest do
 
     assert {:ok, endpoint, _compatibility} =
              InferenceEndpoint.ensure_endpoint(
-               request(:gemini, "gemini-3.1-flash-lite-preview", authority_refs: authority_refs),
+               request(:amp, "amp-1", authority_refs: authority_refs),
                compatible_consumer_manifest(),
                context(authority_refs: %{caller_trace_ref: "trace://inference/asm"})
              )
@@ -119,7 +119,7 @@ defmodule ASM.InferenceEndpointTest do
              "execution-context://inference/asm"
 
     assert endpoint.metadata.authority_refs.provider_account_ref ==
-             "provider-account://gemini/governed"
+             "provider-account://amp/governed"
 
     assert endpoint.metadata.authority_refs.attach_grant_ref == "attach-grant://inference/asm"
     assert endpoint.metadata.authority_refs.caller_trace_ref == "trace://inference/asm"
@@ -132,7 +132,7 @@ defmodule ASM.InferenceEndpointTest do
 
     assert {:ok, endpoint, _compatibility} =
              InferenceEndpoint.ensure_endpoint(
-               request(:gemini, "gemini-3.1-flash-lite-preview"),
+               request(:amp, "amp-1"),
                compatible_consumer_manifest(),
                context()
              )
@@ -144,7 +144,7 @@ defmodule ASM.InferenceEndpointTest do
              })
 
     assert payload["object"] == "chat.completion"
-    assert payload["model"] == "gemini-3.1-flash-lite-preview"
+    assert payload["model"] == "amp-1"
 
     assert get_in(payload, ["choices", Access.at(0), "message", "content"]) ==
              "ASM completion endpoint OK"
@@ -158,7 +158,7 @@ defmodule ASM.InferenceEndpointTest do
 
     assert {:ok, endpoint, _compatibility} =
              InferenceEndpoint.ensure_endpoint(
-               request(:gemini, "gemini-3.1-flash-lite-preview", stream?: true),
+               request(:amp, "amp-1", stream?: true),
                compatible_consumer_manifest(required_capabilities: %{streaming?: true}),
                context()
              )
@@ -191,9 +191,7 @@ defmodule ASM.InferenceEndpointTest do
   test "ensure_endpoint/3 rejects requests that would smuggle agent-loop semantics into a completion endpoint" do
     assert {:error, {:incompatible, compatibility}} =
              InferenceEndpoint.ensure_endpoint(
-               request(:gemini, "gemini-3.1-flash-lite-preview",
-                 tool_policy: %{tools: [%{name: "shell"}]}
-               ),
+               request(:amp, "amp-1", tool_policy: %{tools: [%{name: "shell"}]}),
                compatible_consumer_manifest(),
                context()
              )
@@ -206,7 +204,7 @@ defmodule ASM.InferenceEndpointTest do
   test "compatibility maps string capability keys through the bounded capability table" do
     assert {:error, {:incompatible, compatibility}} =
              InferenceEndpoint.ensure_endpoint(
-               request(:gemini, "gemini-3.1-flash-lite-preview"),
+               request(:amp, "amp-1"),
                compatible_consumer_manifest(
                  required_capabilities: %{"unknown_capability" => true}
                ),
@@ -218,7 +216,7 @@ defmodule ASM.InferenceEndpointTest do
 
     assert {:error, {:incompatible, compatibility}} =
              InferenceEndpoint.ensure_endpoint(
-               request(:gemini, "gemini-3.1-flash-lite-preview"),
+               request(:amp, "amp-1"),
                compatible_consumer_manifest(required_capabilities: %{"tool_calling?" => true}),
                context()
              )

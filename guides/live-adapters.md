@@ -8,7 +8,6 @@ Install provider CLIs and authenticate each one:
 
 ```bash
 npm install -g @anthropic-ai/claude-code
-npm install -g @google/gemini-cli
 npm install -g @openai/codex
 npm install -g @sourcegraph/amp
 # Install Cursor Agent CLI using Cursor's current CLI documentation.
@@ -17,7 +16,6 @@ npm install -g @sourcegraph/amp
 Optional explicit binary paths:
 
 - `CLAUDE_CLI_PATH`
-- `GEMINI_CLI_PATH`
 - `CODEX_PATH`
 - `AMP_CLI_PATH`
 - `CURSOR_CLI_PATH`
@@ -42,7 +40,7 @@ provider-native permission term and CLI flag.
 
 ```bash
 mix run --no-start examples/live_query.exs -- --provider claude
-mix run --no-start examples/live_stream.exs -- --provider gemini
+mix run --no-start examples/live_stream.exs -- --provider antigravity
 mix run --no-start examples/live_session_lifecycle.exs -- --provider codex
 mix run --no-start examples/live_stream.exs -- --provider amp --prompt "Reply with exactly: AMP_STREAM_OK"
 mix run --no-start examples/live_stream.exs -- --provider cursor
@@ -53,7 +51,7 @@ mix run --no-start examples/provider_cursor_sdk_stream.exs -- --provider cursor 
 
 ```bash
 ./examples/run_all.sh --provider claude
-./examples/run_all.sh --provider claude --provider gemini
+./examples/run_all.sh --provider claude --provider antigravity
 ./examples/run_all.sh --provider codex --model gpt-5.6-sol
 ./examples/run_all.sh --provider codex --ssh-host example.internal --danger-full-access
 ./examples/run_all.sh --provider claude --ollama --ollama-model llama3.2
@@ -88,8 +86,8 @@ targets.
 ## Useful environment knobs
 
 - `ASM_PERMISSION_MODE` (`default`, `auto`, `bypass`, `plan`)
-- `ASM_CLAUDE_MODEL`, `ASM_GEMINI_MODEL`, `ASM_CODEX_MODEL`, `ASM_AMP_MODEL`, `ASM_CURSOR_MODEL`
-- `CLAUDE_CLI_PATH`, `GEMINI_CLI_PATH`, `CODEX_PATH`, `AMP_CLI_PATH`, `CURSOR_CLI_PATH`
+- `ASM_CLAUDE_MODEL`, `ASM_CODEX_MODEL`, `ASM_AMP_MODEL`, `ASM_CURSOR_MODEL`
+- `CLAUDE_CLI_PATH`, `CODEX_PATH`, `AMP_CLI_PATH`, `CURSOR_CLI_PATH`
 
 ## Remote SSH Smoke Tests
 
@@ -109,7 +107,7 @@ remote CLI exists outside the target shell `PATH`, for example
 
 That test file exercises `ASM.query/3` over both the explicit `:core` and
 explicit `:sdk` Codex lanes and also checks structured SDK-lane remote failure
-handling for Claude, Gemini, and Amp on a real remote `execution_surface`.
+handling for Claude and Amp on a real remote `execution_surface`.
 
 ## Partial Common Features
 
@@ -119,7 +117,6 @@ providers that actually support it.
 - Claude: supported
 - Codex: supported
 - Cursor: unsupported
-- Gemini: unsupported
 - Amp: unsupported
 
 See [Common And Partial Provider Features](common-and-partial-provider-features.md)

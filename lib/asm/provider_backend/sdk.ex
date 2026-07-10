@@ -10,7 +10,6 @@ defmodule ASM.ProviderBackend.SDK do
   alias ASM.ProviderBackend.SDK.CodexAppServer
   alias ASM.RuntimeAuth.CodexMaterialization
   @claude_options_module :"Elixir.ClaudeAgentSDK.Options"
-  @gemini_options_module :"Elixir.GeminiCliSdk.Options"
   @amp_options_module :"Elixir.AmpSdk.Types.Options"
   @cursor_options_module :"Elixir.CursorCliSdk.Options"
   @antigravity_options_module :"Elixir.AntigravityCliSdk.Options"
@@ -147,32 +146,6 @@ defmodule ASM.ProviderBackend.SDK do
          options: options,
          max_stderr_buffer_size: kw(config, :max_stderr_buffer_bytes),
          metadata: %{lane: :sdk, asm_provider: :claude}
-       )}
-    end
-  end
-
-  defp build_start_opts(%Provider{name: :gemini, sdk_runtime: runtime}, config) do
-    execution_surface = Map.fetch!(config, :execution_surface)
-
-    with {:ok, provider_opts} <-
-           Options.finalize_provider_opts(
-             :gemini,
-             effective_provider_opts(config, Map.get(config, :execution_config))
-           ),
-         :ok <- RuntimeAuth.authorize_governed_provider_runtime(:gemini, config, provider_opts),
-         config = Map.put(config, :provider_opts, provider_opts),
-         model_payload = Keyword.fetch!(provider_opts, :model_payload),
-         {:ok, options} <-
-           build_sdk_struct(
-             @gemini_options_module,
-             gemini_option_attrs(config, model_payload, execution_surface),
-             "gemini"
-           ) do
-      {:ok,
-       sdk_start_opts(runtime, config,
-         prompt: Map.fetch!(config, :prompt),
-         options: options,
-         metadata: %{lane: :sdk, asm_provider: :gemini}
        )}
     end
   end
@@ -454,10 +427,6 @@ defmodule ASM.ProviderBackend.SDK do
     )
   end
 
-  defp gemini_approval_mode(nil), do: nil
-  defp gemini_approval_mode(:default), do: nil
-  defp gemini_approval_mode(mode), do: mode
-
   defp claude_option_attrs(config, model_payload, execution_surface) do
     [
       cwd: kw(config, :cwd),
@@ -476,24 +445,6 @@ defmodule ASM.ProviderBackend.SDK do
       include_partial_messages: true,
       output_format: :stream_json,
       timeout_ms: kw(config, :transport_timeout_ms)
-    ]
-    |> drop_nil_values()
-  end
-
-  defp gemini_option_attrs(config, model_payload, execution_surface) do
-    [
-      execution_surface: execution_surface,
-      model_payload: model_payload,
-      model: model_payload_value(model_payload, :resolved_model),
-      system_prompt: kw(config, :system_prompt),
-      approval_mode: gemini_approval_mode(kw(config, :provider_permission_mode)),
-      sandbox: kw(config, :sandbox, false),
-      resume: kw(config, :resume, gemini_resume_value(config)),
-      extensions: kw(config, :extensions, []),
-      cwd: kw(config, :cwd),
-      env: kw(config, :env, %{}),
-      timeout_ms: kw(config, :transport_timeout_ms),
-      max_stderr_buffer_bytes: kw(config, :max_stderr_buffer_bytes)
     ]
     |> drop_nil_values()
   end
@@ -745,9 +696,6 @@ defmodule ASM.ProviderBackend.SDK do
 
   defp continuation_continue_conversation(%{continuation: %{strategy: :latest}}), do: true
   defp continuation_continue_conversation(_config), do: nil
-
-  defp gemini_resume_value(%{continuation: %{strategy: :latest}}), do: "latest"
-  defp gemini_resume_value(config), do: continuation_resume_id(config)
 
   defp amp_continue_thread(%{continuation: %{strategy: :latest}}), do: true
   defp amp_continue_thread(config), do: continuation_resume_id(config)

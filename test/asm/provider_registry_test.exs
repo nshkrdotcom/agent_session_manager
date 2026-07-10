@@ -20,10 +20,10 @@ defmodule ASM.ProviderRegistryTest do
   test "supported providers resolve to core profiles" do
     assert {:ok, :claude} = ProviderRegistry.core_profile_id(:claude)
     assert {:ok, :codex} = ProviderRegistry.core_profile_id(:codex)
-    assert {:ok, :gemini} = ProviderRegistry.core_profile_id(:gemini)
     assert {:ok, :amp} = ProviderRegistry.core_profile_id(:amp)
     assert {:ok, :cursor} = ProviderRegistry.core_profile_id(:cursor)
     assert {:ok, :antigravity} = ProviderRegistry.core_profile_id(:antigravity)
+    assert {:error, _error} = ProviderRegistry.core_profile_id(:gemini)
   end
 
   test "provider_info/1 exposes provider and lane discovery metadata" do
@@ -91,11 +91,14 @@ defmodule ASM.ProviderRegistryTest do
 
   test "lane_info/2 does not load provider SDK runtimes for explicit core lane" do
     put_runtime_loader(fn
-      GeminiCliSdk.Runtime.CLI -> flunk("explicit core lane must not probe Gemini SDK")
-      runtime -> Code.ensure_loaded?(runtime)
+      :"Elixir.AntigravityCliSdk.Runtime.CLI" ->
+        flunk("explicit core lane must not probe Antigravity SDK")
+
+      runtime ->
+        Code.ensure_loaded?(runtime)
     end)
 
-    assert {:ok, info} = ProviderRegistry.lane_info(:gemini, lane: :core)
+    assert {:ok, info} = ProviderRegistry.lane_info(:antigravity, lane: :core)
 
     assert info.requested_lane == :core
     assert info.preferred_lane == :core

@@ -7,7 +7,7 @@ defmodule ASM.Schema.ProviderOptions do
   alias ASM.Schema
   alias CliSubprocessCore.Schema.Conventions
 
-  @providers [:amp, :antigravity, :claude, :codex, :codex_exec, :cursor, :gemini]
+  @providers [:amp, :antigravity, :claude, :codex, :codex_exec, :cursor]
   @permission_modes [:default, :auto, :bypass, :plan]
   @overflow_policies [:fail_run, :drop_oldest, :block]
 
@@ -87,13 +87,6 @@ defmodule ASM.Schema.ProviderOptions do
     dynamic_tools: Zoi.array(Conventions.optional_any()),
     output_schema: Zoi.optional(Zoi.nullish(Conventions.any_map())),
     additional_directories: Zoi.array(Conventions.trimmed_string() |> Zoi.min(1))
-  }
-
-  @gemini_fields %{
-    model: Conventions.optional_trimmed_string(),
-    system_prompt: Conventions.optional_trimmed_string(),
-    sandbox: Zoi.boolean(),
-    extensions: Zoi.array(Conventions.trimmed_string() |> Zoi.min(1))
   }
 
   @amp_fields %{
@@ -177,9 +170,6 @@ defmodule ASM.Schema.ProviderOptions do
 
   defp schema_for(:codex_exec),
     do: Zoi.map(Map.merge(@common_fields, @codex_fields), unrecognized_keys: :error)
-
-  defp schema_for(:gemini),
-    do: Zoi.map(Map.merge(@common_fields, @gemini_fields), unrecognized_keys: :error)
 
   defp schema_for(:amp),
     do: Zoi.map(Map.merge(@common_fields, @amp_fields), unrecognized_keys: :error)

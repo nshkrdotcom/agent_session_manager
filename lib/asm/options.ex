@@ -148,7 +148,6 @@ defmodule ASM.Options do
     "CURSOR_",
     "ANTIGRAVITY_",
     "OPENAI_",
-    "GEMINI_",
     "GOOGLE_",
     "AMP_"
   ]

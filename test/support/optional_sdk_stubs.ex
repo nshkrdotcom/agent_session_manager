@@ -19,7 +19,7 @@ workspace_build_glob = fn repo, env ->
 end
 
 workspace_provider_ebins =
-  ["codex_sdk", "claude_agent_sdk", "gemini_cli_sdk", "amp_sdk", "cursor_cli_sdk"]
+  ["codex_sdk", "claude_agent_sdk", "amp_sdk", "cursor_cli_sdk"]
   |> Enum.flat_map(fn repo ->
     test_paths = workspace_build_glob.(repo, "test") |> Path.wildcard()
 
@@ -606,49 +606,6 @@ unless Code.ensure_loaded?(Codex.Runtime.Exec) do
     defp permission_mode(%{dangerously_bypass_approvals_and_sandbox: true}), do: :yolo
     defp permission_mode(%{full_auto: true}), do: :auto_edit
     defp permission_mode(_thread_opts), do: :default
-  end
-end
-
-unless Code.ensure_loaded?(GeminiCliSdk) do
-  defmodule GeminiCliSdk do
-    @moduledoc false
-
-    use Boundary, check: [in: false, out: false]
-  end
-end
-
-unless Code.ensure_loaded?(GeminiCliSdk.Options) do
-  defmodule GeminiCliSdk.Options do
-    @moduledoc false
-
-    defstruct model_payload: nil,
-              model: nil,
-              cli_command: nil,
-              execution_surface: nil,
-              yolo: false,
-              approval_mode: nil,
-              sandbox: false,
-              skip_trust: false,
-              extensions: [],
-              settings: nil,
-              cwd: nil,
-              env: %{},
-              timeout_ms: nil,
-              max_stderr_buffer_bytes: nil
-
-    def validate!(options), do: options
-  end
-end
-
-unless Code.ensure_loaded?(GeminiCliSdk.Runtime.CLI) do
-  defmodule GeminiCliSdk.Runtime.CLI do
-    @moduledoc false
-
-    alias CliSubprocessCore.ProviderProfiles.Gemini
-
-    def capabilities do
-      Gemini.capabilities()
-    end
   end
 end
 

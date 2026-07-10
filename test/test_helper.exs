@@ -77,7 +77,7 @@ workspace_build_glob = fn repo, env ->
 end
 
 workspace_provider_ebins =
-  ["codex_sdk", "claude_agent_sdk", "gemini_cli_sdk", "amp_sdk", "cursor_cli_sdk"]
+  ["codex_sdk", "claude_agent_sdk", "amp_sdk", "cursor_cli_sdk"]
   |> Enum.flat_map(fn repo ->
     test_paths = workspace_build_glob.(repo, "test") |> Path.wildcard()
 

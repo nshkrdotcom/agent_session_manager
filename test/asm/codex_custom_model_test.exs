@@ -13,7 +13,7 @@ defmodule ASM.CodexCustomModelTest do
   use ExUnit.Case, async: true
 
   alias ASM.Options
-  alias ASM.Options.{Amp, Antigravity, Codex, Cursor, Gemini}
+  alias ASM.Options.{Amp, Antigravity, Codex, Cursor}
 
   describe "finalize_provider_opts/3 model resolution" do
     test "allow_unknown_model passes an unregistered Codex model through" do
@@ -54,6 +54,18 @@ defmodule ASM.CodexCustomModelTest do
                Options.finalize_provider_opts(:codex, model: "gpt-5.6")
     end
 
+    test "Spark resolves strictly with its live default reasoning" do
+      assert {:ok, attrs} =
+               Options.finalize_provider_opts(:codex,
+                 model: "gpt-5.3-codex-spark"
+               )
+
+      payload = Keyword.fetch!(attrs, :model_payload)
+      assert payload.resolved_model == "gpt-5.3-codex-spark"
+      assert payload.reasoning == "high"
+      refute Map.get(payload.extra, "unregistered")
+    end
+
     test "delegates GPT-5.6 max and ultra boundaries to the shared core" do
       assert {:ok, sol} =
                Options.finalize_provider_opts(:codex,
@@ -89,7 +101,6 @@ defmodule ASM.CodexCustomModelTest do
     test "allow_unknown_model is recognized for every ASM provider schema" do
       for {provider_mod, provider} <- [
             {Codex, :codex},
-            {Gemini, :gemini},
             {Amp, :amp},
             {Antigravity, :antigravity},
             {Cursor, :cursor}

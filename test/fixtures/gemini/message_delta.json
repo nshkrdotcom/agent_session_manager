@@ -1,6 +1,0 @@
-{
-  "type": "message",
-  "role": "assistant",
-  "content": "gemini stream chunk",
-  "delta": true
-}

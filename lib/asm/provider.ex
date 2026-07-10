@@ -31,7 +31,7 @@ defmodule ASM.Provider do
   ]
 
   @type provider_name ::
-          :amp | :antigravity | :claude | :codex | :codex_exec | :cursor | :gemini | atom()
+          :amp | :antigravity | :claude | :codex | :codex_exec | :cursor | atom()
 
   @provider_names_by_string %{
     "amp" => :amp,
@@ -39,8 +39,7 @@ defmodule ASM.Provider do
     "claude" => :claude,
     "codex" => :codex,
     "codex_exec" => :codex,
-    "cursor" => :cursor,
-    "gemini" => :gemini
+    "cursor" => :cursor
   }
 
   @type t :: %__MODULE__{
@@ -223,30 +222,6 @@ defmodule ASM.Provider do
         options_schema: ASM.Options.Codex.schema(),
         feature_manifest: feature_manifest_for(:codex),
         aliases: [:codex_exec],
-        profile:
-          Profile.new!(
-            max_concurrent_runs: 1,
-            max_queued_runs: 10
-          )
-      },
-      gemini: %__MODULE__{
-        name: :gemini,
-        display_name: "Gemini CLI",
-        core_profile: CliSubprocessCore.ProviderProfiles.Gemini,
-        sdk_runtime: :"Elixir.GeminiCliSdk.Runtime.CLI",
-        example_support: %ExampleSupport{
-          cli_command: "gemini",
-          cli_path_env: "GEMINI_CLI_PATH",
-          install_hint: "npm install -g @google/gemini-cli",
-          model_env: "ASM_GEMINI_MODEL",
-          example_default_model: "gemini-3.1-flash-lite-preview",
-          sdk_app: :gemini_cli_sdk,
-          sdk_repo_dir: "gemini_cli_sdk",
-          sdk_root_env: "GEMINI_CLI_SDK_ROOT",
-          sdk_cli_env: "GEMINI_CLI_PATH"
-        },
-        options_schema: ASM.Options.Gemini.schema(),
-        feature_manifest: feature_manifest_for(:gemini),
         profile:
           Profile.new!(
             max_concurrent_runs: 1,

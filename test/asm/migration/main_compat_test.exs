@@ -12,7 +12,6 @@ defmodule ASM.Migration.MainCompatTest do
       assert {:ok, :codex} =
                MainCompat.resolve_provider("AgentSessionManager.Adapters.CodexAdapter")
 
-      assert {:ok, :gemini} = MainCompat.resolve_provider(:gemini)
       assert {:ok, :codex} = MainCompat.resolve_provider(:codex_exec)
     end
 

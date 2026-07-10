@@ -12,7 +12,7 @@ defmodule ASM.Extensions.ProviderSDKTest do
     Application.put_env(
       :agent_session_manager,
       ASM.ProviderRegistry,
-      runtime_loader: OptionalSDK.loaded_runtime_loader([:amp, :claude, :codex, :gemini])
+      runtime_loader: OptionalSDK.loaded_runtime_loader([:amp, :claude, :codex])
     )
 
     on_exit(fn ->
@@ -29,14 +29,13 @@ defmodule ASM.Extensions.ProviderSDKTest do
   test "extensions/0 exposes the built-in provider-native namespaces" do
     extensions = ProviderSDK.extensions()
 
-    assert Enum.map(extensions, & &1.provider) == [:amp, :claude, :codex, :cursor, :gemini]
+    assert Enum.map(extensions, & &1.provider) == [:amp, :claude, :codex, :cursor]
 
     assert Enum.map(extensions, & &1.namespace) == [
              ASM.Extensions.ProviderSDK.Amp,
              ASM.Extensions.ProviderSDK.Claude,
              ASM.Extensions.ProviderSDK.Codex,
-             ASM.Extensions.ProviderSDK.Cursor,
-             ASM.Extensions.ProviderSDK.Gemini
+             ASM.Extensions.ProviderSDK.Cursor
            ]
   end
 
@@ -54,10 +53,6 @@ defmodule ASM.Extensions.ProviderSDKTest do
              :hooks,
              :permission_callbacks
            ]
-
-    assert {:ok, gemini} = ProviderSDK.extension(:gemini)
-    assert gemini.namespace == ASM.Extensions.ProviderSDK.Gemini
-    assert gemini.native_capabilities == [:extensions, :settings_profiles, :trust_controls]
 
     assert {:ok, cursor} = ProviderSDK.extension(:cursor)
     assert cursor.namespace == ASM.Extensions.ProviderSDK.Cursor
@@ -116,10 +111,6 @@ defmodule ASM.Extensions.ProviderSDKTest do
              Codex.Realtime,
              Codex.Voice
            ]
-
-    assert report.gemini.sdk_available? == true
-    assert report.gemini.namespaces == [ASM.Extensions.ProviderSDK.Gemini]
-    assert report.gemini.native_capabilities == [:extensions, :settings_profiles, :trust_controls]
 
     assert report.amp.sdk_available? == true
     assert report.amp.namespaces == [ASM.Extensions.ProviderSDK.Amp]

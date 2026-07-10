@@ -5,8 +5,8 @@ defmodule ASM.Extensions.ProviderSDK.CompositionTest do
   alias ASM.Provider
   alias ASM.ProviderRegistry
 
-  @providers [:amp, :antigravity, :claude, :codex, :cursor, :gemini]
-  @runtime_backed_providers [:amp, :claude, :codex, :cursor, :gemini]
+  @providers [:amp, :antigravity, :claude, :codex, :cursor]
+  @runtime_backed_providers [:amp, :claude, :codex, :cursor]
 
   setup do
     original = Application.get_env(:agent_session_manager, ASM.ProviderRegistry)
@@ -25,9 +25,9 @@ defmodule ASM.Extensions.ProviderSDK.CompositionTest do
   test "common-only composition keeps ASM usable with no provider SDKs active" do
     put_loaded_providers([])
 
-    assert {:ok, session} = ASM.start_session(provider: :gemini)
+    assert {:ok, session} = ASM.start_session(provider: :antigravity)
     assert {:ok, info} = ASM.session_info(session)
-    assert info.provider == :gemini
+    assert info.provider == :antigravity
     assert :ok = ASM.stop_session(session)
 
     assert ProviderSDK.available_extensions() == []
@@ -63,11 +63,6 @@ defmodule ASM.Extensions.ProviderSDK.CompositionTest do
     assert claude_report.namespaces == []
     assert Enum.map(claude_report.registered_extensions, & &1.provider) == [:claude]
     assert claude_report.extensions == []
-
-    assert {:ok, gemini_report} = ProviderSDK.provider_report(:gemini)
-    assert gemini_report.composition_mode == :common_surface_only
-    assert gemini_report.registered_namespaces == [ASM.Extensions.ProviderSDK.Gemini]
-    assert Enum.map(gemini_report.registered_extensions, & &1.provider) == [:gemini]
 
     assert {:ok, cursor_report} = ProviderSDK.provider_report(:cursor)
     assert cursor_report.composition_mode == :common_surface_only
@@ -114,9 +109,6 @@ defmodule ASM.Extensions.ProviderSDK.CompositionTest do
     assert report.codex.registered_namespaces == [ASM.Extensions.ProviderSDK.Codex]
     assert report.codex.namespaces == []
 
-    assert report.gemini.sdk_available? == false
-    assert report.gemini.namespaces == []
-
     assert report.amp.sdk_available? == false
     assert report.amp.namespaces == []
 
@@ -138,8 +130,7 @@ defmodule ASM.Extensions.ProviderSDK.CompositionTest do
              :amp,
              :claude,
              :codex,
-             :cursor,
-             :gemini
+             :cursor
            ]
 
     assert report.claude.sdk_available? == true
@@ -147,10 +138,6 @@ defmodule ASM.Extensions.ProviderSDK.CompositionTest do
 
     assert report.codex.sdk_available? == true
     assert report.codex.namespaces == [ASM.Extensions.ProviderSDK.Codex]
-
-    assert report.gemini.sdk_available? == true
-    assert report.gemini.namespaces == [ASM.Extensions.ProviderSDK.Gemini]
-    assert report.gemini.native_capabilities == [:extensions, :settings_profiles, :trust_controls]
 
     assert report.amp.sdk_available? == true
     assert report.amp.namespaces == [ASM.Extensions.ProviderSDK.Amp]
@@ -174,8 +161,7 @@ defmodule ASM.Extensions.ProviderSDK.CompositionTest do
              :amp,
              :claude,
              :codex,
-             :cursor,
-             :gemini
+             :cursor
            ]
 
     assert Enum.map(ProviderSDK.available_extensions(), & &1.provider) == [:codex]
@@ -191,8 +177,6 @@ defmodule ASM.Extensions.ProviderSDK.CompositionTest do
 
     assert report.codex.namespaces == [ASM.Extensions.ProviderSDK.Codex]
     assert report.claude.namespaces == []
-    assert report.gemini.registered_namespaces == [ASM.Extensions.ProviderSDK.Gemini]
-    assert report.gemini.namespaces == []
     assert report.amp.registered_namespaces == [ASM.Extensions.ProviderSDK.Amp]
     assert report.amp.namespaces == []
     assert report.cursor.registered_namespaces == [ASM.Extensions.ProviderSDK.Cursor]

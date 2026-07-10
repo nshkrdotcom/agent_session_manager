@@ -44,29 +44,29 @@ defmodule ASM.APITest do
 
   test "query/3 rejects provider option mismatches instead of overwriting them" do
     assert {:error, error} =
-             ASM.query(:gemini, "hello",
+             ASM.query(:antigravity, "hello",
                provider: :claude,
                backend_module: FakeBackend
              )
 
     assert error.kind == :config_invalid
     assert %ASM.Options.ProviderMismatchError{} = error.cause
-    assert error.cause.expected_provider == :gemini
+    assert error.cause.expected_provider == :antigravity
     assert error.cause.actual_provider == :claude
   end
 
   test "query/3 rejects redundant provider options for positional provider calls" do
     assert {:error, error} =
-             ASM.query(:gemini, "hello",
-               provider: :gemini,
+             ASM.query(:antigravity, "hello",
+               provider: :antigravity,
                backend_module: FakeBackend
              )
 
     assert error.kind == :config_invalid
     assert %ASM.Options.ProviderMismatchError{} = error.cause
     assert error.cause.reason == :redundant_provider
-    assert error.cause.expected_provider == :gemini
-    assert error.cause.actual_provider == :gemini
+    assert error.cause.expected_provider == :antigravity
+    assert error.cause.actual_provider == :antigravity
   end
 
   test "session-level provider options are inherited by stream/query calls" do

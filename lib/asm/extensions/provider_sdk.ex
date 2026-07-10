@@ -19,7 +19,7 @@ defmodule ASM.Extensions.ProviderSDK do
   - `provider_report/1` and `capability_report/0` expose both views through
     `registered_namespaces` versus `namespaces`
 
-  Gemini, Amp, and Cursor start with limited derivation helpers, but they still
+  Amp and Cursor start with limited derivation helpers, but they still
   have explicit namespaces so provider-native behavior has one clear home.
   Antigravity is reported as a first-party provider with core and SDK runtime
   lanes, but it has no registered ProviderSDK namespace yet.
@@ -32,8 +32,7 @@ defmodule ASM.Extensions.ProviderSDK do
       Extension,
       Claude,
       Codex,
-      Cursor,
-      Gemini
+      Cursor
     ]
 
   alias ASM.{Error, Provider, ProviderRegistry}
@@ -43,8 +42,7 @@ defmodule ASM.Extensions.ProviderSDK do
     ASM.Extensions.ProviderSDK.Amp,
     ASM.Extensions.ProviderSDK.Claude,
     ASM.Extensions.ProviderSDK.Codex,
-    ASM.Extensions.ProviderSDK.Cursor,
-    ASM.Extensions.ProviderSDK.Gemini
+    ASM.Extensions.ProviderSDK.Cursor
   ]
 
   @typedoc """

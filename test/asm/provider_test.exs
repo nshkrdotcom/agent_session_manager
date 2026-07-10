@@ -54,6 +54,14 @@ defmodule ASM.ProviderTest do
     assert String.contains?(error.message, "Unknown provider")
   end
 
+  test "Google coding-agent support is Antigravity-only" do
+    assert :antigravity in Provider.supported_providers()
+    refute :gemini in Provider.supported_providers()
+    assert {:ok, %{name: :antigravity}} = Provider.resolve(:antigravity)
+    assert {:error, error} = Provider.resolve(:gemini)
+    assert error.kind == :config_invalid
+  end
+
   test "provider profiles use the schema-backed closed boundary" do
     assert {:ok, %Profile{max_concurrent_runs: 2, max_queued_runs: 4}} =
              Profile.new(max_concurrent_runs: 2, max_queued_runs: 4)

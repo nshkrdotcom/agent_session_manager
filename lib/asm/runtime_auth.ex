@@ -44,15 +44,6 @@ defmodule ASM.RuntimeAuth do
       "CLAUDE_HOME",
       "CLAUDE_MODEL"
     ],
-    gemini: [
-      "ASM_GEMINI_MODEL",
-      "GEMINI_API_KEY",
-      "GEMINI_CLI_CONFIG_HOME",
-      "GEMINI_CLI_PATH",
-      "GEMINI_MODEL",
-      "GOOGLE_API_KEY",
-      "GOOGLE_APPLICATION_CREDENTIALS"
-    ],
     amp: [
       "AMP_API_KEY",
       "AMP_AUTH_TOKEN",

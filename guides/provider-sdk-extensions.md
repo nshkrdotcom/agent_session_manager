@@ -74,7 +74,6 @@ ProviderSDK.available_extensions()
 {:ok, active_claude_extensions} = ProviderSDK.available_provider_extensions(:claude)
 {:ok, codex_extensions} = ProviderSDK.provider_extensions(:codex)
 {:ok, codex_native_caps} = ProviderSDK.provider_capabilities(:codex)
-{:ok, gemini_report} = ProviderSDK.provider_report(:gemini)
 
 report = ProviderSDK.capability_report()
 ```
@@ -85,7 +84,6 @@ Current built-in namespaces:
 - `ASM.Extensions.ProviderSDK.Claude`
 - `ASM.Extensions.ProviderSDK.Codex`
 - `ASM.Extensions.ProviderSDK.Cursor`
-- `ASM.Extensions.ProviderSDK.Gemini`
 
 These root modules are the namespace anchors for optional provider-native
 helpers.
@@ -110,38 +108,19 @@ Activation-aware discovery follows a separate rule:
 - `available_provider_extensions/1` reports the active native-extension subset
   for one provider
 - `provider_report/1` and `capability_report/0` always include all ASM
-  providers, including Cursor, Gemini, Amp, and Antigravity, and show whether
+  providers, including Cursor, Amp, and Antigravity, and show whether
   each provider SDK runtime is available plus any active native namespace
   inventory
 - `registered_namespaces` and `registered_extensions` keep the static catalog
   visible even when a provider currently composes only through the common
   surface
-- Cursor, Gemini, and Amp start with strict derivation helpers. They still have
-  explicit namespaces so Cursor mode/MCP/plugin settings, Gemini settings/trust
-  controls, and Amp permissions/MCP/skills have one provider-native home.
+- Cursor and Amp start with strict derivation helpers. They still have
+  explicit namespaces so Cursor mode/MCP/plugin settings and Amp
+  permissions/MCP/skills have one provider-native home.
   Antigravity has no derivation helper in this namespace layer yet; its SDK
   lane is available through the runtime kit when installed.
 
-Every namespace exposes `derive_options/2` for the strict common path:
-
-```elixir
-alias ASM.Extensions.ProviderSDK.Gemini
-
-asm_common = [
-  model: "gemini-3.1-flash-lite-preview",
-  cwd: File.cwd!(),
-  execution_surface: [surface_kind: :local_subprocess]
-]
-
-native_overrides = [
-  settings: GeminiCliSdk.SettingsProfiles.plain_response(),
-  skip_trust: true
-]
-
-{:ok, gemini_options} = Gemini.derive_options(asm_common, native_overrides: native_overrides)
-```
-
-The first argument is checked with strict common ASM preflight. Provider-native
+The first argument to each `derive_options/2` helper is checked with strict common ASM preflight. Provider-native
 keys in that map are rejected. Native provider data must be passed explicitly in
 `native_overrides` or through the provider SDK directly.
 
@@ -348,12 +327,6 @@ Codex namespace:
 - `:mcp`
 - `:realtime`
 - `:voice`
-
-Gemini namespace:
-
-- `:extensions`
-- `:settings_profiles`
-- `:trust_controls`
 
 Amp namespace:
 

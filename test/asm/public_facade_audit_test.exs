@@ -65,7 +65,7 @@ defmodule ASM.PublicFacadeAuditTest do
       runtime_loader: fn _runtime -> false end
     )
 
-    assert {:error, error} = ASM.list_provider_sessions(:gemini)
+    assert {:error, error} = ASM.list_provider_sessions(:antigravity)
 
     assert error.kind == :config_invalid
     assert error.domain == :provider

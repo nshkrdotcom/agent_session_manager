@@ -435,30 +435,6 @@ defmodule ASM.ProviderFeatures do
     }
   end
 
-  defp capability_map(:gemini, lane) do
-    %{
-      app_server: unsupported(lane),
-      host_tools: unsupported(lane),
-      session_resume:
-        capability_manifest(:common, lane,
-          common_surface?: true,
-          asm_option_keys: [:continuation]
-        ),
-      sandbox_policy:
-        capability_manifest(:sdk_local, lane,
-          provider_native?: true,
-          provider_native_option_keys: [:sandbox]
-        ),
-      approvals:
-        capability_manifest(:sdk_local, lane,
-          provider_native?: true,
-          provider_native_option_keys: [:approval_mode]
-        ),
-      workspace_context:
-        capability_manifest(:common, lane, common_surface?: true, asm_option_keys: [:cwd])
-    }
-  end
-
   defp capability_map(:cursor, lane) do
     %{
       app_server: unsupported(lane),

@@ -19,7 +19,6 @@ defmodule ASM.Permission do
           | :codex
           | :codex_exec
           | :cursor
-          | :gemini
           | :shell
           | atom()
   @type normalized_mode :: :default | :auto | :bypass | :plan
@@ -130,17 +129,6 @@ defmodule ASM.Permission do
   defp provider_mode_map(:codex_exec) do
     %{
       default: %{normalized: :default, native: :default},
-      bypass: %{normalized: :bypass, native: :yolo},
-      yolo: %{normalized: :bypass, native: :yolo},
-      plan: %{normalized: :plan, native: :plan}
-    }
-  end
-
-  defp provider_mode_map(:gemini) do
-    %{
-      default: %{normalized: :default, native: :default},
-      auto: %{normalized: :auto, native: :auto_edit},
-      auto_edit: %{normalized: :auto, native: :auto_edit},
       bypass: %{normalized: :bypass, native: :yolo},
       yolo: %{normalized: :bypass, native: :yolo},
       plan: %{normalized: :plan, native: :plan}

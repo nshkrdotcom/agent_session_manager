@@ -25,7 +25,7 @@ defmodule ASM.Migration.MainCompat do
         }
 
   @type query_spec :: %{
-          provider: :claude | :codex | :gemini,
+          provider: :claude | :codex,
           prompt: String.t(),
           session_opts: keyword(),
           query_opts: keyword()
@@ -35,7 +35,6 @@ defmodule ASM.Migration.MainCompat do
     "claude" => :claude,
     "codex" => :codex,
     "codex_exec" => :codex,
-    "gemini" => :gemini,
     "amp" => :amp,
     "shell" => :shell
   }
@@ -43,7 +42,6 @@ defmodule ASM.Migration.MainCompat do
   @adapter_provider_names %{
     "Elixir.AgentSessionManager.Adapters.ClaudeAdapter" => :claude,
     "Elixir.AgentSessionManager.Adapters.CodexAdapter" => :codex,
-    "Elixir.AgentSessionManager.Adapters.GeminiAdapter" => :gemini,
     "Elixir.AgentSessionManager.Adapters.AmpAdapter" => :amp,
     "Elixir.AgentSessionManager.Adapters.ShellAdapter" => :shell
   }
@@ -143,13 +141,12 @@ defmodule ASM.Migration.MainCompat do
     "claude" => :claude,
     "codex" => :codex,
     "codex_exec" => :codex,
-    "gemini" => :gemini,
     "amp" => :amp,
     "shell" => :shell
   }
 
   @spec resolve_provider(provider_hint()) ::
-          {:ok, :claude | :codex | :gemini} | {:error, Error.t()}
+          {:ok, :claude | :codex} | {:error, Error.t()}
   def resolve_provider(provider_hint) do
     case normalize_provider_hint(provider_hint) do
       {:ok, :amp} ->
@@ -164,13 +161,13 @@ defmodule ASM.Migration.MainCompat do
            "Shell migration is unsupported in this compatibility helper. Keep Shell workloads on main or migrate manually with explicit command policy controls."
          )}
 
-      {:ok, provider} when provider in [:claude, :codex, :gemini] ->
+      {:ok, provider} when provider in [:claude, :codex] ->
         {:ok, provider}
 
       _ ->
         {:error,
          config_error(
-           "Unable to resolve provider from #{inspect(provider_hint)}. Use claude/codex/gemini or a known main adapter module name."
+           "Unable to resolve provider from #{inspect(provider_hint)}. Use claude/codex or a known main adapter module name."
          )}
     end
   end

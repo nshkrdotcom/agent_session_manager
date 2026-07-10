@@ -7,17 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.10.0] - 2026-07-09
+## [0.10.0] - 2026-07-10
 
 ### Added
 
-- Current GPT-5.6 Sol, Terra, and Luna model selection through the shared core,
-  including Codex `:max` and `:ultra` schema inputs with model-specific
-  validation delegated to `CliSubprocessCore.ModelRegistry`.
+- Current GPT-5.6 Sol, Terra, and Luna plus GPT-5.3-Codex-Spark model selection
+  through the shared core, including live defaults and Codex `:max`/`:ultra`
+  schema inputs with model-specific validation delegated to
+  `CliSubprocessCore.ModelRegistry`.
 - Provider/lane capability manifests with support states for Codex, Claude,
-  Amp, Gemini, and Cursor, including explicit unsupported capability errors for
-  Codex-style host dynamic tools on Amp/Gemini/Cursor.
-- Cursor Agent CLI is registered as the fifth ASM provider on the core
+  Amp, Cursor, and Antigravity, including explicit unsupported capability errors
+  for Codex-style host dynamic tools on Amp/Cursor/Antigravity.
+- Cursor Agent CLI is registered as a first-party ASM provider on the core
   `cli_subprocess_core` lane, with Cursor options, permission mapping,
   extension metadata, examples, and live smoke tests.
 - Cursor SDK lane documentation now covers backend selection, strict
@@ -33,8 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Codex examples and provider guides now use current GPT-5.6 model IDs and the
-  `codex_sdk` 0.17.0 extension surface.
+- Codex examples and provider guides now cover the current GPT-5.6 model IDs,
+  the strict shared-registry Spark preview path, and the `codex_sdk` 0.17.0
+  extension surface.
 - Refreshed compatible dependencies, including Zoi 0.18.5.
 - Renamed the provider adapter-selection policy contract from the old
   `ExecutionPlane.*` namespace to the ASM-owned
@@ -45,6 +47,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Codex app-server result projection now avoids duplicate final text when a
   turn emits both streaming deltas and completed assistant-message items, and
   ASM content projection accepts atom-form content block types.
+
+### Removed
+
+- Retired the Gemini CLI provider, optional `gemini_cli_sdk` lane, native
+  extension, examples, and documentation. Antigravity is now ASM's only Google
+  coding-agent provider.
 
 ## [0.9.2] - 2026-04-09
 

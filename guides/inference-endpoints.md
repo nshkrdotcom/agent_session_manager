@@ -34,7 +34,6 @@ ASM publishes the current endpoint-ready CLI providers:
 
 - `:codex`
 - `:claude`
-- `:gemini`
 - `:amp`
 
 `:cursor` and `:antigravity` are first-party ASM runtime providers, but they
@@ -95,11 +94,11 @@ projection path that ordinary session/query callers already consume.
 
 ## Provider Boundaries
 
-Gemini and Amp remain common-surface-only providers on this endpoint
+Amp remains a common-surface-only provider on this endpoint
 publication seam. Cursor and Antigravity remain outside this endpoint
 publication contract in the current implementation.
 
-Gemini and Amp can publish:
+Amp can publish:
 
 - `cli_completion_v1`
 - `cli_streaming_v1`

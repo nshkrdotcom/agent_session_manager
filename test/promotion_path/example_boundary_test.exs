@@ -10,7 +10,7 @@ defmodule PromotionPath.ExampleBoundaryTest do
     AmpSdk,
     ClaudeAgentSDK,
     Codex,
-    GeminiCliSdk
+    CursorCliSdk
   ]
 
   test "ASM-only promotion examples do not reference provider SDK modules" do
@@ -33,7 +33,7 @@ defmodule PromotionPath.ExampleBoundaryTest do
   test "AST boundary helper catches imports, requires, remote calls, and apply dispatch" do
     source = """
     defmodule BadPromotionExample do
-      import GeminiCliSdk
+      import CursorCliSdk
       require ClaudeAgentSDK
 
       def remote, do: Codex.query("prompt")
@@ -41,7 +41,7 @@ defmodule PromotionPath.ExampleBoundaryTest do
 
       defmacro macro_remote do
         quote do
-          GeminiCliSdk.run("prompt")
+          CursorCliSdk.run("prompt")
         end
       end
     end
@@ -49,17 +49,16 @@ defmodule PromotionPath.ExampleBoundaryTest do
 
     violations = forbidden_references(source, @forbidden_sdk_modules)
 
-    assert Enum.any?(violations, &match?(%{kind: :import, module: GeminiCliSdk}, &1))
+    assert Enum.any?(violations, &match?(%{kind: :import, module: CursorCliSdk}, &1))
     assert Enum.any?(violations, &match?(%{kind: :require, module: ClaudeAgentSDK}, &1))
     assert Enum.any?(violations, &match?(%{kind: :remote_call, module: Codex}, &1))
     assert Enum.any?(violations, &match?(%{kind: :apply, module: AmpSdk}, &1))
-    assert Enum.any?(violations, &match?(%{kind: :remote_call, module: GeminiCliSdk}, &1))
+    assert Enum.any?(violations, &match?(%{kind: :remote_call, module: CursorCliSdk}, &1))
   end
 
-  test "promotion path files are present for core, sdk-backed, and hybrid modes" do
+  test "promotion path files are present for core and sdk-backed modes" do
     assert File.regular?(Path.join(@promotion_path_dir, "asm_core_lane.exs"))
     assert File.regular?(Path.join(@promotion_path_dir, "asm_sdk_backed_lane.exs"))
-    assert File.regular?(Path.join(@promotion_path_dir, "hybrid_asm_plus_gemini.exs"))
     assert File.regular?(Path.join(@promotion_path_dir, "README.md"))
   end
 

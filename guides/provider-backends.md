@@ -121,12 +121,12 @@ Provider-native capability reporting now lives under
 
 That keeps backend discovery focused on `:core` versus `:sdk`, while
 provider-native surfaces such as Claude control semantics, Codex app-server,
-Gemini settings profiles, Amp permissions/MCP, Cursor mode/worktree controls,
+Amp permissions/MCP, Cursor mode/worktree controls,
 and Antigravity runtime options remain explicit optional seams above the
 kernel.
 
-Five providers currently have explicit extension namespaces: Claude, Codex,
-Gemini, Amp, and Cursor. Gemini, Amp, and Cursor start with strict
+Four providers currently have explicit extension namespaces: Claude, Codex,
+Amp, and Cursor. Amp and Cursor start with strict
 `derive_options/2` helpers; those helpers derive only common placement/session
 data and require provider-native settings in `native_overrides`.
 
@@ -177,7 +177,7 @@ The relevant Claude provider fields are:
 - `:model`
 - `:allow_unknown_model` (default `false`) — pass a Claude model newer than the
   shared registry straight through to the CLI `--model` instead of erroring.
-  Common across every provider (`:codex`, `:gemini`, `:amp`, `:antigravity`,
+  Common across every provider (`:codex`, `:amp`, `:antigravity`,
   `:cursor` accept the same option with the same behavior), not
   Claude-specific.
 
@@ -208,11 +208,12 @@ Relevant Codex provider fields:
 - `:model`
 - `:reasoning_effort`
 
-The current shared catalog exposes `gpt-5.5` as the live default plus
-`gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.4`, and
-`gpt-5.4-mini`. ASM does not add a `gpt-5.6` alias. Sol and Terra admit
-`:max` and `:ultra`; Luna admits `:max` but rejects `:ultra` through the shared
-registry contract.
+The current shared catalog exposes `gpt-5.6-sol` as the live default plus
+`gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, and
+the text-only ChatGPT Pro preview `gpt-5.3-codex-spark`. ASM does not add a
+`gpt-5.6` alias. Sol and Terra admit `:max` and `:ultra`; Luna admits `:max`
+but rejects `:ultra`, while Spark supports `:low` through `:xhigh` and defaults
+to `:high` through the shared registry contract.
 
 For the current local Ollama path, ASM callers should use:
 
@@ -236,29 +237,6 @@ If a custom `ollama_base_url` is supplied, the finalized payload carries it in
 payload-owned runtime data (`CODEX_OSS_BASE_URL`). Raw Ollama roots are
 normalized to the OpenAI-compatible `/v1` base for Codex, so downstream core
 and SDK transports can consume the payload alone after normalization.
-
-## Gemini Backend-Specific Model Inputs
-
-Gemini has a narrower surface than Claude or Codex.
-
-Relevant Gemini provider fields:
-
-- `:model`
-
-The shared model registry currently accepts Gemini CLI virtual model ids such
-as `auto-gemini-3` and `auto-gemini-2.5`, CLI aliases such as `pro`, `flash`,
-and `flash-lite`, and concrete Gemini ids such as
-`gemini-3.1-flash-lite-preview`.
-
-When ASM bridges into `gemini_cli_sdk`, the Gemini SDK now consumes the shared
-normalized payload instead of re-resolving over an explicit payload. Repo-local
-`GEMINI_MODEL` defaults remain fallback inputs only when the caller did not
-supply a payload.
-
-In governed ASM mode, Gemini model/env defaults cannot be promoted into
-provider-account, session, target, handoff, or credential authority. Governed
-Gemini starts fail closed until a verified provider-auth materializer supplies
-the launch envelope.
 
 ## Amp Backend-Specific Model Inputs
 
@@ -312,7 +290,7 @@ Auth and command path ownership:
 - `ASM_ANTIGRAVITY_MODEL`
 
 In governed ASM mode, Antigravity follows the same fail-closed family as
-Claude/Gemini/Amp/Cursor. Provider auth, command, cwd, env, execution surface,
+Claude/Amp/Cursor. Provider auth, command, cwd, env, execution surface,
 and target authority must be materialized by the owner boundary; ASM does not
 promote local Antigravity login state into governed authority.
 
@@ -354,6 +332,6 @@ Auth and command path ownership:
 - `ASM_CURSOR_MODEL`
 
 In governed ASM mode, Cursor follows the same fail-closed family as
-Claude/Gemini/Amp. Provider auth, command, cwd, env, execution surface, and
+Claude/Amp. Provider auth, command, cwd, env, execution surface, and
 target authority must be materialized by the owner boundary; ASM does not
 promote local Cursor login state into governed authority.

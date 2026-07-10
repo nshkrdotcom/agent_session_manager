@@ -28,7 +28,7 @@ defmodule ASM.Examples.Common do
           permission_source: :cli_flag | :danger_full_access_flag | :env | :example_default_bypass
         }
 
-  @providers [:claude, :gemini, :codex, :amp, :cursor, :antigravity]
+  @providers [:claude, :codex, :amp, :cursor, :antigravity]
   @cli_probe_prompt "__ASM_EXAMPLE_CLI_PREFLIGHT__"
   @example_ssh_options %{
     "BatchMode" => "yes",
@@ -439,7 +439,6 @@ defmodule ASM.Examples.Common do
       "claude" -> {:ok, :claude}
       "codex" -> {:ok, :codex}
       "cursor" -> {:ok, :cursor}
-      "gemini" -> {:ok, :gemini}
       _ -> {:error, "unsupported provider #{inspect(provider_name)}"}
     end
   end

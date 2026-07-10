@@ -14,7 +14,6 @@ declare -A PROVIDER_SPECIFIC_EXAMPLE=(
   [claude]="provider_claude_control_client.exs"
   [codex]="provider_codex_app_server.exs"
   [cursor]="provider_cursor_core_stream.exs"
-  [gemini]="provider_gemini_session_resume.exs"
 )
 
 usage() {
@@ -28,7 +27,7 @@ Usage:
   ./examples/run_all.sh --provider claude --ollama --model haiku --ollama-model llama3.2
   ./examples/run_all.sh --provider codex --ollama --ollama-model gpt-oss:20b
   ./examples/run_all.sh --provider claude --provider codex --ollama --ollama-model llama3.2
-  ./examples/run_all.sh --provider claude --provider gemini
+  ./examples/run_all.sh --provider claude --provider antigravity
   ./examples/run_all.sh --provider cursor
   ./examples/run_all.sh --provider antigravity
   ./examples/run_all.sh --provider amp --lane sdk --sdk-root ../amp_sdk
@@ -44,8 +43,7 @@ Notes:
   - The examples print the provider-native permission term at startup.
   - --ollama and the related --ollama-* flags are only valid for claude and codex.
   - Provider-specific examples may require the matching SDK checkout on the code path or via --sdk-root.
-  - `live_session_lifecycle.exs` and `provider_gemini_session_resume.exs` are the session-recovery
-    examples for this hardening lane.
+  - `live_session_lifecycle.exs` is the session-recovery example for this hardening lane.
 EOF
 }
 
@@ -104,7 +102,7 @@ for raw in "${providers[@]}"; do
     provider="${provider// /}"
 
     case "$provider" in
-      claude|gemini|codex|amp|cursor|antigravity)
+      claude|codex|amp|cursor|antigravity)
         if [[ -z "${seen[$provider]:-}" ]]; then
           seen["$provider"]=1
           selected_providers+=("$provider")

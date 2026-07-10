@@ -5,7 +5,6 @@ defmodule ASM.DependencyBoundaryTest do
     :execution_plane,
     :execution_plane_process,
     :execution_plane_jsonrpc,
-    :gemini_cli_sdk,
     :claude_agent_sdk,
     :codex_sdk,
     :amp_sdk,

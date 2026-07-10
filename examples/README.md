@@ -4,7 +4,7 @@ These examples cover two surfaces:
 
 - three provider-agnostic live examples on ASM's common API
 - one offline inference-endpoint publication proof
-- twelve provider-focused examples covering SDK-native surfaces, Cursor's core
+- nine provider-focused examples covering SDK-native surfaces, Cursor's core
   and SDK provider paths, and Antigravity's core provider path
 
 Nothing runs by default. The live CLI examples require `--provider`.
@@ -31,11 +31,8 @@ Nothing runs by default. The live CLI examples require `--provider`.
   `cli_subprocess_core` lane
 - `provider_cursor_sdk_stream.exs`: Cursor Agent CLI through ASM's SDK lane
   backed by `cursor_cli_sdk`
-- `provider_gemini_hybrid_plain_response.exs`:
-  `ASM.Extensions.ProviderSDK.Gemini` strict common derivation plus
-  SDK-native plain-response settings
 - `promotion_path/README.md`: promotion-path hub for ASM core lane,
-  SDK-backed lane, SDK-direct ownership links, hybrid examples, and inference
+  SDK-backed lane, SDK-direct ownership links, and inference
   ASM adapter examples
 - `live_codex_app_server_session.exs`: promoted ASM SDK lane with a live Codex
   app-server session
@@ -43,8 +40,6 @@ Nothing runs by default. The live CLI examples require `--provider`.
   request projected as ASM host-tool events and fulfilled by a host executor
 - `live_codex_app_server_resume.exs`: live Codex app-server checkpoint and exact
   provider-thread resume through ASM continuation metadata
-- `provider_gemini_session_resume.exs`: direct `GeminiCliSdk.execute/2` and
-  `GeminiCliSdk.resume_session/3`
 - `run_all.sh`: runs the full example set for one or more selected providers
 
 ## Default Behavior
@@ -54,10 +49,9 @@ touching a live CLI.
 
 That is deliberate. The live examples never silently pick a provider for you.
 
-`inference_endpoint_http.exs` is the exception. It defaults to the Gemini
+`inference_endpoint_http.exs` is the exception. It defaults to the Amp
 provider profile and runs against a local fake backend so the publication seam
-stays deterministic and offline. Its default model is
-`gemini-3.1-flash-lite-preview`.
+stays deterministic and offline. Its default model is `amp-1`.
 
 ## Permission Defaults
 
@@ -78,7 +72,6 @@ At startup, each example prints:
 Examples:
 
 - Claude: `:bypass` -> `:bypass_permissions` -> `--permission-mode bypassPermissions`
-- Gemini: `:bypass` -> `:yolo` -> `--yolo`
 - Codex: `:bypass` -> `:yolo` -> `--dangerously-bypass-approvals-and-sandbox`
 - Amp: `:bypass` -> `:dangerously_allow_all` -> `--dangerously-allow-all`
 - Cursor: `:bypass` -> `:bypass` -> `--force`
@@ -103,7 +96,6 @@ Supported:
 
 Unsupported:
 
-- Gemini
 - Amp
 - Cursor
 - Antigravity
@@ -131,9 +123,9 @@ smoke-test targets.
 
 ```bash
 mix run --no-start examples/live_query.exs -- --provider claude
-mix run --no-start examples/live_stream.exs -- --provider gemini
+mix run --no-start examples/live_stream.exs -- --provider antigravity
 mix run --no-start examples/live_session_lifecycle.exs -- --provider codex --model gpt-5.6-sol
-mix run --no-start examples/inference_endpoint_http.exs -- --provider gemini --stream
+mix run --no-start examples/inference_endpoint_http.exs -- --provider amp --stream
 mix run --no-start examples/live_query.exs -- --provider claude --ollama --model haiku --ollama-model llama3.2
 mix run --no-start examples/live_query.exs -- --provider codex --ollama --ollama-model gpt-oss:20b
 mix run --no-start examples/live_query.exs -- --provider amp --lane sdk --sdk-root ../amp_sdk
@@ -147,7 +139,6 @@ mix run --no-start examples/live_query.exs -- --provider codex --ssh-host exampl
 mix run --no-start examples/live_query.exs -- --provider codex --ssh-host example.internal --danger-full-access
 mix run --no-start examples/live_query.exs -- --provider claude --ssh-host builder@example.internal --ssh-port 2222
 mix run --no-start examples/provider_codex_app_server.exs -- --provider codex --ollama --ollama-model gpt-oss:20b
-mix run --no-start examples/provider_gemini_hybrid_plain_response.exs -- --provider gemini --model gemini-3.1-flash-lite-preview
 mix run --no-start examples/live_codex_app_server_session.exs -- --provider codex --lane sdk
 mix run --no-start examples/live_codex_app_server_dynamic_tools.exs -- --provider codex --lane sdk
 mix run --no-start examples/live_codex_app_server_resume.exs -- --provider codex --lane sdk
@@ -238,13 +229,12 @@ from result/checkpoint metadata and sends the second turn with
 ## Environment
 
 - `CLAUDE_CLI_PATH`, `ASM_CLAUDE_MODEL`
-- `GEMINI_CLI_PATH`, `ASM_GEMINI_MODEL`
 - `CODEX_PATH`, `ASM_CODEX_MODEL`
 - `AMP_CLI_PATH`, `ASM_AMP_MODEL`
 - `ANTIGRAVITY_CLI_PATH`, `ASM_ANTIGRAVITY_MODEL`
 - `ASM_PERMISSION_MODE`
-- `CLAUDE_AGENT_SDK_ROOT`, `CODEX_SDK_ROOT`, `GEMINI_CLI_SDK_ROOT`,
-  `AMP_SDK_ROOT`, `ANTIGRAVITY_CLI_SDK_ROOT`
+- `CLAUDE_AGENT_SDK_ROOT`, `CODEX_SDK_ROOT`, `AMP_SDK_ROOT`,
+  `ANTIGRAVITY_CLI_SDK_ROOT`
 
 The examples preflight the selected CLI before they start a session and print an
 install hint if it is missing.
@@ -254,7 +244,6 @@ The standard example runner already includes the session-focused paths relevant 
 hardening work:
 
 - `examples/live_session_lifecycle.exs`
-- `examples/provider_gemini_session_resume.exs`
 
 Those examples exercise the same provider-session history and resume seams now exposed through
 `ASM.SessionControl`.

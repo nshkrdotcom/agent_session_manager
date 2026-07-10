@@ -67,11 +67,11 @@ iex> ASM.ProviderFeatures.lane_manifest!(:codex, :core).capabilities.host_tools.
 :event_only
 ```
 
-Amp, Gemini, Cursor, and Antigravity have SDK runtime lanes, but they still do
+Amp, Cursor, and Antigravity have SDK runtime lanes, but they still do
 not claim Codex app-server or host dynamic-tool semantics:
 
 ```elixir
-iex> ASM.ProviderFeatures.require_capability(:gemini, :sdk, :host_tools)
+iex> ASM.ProviderFeatures.require_capability(:antigravity, :sdk, :host_tools)
 {:error, %ASM.Error{}}
 ```
 
@@ -91,8 +91,8 @@ ASM does not expose a top-level all-provider sandbox switch. Execution
 isolation and target placement are represented by `execution_surface`, including
 surface kind, transport options, boundary class, and observability metadata.
 
-Provider CLI sandbox flags remain provider-native. For example, Gemini's
-`sandbox` flag, Cursor's `sandbox` flag, Antigravity's `sandbox` flag, and
+Provider CLI sandbox flags remain provider-native. For example, Cursor's
+`sandbox` flag, Antigravity's `sandbox` flag, and
 Codex's sandbox/app-server settings belong in the owning provider SDK or
 explicit provider-native extension path. They are not the same as Execution
 Plane isolation, and strict common ASM preflight rejects them.
@@ -107,7 +107,6 @@ semantics are proven.
 Examples:
 
 - Claude `:bypass` -> `:bypass_permissions`
-- Gemini `:bypass` -> `:yolo`
 - Codex `:bypass` -> `:yolo`
 - Amp `:bypass` -> `:dangerously_allow_all`
 - Cursor `:bypass` -> `:bypass` -> `--force`
@@ -128,7 +127,6 @@ For example:
 
 - Codex also has provider-specific thread options such as
   `ask_for_approval`
-- Gemini also has a provider-native `sandbox` CLI flag
 - Cursor also has provider-native `mode`, `sandbox`, `approve_mcps`,
   worktree, plugin directory, and header flags
 - Antigravity also has provider-native `sandbox`, `conversation`, `continue`,
@@ -188,7 +186,6 @@ Supported today:
 Not supported today:
 
 - Cursor
-- Gemini
 - Amp
 - Antigravity
 

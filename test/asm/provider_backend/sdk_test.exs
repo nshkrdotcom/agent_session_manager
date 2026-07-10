@@ -211,39 +211,6 @@ defmodule ASM.ProviderBackend.SDKTest do
     end
   end
 
-  defmodule GeminiRuntimeStub do
-    @moduledoc false
-
-    def start_session(opts) when is_list(opts) do
-      metadata = Keyword.get(opts, :metadata, %{})
-
-      if is_pid(metadata[:test_pid]) do
-        send(metadata[:test_pid], {:gemini_runtime_start_opts, opts})
-      end
-
-      session =
-        spawn_link(fn ->
-          receive do
-            :stop -> :ok
-          end
-        end)
-
-      {:ok, session, %{runtime: :gemini_stub}}
-    end
-
-    def send_input(_session, _input, _opts), do: :ok
-    def end_input(_session), do: :ok
-    def interrupt(_session), do: :ok
-    def subscribe(_session, _pid, _ref), do: :ok
-    def info(_session), do: %{runtime: :gemini_stub}
-    def capabilities, do: [:streaming]
-
-    def close(session) when is_pid(session) do
-      send(session, :stop)
-      :ok
-    end
-  end
-
   test "claude sdk backend forwards stderr buffer size as a runtime option" do
     provider = %{Provider.resolve!(:claude) | sdk_runtime: ClaudeRuntimeStub}
 
@@ -880,77 +847,6 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert metadata[:asm_provider] == :cursor
   end
 
-  test "gemini sdk backend propagates execution surface into the runtime options" do
-    provider = %{Provider.resolve!(:gemini) | sdk_runtime: GeminiRuntimeStub}
-
-    config = %{
-      provider: provider,
-      prompt: "hello",
-      execution_config:
-        execution_config(
-          surface_kind: :ssh_exec,
-          transport_options: [destination: "gemini.sdk.example"],
-          surface_ref: "surface-9"
-        ),
-      continuation: %{strategy: :exact, provider_session_id: "gemini-session-123"},
-      provider_opts: [model: "gemini-3.1-flash-lite-preview", system_prompt: "Be brief."],
-      metadata: %{test_pid: self()}
-    }
-
-    assert {:ok, proxy, info} = SDK.start_run(config)
-    on_exit(fn -> SDK.close(proxy) end)
-
-    assert info.lane == :sdk
-    assert info.provider == :gemini
-
-    assert_receive {:gemini_runtime_start_opts, start_opts}
-
-    assert %GeminiCliSdk.Options{} = options = Keyword.fetch!(start_opts, :options)
-
-    assert %CliSubprocessCore.ExecutionSurface{} =
-             execution_surface = Keyword.fetch!(start_opts, :execution_surface)
-
-    assert execution_surface.surface_kind == :ssh_exec
-    assert execution_surface.transport_options[:destination] == "gemini.sdk.example"
-    assert execution_surface.surface_ref == "surface-9"
-    assert options.system_prompt == "Be brief."
-    assert options.execution_surface == execution_surface
-    assert options.resume == "gemini-session-123"
-    assert Keyword.fetch!(start_opts, :prompt) == "hello"
-
-    metadata = Keyword.fetch!(start_opts, :metadata)
-    assert metadata[:lane] == :sdk
-    assert metadata[:asm_provider] == :gemini
-  end
-
-  test "gemini sdk backend maps ASM bypass mode onto approval_mode without legacy yolo duplication" do
-    provider = %{Provider.resolve!(:gemini) | sdk_runtime: GeminiRuntimeStub}
-
-    config = %{
-      provider: provider,
-      prompt: "hello",
-      execution_config: execution_config([]),
-      provider_opts: [
-        model: "gemini-3.1-flash-lite-preview",
-        permission_mode: :bypass,
-        provider_permission_mode: :yolo
-      ],
-      metadata: %{test_pid: self()}
-    }
-
-    assert {:ok, proxy, info} = SDK.start_run(config)
-    on_exit(fn -> SDK.close(proxy) end)
-
-    assert info.lane == :sdk
-    assert info.provider == :gemini
-
-    assert_receive {:gemini_runtime_start_opts, start_opts}
-
-    assert %GeminiCliSdk.Options{} = options = Keyword.fetch!(start_opts, :options)
-    assert options.approval_mode == :yolo
-    assert options.yolo == false
-  end
-
   test "sdk backends reject explicit approval_posture :none before runtime start" do
     provider = %{Provider.resolve!(:claude) | sdk_runtime: ClaudeRuntimeStub}
 
@@ -971,7 +867,6 @@ defmodule ASM.ProviderBackend.SDKTest do
   test "non-codex governed sdk backends reject unmanaged ambient provider auth env" do
     for {provider_name, runtime, env_key, model} <- [
           {:claude, ClaudeRuntimeStub, "ANTHROPIC_API_KEY", "sonnet"},
-          {:gemini, GeminiRuntimeStub, "GEMINI_API_KEY", "gemini-3.1-flash-lite-preview"},
           {:amp, AmpRuntimeStub, "AMP_API_KEY", "amp-1"}
         ] do
       with_env(provider_env(env_key, "ambient-secret"), fn ->
@@ -1018,25 +913,6 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert String.contains?(error.message, "rejects provider auth")
     assert :env in error.cause.keys
     assert :cli_path in error.cause.keys
-  end
-
-  test "non-codex governed sdk backends fail closed without provider materialization" do
-    provider = %{Provider.resolve!(:gemini) | sdk_runtime: GeminiRuntimeStub}
-
-    with_env(provider_env(), fn ->
-      config = %{
-        provider: provider,
-        prompt: "hello",
-        provider_opts: [model: "gemini-3.1-flash-lite-preview"],
-        execution_config: execution_config([]),
-        metadata: governed_runtime_metadata(:gemini)
-      }
-
-      assert {:error, error} = SDK.start_run(config)
-      assert error.kind == :config_invalid
-      assert String.contains?(error.message, "requires verified provider-auth materialization")
-      assert String.contains?(error.message, "standalone env")
-    end)
   end
 
   defp governed_runtime_metadata do
@@ -1122,23 +998,18 @@ defmodule ASM.ProviderBackend.SDKTest do
     end
   end
 
-  defp provider_env(key \\ nil, value \\ nil) do
+  defp provider_env(key, value) do
     [
       "ANTHROPIC_API_KEY",
       "ANTHROPIC_AUTH_TOKEN",
       "ANTHROPIC_BASE_URL",
       "ASM_AMP_MODEL",
       "ASM_CLAUDE_MODEL",
-      "ASM_GEMINI_MODEL",
       "CLAUDE_CLI_PATH",
       "CLAUDE_CODE_OAUTH_TOKEN",
       "CLAUDE_CONFIG_DIR",
       "CLAUDE_HOME",
       "CLAUDE_MODEL",
-      "GEMINI_API_KEY",
-      "GEMINI_CLI_CONFIG_HOME",
-      "GEMINI_CLI_PATH",
-      "GEMINI_MODEL",
       "GOOGLE_API_KEY",
       "GOOGLE_APPLICATION_CREDENTIALS",
       "AMP_API_KEY",

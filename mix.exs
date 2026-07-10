@@ -241,7 +241,6 @@ defmodule AgentSessionManager.MixProject do
         ASM.Options.Claude,
         ASM.Options.Codex,
         ASM.Options.Cursor,
-        ASM.Options.Gemini,
         ASM.Options.PartialFeatureUnsupportedError,
         ASM.Options.ProviderMismatchError,
         ASM.Options.ProviderNativeOptionError,
@@ -368,7 +367,6 @@ defmodule AgentSessionManager.MixProject do
         ASM.Extensions.ProviderSDK.Derivation,
         ASM.Extensions.ProviderSDK.Dispatch,
         ASM.Extensions.ProviderSDK.Extension,
-        ASM.Extensions.ProviderSDK.Gemini,
         ASM.Extensions.ProviderSDK.SessionOptions
       ]
     ]

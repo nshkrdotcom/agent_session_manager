@@ -129,7 +129,7 @@ defmodule ASM.InferenceEndpoint do
     end
   end
 
-  defp publication(provider) when provider in [:amp, :claude, :codex, :gemini] do
+  defp publication(provider) when provider in [:amp, :claude, :codex] do
     capabilities =
       provider
       |> Provider.resolve!()
@@ -165,7 +165,7 @@ defmodule ASM.InferenceEndpoint do
 
   defp agent_capable?(_provider, _capabilities), do: false
 
-  defp common_surface_only?(provider), do: provider in [:amp, :gemini]
+  defp common_surface_only?(provider), do: provider == :amp
 
   defp agent_capability_derivation(provider) when provider in [:claude, :codex],
     do: :provider_native_extension_surface

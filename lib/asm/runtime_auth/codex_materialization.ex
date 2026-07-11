@@ -36,6 +36,7 @@ defmodule ASM.RuntimeAuth.CodexMaterialization do
     :codex_home_override,
     :config_values,
     :config_overrides,
+    # secret-safe: key-name registry (names, not values)
     :api_key,
     :base_url,
     :openai_base_url,
@@ -59,9 +60,11 @@ defmodule ASM.RuntimeAuth.CodexMaterialization do
     :codex_home,
     :config_values,
     :config_overrides,
+    # secret-safe: key-name registry (names, not values)
     :api_key,
     :base_url,
     :openai_base_url,
+    # secret-safe: key-name registry (names, not values)
     :auth_token,
     :auth_token_env
   ]
@@ -92,6 +95,9 @@ defmodule ASM.RuntimeAuth.CodexMaterialization do
     :provider_account_ref,
     :native_auth_assertion
   ]
+  # api_key, env, and native_auth_assertion carry live credentials — keep
+  # them out of inspect output (crash reports, Logger metadata, :observer).
+  @derive {Inspect, except: [:api_key, :env, :native_auth_assertion]}
   defstruct [
     :command,
     :cwd,

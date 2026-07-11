@@ -29,3 +29,8 @@ agent_session_manager-*.tar
 /_legacy/
 
 .dependency_sources.local.exs
+
+# Local secrets — never commit a real .env (templates *.env.example are fine)
+.env
+*.env
+!*.env.example

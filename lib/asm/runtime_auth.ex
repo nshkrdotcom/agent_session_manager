@@ -71,8 +71,10 @@ defmodule ASM.RuntimeAuth do
   }
   @governed_provider_override_keys [
     :access_token,
+    # secret-safe: key-name registry (names, not values)
     :api_key,
     :auth_root,
+    # secret-safe: key-name registry (names, not values)
     :auth_token,
     :authorization_header,
     :base_url,
@@ -92,6 +94,7 @@ defmodule ASM.RuntimeAuth do
     :provider_session_id,
     :refresh_token,
     :resume,
+    # secret-safe: key-name registry (names, not values)
     :token,
     :token_file,
     :working_directory,
@@ -101,6 +104,7 @@ defmodule ASM.RuntimeAuth do
     :singleton_client
   ]
   @provider_account_evidence_forbidden_keys [
+    # secret-safe: key-name registry (names, not values)
     :api_key,
     :auth_json,
     :authorization_header,
@@ -110,6 +114,7 @@ defmodule ASM.RuntimeAuth do
     :raw_token,
     :refresh_token,
     :target_credentials,
+    # secret-safe: key-name registry (names, not values)
     :token,
     :token_file
   ]
@@ -395,8 +400,10 @@ defmodule ASM.RuntimeAuth do
 
   @handoff_forbidden_keys [
     :access_token,
+    # secret-safe: key-name registry (names, not values)
     :api_key,
     :auth_root,
+    # secret-safe: key-name registry (names, not values)
     :auth_token,
     :authorization_header,
     :command,
@@ -409,6 +416,7 @@ defmodule ASM.RuntimeAuth do
     :raw_secret,
     :raw_token,
     :target_credentials,
+    # secret-safe: key-name registry (names, not values)
     :token,
     :token_file
   ]

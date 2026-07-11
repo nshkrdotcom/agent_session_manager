@@ -399,6 +399,12 @@ Relevant Claude provider opts:
   same behavior, since model resolution flows through one shared
   ASM model-normalization path regardless of provider.
 
+  Note the deliberate default divergence from `claude_agent_sdk`: the SDK is
+  permissive by default (unknown model ids pass through with a warning),
+  while ASM is strict by default. Same registry machinery, opposite
+  defaults — ASM is a governed multi-provider manager, so unknown models
+  require an explicit opt-in here. Do not "align" the two.
+
 Example:
 
 ```elixir

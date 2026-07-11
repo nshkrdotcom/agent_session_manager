@@ -93,7 +93,8 @@ defmodule AgentSessionManager.MixProject do
       ci: [
         "format --check-formatted",
         "compile --warnings-as-errors",
-        "credo",
+        "cmd ./scripts/atom_guard.sh",
+        "credo --strict",
         "cmd env MIX_ENV=test mix test",
         "dialyzer"
       ],

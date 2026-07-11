@@ -31,6 +31,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   projects host-tool lifecycle events.
 - Live-only Codex app-server ASM examples for plain app-server sessions,
   dynamic host-tool fulfillment, and exact provider-thread resume.
+- Fable resolution regression test pinning `fable` / `claude-fable-5` through
+  `finalize_provider_opts` and the shared registry catalog.
+- Atom-safety guardrail: `.credo.exs` with `Credo.Check.Warning.UnsafeToAtom`
+  enabled (scoped to `lib/`) plus a `scripts/atom_guard.sh` CI backstop wired
+  into `mix ci` (which now runs `credo --strict`).
+- Secrets guardrail: `scripts/secrets_guard.sh` in `mix ci`; `.env` files
+  gitignored.
+- README documents the deliberate `allow_unknown_model` default divergence:
+  ASM stays strict-by-default while `claude_agent_sdk` is
+  permissive-by-default on the same registry machinery.
 
 ### Changed
 
@@ -47,6 +57,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Codex app-server result projection now avoids duplicate final text when a
   turn emits both streaming deltas and completed assistant-message items, and
   ASM content projection accepts atom-form content block types.
+
+### Security
+
+- `config/runtime.exs` snapshots an **allowlist** (`ASM.EnvSnapshot.take/1`:
+  provider namespaces plus static selectors) instead of the whole OS
+  environment, so unrelated secrets in the parent process are never copied
+  into inspectable Application config.
+- `RuntimeAuth.CodexMaterialization` redacts `:api_key`, `:env`, and
+  `:native_auth_assertion` from `inspect/1` via `@derive Inspect`.
 
 ### Removed
 

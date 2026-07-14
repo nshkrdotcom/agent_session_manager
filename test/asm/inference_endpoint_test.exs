@@ -225,6 +225,17 @@ defmodule ASM.InferenceEndpointTest do
     assert compatibility.missing_requirements == [:tool_calling]
   end
 
+  test "runtime-only providers are rejected at the inference endpoint seam" do
+    for provider <- [:cursor, :antigravity] do
+      assert {:error, {:unsupported_endpoint_provider, ^provider}} =
+               InferenceEndpoint.ensure_endpoint(
+                 request(provider, "runtime-only-model"),
+                 compatible_consumer_manifest(),
+                 context()
+               )
+    end
+  end
+
   defp configure_fake_backend(text) do
     RuntimeConfig.configure!(
       backend_module: ASM.TestSupport.FakeBackend,

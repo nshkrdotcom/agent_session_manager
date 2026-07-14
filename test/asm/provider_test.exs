@@ -16,7 +16,7 @@ defmodule ASM.ProviderTest do
     assert support.sdk_cli_env == "CODEX_PATH"
   end
 
-  test "cursor resolves as the fifth provider with core and sdk lanes" do
+  test "cursor resolves with core and sdk lanes" do
     assert :cursor in Provider.supported_providers()
     assert {:ok, provider} = Provider.resolve("cursor")
 

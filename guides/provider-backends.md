@@ -130,8 +130,10 @@ Amp, and Cursor. Amp and Cursor start with strict
 `derive_options/2` helpers; those helpers derive only common placement/session
 data and require provider-native settings in `native_overrides`.
 
-Antigravity is the sixth first-party provider. It has a core profile and
-optional `antigravity_cli_sdk` runtime lane, but no separate
+Antigravity is one of five first-party providers and is the current Google
+coding-agent SDK route. Gemini CLI remains retired; `gemini_ex` is a distinct
+model API SDK outside ASM's CLI provider registry. Antigravity has a core
+profile and optional `antigravity_cli_sdk` runtime lane, but no separate
 `ASM.Extensions.ProviderSDK.Antigravity` namespace yet. Provider SDK reports
 therefore include `:antigravity` with an empty `registered_namespaces` list.
 

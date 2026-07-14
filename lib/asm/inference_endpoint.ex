@@ -58,7 +58,7 @@ defmodule ASM.InferenceEndpoint do
     with {:ok, consumer_manifest} <- normalize_consumer_manifest(consumer_manifest),
          {:ok, provider} <- request_provider(request),
          {:ok, model_identity} <- request_model_identity(request),
-         publication <- publication(provider),
+         {:ok, publication} <- publication(provider),
          backend_manifest <- backend_manifest(provider, publication),
          compatibility <- Compatibility.resolve(backend_manifest, consumer_manifest, request),
          true <- compatibility.compatible? || {:error, {:incompatible, compatibility}},
@@ -136,20 +136,23 @@ defmodule ASM.InferenceEndpoint do
       |> Map.fetch!(:core_profile)
       |> Kernel.apply(:capabilities, [])
 
-    %{
-      provider: provider,
-      cli_completion_v1: completion_capable?(capabilities),
-      cli_streaming_v1: :streaming in capabilities,
-      cli_agent_v2: agent_capable?(provider, capabilities),
-      common_surface_only?: common_surface_only?(provider),
-      derivation: %{
-        cli_completion_v1: :prompt_driven_cli_profile,
-        cli_streaming_v1: :streaming_profile_capability,
-        cli_agent_v2: agent_capability_derivation(provider)
-      },
-      profile_capabilities: capabilities
-    }
+    {:ok,
+     %{
+       provider: provider,
+       cli_completion_v1: completion_capable?(capabilities),
+       cli_streaming_v1: :streaming in capabilities,
+       cli_agent_v2: agent_capable?(provider, capabilities),
+       common_surface_only?: common_surface_only?(provider),
+       derivation: %{
+         cli_completion_v1: :prompt_driven_cli_profile,
+         cli_streaming_v1: :streaming_profile_capability,
+         cli_agent_v2: agent_capability_derivation(provider)
+       },
+       profile_capabilities: capabilities
+     }}
   end
+
+  defp publication(provider), do: {:error, {:unsupported_endpoint_provider, provider}}
 
   defp completion_capable?(capabilities) when is_list(capabilities) do
     Enum.any?(

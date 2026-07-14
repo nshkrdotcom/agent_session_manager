@@ -2,12 +2,12 @@ defmodule ASM.EnvSnapshot do
   @moduledoc """
   Allowlist filter for the `config/runtime.exs` environment snapshot.
 
-  ASM copies OS environment variables into Application config (backing
-  `ASM.Env`) at boot. Copying the *whole* environment would spread every
-  unrelated secret in the parent process into inspectable Application
-  config (`Application.get_all_env/1`, `:observer`, crash dumps), so only
-  the variables ASM reads are taken: the provider namespaces (which cover
-  `ASM.RuntimeAuth`'s per-provider auth env keys) plus a small static set.
+  ASM copies OS environment variables into Application config for its explicit
+  environment access layer at boot. Copying the *whole* environment would
+  spread every unrelated secret in the parent process into inspectable
+  Application config (`Application.get_all_env/1`, `:observer`, crash dumps),
+  so only the variables ASM reads are taken: the provider namespaces (which
+  cover `ASM.RuntimeAuth`'s per-provider auth env keys) plus a small static set.
   """
 
   @static_vars ~w(ASM_PERMISSION_MODE PATH HOME MIX_ENV CI LIVE_MODE LIVE_TESTS)

@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.10.0] - 2026-07-10
+## [0.10.0] - 2026-07-13
 
 ### Added
 
@@ -44,6 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Prepared the Hex candidate for Elixir `~> 1.19`,
+  `cli_subprocess_core ~> 0.2.0`, and `cursor_cli_sdk ~> 0.1.0`; the optional
+  SDK documentation now matches the prepared Claude 0.18 and Amp 0.6 lines.
 - Codex examples and provider guides now cover the current GPT-5.6 model IDs,
   the strict shared-registry Spark preview path, and the `codex_sdk` 0.17.0
   extension surface.
@@ -54,6 +57,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Distributed test peers now preserve the local prepared dependency precedence
+  instead of loading stale component-era beams from optional SDK build
+  closures.
+- Runtime-only Cursor and Antigravity providers now return a bounded error when
+  presented to the inference endpoint seam instead of raising a function-clause
+  exception.
 - Codex app-server result projection now avoids duplicate final text when a
   turn emits both streaming deltas and completed assistant-message items, and
   ASM content projection accepts atom-form content block types.

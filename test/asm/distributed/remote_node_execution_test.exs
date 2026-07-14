@@ -13,6 +13,7 @@ defmodule ASM.Distributed.RemoteNodeExecutionTest do
     original = Application.get_env(:agent_session_manager, ASM.ProviderRegistry)
 
     {:ok, peer, node} = start_peer!()
+    assert_prepared_dependency_paths!(node)
 
     workspace =
       Path.join(System.tmp_dir!(), "asm-remote-workspace-#{System.unique_integer([:positive])}")
@@ -235,15 +236,25 @@ defmodule ASM.Distributed.RemoteNodeExecutionTest do
     cookie = Node.get_cookie()
     peer_name = :"asm_remote_peer_#{System.unique_integer([:positive])}"
 
-    args =
-      Enum.flat_map(:code.get_path(), fn path ->
-        [~c"-pa", to_charlist(path)]
-      end) ++ [~c"-setcookie", cookie |> Atom.to_string() |> to_charlist()]
+    code_path_args =
+      :code.get_path()
+      |> Enum.reverse()
+      |> Enum.flat_map(fn path -> [~c"-pa", to_charlist(path)] end)
+
+    args = code_path_args ++ [~c"-setcookie", cookie |> Atom.to_string() |> to_charlist()]
 
     :peer.start(%{
       name: peer_name,
       args: args
     })
+  end
+
+  defp assert_prepared_dependency_paths!(node) do
+    for module <- [CliSubprocessCore.TaskSupport, ExecutionPlane.Process.Transport] do
+      local_path = :code.which(module)
+      assert local_path != :non_existing
+      assert :rpc.call(node, :code, :which, [module]) == local_path
+    end
   end
 
   defp ensure_local_distribution! do

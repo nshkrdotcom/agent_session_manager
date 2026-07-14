@@ -16,7 +16,8 @@
   </a>
 </p>
 
-`ASM` is an OTP-native Elixir runtime for running multi-turn AI sessions across multiple CLI providers with one API.
+`ASM` is an OTP-native Elixir runtime for running multi-turn AI sessions across
+five first-party CLI providers with one API.
 
 Supported providers:
 
@@ -25,6 +26,10 @@ Supported providers:
 - Amp CLI
 - Cursor Agent CLI
 - Antigravity CLI
+
+Antigravity is the current Google coding-agent SDK route. Gemini CLI and
+`gemini_cli_sdk` remain retired. `gemini_ex` is a distinct model API SDK for
+Gemini model endpoints; it is not an ASM CLI provider.
 
 ## Documentation Menu
 
@@ -52,6 +57,8 @@ Supported providers:
 
 ## Install
 
+ASM 0.10.0 requires Elixir 1.19 or later.
+
 ```elixir
 def deps do
   [
@@ -71,11 +78,11 @@ Optional provider SDK dependencies stay additive. Add one only when you want
 that provider's SDK lane/runtime kit or, where it exists today, its ASM
 provider-native namespace:
 
-- `{:claude_agent_sdk, "~> 0.17.0", optional: true}` for Claude control-protocol
+- `{:claude_agent_sdk, "~> 0.18.0", optional: true}` for Claude control-protocol
   helpers and `ASM.Extensions.ProviderSDK.Claude`
 - `{:codex_sdk, "~> 0.17.0", optional: true}` for Codex app-server, MCP,
   realtime, voice helpers, and `ASM.Extensions.ProviderSDK.Codex`
-- `{:amp_sdk, "~> 0.5.0", optional: true}` for Amp SDK lane/runtime-kit
+- `{:amp_sdk, "~> 0.6.0", optional: true}` for Amp SDK lane/runtime-kit
   availability and `ASM.Extensions.ProviderSDK.Amp`
 - `{:cursor_cli_sdk, "~> 0.1.0", optional: true}` for Cursor SDK
   lane/runtime-kit availability and `ASM.Extensions.ProviderSDK.Cursor`

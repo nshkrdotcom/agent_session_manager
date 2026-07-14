@@ -35,9 +35,26 @@ defmodule ASM.ReleasePreparationTest do
     assert package[:links]["Hex"] == "https://hex.pm/packages/agent_session_manager"
     assert package[:links]["HexDocs"] == "https://hexdocs.pm/agent_session_manager"
 
-    for required <- ~w(lib assets build_support mix.exs README.md CHANGELOG.md LICENSE guides) do
+    for required <-
+          ~w(lib assets build_support mix.exs README.md CHANGELOG.md LICENSE guides examples/README.md) do
       assert required in package[:files]
     end
+
+    refute ".formatter.exs" in package[:files]
+  end
+
+  test "README and HexDocs use the named 200px release asset" do
+    project = Mix.Project.config()
+    readme = File.read!(Path.join(@repo_root, "README.md"))
+    header = readme |> String.split("\n") |> Enum.take(24) |> Enum.join("\n")
+
+    assert project[:docs][:assets] == %{"assets" => "assets"}
+    assert project[:docs][:logo] == "assets/agent_session_manager.svg"
+    assert header =~ ~s(src="assets/agent_session_manager.svg")
+    assert header =~ ~s(width="200")
+    assert header =~ ~s(href="https://github.com/nshkrdotcom/agent_session_manager")
+    assert header =~ ~s(href="LICENSE")
+    assert length(Regex.scan(~r/img\.shields\.io/, header)) == 2
   end
 
   test "the provider set is closed and Antigravity owns Google coding-agent support" do

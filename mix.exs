@@ -108,7 +108,7 @@ defmodule AgentSessionManager.MixProject do
       name: "agent_session_manager",
       description: description(),
       files:
-        ~w(lib assets build_support mix.exs README.md CHANGELOG.md LICENSE .formatter.exs guides),
+        ~w(lib assets build_support mix.exs README.md CHANGELOG.md LICENSE guides examples/README.md),
       licenses: ["MIT"],
       maintainers: ["nshkrdotcom"],
       links: %{

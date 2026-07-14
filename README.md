@@ -1,18 +1,15 @@
 <p align="center">
-  <img src="assets/agent_session_manager.svg" alt="Agent Session Manager" />
+  <img src="assets/agent_session_manager.svg" alt="Agent Session Manager" width="200" />
 </p>
 
 # ASM (Agent Session Manager)
 
 <p align="center">
-  <a href="https://hex.pm/packages/agent_session_manager">
-    <img src="https://img.shields.io/hexpm/v/agent_session_manager.svg" alt="Hex" />
-  </a>
-  <a href="https://hexdocs.pm/agent_session_manager">
-    <img src="https://img.shields.io/badge/hexdocs-docs-blue.svg" alt="HexDocs" />
-  </a>
   <a href="https://github.com/nshkrdotcom/agent_session_manager">
     <img src="https://img.shields.io/badge/github-nshkrdotcom%2Fagent__session__manager-24292e.svg" alt="GitHub" />
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License" />
   </a>
 </p>
 

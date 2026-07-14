@@ -44,6 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Restricted the Hex archive to consumer-facing source, guides, the HexDocs
+  example overview, and public documentation/assets; standardized the README
+  on the centered 200px logo with GitHub and MIT badges.
 - Prepared the Hex candidate for Elixir `~> 1.19`,
   `cli_subprocess_core ~> 0.2.0`, and `cursor_cli_sdk ~> 0.1.0`; the optional
   SDK documentation now matches the prepared Claude 0.18 and Amp 0.6 lines.

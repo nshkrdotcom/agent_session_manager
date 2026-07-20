@@ -13,6 +13,7 @@ defmodule ASM.RuntimeAuth do
     ConnectorBinding,
     ConnectorInstance,
     ExecutionContext,
+    ManagedBinding,
     ProviderAccountIdentity
   }
 
@@ -141,6 +142,16 @@ defmodule ASM.RuntimeAuth do
     :authority_decision_ref,
     :credential_handle_ref,
     :credential_lease_ref,
+    :credential_generation,
+    :materialization_ref,
+    :managed_session,
+    :managed_binding,
+    :materialization_request,
+    :secret_material,
+    :runtime_gateway_module,
+    :runtime_gateway_ref,
+    :workspace_ref,
+    :working_directory_ref,
     :native_auth_assertion_ref,
     :prompt_ref,
     :guard_chain_ref,
@@ -162,6 +173,7 @@ defmodule ASM.RuntimeAuth do
     :connector_binding,
     :provider_account_identity,
     :provider_auth_backend,
+    :managed_binding,
     connector_invocation_evidence: %{}
   ]
 
@@ -173,6 +185,7 @@ defmodule ASM.RuntimeAuth do
           connector_binding: ConnectorBinding.t(),
           provider_account_identity: ProviderAccountIdentity.t(),
           provider_auth_backend: atom(),
+          managed_binding: ManagedBinding.t() | nil,
           connector_invocation_evidence: map()
         }
 
@@ -461,7 +474,7 @@ defmodule ASM.RuntimeAuth do
         build(session_id, provider, nil, opts)
 
       %__MODULE__{} = runtime_auth ->
-        validate(runtime_auth)
+        validate_supplied_runtime_auth(session_id, provider, runtime_auth, opts)
 
       other ->
         {:error,
@@ -489,7 +502,8 @@ defmodule ASM.RuntimeAuth do
     provider = runtime_auth.execution_context.provider
     session_id = runtime_auth.execution_context.session_id
 
-    with :ok <- reject_standalone_governed_upgrade(runtime_auth, opts) do
+    with :ok <- reject_standalone_governed_upgrade(runtime_auth, opts),
+         :ok <- validate_managed_run(runtime_auth, opts) do
       base_opts =
         [
           runtime_auth_mode: runtime_auth.mode,
@@ -512,7 +526,8 @@ defmodule ASM.RuntimeAuth do
           authority_decision_ref: runtime_auth.connector_binding.authority_decision_ref,
           credential_handle_ref: runtime_auth.connector_binding.credential_handle_ref,
           credential_lease_ref: runtime_auth.connector_binding.credential_lease_ref,
-          native_auth_assertion_ref: runtime_auth.connector_binding.native_auth_assertion_ref
+          native_auth_assertion_ref: runtime_auth.connector_binding.native_auth_assertion_ref,
+          managed_binding: runtime_auth.managed_binding
         ]
         |> Keyword.merge(opts)
         |> Keyword.delete(:runtime_auth)
@@ -544,6 +559,8 @@ defmodule ASM.RuntimeAuth do
       authority_ref: runtime_auth.connector_binding.authority_ref,
       authority_decision_ref: runtime_auth.connector_binding.authority_decision_ref,
       provider_auth_backend: runtime_auth.provider_auth_backend,
+      managed_binding: managed_binding_metadata(runtime_auth.managed_binding),
+      managed_session: not is_nil(runtime_auth.managed_binding),
       connector_invocation_evidence: runtime_auth.connector_invocation_evidence,
       governed_authority: governed_authority?(runtime_auth)
     }
@@ -558,8 +575,46 @@ defmodule ASM.RuntimeAuth do
       connector_binding: struct_to_map(runtime_auth.connector_binding),
       provider_account_identity: struct_to_map(runtime_auth.provider_account_identity),
       provider_auth_backend: runtime_auth.provider_auth_backend,
+      managed_binding: managed_binding_metadata(runtime_auth.managed_binding),
       connector_invocation_evidence: runtime_auth.connector_invocation_evidence
     }
+  end
+
+  @doc "Normalizes transient managed material into a redacted provider envelope."
+  @spec prepare_session_options(t(), keyword()) :: {:ok, keyword()} | {:error, Error.t()}
+  def prepare_session_options(%__MODULE__{managed_binding: nil}, opts) when is_list(opts),
+    do: {:ok, opts}
+
+  def prepare_session_options(%__MODULE__{} = runtime_auth, opts) when is_list(opts) do
+    prepare_managed_options(runtime_auth, [], opts)
+  end
+
+  @doc "Merges run options without replacing a managed session's pinned identity."
+  @spec prepare_run_options(t(), keyword(), keyword()) ::
+          {:ok, keyword()} | {:error, Error.t()}
+  def prepare_run_options(%__MODULE__{managed_binding: nil}, session_opts, run_opts)
+      when is_list(session_opts) and is_list(run_opts),
+      do: {:ok, Keyword.merge(session_opts, run_opts)}
+
+  def prepare_run_options(%__MODULE__{} = runtime_auth, session_opts, run_opts)
+      when is_list(session_opts) and is_list(run_opts) do
+    prepare_managed_options(runtime_auth, session_opts, run_opts)
+  end
+
+  @doc "Validates a Jido revocation envelope against the pinned materialization."
+  @spec authorize_managed_revocation(t(), map() | keyword() | struct()) ::
+          :ok | {:error, Error.t()}
+  def authorize_managed_revocation(%__MODULE__{managed_binding: nil}, _revocation) do
+    {:error,
+     Error.new(
+       :config_invalid,
+       :config,
+       "cannot revoke materialization for an unmanaged ASM session"
+     )}
+  end
+
+  def authorize_managed_revocation(%__MODULE__{managed_binding: binding}, revocation) do
+    ManagedBinding.authorize_revocation(binding, revocation)
   end
 
   @spec handoff_packet(t(), keyword()) :: {:ok, HandoffPacket.t()} | {:error, Error.t()}
@@ -980,11 +1035,18 @@ defmodule ASM.RuntimeAuth do
         connector_binding: binding,
         provider_account_identity: account,
         provider_auth_backend: provider_auth_backend,
+        managed_binding: nil,
         connector_invocation_evidence:
           connector_invocation_evidence(provider, run_id, context, connector, account, binding)
       }
 
-      validate(runtime_auth)
+      with {:ok, runtime_auth} <- validate(runtime_auth),
+           {:ok, managed_binding} <- managed_binding(provider, runtime_auth, opts) do
+        runtime_auth
+        |> Map.put(:managed_binding, managed_binding)
+        |> put_managed_invocation_evidence()
+        |> validate()
+      end
     end
   end
 
@@ -1085,7 +1147,7 @@ defmodule ASM.RuntimeAuth do
       connector_instance_ref: connector.ref,
       connector_binding_ref: binding.ref,
       provider_account_ref: account.ref,
-      governed_authority: false
+      governed_authority: binding.mode == :governed
     }
   end
 
@@ -1141,6 +1203,15 @@ defmodule ASM.RuntimeAuth do
            "governed runtime_auth requires governed context source, authority ref, credential lease ref, native auth assertion ref, connector instance ref, provider account ref, target ref, and operation policy ref",
            provider: runtime_auth.execution_context.provider,
            cause: governed_validation_cause(runtime_auth)
+         )}
+
+      not is_nil(runtime_auth.managed_binding) and runtime_auth.mode != :governed ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :config,
+           "managed session binding requires governed runtime auth",
+           provider: runtime_auth.execution_context.provider
          )}
 
       true ->
@@ -1382,13 +1453,172 @@ defmodule ASM.RuntimeAuth do
   end
 
   defp provider_account_evidence_forbidden_hits(evidence) when is_map(evidence) do
-    @provider_account_evidence_forbidden_keys
-    |> Enum.filter(fn key ->
-      Map.has_key?(evidence, key) or Map.has_key?(evidence, Atom.to_string(key))
-    end)
+    provider_account_evidence_forbidden_hits(evidence, [])
+    |> Enum.uniq()
   end
 
   defp provider_account_evidence_forbidden_hits(_evidence), do: []
+
+  defp provider_account_evidence_forbidden_hits(%DateTime{}, _path), do: []
+
+  defp provider_account_evidence_forbidden_hits(%_{} = evidence, path),
+    do: evidence |> Map.from_struct() |> provider_account_evidence_forbidden_hits(path)
+
+  defp provider_account_evidence_forbidden_hits(evidence, path) when is_map(evidence) do
+    Enum.flat_map(evidence, fn {key, value} ->
+      normalized = key |> to_string() |> String.downcase()
+      next_path = path ++ [normalized]
+
+      current =
+        if Enum.any?(@provider_account_evidence_forbidden_keys, fn forbidden ->
+             Atom.to_string(forbidden) == normalized
+           end) or String.starts_with?(normalized, "raw_") do
+          [if(path == [], do: key, else: Enum.join(next_path, "."))]
+        else
+          []
+        end
+
+      current ++ provider_account_evidence_forbidden_hits(value, next_path)
+    end)
+  end
+
+  defp provider_account_evidence_forbidden_hits(values, path) when is_list(values),
+    do: Enum.flat_map(values, &provider_account_evidence_forbidden_hits(&1, path))
+
+  defp provider_account_evidence_forbidden_hits(_value, _path), do: []
+
+  defp managed_binding(provider, runtime_auth, opts) do
+    case Keyword.get(opts, :managed_binding) do
+      %ManagedBinding{} = binding ->
+        with :ok <- ManagedBinding.active(binding),
+             :ok <- ManagedBinding.revalidate(binding, runtime_auth, opts) do
+          {:ok, binding}
+        end
+
+      nil ->
+        ManagedBinding.new(provider, runtime_auth, opts)
+
+      _other ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :config,
+           "managed_binding must be an ASM.RuntimeAuth.ManagedBinding",
+           provider: provider
+         )}
+    end
+  end
+
+  defp validate_supplied_runtime_auth(session_id, provider, runtime_auth, opts) do
+    managed_keys = [:managed_session, :materialization_request, :secret_material]
+
+    cond do
+      runtime_auth.execution_context.session_id != session_id or
+          runtime_auth.execution_context.provider != provider ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :config,
+           "supplied runtime_auth does not match the requested ASM session and provider",
+           provider: provider
+         )}
+
+      not is_nil(runtime_auth.managed_binding) or
+          Enum.any?(managed_keys, &Keyword.has_key?(opts, &1)) ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :config,
+           "managed sessions require a fresh exact materialization bundle at ASM session admission",
+           provider: provider
+         )}
+
+      true ->
+        validate(runtime_auth)
+    end
+  end
+
+  defp validate_managed_run(%__MODULE__{managed_binding: nil}, _opts), do: :ok
+
+  defp validate_managed_run(%__MODULE__{managed_binding: binding} = runtime_auth, opts) do
+    ManagedBinding.revalidate(binding, runtime_auth, opts)
+  end
+
+  defp put_managed_invocation_evidence(%__MODULE__{managed_binding: nil} = runtime_auth),
+    do: runtime_auth
+
+  defp put_managed_invocation_evidence(%__MODULE__{} = runtime_auth) do
+    binding = runtime_auth.managed_binding
+
+    evidence =
+      Map.merge(runtime_auth.connector_invocation_evidence, %{
+        managed_session_ref: binding.session_ref,
+        managed_session_generation: binding.session_generation,
+        materialization_ref: binding.materialization_ref,
+        credential_generation: binding.credential_generation,
+        workspace_ref: binding.workspace_ref,
+        runtime_gateway_ref: binding.runtime_gateway_ref,
+        governed_authority: true
+      })
+
+    %{runtime_auth | connector_invocation_evidence: evidence}
+  end
+
+  defp prepare_managed_options(runtime_auth, baseline, supplied) do
+    binding = runtime_auth.managed_binding
+
+    with :ok <- reject_supplied_materialization(runtime_auth, supplied),
+         :ok <- ManagedBinding.revalidate(binding, runtime_auth, supplied),
+         {:ok, supplied} <- maybe_materialize_codex(runtime_auth, supplied) do
+      sanitized =
+        supplied
+        |> Keyword.drop([
+          :managed_session,
+          :materialization_request,
+          :secret_material,
+          :managed_binding
+        ])
+
+      {:ok, Keyword.merge(baseline, sanitized)}
+    end
+  end
+
+  defp maybe_materialize_codex(
+         %__MODULE__{execution_context: %{provider: :codex}} = runtime_auth,
+         opts
+       ) do
+    if Keyword.has_key?(opts, :secret_material) do
+      with {:ok, payload} <-
+             ManagedBinding.material_payload(Keyword.put(opts, :provider, :codex)),
+           {:ok, materialization} <-
+             ASM.RuntimeAuth.CodexMaterialization.new(payload, runtime_auth) do
+        {:ok, Keyword.put(opts, :codex_materialized_runtime, materialization)}
+      end
+    else
+      {:ok, opts}
+    end
+  end
+
+  defp maybe_materialize_codex(_runtime_auth, opts), do: {:ok, opts}
+
+  defp reject_supplied_materialization(runtime_auth, supplied) do
+    if Keyword.has_key?(supplied, :codex_materialized_runtime) do
+      {:error,
+       Error.new(
+         :config_invalid,
+         :config,
+         "managed session rejects caller-supplied materialized provider runtime",
+         provider: runtime_auth.execution_context.provider
+       )}
+    else
+      :ok
+    end
+  end
+
+  defp managed_binding_metadata(nil), do: nil
+
+  defp managed_binding_metadata(%ManagedBinding{} = binding),
+    do: ManagedBinding.to_metadata(binding)
 
   defp governed_mode?(mode), do: mode in [:governed, "governed"]
   defp governed_scope?(scope), do: scope in [:governed, "governed"]

@@ -11,6 +11,7 @@ defmodule ASM.Session.Server do
   alias ASM.Session.Continuation
   alias ASM.Session.State
   alias ASM.SessionControl
+  alias ASM.RuntimeAuth.ManagedBinding
   alias CliSubprocessCore.Payload
 
   @spec start_link(keyword()) :: GenServer.on_start()
@@ -63,6 +64,17 @@ defmodule ASM.Session.Server do
     GenServer.call(server, {:intervene, run_id, prompt, opts})
   end
 
+  @spec revoke_materialization(GenServer.server(), map() | keyword()) ::
+          :ok | {:error, Error.t()}
+  def revoke_materialization(server, revocation) do
+    GenServer.call(server, {:revoke_materialization, revocation})
+  end
+
+  @spec cleanup_materialization(GenServer.server(), atom()) :: :ok | {:error, Error.t()}
+  def cleanup_materialization(server, reason \\ :scope_closed) when is_atom(reason) do
+    GenServer.call(server, {:cleanup_materialization, reason})
+  end
+
   @impl true
   def init(opts) do
     session_id = Keyword.fetch!(opts, :session_id)
@@ -70,7 +82,12 @@ defmodule ASM.Session.Server do
     session_options = Keyword.get(opts, :options, [])
     runtime_auth = Keyword.fetch!(opts, :runtime_auth)
 
-    {:ok, State.new(session_id, provider, session_options, runtime_auth)}
+    state =
+      session_id
+      |> State.new(provider, session_options, runtime_auth)
+      |> schedule_materialization_expiry()
+
+    {:ok, state}
   end
 
   @impl true
@@ -80,6 +97,27 @@ defmodule ASM.Session.Server do
 
   def handle_call(:checkpoint, _from, state) do
     {:reply, {:ok, state.checkpoint}, state}
+  end
+
+  def handle_call({:revoke_materialization, revocation}, _from, state) do
+    case RuntimeAuth.authorize_managed_revocation(state.runtime_auth, revocation) do
+      :ok -> {:reply, :ok, terminate_materialization(state, :revoked)}
+      {:error, %Error{} = error} -> {:reply, {:error, error}, state}
+    end
+  end
+
+  def handle_call({:cleanup_materialization, _reason}, _from, state) do
+    if is_nil(state.runtime_auth.managed_binding) do
+      {:reply,
+       {:error,
+        Error.new(
+          :config_invalid,
+          :config,
+          "cannot clean up materialization for an unmanaged ASM session"
+        )}, state}
+    else
+      {:reply, :ok, terminate_materialization(state, :cleaned)}
+    end
   end
 
   @impl true
@@ -237,10 +275,38 @@ defmodule ASM.Session.Server do
     end
   end
 
+  def handle_info(:managed_materialization_expiry, state) do
+    state = %{state | materialization_timer_ref: nil}
+
+    case state.runtime_auth.managed_binding do
+      nil ->
+        {:noreply, state}
+
+      binding ->
+        case ManagedBinding.active(binding) do
+          :ok -> {:noreply, schedule_materialization_expiry(state)}
+          {:error, %Error{}} -> {:noreply, terminate_materialization(state, :expired)}
+        end
+    end
+  end
+
+  @impl true
+  def terminate(_reason, state) do
+    cancel_materialization_timer(state.materialization_timer_ref)
+    :ok
+  end
+
   defp maybe_start_or_queue_run(state, run_id, prompt, run_opts) do
     max_active = state.provider_profile.max_concurrent_runs
 
     cond do
+      state.status != :ready ->
+        {:error, materialization_closed_error(state)}
+
+      not managed_materialization_active?(state) ->
+        send(self(), :managed_materialization_expiry)
+        {:error, materialization_closed_error(state)}
+
       map_size(state.active_runs) < max_active ->
         start_run(state, run_id, prompt, run_opts)
 
@@ -290,13 +356,38 @@ defmodule ASM.Session.Server do
   end
 
   defp start_run_child(state, run_sup, run_id, prompt, run_opts) do
-    run_module = Keyword.get(run_opts, :run_module, ASM.Run.Server)
-    run_module_opts = Keyword.get(run_opts, :run_module_opts, [])
-    passthrough_opts = Keyword.drop(run_opts, [:run_module, :run_module_opts])
+    with {:ok, run_opts} <-
+           RuntimeAuth.prepare_run_options(state.runtime_auth, state.options, run_opts) do
+      run_module = Keyword.get(run_opts, :run_module, ASM.Run.Server)
+      run_module_opts = Keyword.get(run_opts, :run_module_opts, [])
+      passthrough_opts = Keyword.drop(run_opts, [:run_module, :run_module_opts])
 
-    {runtime_auth_opts, passthrough_opts} =
-      Keyword.split(passthrough_opts, RuntimeAuth.option_keys())
+      {runtime_auth_opts, passthrough_opts} =
+        Keyword.split(passthrough_opts, RuntimeAuth.option_keys())
 
+      do_start_run_child(
+        state,
+        run_sup,
+        run_id,
+        prompt,
+        runtime_auth_opts,
+        passthrough_opts,
+        run_module,
+        run_module_opts
+      )
+    end
+  end
+
+  defp do_start_run_child(
+         state,
+         run_sup,
+         run_id,
+         prompt,
+         runtime_auth_opts,
+         passthrough_opts,
+         run_module,
+         run_module_opts
+       ) do
     with {:ok, runtime_auth} <- RuntimeAuth.for_run(state.runtime_auth, run_id, runtime_auth_opts) do
       passthrough_opts =
         put_runtime_auth_metadata(passthrough_opts, RuntimeAuth.to_metadata(runtime_auth))
@@ -325,6 +416,9 @@ defmodule ASM.Session.Server do
     |> Keyword.delete(:metadata)
     |> Keyword.put(:metadata, Metadata.merge_run_metadata(metadata, existing_metadata))
   end
+
+  defp maybe_start_next_queued_run(%State{status: status} = state) when status != :ready,
+    do: state
 
   defp maybe_start_next_queued_run(state) do
     case :queue.out(state.run_queue) do
@@ -366,6 +460,84 @@ defmodule ASM.Session.Server do
           pending_approval_index: pending_approval_index
       }
     end
+  end
+
+  defp schedule_materialization_expiry(
+         %State{status: :ready, runtime_auth: %{managed_binding: %ManagedBinding{} = binding}} =
+           state
+       ) do
+    cancel_materialization_timer(state.materialization_timer_ref)
+
+    timeout = min(ManagedBinding.remaining_ms(binding), 4_294_967_295)
+    timer_ref = Process.send_after(self(), :managed_materialization_expiry, timeout)
+    %{state | materialization_timer_ref: timer_ref}
+  end
+
+  defp schedule_materialization_expiry(%State{} = state), do: state
+
+  defp terminate_materialization(%State{} = state, materialization_status)
+       when materialization_status in [:expired, :revoked, :cleaned] do
+    cancel_materialization_timer(state.materialization_timer_ref)
+    terminate_active_runs(state)
+
+    Enum.each(state.run_monitors, fn {_run_pid, monitor_ref} ->
+      Process.demonitor(monitor_ref, [:flush])
+    end)
+
+    %{
+      state
+      | status: :stopped,
+        materialization_status: materialization_status,
+        materialization_timer_ref: nil,
+        active_runs: %{},
+        run_monitors: %{},
+        run_queue: :queue.new(),
+        pending_approval_index: %{},
+        options:
+          Keyword.drop(state.options, [
+            :codex_materialized_runtime,
+            :secret_material,
+            :materialization_request
+          ])
+    }
+  end
+
+  defp terminate_active_runs(%State{} = state) do
+    Enum.each(state.active_runs, fn {_run_id, run_pid} ->
+      GenServer.cast(run_pid, :interrupt)
+    end)
+
+    case lookup_run_supervisor(state.session_id) do
+      {:ok, run_supervisor} ->
+        Enum.each(state.active_runs, fn {_run_id, run_pid} ->
+          _ = DynamicSupervisor.terminate_child(run_supervisor, run_pid)
+        end)
+
+      {:error, %Error{}} ->
+        :ok
+    end
+  end
+
+  defp managed_materialization_active?(%State{runtime_auth: %{managed_binding: nil}}), do: true
+
+  defp managed_materialization_active?(%State{runtime_auth: %{managed_binding: binding}}),
+    do: ManagedBinding.active(binding) == :ok
+
+  defp materialization_closed_error(%State{} = state) do
+    Error.new(
+      :config_invalid,
+      :config,
+      "managed session materialization is no longer active",
+      provider: state.provider.name,
+      cause: %{materialization_status: state.materialization_status}
+    )
+  end
+
+  defp cancel_materialization_timer(nil), do: :ok
+
+  defp cancel_materialization_timer(timer_ref) when is_reference(timer_ref) do
+    _ = Process.cancel_timer(timer_ref, async: false, info: false)
+    :ok
   end
 
   defp pop_run_by_pid(active_runs, run_pid) do

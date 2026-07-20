@@ -20,6 +20,7 @@ defmodule ASM.ProviderBackend.Core do
   @impl true
   def start_run(%{provider: %Provider{} = provider} = config) do
     with {:ok, execution_config} <- fetch_execution_config(config),
+         :ok <- reject_managed_manual_rpc(execution_config, config),
          :ok <- validate_approval_posture(execution_config),
          {:ok, session_opts} <- build_session_opts(provider, config, execution_config),
          {:ok, proxy, info} <-
@@ -108,10 +109,8 @@ defmodule ASM.ProviderBackend.Core do
              provider.name,
              effective_provider_opts(config, execution_config)
            ),
-         :ok <-
-           RuntimeAuth.authorize_governed_provider_runtime(provider.name, config, provider_opts),
          {:ok, materialization} <-
-           authorize_codex_materialization(provider, config, provider_opts) do
+           authorize_provider_runtime(provider, config, provider_opts) do
       provider_opts =
         provider_opts
         |> Keyword.put(:prompt, Map.fetch!(config, :prompt))
@@ -167,11 +166,49 @@ defmodule ASM.ProviderBackend.Core do
     |> Keyword.put(:clear_env?, materialization.clear_env?)
   end
 
-  defp authorize_codex_materialization(%Provider{name: :codex}, config, provider_opts) do
+  defp authorize_provider_runtime(%Provider{name: :codex}, config, provider_opts) do
     CodexMaterialization.authorize_config(config, provider_opts)
   end
 
-  defp authorize_codex_materialization(%Provider{}, _config, _provider_opts), do: {:ok, nil}
+  defp authorize_provider_runtime(%Provider{name: provider}, config, provider_opts) do
+    with :ok <- RuntimeAuth.authorize_governed_provider_runtime(provider, config, provider_opts) do
+      {:ok, nil}
+    end
+  end
+
+  defp reject_managed_manual_rpc(
+         %Execution.Config{execution_mode: :remote_node},
+         config
+       ) do
+    if managed_session?(config) do
+      {:error,
+       Error.new(
+         :config_invalid,
+         :config,
+         "managed sessions cannot downgrade RuntimeGateway admission to manual remote RPC"
+       )}
+    else
+      :ok
+    end
+  end
+
+  defp reject_managed_manual_rpc(%Execution.Config{}, _config), do: :ok
+
+  defp managed_session?(config) do
+    metadata = Map.get(config, :metadata, %{})
+    runtime_auth = map_value(metadata, :runtime_auth, %{})
+
+    map_value(metadata, :managed_session, false) == true or
+      not is_nil(map_value(metadata, :managed_binding)) or
+      not is_nil(map_value(runtime_auth, :managed_binding))
+  end
+
+  defp map_value(map, key, default \\ nil)
+
+  defp map_value(map, key, default) when is_map(map),
+    do: Map.get(map, key, Map.get(map, Atom.to_string(key), default))
+
+  defp map_value(_map, _key, default), do: default
 
   defp validate_approval_posture(execution_config) when is_map(execution_config) do
     if Execution.Config.to_execution_environment(execution_config).approval_posture == :none do

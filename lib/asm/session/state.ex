@@ -12,7 +12,9 @@ defmodule ASM.Session.State do
     :provider_profile,
     :options,
     :runtime_auth,
+    :materialization_timer_ref,
     status: :ready,
+    materialization_status: :unmanaged,
     active_runs: %{},
     run_monitors: %{},
     run_queue: :queue.new(),
@@ -27,7 +29,9 @@ defmodule ASM.Session.State do
           provider_profile: Provider.Profile.t(),
           options: keyword(),
           runtime_auth: RuntimeAuth.t(),
+          materialization_timer_ref: reference() | nil,
           status: :ready | :stopped,
+          materialization_status: :unmanaged | :active | :expired | :revoked | :cleaned,
           active_runs: %{optional(String.t()) => pid()},
           run_monitors: %{optional(pid()) => reference()},
           # :queue is opaque to Dialyzer; keep this field generic at the type level.
@@ -55,7 +59,9 @@ defmodule ASM.Session.State do
       provider: provider,
       provider_profile: profile_from_options(provider.profile, options),
       options: options,
-      runtime_auth: runtime_auth
+      runtime_auth: runtime_auth,
+      materialization_status:
+        if(is_nil(runtime_auth.managed_binding), do: :unmanaged, else: :active)
     }
   end
 

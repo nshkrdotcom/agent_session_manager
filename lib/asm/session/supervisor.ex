@@ -5,9 +5,9 @@ defmodule ASM.Session.Supervisor do
 
   use DynamicSupervisor
 
+  alias ASM.{Error, RuntimeAuth}
   alias ASM.Execution.Config
   alias ASM.Provider
-  alias ASM.RuntimeAuth
 
   @registry :asm_sessions
 
@@ -33,7 +33,9 @@ defmodule ASM.Session.Supervisor do
          {:ok, session_options} <-
            normalize_session_options(provider_config.name, session_options),
          {:ok, runtime_auth} <-
-           RuntimeAuth.new(session_id, provider_config.name, session_options) do
+           RuntimeAuth.new(session_id, provider_config.name, session_options),
+         {:ok, session_options} <-
+           RuntimeAuth.prepare_session_options(runtime_auth, session_options) do
       subtree_opts =
         opts
         |> Keyword.put(:session_id, session_id)
@@ -60,6 +62,25 @@ defmodule ASM.Session.Supervisor do
     case Registry.lookup(@registry, {session_id, :subtree}) do
       [{pid, _}] -> stop_session(supervisor, pid)
       [] -> {:error, :not_found}
+    end
+  end
+
+  @doc "Revokes a managed session by opaque session id after exact lease-scope validation."
+  @spec revoke_managed_session(String.t(), map() | keyword()) ::
+          :ok | {:error, Error.t() | :not_found}
+  def revoke_managed_session(session_id, revocation) when is_binary(session_id) do
+    with {:ok, server} <- lookup_session_server(session_id) do
+      ASM.Session.Server.revoke_materialization(server, revocation)
+    end
+  end
+
+  @doc "Closes a managed session's materialization when its owning scope is cleaned up."
+  @spec cleanup_managed_session(String.t(), atom()) ::
+          :ok | {:error, Error.t() | :not_found}
+  def cleanup_managed_session(session_id, reason \\ :scope_closed)
+      when is_binary(session_id) and is_atom(reason) do
+    with {:ok, server} <- lookup_session_server(session_id) do
+      ASM.Session.Server.cleanup_materialization(server, reason)
     end
   end
 
@@ -100,4 +121,11 @@ defmodule ASM.Session.Supervisor do
 
   defp maybe_put(opts, _key, nil), do: opts
   defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
+
+  defp lookup_session_server(session_id) do
+    case Registry.lookup(@registry, {session_id, :server}) do
+      [{pid, _}] -> {:ok, pid}
+      [] -> {:error, :not_found}
+    end
+  end
 end

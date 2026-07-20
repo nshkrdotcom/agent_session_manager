@@ -8,6 +8,7 @@ defmodule ASM.RuntimeAuth.CodexMaterialization do
   """
 
   alias ASM.{Error, RuntimeAuth}
+  alias ASM.RuntimeAuth.ManagedBinding
   alias CliSubprocessCore.ExecutionSurface
 
   @default_openai_base_url "https://api.openai.com/v1"
@@ -95,10 +96,27 @@ defmodule ASM.RuntimeAuth.CodexMaterialization do
     :provider_account_ref,
     :native_auth_assertion
   ]
-  # api_key, env, and native_auth_assertion carry live credentials — keep
-  # them out of inspect output (crash reports, Logger metadata, :observer).
-  @derive {Inspect, except: [:api_key, :env, :native_auth_assertion]}
+  # Keep commands, filesystem roots, provider routing, env, and live auth out
+  # of crash reports, Logger metadata, :observer, and exception inspection.
+  @derive {Inspect,
+           only: [
+             :materialization_ref,
+             :credential_generation,
+             :credential_lease_ref,
+             :native_auth_assertion_ref,
+             :connector_binding_ref,
+             :provider_account_ref,
+             :authority_ref,
+             :target_ref,
+             :workspace_ref,
+             :expires_at,
+             :clear_env?,
+             :source,
+             :target_auth_posture
+           ]}
   defstruct [
+    :materialization_ref,
+    :credential_generation,
     :command,
     :cwd,
     :env,
@@ -107,6 +125,10 @@ defmodule ASM.RuntimeAuth.CodexMaterialization do
     :native_auth_assertion_ref,
     :connector_binding_ref,
     :provider_account_ref,
+    :authority_ref,
+    :target_ref,
+    :workspace_ref,
+    :expires_at,
     :native_auth_assertion,
     api_key: nil,
     base_url: nil,
@@ -116,6 +138,8 @@ defmodule ASM.RuntimeAuth.CodexMaterialization do
   ]
 
   @type t :: %__MODULE__{
+          materialization_ref: String.t() | nil,
+          credential_generation: pos_integer() | nil,
           command: String.t(),
           cwd: String.t(),
           env: %{optional(String.t()) => String.t()},
@@ -124,6 +148,10 @@ defmodule ASM.RuntimeAuth.CodexMaterialization do
           native_auth_assertion_ref: String.t(),
           connector_binding_ref: String.t(),
           provider_account_ref: String.t(),
+          authority_ref: String.t() | nil,
+          target_ref: String.t() | nil,
+          workspace_ref: String.t() | nil,
+          expires_at: DateTime.t() | nil,
           native_auth_assertion: map(),
           api_key: String.t() | nil,
           base_url: String.t() | nil,
@@ -174,6 +202,12 @@ defmodule ASM.RuntimeAuth.CodexMaterialization do
          {:ok, account_ref} <- materialized_ref(attrs, runtime_auth, :provider_account_ref),
          {:ok, assertion} <- native_auth_assertion(attrs, assertion_ref) do
       %__MODULE__{
+        materialization_ref:
+          string_attr(attrs, :materialization_ref) ||
+            managed_binding_value(runtime_auth, :materialization_ref),
+        credential_generation:
+          attr(attrs, :credential_generation) ||
+            managed_binding_value(runtime_auth, :credential_generation),
         command: string_attr(attrs, :command) || string_attr(attrs, :codex_path),
         cwd: string_attr(attrs, :cwd),
         env: env,
@@ -182,6 +216,10 @@ defmodule ASM.RuntimeAuth.CodexMaterialization do
         native_auth_assertion_ref: assertion_ref,
         connector_binding_ref: binding_ref,
         provider_account_ref: account_ref,
+        authority_ref: managed_binding_value(runtime_auth, :authority_ref),
+        target_ref: managed_binding_value(runtime_auth, :target_ref),
+        workspace_ref: managed_binding_value(runtime_auth, :workspace_ref),
+        expires_at: managed_binding_value(runtime_auth, :expires_at),
         native_auth_assertion: assertion,
         api_key: string_attr(attrs, :api_key),
         base_url: string_attr(attrs, :base_url),
@@ -206,6 +244,8 @@ defmodule ASM.RuntimeAuth.CodexMaterialization do
 
   def redacted_evidence(%__MODULE__{} = materialization) do
     %{
+      materialization_ref: materialization.materialization_ref,
+      credential_generation: materialization.credential_generation,
       source: materialization.source,
       target_auth_posture: materialization.target_auth_posture,
       clear_env?: materialization.clear_env?,
@@ -219,7 +259,11 @@ defmodule ASM.RuntimeAuth.CodexMaterialization do
         Map.get(materialization.native_auth_assertion, :introspection_level),
       native_auth_limits: Map.get(materialization.native_auth_assertion, :limits),
       connector_binding_ref: materialization.connector_binding_ref,
-      provider_account_ref: materialization.provider_account_ref
+      provider_account_ref: materialization.provider_account_ref,
+      authority_ref: materialization.authority_ref,
+      target_ref: materialization.target_ref,
+      workspace_ref: materialization.workspace_ref,
+      expires_at: materialization.expires_at
     }
   end
 
@@ -288,7 +332,7 @@ defmodule ASM.RuntimeAuth.CodexMaterialization do
     end) ||
       {:error,
        config_error(
-         "governed Codex strict mode requires a materialized runtime from the verified provider-auth materializer"
+         "governed Codex strict mode requires verified provider-auth materialization; it requires a materialized runtime from that boundary"
        )}
   end
 
@@ -310,18 +354,25 @@ defmodule ASM.RuntimeAuth.CodexMaterialization do
            cause: ref_match_cause(materialization, runtime_auth)
          )}
 
+      not managed_materialization_matches?(materialization, runtime_auth) ->
+        {:error,
+         config_error(
+           "codex materialized runtime does not match the managed session generation, authority, expiry, or workspace",
+           cause: %{materialization_ref: materialization.materialization_ref}
+         )}
+
       true ->
         {:ok, materialization}
     end
   end
 
-  defp reject_unmanaged_process_env(%__MODULE__{} = materialization) do
+  defp reject_unmanaged_process_env(%__MODULE__{}) do
     unmanaged =
       Enum.filter(@ambient_env_keys, fn key ->
         case ASM.Env.get(key) do
           nil -> false
           "" -> false
-          value -> Map.get(materialization.env, key) != value
+          _value -> true
         end
       end)
 
@@ -632,6 +683,66 @@ defmodule ASM.RuntimeAuth.CodexMaterialization do
       }
     }
   end
+
+  defp managed_materialization_matches?(%__MODULE__{} = materialization, runtime_auth) do
+    case managed_binding_from(runtime_auth) do
+      nil ->
+        true
+
+      binding ->
+        expires_at = binding_field(binding, :expires_at)
+
+        materialization.materialization_ref ==
+          binding_field(binding, :materialization_ref) and
+          materialization.credential_generation ==
+            binding_field(binding, :credential_generation) and
+          materialization.credential_lease_ref == binding_field(binding, :lease_ref) and
+          materialization.provider_account_ref ==
+            binding_field(binding, :provider_account_ref) and
+          materialization.authority_ref == binding_field(binding, :authority_ref) and
+          materialization.target_ref == binding_field(binding, :target_ref) and
+          materialization.workspace_ref == binding_field(binding, :workspace_ref) and
+          materialization.expires_at == expires_at and is_struct(expires_at, DateTime) and
+          DateTime.compare(expires_at, DateTime.utc_now()) == :gt and
+          workspace_matches?(materialization.cwd, binding_field(binding, :workspace_digest))
+    end
+  end
+
+  defp managed_binding_from(%RuntimeAuth{managed_binding: %ManagedBinding{} = binding}),
+    do: binding
+
+  defp managed_binding_from(%RuntimeAuth{managed_binding: nil}), do: nil
+
+  defp managed_binding_from(metadata) when is_map(metadata) do
+    attr(metadata, :managed_binding) ||
+      metadata
+      |> attr(:runtime_auth, %{})
+      |> attr(:managed_binding)
+  end
+
+  defp managed_binding_from(_runtime_auth), do: nil
+
+  defp managed_binding_value(runtime_auth, key) do
+    runtime_auth
+    |> managed_binding_from()
+    |> binding_field(key)
+  end
+
+  defp binding_field(nil, _key), do: nil
+  defp binding_field(%ManagedBinding{} = binding, key), do: Map.get(binding, key)
+  defp binding_field(binding, key) when is_map(binding), do: attr(binding, key)
+
+  defp workspace_matches?(cwd, digest) when is_binary(cwd) and is_binary(digest) do
+    cwd_digest =
+      cwd
+      |> Path.expand()
+      |> then(&:crypto.hash(:sha256, &1))
+      |> Base.encode16(case: :lower)
+
+    cwd_digest == digest
+  end
+
+  defp workspace_matches?(_cwd, _digest), do: false
 
   defp binding_value(%RuntimeAuth{} = runtime_auth, :connector_binding_ref),
     do: runtime_auth.connector_binding.ref

@@ -28,7 +28,7 @@ defmodule ASM do
       ProviderRegistry,
       Result,
       RuntimeAuth,
-      {RuntimeAuth, []},
+      RuntimeAuth.CodexMaterialization,
       SessionControl,
       Store,
       {Store, []},

@@ -686,26 +686,35 @@ defmodule ASM.RuntimeAuth.CodexMaterialization do
 
   defp managed_materialization_matches?(%__MODULE__{} = materialization, runtime_auth) do
     case managed_binding_from(runtime_auth) do
-      nil ->
-        true
-
-      binding ->
-        expires_at = binding_field(binding, :expires_at)
-
-        materialization.materialization_ref ==
-          binding_field(binding, :materialization_ref) and
-          materialization.credential_generation ==
-            binding_field(binding, :credential_generation) and
-          materialization.credential_lease_ref == binding_field(binding, :lease_ref) and
-          materialization.provider_account_ref ==
-            binding_field(binding, :provider_account_ref) and
-          materialization.authority_ref == binding_field(binding, :authority_ref) and
-          materialization.target_ref == binding_field(binding, :target_ref) and
-          materialization.workspace_ref == binding_field(binding, :workspace_ref) and
-          materialization.expires_at == expires_at and is_struct(expires_at, DateTime) and
-          DateTime.compare(expires_at, DateTime.utc_now()) == :gt and
-          workspace_matches?(materialization.cwd, binding_field(binding, :workspace_digest))
+      nil -> true
+      binding -> managed_binding_matches?(materialization, binding)
     end
+  end
+
+  defp managed_binding_matches?(%__MODULE__{} = materialization, binding) do
+    expires_at = binding_field(binding, :expires_at)
+
+    managed_refs_match?(materialization, binding) and
+      managed_expiry_current?(materialization, expires_at) and
+      workspace_matches?(materialization.cwd, binding_field(binding, :workspace_digest))
+  end
+
+  defp managed_refs_match?(%__MODULE__{} = materialization, binding) do
+    materialization.materialization_ref ==
+      binding_field(binding, :materialization_ref) and
+      materialization.credential_generation ==
+        binding_field(binding, :credential_generation) and
+      materialization.credential_lease_ref == binding_field(binding, :lease_ref) and
+      materialization.provider_account_ref ==
+        binding_field(binding, :provider_account_ref) and
+      materialization.authority_ref == binding_field(binding, :authority_ref) and
+      materialization.target_ref == binding_field(binding, :target_ref) and
+      materialization.workspace_ref == binding_field(binding, :workspace_ref)
+  end
+
+  defp managed_expiry_current?(%__MODULE__{} = materialization, expires_at) do
+    materialization.expires_at == expires_at and is_struct(expires_at, DateTime) and
+      DateTime.compare(expires_at, DateTime.utc_now()) == :gt
   end
 
   defp managed_binding_from(%RuntimeAuth{managed_binding: %ManagedBinding{} = binding}),

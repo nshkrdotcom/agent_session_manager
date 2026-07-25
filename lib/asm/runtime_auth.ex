@@ -10,6 +10,7 @@ defmodule ASM.RuntimeAuth do
   alias ASM.Error
 
   alias __MODULE__.{
+    CodexMaterialization,
     ConnectorBinding,
     ConnectorInstance,
     ExecutionContext,
@@ -1469,16 +1470,8 @@ defmodule ASM.RuntimeAuth do
       normalized = key |> to_string() |> String.downcase()
       next_path = path ++ [normalized]
 
-      current =
-        if Enum.any?(@provider_account_evidence_forbidden_keys, fn forbidden ->
-             Atom.to_string(forbidden) == normalized
-           end) or String.starts_with?(normalized, "raw_") do
-          [if(path == [], do: key, else: Enum.join(next_path, "."))]
-        else
-          []
-        end
-
-      current ++ provider_account_evidence_forbidden_hits(value, next_path)
+      forbidden_evidence_hit(key, normalized, path, next_path) ++
+        provider_account_evidence_forbidden_hits(value, next_path)
     end)
   end
 
@@ -1486,6 +1479,20 @@ defmodule ASM.RuntimeAuth do
     do: Enum.flat_map(values, &provider_account_evidence_forbidden_hits(&1, path))
 
   defp provider_account_evidence_forbidden_hits(_value, _path), do: []
+
+  defp forbidden_evidence_hit(key, normalized, path, next_path) do
+    if forbidden_evidence_key?(normalized) do
+      [if(path == [], do: key, else: Enum.join(next_path, "."))]
+    else
+      []
+    end
+  end
+
+  defp forbidden_evidence_key?(normalized) do
+    Enum.any?(@provider_account_evidence_forbidden_keys, fn forbidden ->
+      Atom.to_string(forbidden) == normalized
+    end) or String.starts_with?(normalized, "raw_")
+  end
 
   defp managed_binding(provider, runtime_auth, opts) do
     case Keyword.get(opts, :managed_binding) do
@@ -1591,7 +1598,7 @@ defmodule ASM.RuntimeAuth do
       with {:ok, payload} <-
              ManagedBinding.material_payload(Keyword.put(opts, :provider, :codex)),
            {:ok, materialization} <-
-             ASM.RuntimeAuth.CodexMaterialization.new(payload, runtime_auth) do
+             CodexMaterialization.new(payload, runtime_auth) do
         {:ok, Keyword.put(opts, :codex_materialized_runtime, materialization)}
       end
     else

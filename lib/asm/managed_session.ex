@@ -8,6 +8,12 @@ defmodule ASM.ManagedSession do
 
   @statuses ~w(allocated starting active draining completed failed cancelled ambiguous)
   @terminal_statuses ~w(completed failed cancelled ambiguous)
+  # Attribute key NAMES that may never appear in a governed session's attrs. This
+  # is a denylist of names; no value for any of them is ever accepted or stored.
+  @forbidden_attr_keys ~w(
+    api_key auth_root authorization client_secret config_root credential env home
+    material password pid private_key raw_credential refresh_token secret token
+  )
   @fields [
     :contract_version,
     :session_ref,
@@ -117,15 +123,10 @@ defmodule ASM.ManagedSession do
   end
 
   defp safe_attrs?(attrs) do
-    forbidden = MapSet.new(~w(
-      api_key auth_root authorization client_secret config_root credential env home
-      material password pid private_key raw_credential refresh_token secret token
-    ))
-
     Enum.all?(attrs, fn {key, nested} ->
       normalized = key |> to_string() |> String.downcase()
 
-      not MapSet.member?(forbidden, normalized) and not String.starts_with?(normalized, "raw_") and
+      normalized not in @forbidden_attr_keys and not String.starts_with?(normalized, "raw_") and
         not is_pid(nested) and not is_port(nested) and not is_reference(nested)
     end)
   end
@@ -174,16 +175,9 @@ defmodule ASM.ManagedSession.Lifecycle do
     with true <- known_fields?(attrs),
          true <- value(attrs, :expected_row_version) == session.row_version,
          true <- next_status in Map.fetch!(@transitions, session.status) do
-      updates =
-        Enum.reduce(@update_fields, Map.from_struct(session), fn field, acc ->
-          case fetch(attrs, field) do
-            {:ok, nested} -> Map.put(acc, field, nested)
-            :error -> acc
-          end
-        end)
-
       result =
-        updates
+        session
+        |> apply_updates(attrs)
         |> Map.put(:status, next_status)
         |> Map.put(:row_version, session.row_version + 1)
         |> ManagedSession.new()
@@ -199,6 +193,15 @@ defmodule ASM.ManagedSession.Lifecycle do
 
   def transition(%ManagedSession{}, _next_status, _attrs),
     do: {:error, :invalid_managed_session_transition}
+
+  defp apply_updates(%ManagedSession{} = session, attrs) do
+    Enum.reduce(@update_fields, Map.from_struct(session), fn field, acc ->
+      case fetch(attrs, field) do
+        {:ok, nested} -> Map.put(acc, field, nested)
+        :error -> acc
+      end
+    end)
+  end
 
   defp known_fields?(attrs) do
     fields = [:expected_row_version | @update_fields]

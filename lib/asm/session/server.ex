@@ -8,10 +8,10 @@ defmodule ASM.Session.Server do
   alias ASM.{Control, Error, Metadata, RuntimeAuth}
   alias ASM.Provider
   alias ASM.Run.ApprovalCoordinator
+  alias ASM.RuntimeAuth.ManagedBinding
   alias ASM.Session.Continuation
   alias ASM.Session.State
   alias ASM.SessionControl
-  alias ASM.RuntimeAuth.ManagedBinding
   alias CliSubprocessCore.Payload
 
   @spec start_link(keyword()) :: GenServer.on_start()

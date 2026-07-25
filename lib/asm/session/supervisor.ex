@@ -8,6 +8,7 @@ defmodule ASM.Session.Supervisor do
   alias ASM.{Error, RuntimeAuth}
   alias ASM.Execution.Config
   alias ASM.Provider
+  alias ASM.Session.Server
 
   @registry :asm_sessions
 
@@ -70,7 +71,7 @@ defmodule ASM.Session.Supervisor do
           :ok | {:error, Error.t() | :not_found}
   def revoke_managed_session(session_id, revocation) when is_binary(session_id) do
     with {:ok, server} <- lookup_session_server(session_id) do
-      ASM.Session.Server.revoke_materialization(server, revocation)
+      Server.revoke_materialization(server, revocation)
     end
   end
 
@@ -80,7 +81,7 @@ defmodule ASM.Session.Supervisor do
   def cleanup_managed_session(session_id, reason \\ :scope_closed)
       when is_binary(session_id) and is_atom(reason) do
     with {:ok, server} <- lookup_session_server(session_id) do
-      ASM.Session.Server.cleanup_materialization(server, reason)
+      Server.cleanup_materialization(server, reason)
     end
   end
 

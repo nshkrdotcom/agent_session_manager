@@ -49,10 +49,15 @@ defmodule ASM.RuntimeAuth.ManagedBinding do
     cancel: 2,
     terminate: 2
   ]
+  # Caller-supplied option keys that must never override a managed binding. This
+  # is a denylist of key NAMES; no value for any of them is ever stored on this
+  # struct, so there is nothing here for `Inspect` to redact.
   @managed_override_keys [
     :access_token,
+    # secret-safe: denied key name, never a stored value
     :api_key,
     :auth_root,
+    # secret-safe: denied key name, never a stored value
     :auth_token,
     :authorization,
     :authorization_header,
@@ -63,6 +68,7 @@ defmodule ASM.RuntimeAuth.ManagedBinding do
     :config_root,
     :config_values,
     :codex_home,
+    # secret-safe: denied key name, never a stored value
     :credential,
     :cwd,
     :env,
@@ -70,13 +76,16 @@ defmodule ASM.RuntimeAuth.ManagedBinding do
     :headers,
     :home,
     :oauth_token,
+    # secret-safe: denied key name, never a stored value
     :password,
     :private_key,
     :process_env,
     :provider_backend,
     :raw_credential,
     :refresh_token,
+    # secret-safe: denied key name, never a stored value
     :secret,
+    # secret-safe: denied key name, never a stored value
     :token,
     :token_file,
     :working_directory
@@ -219,9 +228,8 @@ defmodule ASM.RuntimeAuth.ManagedBinding do
     with :ok <- active(binding),
          :ok <- validate_runtime_auth_binding(binding, runtime_auth),
          :ok <- reject_managed_overrides(opts, runtime_auth.execution_context.provider),
-         :ok <- reject_identity_rebinding(binding, opts, runtime_auth.execution_context.provider),
-         :ok <- validate_optional_bundle(binding, runtime_auth, opts) do
-      :ok
+         :ok <- reject_identity_rebinding(binding, opts, runtime_auth.execution_context.provider) do
+      validate_optional_bundle(binding, runtime_auth, opts)
     end
   end
 
@@ -254,15 +262,7 @@ defmodule ASM.RuntimeAuth.ManagedBinding do
       {:workspace_ref, binding.workspace_ref, value(attrs, :workspace_ref)}
     ]
 
-    optional_checks = [
-      {:provider_account_ref, binding.provider_account_ref,
-       value(lease_scope, :provider_account_ref) || value(attrs, :provider_account_ref)},
-      {:credential_generation, binding.credential_generation,
-       value(lease_scope, :credential_generation) || value(lease_scope, :generation) ||
-         value(attrs, :credential_generation)},
-      {:authority_ref, binding.authority_ref,
-       value(lease_scope, :authority_ref) || value(attrs, :authority_ref)}
-    ]
+    optional_checks = optional_revocation_checks(binding, attrs, lease_scope)
 
     cond do
       not is_map(attrs) ->
@@ -323,6 +323,18 @@ defmodule ASM.RuntimeAuth.ManagedBinding do
     end
   end
 
+  defp optional_revocation_checks(%__MODULE__{} = binding, attrs, lease_scope) do
+    [
+      {:provider_account_ref, binding.provider_account_ref,
+       value(lease_scope, :provider_account_ref) || value(attrs, :provider_account_ref)},
+      {:credential_generation, binding.credential_generation,
+       value(lease_scope, :credential_generation) || value(lease_scope, :generation) ||
+         value(attrs, :credential_generation)},
+      {:authority_ref, binding.authority_ref,
+       value(lease_scope, :authority_ref) || value(attrs, :authority_ref)}
+    ]
+  end
+
   @spec to_metadata(t()) :: map()
   def to_metadata(%__MODULE__{} = binding) do
     binding
@@ -356,24 +368,7 @@ defmodule ASM.RuntimeAuth.ManagedBinding do
 
     if Enum.any?(fields, &Keyword.has_key?(opts, &1)) do
       if Enum.all?(fields, &Keyword.has_key?(opts, &1)) do
-        provider = runtime_auth.execution_context.provider
-
-        with {:ok, candidate} <- new(provider, %{runtime_auth | managed_binding: nil}, opts),
-             true <- same_binding?(binding, candidate) do
-          :ok
-        else
-          false ->
-            {:error,
-             managed_error(
-               :materialization_mismatch,
-               "managed session cannot replace its pinned materialization",
-               %{session_ref: binding.session_ref},
-               provider
-             )}
-
-          {:error, %Error{} = error} ->
-            {:error, error}
-        end
+        validate_pinned_materialization(binding, runtime_auth, opts)
       else
         {:error,
          managed_error(
@@ -385,6 +380,27 @@ defmodule ASM.RuntimeAuth.ManagedBinding do
       end
     else
       :ok
+    end
+  end
+
+  defp validate_pinned_materialization(binding, runtime_auth, opts) do
+    provider = runtime_auth.execution_context.provider
+
+    with {:ok, candidate} <- new(provider, %{runtime_auth | managed_binding: nil}, opts),
+         true <- same_binding?(binding, candidate) do
+      :ok
+    else
+      false ->
+        {:error,
+         managed_error(
+           :materialization_mismatch,
+           "managed session cannot replace its pinned materialization",
+           %{session_ref: binding.session_ref},
+           provider
+         )}
+
+      {:error, %Error{} = error} ->
+        {:error, error}
     end
   end
 
@@ -658,10 +674,7 @@ defmodule ASM.RuntimeAuth.ManagedBinding do
         {:ok, nil}
 
       module when is_atom(module) ->
-        if Code.ensure_loaded?(module) and
-             Enum.all?(@gateway_callbacks, fn {name, arity} ->
-               function_exported?(module, name, arity)
-             end) do
+        if runtime_gateway?(module) do
           {:ok, module}
         else
           {:error,
@@ -682,6 +695,13 @@ defmodule ASM.RuntimeAuth.ManagedBinding do
            provider
          )}
     end
+  end
+
+  defp runtime_gateway?(module) do
+    Code.ensure_loaded?(module) and
+      Enum.all?(@gateway_callbacks, fn {name, arity} ->
+        function_exported?(module, name, arity)
+      end)
   end
 
   defp validate_runtime_gateway_ref(opts, session, provider) do
@@ -786,12 +806,7 @@ defmodule ASM.RuntimeAuth.ManagedBinding do
       ]
       |> Enum.reject(&is_nil/1)
 
-    if Enum.all?(roots, fn root ->
-         case normalize_absolute_path(root) do
-           {:ok, normalized} -> workspace_digest(normalized) == binding.workspace_digest
-           :error -> false
-         end
-       end) do
+    if Enum.all?(roots, &workspace_digest_matches?(&1, binding.workspace_digest)) do
       :ok
     else
       {:error,
@@ -801,6 +816,13 @@ defmodule ASM.RuntimeAuth.ManagedBinding do
          %{},
          provider
        )}
+    end
+  end
+
+  defp workspace_digest_matches?(root, expected_digest) do
+    case normalize_absolute_path(root) do
+      {:ok, normalized} -> workspace_digest(normalized) == expected_digest
+      :error -> false
     end
   end
 

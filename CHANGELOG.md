@@ -41,6 +41,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Publish preflight now verifies the exact local sibling release on Hex, so an
+  older package version cannot falsely satisfy release readiness. Nested
+  package tasks resolve the helper-owning repository, and manifest self-entries
+  are excluded from prerequisites.
 - `:output_schema` is a normalized common ASM option gated by the
   `:structured_output` capability, rather than a Codex-only provider option. A
   provider without that capability now fails with a typed `%ASM.Error{}` naming

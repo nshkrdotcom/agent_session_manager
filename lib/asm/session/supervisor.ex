@@ -8,6 +8,7 @@ defmodule ASM.Session.Supervisor do
   alias ASM.{Error, RuntimeAuth}
   alias ASM.Execution.Config
   alias ASM.Provider
+  alias ASM.Session.GuardSupervisor
   alias ASM.Session.Server
 
   @registry :asm_sessions
@@ -27,7 +28,7 @@ defmodule ASM.Session.Supervisor do
 
     session_options =
       opts
-      |> Keyword.drop([:session_id, :provider, :name, :options])
+      |> Keyword.drop([:session_id, :provider, :name, :options, :owner])
       |> Keyword.merge(Keyword.get(opts, :options, []))
 
     with {:ok, provider_config} <- Provider.resolve(provider),
@@ -44,9 +45,39 @@ defmodule ASM.Session.Supervisor do
         |> Keyword.put(:options, session_options)
         |> Keyword.put(:runtime_auth, runtime_auth)
 
-      DynamicSupervisor.start_child(supervisor, {ASM.Session.Subtree, subtree_opts})
+      supervisor
+      |> DynamicSupervisor.start_child({ASM.Session.Subtree, subtree_opts})
+      |> maybe_scope_to_owner(supervisor, session_id, Keyword.get(opts, :owner))
     end
   end
+
+  # An owned session is bound to the owner's lifetime: when the owner goes
+  # down for any reason, including an untrappable kill, the guard terminates
+  # the subtree child and with it the provider process group. Failing to start
+  # the guard fails the session, so an owned session is never silently
+  # downgraded to an unowned one.
+  defp maybe_scope_to_owner(result, _supervisor, _session_id, nil), do: result
+
+  defp maybe_scope_to_owner({:ok, subtree_pid} = result, supervisor, session_id, owner)
+       when is_pid(owner) do
+    case GuardSupervisor.guard(supervisor, session_id, owner, subtree_pid) do
+      {:ok, _guard_pid} ->
+        result
+
+      {:error, reason} ->
+        _ = stop_session(supervisor, subtree_pid)
+
+        {:error,
+         Error.new(
+           :runtime,
+           :runtime,
+           "unable to scope session #{session_id} to its owner: #{inspect(reason)}",
+           cause: reason
+         )}
+    end
+  end
+
+  defp maybe_scope_to_owner(result, _supervisor, _session_id, _owner), do: result
 
   @spec stop_session(String.t() | pid()) :: :ok | {:error, :not_found}
   def stop_session(session_or_pid), do: stop_session(__MODULE__, session_or_pid)

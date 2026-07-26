@@ -227,45 +227,59 @@ defmodule ASM.ProviderFeaturesTest do
     assert String.contains?(error.message, "does not support the common Ollama surface")
   end
 
+  # `:skip_git_repo_check` is Codex-only. `:output_schema` used to be the
+  # example here, but it is now a normalized common option gated by the
+  # `:structured_output` partial feature, so it is no longer foreign to Claude.
   test "ASM local provider-option schemas do not absorb foreign provider keys" do
     assert {:error, {:invalid_provider_options, details}} =
-             ProviderOptionsSchema.validate(
-               provider: :claude,
-               permission_mode: :default,
-               provider_permission_mode: nil,
-               cli_path: nil,
-               cwd: nil,
-               env: %{},
-               args: [],
-               ollama: false,
-               ollama_model: nil,
-               ollama_base_url: nil,
-               ollama_http: nil,
-               ollama_timeout_ms: nil,
-               model_payload: nil,
-               queue_limit: 1_000,
-               overflow_policy: :fail_run,
-               subscriber_queue_warn: 100,
-               subscriber_queue_limit: 500,
-               approval_timeout_ms: 120_000,
-               transport_timeout_ms: 60_000,
-               transport_headless_timeout_ms: 5_000,
-               max_stdout_buffer_bytes: 1_048_576,
-               max_stderr_buffer_bytes: 65_536,
-               max_concurrent_runs: 1,
-               max_queued_runs: 10,
-               debug: false,
-               model: "haiku",
-               provider_backend: :anthropic,
-               external_model_overrides: %{},
-               anthropic_base_url: nil,
-               anthropic_auth_token: nil,
-               include_thinking: false,
-               max_turns: 1,
-               output_schema: %{"type" => "object"}
-             )
+             ProviderOptionsSchema.validate(complete_claude_options(skip_git_repo_check: true))
 
-    assert String.contains?(details.message, "output_schema")
+    assert String.contains?(details.message, "skip_git_repo_check")
+  end
+
+  test "a normalized common option is accepted by the provider schema shape" do
+    assert {:ok, _validated} =
+             ProviderOptionsSchema.validate(
+               complete_claude_options(output_schema: %{"type" => "object"})
+             )
+  end
+
+  defp complete_claude_options(extra) when is_list(extra) do
+    [
+      provider: :claude,
+      permission_mode: :default,
+      provider_permission_mode: nil,
+      cli_path: nil,
+      cwd: nil,
+      env: %{},
+      args: [],
+      ollama: false,
+      ollama_model: nil,
+      ollama_base_url: nil,
+      ollama_http: nil,
+      ollama_timeout_ms: nil,
+      model_payload: nil,
+      queue_limit: 1_000,
+      overflow_policy: :fail_run,
+      subscriber_queue_warn: 100,
+      subscriber_queue_limit: 500,
+      approval_timeout_ms: 120_000,
+      transport_timeout_ms: 60_000,
+      transport_headless_timeout_ms: 5_000,
+      max_stdout_buffer_bytes: 1_048_576,
+      max_stderr_buffer_bytes: 65_536,
+      max_concurrent_runs: 1,
+      max_queued_runs: 10,
+      debug: false,
+      model: "haiku",
+      provider_backend: :anthropic,
+      external_model_overrides: %{},
+      anthropic_base_url: nil,
+      anthropic_auth_token: nil,
+      include_thinking: false,
+      completion_only: false,
+      max_turns: 1
+    ] ++ extra
   end
 
   test "provider schemas allow system prompt only where the runtime surface supports it" do

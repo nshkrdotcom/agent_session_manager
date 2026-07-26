@@ -52,12 +52,23 @@ defmodule ASM.Run.Server do
 
   @impl true
   def init({caller, reply_ref, opts}) when is_list(opts) do
+    trap_exits()
     Process.put({__MODULE__, :boot_waiter}, {caller, reply_ref})
     {:ok, Run.State.new(opts), {:continue, :bootstrap}}
   end
 
   def init(opts) when is_list(opts) do
+    trap_exits()
     {:ok, Run.State.new(opts), {:continue, :bootstrap}}
+  end
+
+  # The run process owns the backend handle, and `terminate/2` is what closes
+  # it. Without trapping exits that callback never runs when the run
+  # supervisor shuts the run down — a session stop would leave the provider
+  # process group orphaned.
+  defp trap_exits do
+    _ = Process.flag(:trap_exit, true)
+    :ok
   end
 
   @impl true
@@ -66,7 +77,7 @@ defmodule ASM.Run.Server do
       {:ok, next_state} ->
         _ = ASM.Telemetry.run_started(state.session_id, state.run_id, state.provider)
         notify_bootstrap_waiter(:ok)
-        {:noreply, next_state}
+        {:noreply, arm_run_deadline(next_state)}
 
       {:error, %Error{} = error, next_state} ->
         notify_bootstrap_waiter({:error, error})
@@ -181,6 +192,46 @@ defmodule ASM.Run.Server do
     end
   end
 
+  # The backend is monitored, not linked (`detach_backend_link/1`), and the
+  # parent exit is handled by `:gen_server` itself, so a stray link exit is
+  # not a run-terminating event.
+  def handle_info({:EXIT, _pid, _reason}, state), do: {:noreply, state}
+
+  def handle_info(:run_deadline_reached, state) do
+    state = %{state | deadline_timer_ref: nil}
+
+    if Run.EventReducer.final?(state) do
+      {:noreply, state}
+    else
+      message = run_deadline_message(state)
+      _ = maybe_interrupt_backend(state)
+
+      event =
+        Event.new(
+          :error,
+          Payload.Error.new(
+            message: message,
+            code: "timeout",
+            severity: :fatal,
+            metadata: %{asm_error_domain: :runtime}
+          ),
+          run_id: state.run_id,
+          session_id: state.session_id,
+          provider: state.provider,
+          timestamp: DateTime.utc_now()
+        )
+
+      next_state =
+        state
+        |> process_events([event])
+        |> Map.put(:status, :failed)
+        |> Map.put(:finished_at, DateTime.utc_now())
+        |> Map.put(:error, Error.new(:timeout, :runtime, message))
+
+      finish_run(next_state)
+    end
+  end
+
   def handle_info({:DOWN, ref, :process, _pid, reason}, %{backend_ref: ref} = state) do
     next_state = %{state | backend_pid: nil, backend_ref: nil}
 
@@ -222,8 +273,30 @@ defmodule ASM.Run.Server do
   @impl true
   def terminate(_reason, state) do
     cleanup_approval_timers(state)
+    cancel_run_deadline(state)
     _ = maybe_close_backend(state)
     :ok
+  end
+
+  # The total-run deadline is armed once, at backend start, and never re-armed:
+  # a backend that keeps emitting events re-arms `:stream_timeout_ms` forever,
+  # so only a wall-clock budget over the whole run can end it.
+  defp arm_run_deadline(%Run.State{run_deadline_ms: :infinity} = state), do: state
+
+  defp arm_run_deadline(%Run.State{run_deadline_ms: deadline_ms} = state)
+       when is_integer(deadline_ms) and deadline_ms > 0 do
+    %{state | deadline_timer_ref: Process.send_after(self(), :run_deadline_reached, deadline_ms)}
+  end
+
+  defp cancel_run_deadline(%Run.State{deadline_timer_ref: ref}) when is_reference(ref) do
+    _ = Process.cancel_timer(ref, async: true, info: false)
+    :ok
+  end
+
+  defp cancel_run_deadline(_state), do: :ok
+
+  defp run_deadline_message(%Run.State{run_deadline_ms: deadline_ms, run_id: run_id}) do
+    "run #{run_id} exceeded its total run deadline of #{deadline_ms}ms"
   end
 
   defp start_backend(%Run.State{} = state) do

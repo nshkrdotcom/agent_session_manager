@@ -915,6 +915,179 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert :cli_path in error.cause.keys
   end
 
+  test "codex sdk backend materializes output_schema onto disk for --output-schema" do
+    schema = %{
+      "type" => "object",
+      "properties" => %{"answer" => %{"type" => "string"}},
+      "required" => ["answer"]
+    }
+
+    test_pid = self()
+
+    owner =
+      spawn(fn ->
+        {:ok, proxy, _info} =
+          SDK.start_run(%{
+            provider: %{Provider.resolve!(:codex) | sdk_runtime: CodexRuntimeStub},
+            prompt: "hello",
+            execution_config: execution_config([]),
+            provider_opts: [model: "gpt-5.4", output_schema: schema],
+            metadata: %{test_pid: test_pid}
+          })
+
+        send(test_pid, {:owner_started, self(), proxy})
+
+        receive do
+          :stop -> :ok
+        end
+      end)
+
+    assert_receive {:codex_runtime_start_opts, start_opts}, 2_000
+    assert_receive {:owner_started, ^owner, _proxy}, 2_000
+
+    exec_opts = Keyword.fetch!(start_opts, :exec_opts)
+
+    assert exec_opts.thread.thread_opts.output_schema == schema
+
+    path = exec_opts.output_schema_path
+    assert is_binary(path)
+    assert File.exists?(path)
+    assert Jason.decode!(File.read!(path)) == schema
+
+    ref = Process.monitor(owner)
+    Process.exit(owner, :kill)
+    assert_receive {:DOWN, ^ref, :process, ^owner, :killed}, 2_000
+
+    assert wait_until(fn -> not File.exists?(path) end),
+           "output schema file #{path} survived the run owner"
+  end
+
+  test "codex sdk backend derives a completion-only posture into thread options" do
+    provider = %{Provider.resolve!(:codex) | sdk_runtime: CodexRuntimeStub}
+
+    config = %{
+      provider: provider,
+      prompt: "hello",
+      execution_config: execution_config([], [], provider_permission_mode: :yolo),
+      provider_opts: [model: "gpt-5.4", completion_only: true],
+      metadata: %{test_pid: self()}
+    }
+
+    assert {:ok, proxy, _info} = SDK.start_run(config)
+    on_exit(fn -> SDK.close(proxy) end)
+
+    assert_receive {:codex_runtime_start_opts, start_opts}, 2_000
+
+    thread_opts = Keyword.fetch!(start_opts, :exec_opts).thread.thread_opts
+
+    assert thread_opts.sandbox == :read_only
+    assert thread_opts.ask_for_approval == :never
+    assert thread_opts.full_auto == false
+    assert thread_opts.dangerously_bypass_approvals_and_sandbox == false
+  end
+
+  test "codex sdk backend keeps the caller's posture when completion_only is off" do
+    provider = %{Provider.resolve!(:codex) | sdk_runtime: CodexRuntimeStub}
+
+    config = %{
+      provider: provider,
+      prompt: "hello",
+      execution_config: execution_config([], [], provider_permission_mode: :yolo),
+      provider_opts: [model: "gpt-5.4"],
+      metadata: %{test_pid: self()}
+    }
+
+    assert {:ok, proxy, _info} = SDK.start_run(config)
+    on_exit(fn -> SDK.close(proxy) end)
+
+    assert_receive {:codex_runtime_start_opts, start_opts}, 2_000
+
+    thread_opts = Keyword.fetch!(start_opts, :exec_opts).thread.thread_opts
+
+    assert thread_opts.dangerously_bypass_approvals_and_sandbox == true
+    assert thread_opts.ask_for_approval == nil
+  end
+
+  test "claude sdk backend derives a completion-only posture into sdk options" do
+    provider = %{Provider.resolve!(:claude) | sdk_runtime: ClaudeRuntimeStub}
+
+    config = %{
+      provider: provider,
+      prompt: "hello",
+      execution_config: execution_config([], [], provider_permission_mode: :bypass_permissions),
+      provider_opts: [model: "sonnet", completion_only: true],
+      metadata: %{test_pid: self()}
+    }
+
+    assert {:ok, proxy, _info} = SDK.start_run(config)
+    on_exit(fn -> SDK.close(proxy) end)
+
+    assert_receive {:claude_runtime_start_opts, start_opts}, 2_000
+
+    options = Keyword.fetch!(start_opts, :options)
+
+    assert options.tools == []
+    assert options.setting_sources == []
+    assert options.strict_mcp_config == true
+    assert options.permission_mode == :plan
+  end
+
+  test "claude sdk backend keeps the caller's posture when completion_only is off" do
+    provider = %{Provider.resolve!(:claude) | sdk_runtime: ClaudeRuntimeStub}
+
+    config = %{
+      provider: provider,
+      prompt: "hello",
+      execution_config: execution_config([], [], provider_permission_mode: :bypass_permissions),
+      provider_opts: [model: "sonnet"],
+      metadata: %{test_pid: self()}
+    }
+
+    assert {:ok, proxy, _info} = SDK.start_run(config)
+    on_exit(fn -> SDK.close(proxy) end)
+
+    assert_receive {:claude_runtime_start_opts, start_opts}, 2_000
+
+    options = Keyword.fetch!(start_opts, :options)
+
+    assert options.permission_mode == :bypass_permissions
+    assert options.tools == nil
+    assert options.strict_mcp_config == nil
+  end
+
+  test "codex sdk backend leaves output_schema_path nil when no schema was requested" do
+    provider = %{Provider.resolve!(:codex) | sdk_runtime: CodexRuntimeStub}
+
+    config = %{
+      provider: provider,
+      prompt: "hello",
+      execution_config: execution_config([]),
+      provider_opts: [model: "gpt-5.4"],
+      metadata: %{test_pid: self()}
+    }
+
+    assert {:ok, proxy, _info} = SDK.start_run(config)
+    on_exit(fn -> SDK.close(proxy) end)
+
+    assert_receive {:codex_runtime_start_opts, start_opts}, 2_000
+
+    exec_opts = Keyword.fetch!(start_opts, :exec_opts)
+    assert exec_opts.output_schema_path == nil
+  end
+
+  defp wait_until(fun, deadline_ms \\ 2_000) when is_function(fun, 0) do
+    deadline = System.monotonic_time(:millisecond) + deadline_ms
+    do_wait_until(fun, deadline)
+  end
+
+  defp do_wait_until(fun, deadline) do
+    cond do
+      fun.() -> true
+      System.monotonic_time(:millisecond) >= deadline -> false
+      true -> do_wait_until(fun, deadline)
+    end
+  end
+
   defp governed_runtime_metadata do
     "sdk-governed-runtime"
     |> ASM.RuntimeAuth.new!(:codex,

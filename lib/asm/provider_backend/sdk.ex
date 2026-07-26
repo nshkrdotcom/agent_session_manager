@@ -9,6 +9,8 @@ defmodule ASM.ProviderBackend.SDK do
   alias ASM.ProviderBackend.Proxy
   alias ASM.ProviderBackend.SDK.CodexAppServer
   alias ASM.RuntimeAuth.CodexMaterialization
+  alias CliSubprocessCore.OutputSchemaFile
+
   @claude_options_module :"Elixir.ClaudeAgentSDK.Options"
   @amp_options_module :"Elixir.AmpSdk.Types.Options"
   @cursor_options_module :"Elixir.CursorCliSdk.Options"
@@ -254,22 +256,65 @@ defmodule ASM.ProviderBackend.SDK do
              "codex"
            ),
          {:ok, thread} <-
-           build_codex_thread(codex_opts, thread_opts, Map.get(config, :continuation)),
-         {:ok, exec_opts} <-
-           new_sdk_struct(
-             @codex_exec_options_module,
-             codex_exec_option_attrs(codex_opts, thread, config, execution_surface),
-             "codex"
-           ) do
-      {:ok,
-       sdk_start_opts(runtime, config,
-         input: Map.fetch!(config, :prompt),
-         exec_opts: exec_opts,
-         metadata: %{lane: :sdk, asm_provider: :codex}
-       )}
+           build_codex_thread(codex_opts, thread_opts, Map.get(config, :continuation)) do
+      build_codex_exec_start_opts(runtime, config, codex_opts, thread, execution_surface)
     else
       {:error, %Error{} = error} ->
         {:error, error}
+    end
+  end
+
+  # `codex exec` types `--output-schema` as a path, so the schema only reaches
+  # argv once it exists on disk. ASM bypasses `Codex.Thread.build_exec_options/2`
+  # (the only codex_sdk caller that materializes the file), so the file's whole
+  # life is owned here.
+  #
+  # The owner is the process that starts the backend — `ASM.Run.Server`, which
+  # exists for exactly the run's duration and closes the backend on a normal
+  # result, an error, and an interrupt. `EphemeralFiles` monitors it, so an
+  # untrappable kill removes the file too. The explicit cleanup below covers
+  # the one window the owner's own death does not: a run that never starts.
+  defp build_codex_exec_start_opts(runtime, config, codex_opts, thread, execution_surface) do
+    with {:ok, output_schema_path, cleanup} <- materialize_codex_output_schema(config) do
+      case new_sdk_struct(
+             @codex_exec_options_module,
+             codex_exec_option_attrs(
+               codex_opts,
+               thread,
+               config,
+               execution_surface,
+               output_schema_path
+             ),
+             "codex"
+           ) do
+        {:ok, exec_opts} ->
+          {:ok,
+           sdk_start_opts(runtime, config,
+             input: Map.fetch!(config, :prompt),
+             exec_opts: exec_opts,
+             metadata: %{lane: :sdk, asm_provider: :codex}
+           )}
+
+        {:error, %Error{} = error} ->
+          _ = cleanup.()
+          {:error, error}
+      end
+    end
+  end
+
+  defp materialize_codex_output_schema(config) do
+    case OutputSchemaFile.create(kw(config, :output_schema), self()) do
+      {:ok, path, cleanup} ->
+        {:ok, path, cleanup}
+
+      {:error, reason} ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :config,
+           "codex output schema could not be materialized: #{inspect(reason)}",
+           cause: reason
+         )}
     end
   end
 
@@ -433,7 +478,7 @@ defmodule ASM.ProviderBackend.SDK do
       env: kw(config, :env, %{}),
       path_to_claude_code_executable: kw(config, :cli_path),
       execution_surface: execution_surface,
-      permission_mode: kw(config, :provider_permission_mode),
+      permission_mode: claude_permission_mode(config),
       model_payload: model_payload,
       model: model_payload_value(model_payload, :resolved_model),
       max_turns: kw(config, :max_turns),
@@ -446,8 +491,31 @@ defmodule ASM.ProviderBackend.SDK do
       output_format: :stream_json,
       timeout_ms: kw(config, :transport_timeout_ms)
     ]
+    |> Keyword.merge(claude_completion_only_attrs(config))
     |> drop_nil_values()
   end
+
+  # The SDK lane derives its own options rather than reusing the core provider
+  # profile, so the completion-only posture has to be re-expressed in the
+  # SDK's vocabulary or it would be silently discarded here. Both lanes mean
+  # the same thing: no tools, no settings sources, no loose MCP, no writes.
+  defp claude_completion_only_attrs(config) do
+    if completion_only?(config) do
+      [tools: [], setting_sources: [], strict_mcp_config: true]
+    else
+      []
+    end
+  end
+
+  defp claude_permission_mode(config) do
+    if completion_only?(config) do
+      :plan
+    else
+      kw(config, :provider_permission_mode)
+    end
+  end
+
+  defp completion_only?(config), do: kw(config, :completion_only, false) == true
 
   defp amp_option_attrs(config, model_payload, execution_surface) do
     [
@@ -536,22 +604,37 @@ defmodule ASM.ProviderBackend.SDK do
       oss: codex_payload_oss?(model_payload),
       local_provider: codex_payload_oss_provider(model_payload),
       model_provider: codex_payload_model_provider(model_payload),
-      full_auto: kw(config, :provider_permission_mode) == :auto_edit,
-      dangerously_bypass_approvals_and_sandbox: kw(config, :provider_permission_mode) == :yolo,
+      full_auto:
+        not completion_only?(config) and kw(config, :provider_permission_mode) == :auto_edit,
+      dangerously_bypass_approvals_and_sandbox:
+        not completion_only?(config) and kw(config, :provider_permission_mode) == :yolo,
       skip_git_repo_check: kw(config, :skip_git_repo_check, false),
       output_schema: kw(config, :output_schema)
     ]
+    |> Keyword.merge(codex_completion_only_attrs(config))
     |> Keyword.merge(CodexMaterialization.thread_attrs(materialization))
     |> drop_nil_values()
   end
 
-  defp codex_exec_option_attrs(codex_opts, thread, config, execution_surface) do
+  # `codex exec` has no `--ask-for-approval` flag, so the never-approval
+  # posture travels as the thread's approval policy, which the SDK renders as
+  # the config override the CLI does accept.
+  defp codex_completion_only_attrs(config) do
+    if completion_only?(config) do
+      [sandbox: :read_only, ask_for_approval: :never]
+    else
+      []
+    end
+  end
+
+  defp codex_exec_option_attrs(codex_opts, thread, config, execution_surface, output_schema_path) do
     materialization = Map.get(config, :codex_materialization)
 
     [
       codex_opts: codex_opts,
       execution_surface: execution_surface,
       thread: thread,
+      output_schema_path: output_schema_path,
       timeout_ms: kw(config, :transport_timeout_ms),
       max_stderr_buffer_bytes: kw(config, :max_stderr_buffer_bytes)
     ]

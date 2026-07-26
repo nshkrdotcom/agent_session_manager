@@ -74,11 +74,18 @@ The reducer is responsible for:
 - accumulating assistant text and legacy message projections
 - tracking provider session id and cost totals
 - tracking pending approvals
+- carrying the provider-returned structured object onto `%ASM.Result{}.object`
 - marking terminal status on result, error, or interruption
 - building `%ASM.Result{}`
 
 `%ASM.Result.metadata` therefore comes from the event stream itself instead of a
 side channel.
+
+`%ASM.Result{}.object` is the same fact: it is read from the terminal
+`:result` payload's `object` field (`CliSubprocessCore.Payload.Result.object`)
+and projected onto `%ASM.Message.Result{}.object` and `%ASM.Result{}.object`.
+It is `nil` when the provider returned no structured object — the reducer never
+reconstructs one from prose.
 
 ## Terminal Semantics
 

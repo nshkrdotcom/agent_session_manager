@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `structured_output` is now a capability-queryable partial provider feature.
+  `ASM.ProviderFeatures.common_feature!/2` and `supports_common_feature?/2`
+  report per-provider support and the real wire form (Claude inline JSON on
+  `--json-schema`, Codex a schema file path on `--output-schema`), sourced from
+  `CliSubprocessCore.ProviderFeatures` rather than a second ASM-local catalog.
+- `ASM.Result.object` and `ASM.Message.Result.object` carry a provider-returned
+  structured object end to end, from the decoded `CliSubprocessCore.Payload.Result`
+  through `ASM.Event.legacy_payload/1` and `ASM.Run.EventReducer`. Both are
+  `nil` when the provider returned no object.
+- `:run_deadline_ms`, a total wall-clock budget for a whole run (default
+  `600_000`, `:infinity` to opt out, overridable per run or through the
+  `:agent_session_manager` application environment). Unlike `:stream_timeout_ms`
+  it never re-arms, so a chatty-but-stuck run terminates instead of running
+  forever. Expiry closes the backend and returns
+  `%ASM.Error{kind: :timeout, domain: :runtime}`.
+- Owner-scoped sessions. `ASM.start_session/1` accepts `owner: pid`, and the
+  provider form of `ASM.query/3` scopes the session it creates to its caller.
+  `ASM.Session.OwnerGuard` (supervised by the new `ASM.Session.GuardSupervisor`,
+  outside the subtree it guards) terminates the session subtree and its provider
+  process group when the owner goes down, including an untrappable kill that
+  skips the caller's `after` block.
+- `:completion_only` for Claude and Codex: an empty tool set, no settings
+  sources, strict MCP config and plan mode for Claude; a read-only sandbox and
+  `approval_policy="never"` for Codex. It replaces any caller-supplied
+  permission mode instead of merging with it, and is carried by both the
+  `:core` and `:sdk` lanes.
+
+### Changed
+
+- `:output_schema` is a normalized common ASM option gated by the
+  `:structured_output` capability, rather than a Codex-only provider option. A
+  provider without that capability now fails with a typed `%ASM.Error{}` naming
+  the provider, option, and capability instead of a NimbleOptions shape error.
+
+### Fixed
+
+- The `:sdk` lane never emitted `--output-schema`. `ASM.ProviderBackend.SDK`
+  set `output_schema` on the Codex thread options but built
+  `Codex.Exec.Options` without `output_schema_path`, and ASM bypasses
+  `Codex.Thread.build_exec_options/2`, the only caller that materializes the
+  file — so a structured-output request produced unconstrained prose that
+  looked like success. The schema is now materialized through
+  `CliSubprocessCore.OutputSchemaFile`, owned by the run process, and removed
+  when the run ends by any route.
+- `ASM.Run.Server` now traps exits, so its `terminate/2` actually runs when the
+  run supervisor shuts a run down. Previously a session stop left the provider
+  backend and its process group orphaned.
+- `ASM.session_id/1` returned nil only for exceptions, while a call to a stopped
+  session exits; it now catches that exit, so `ASM.stop_session/1` on an
+  already-collected session is an honest `{:error, :not_found}`.
+
 ## [0.10.0] - 2026-07-13
 
 ### Added

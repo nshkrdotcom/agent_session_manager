@@ -73,7 +73,18 @@ defmodule ASM.TestSupport.FakeBackend do
       emitted?: false
     }
 
+    announce_start(state)
+
     {:ok, state, {:continue, :emit_initial_events}}
+  end
+
+  # Lets a test hold the backend pid so it can assert the backend was actually
+  # closed, rather than only that the caller stopped waiting.
+  defp announce_start(%__MODULE__{} = state) do
+    case Map.get(state.config, :metadata, %{}) do
+      %{test_pid: pid} when is_pid(pid) -> send(pid, {:fake_backend_started, self()})
+      _other -> :ok
+    end
   end
 
   @impl true
@@ -121,6 +132,15 @@ defmodule ASM.TestSupport.FakeBackend do
     {:reply, info, state}
   end
 
+  @impl true
+  def handle_info({:fake_backend_chatter, interval_ms}, state) do
+    emit_core_event(state, :assistant_delta, Payload.AssistantDelta.new(content: "."))
+    Process.send_after(self(), {:fake_backend_chatter, interval_ms}, interval_ms)
+    {:noreply, state}
+  end
+
+  def handle_info(_message, state), do: {:noreply, state}
+
   defp emit_script(state, nil) do
     emit_core_event(
       state,
@@ -150,6 +170,11 @@ defmodule ASM.TestSupport.FakeBackend do
 
       {:send, message} ->
         send(self(), message)
+
+      # A backend that keeps talking forever: every re-armed tick re-arms the
+      # per-event stream timeout, so only a total-run deadline ends the run.
+      {:chatter, interval_ms} ->
+        Process.send_after(self(), {:fake_backend_chatter, interval_ms}, interval_ms)
     end)
 
     %{state | emitted?: true}

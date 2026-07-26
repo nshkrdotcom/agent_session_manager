@@ -17,6 +17,10 @@ defmodule ASM.Options.Claude do
       anthropic_base_url: [type: {:or, [:string, nil]}, default: nil],
       anthropic_auth_token: [type: {:or, [:string, nil]}, default: nil],
       include_thinking: [type: :boolean, default: false],
+      # A completion is not a coding agent: an empty tool set, no settings
+      # sources, strict MCP config, and plan mode. It REPLACES any
+      # caller-supplied permission mode rather than merging with it.
+      completion_only: [type: :boolean, default: false],
       # Allow a Claude model newer than the shared registry to pass through to
       # the CLI `--model` (default false = require a registered model).
       allow_unknown_model: [type: :boolean, default: false],

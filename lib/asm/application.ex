@@ -12,6 +12,7 @@ defmodule ASM.Application do
       {Task.Supervisor, name: ASM.TaskSupervisor},
       {ASM.Remote.BackendSupervisor, []},
       {ASM.Session.Supervisor, []},
+      {ASM.Session.GuardSupervisor, []},
       {ASM.InferenceEndpoint.LeaseStore, []},
       {ASM.InferenceEndpoint.RuntimeConfig, []},
       {ASM.InferenceEndpoint.Server, []}

@@ -75,6 +75,11 @@ unless Code.ensure_loaded?(ClaudeAgentSDK.Options) do
               timeout_ms: nil,
               thinking: nil,
               hooks: %{},
+              # Completion-only controls; unset (nil) rather than [] so the
+              # stub distinguishes "not requested" the way the real SDK does.
+              tools: nil,
+              setting_sources: nil,
+              strict_mcp_config: nil,
               enable_file_checkpointing: false
 
     def new(attrs) when is_list(attrs) or is_map(attrs) do
@@ -307,6 +312,11 @@ unless Code.ensure_loaded?(Codex.Thread.Options) do
               model_provider: nil,
               full_auto: false,
               dangerously_bypass_approvals_and_sandbox: false,
+              sandbox: :default,
+              ask_for_approval: nil,
+              base_instructions: nil,
+              additional_directories: [],
+              skip_git_repo_check: false,
               output_schema: nil,
               personality: nil,
               collaboration_mode: nil,
@@ -341,6 +351,7 @@ unless Code.ensure_loaded?(Codex.Exec.Options) do
     defstruct codex_opts: nil,
               execution_surface: nil,
               thread: nil,
+              output_schema_path: nil,
               timeout_ms: nil,
               max_stderr_buffer_bytes: nil
 

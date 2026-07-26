@@ -224,6 +224,108 @@ That means ASM does not hard-block other installed local models such as
 `llama3.2`. It forwards them through the shared Codex/Ollama route and leaves
 the degraded-mode distinction to the upstream fallback-metadata behavior.
 
+## Structured Output
+
+`structured_output` is a partial provider feature, discovered the same way as
+the Ollama surface:
+
+```elixir
+iex> ASM.ProviderFeatures.common_feature!(:claude, :structured_output)
+%{
+  supported?: true,
+  common_surface: true,
+  common_opts: [:output_schema],
+  activation: %{option: :output_schema},
+  compatibility: %{wire_form: :inline_json, cli_flag: "--json-schema"},
+  notes: [...]
+}
+
+iex> ASM.ProviderFeatures.supports_common_feature?(:cursor, :structured_output)
+false
+```
+
+The ASM-facing option is `:output_schema`, a JSON Schema map.
+
+Supported today:
+
+- Claude
+- Codex
+
+Not supported today:
+
+- Cursor
+- Amp
+- Antigravity
+
+The two supported providers do not agree on how the schema reaches the CLI,
+and that asymmetry is a provider fact rather than an ASM choice:
+
+| Provider | `compatibility.wire_form` | CLI flag         | How the schema travels        |
+| -------- | ------------------------- | ---------------- | ----------------------------- |
+| Claude   | `:inline_json`            | `--json-schema`  | inline JSON on argv           |
+| Codex    | `:file_path`              | `--output-schema` | a temporary file, path on argv |
+
+`codex exec` types `--output-schema` as a path and exits non-zero when it
+cannot read the file, so materializing the schema on disk is not a degraded
+mode — it is the only working mode. Both ASM lanes do it: the `:core` lane
+through the shared provider profile, and the `:sdk` lane through
+`CliSubprocessCore.OutputSchemaFile`, whose file is owned by the run process
+and removed when the run ends by any route, including an untrappable kill.
+
+An unsupported provider fails validation with a typed `%ASM.Error{}` naming the
+provider, the option, and the missing capability. It never silently drops the
+schema and returns unconstrained prose:
+
+```elixir
+iex> ASM.query(:cursor, "Summarize", output_schema: %{"type" => "object"})
+{:error, %ASM.Error{kind: :config_invalid, domain: :config}}
+```
+
+A schema-conforming reply is projected onto `ASM.Result.object` (and
+`ASM.Message.Result.object` on the terminal message). It is `nil` when the
+provider returned no structured object; nothing reconstructs or guesses an
+object from prose.
+
+### Where This Boundary Sits
+
+`codex_sdk/AGENTS.md` states that output schemas belong in that SDK, and this
+guide does not contradict it. The split is:
+
+- ASM owns the **capability vocabulary** (`:structured_output`, its per-provider
+  support state and wire form) and the **normalized option** (`:output_schema`),
+  because a caller choosing between providers needs to ask one question in one
+  place.
+- `cli_subprocess_core` owns the **flag spelling and materialization**
+  (`--json-schema` inline versus `--output-schema` on disk).
+- `codex_sdk` keeps every richer Codex-native structured-output control.
+
+ASM holds no second catalog of provider capabilities. Every entry in
+`ASM.ProviderFeatures` comes from `CliSubprocessCore.ProviderFeatures`; a
+provider the shared catalog does not describe is reported as unsupported rather
+than omitted, so callers can still query it.
+
+## Completion-Only Invocations
+
+`completion_only: true` asks a provider for a completion, not a coding agent.
+It is available for Claude and Codex, the two providers whose CLIs have a
+real no-write, no-approval posture, and it **replaces** any caller-supplied
+permission mode rather than merging with it:
+
+| Provider | Effect                                                             |
+| -------- | ------------------------------------------------------------------ |
+| Claude   | empty tool set, no settings sources, strict MCP config, plan mode  |
+| Codex    | read-only sandbox, `approval_policy="never"`, no auto/bypass flags |
+
+Both ASM lanes carry it. The `:core` lane passes the option to the shared
+provider profile; the `:sdk` lane re-expresses the same posture in each SDK's
+own vocabulary (`sandbox: :read_only` and `ask_for_approval: :never` for Codex
+thread options, `tools: []`, `setting_sources: []`, `strict_mcp_config: true`
+and `permission_mode: :plan` for Claude SDK options), because the SDK lane
+derives its own options and would otherwise discard the request silently.
+
+Providers without that posture reject `:completion_only` instead of accepting
+and ignoring it.
+
 ## Example Behavior
 
 The ASM examples use these surfaces directly.

@@ -274,6 +274,7 @@ defmodule ASM.Event do
 
     %Message.Result{
       stop_reason: payload.stop_reason,
+      object: payload.object,
       usage: %{
         input_tokens: Map.get(usage, :input_tokens) || Map.get(usage, "input_tokens") || 0,
         output_tokens: Map.get(usage, :output_tokens) || Map.get(usage, "output_tokens") || 0

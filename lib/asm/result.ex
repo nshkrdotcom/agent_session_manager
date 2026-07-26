@@ -4,6 +4,10 @@ defmodule ASM.Result do
 
   Result metadata is derived from the run event stream so streaming consumers
   and query-style consumers observe the same lane/backend/execution metadata.
+
+  `:object` is the provider-returned structured object for a run that requested
+  one through `:output_schema`. It is `nil` whenever the provider returned no
+  structured object; nothing here reconstructs or guesses an object from prose.
   """
 
   @enforce_keys [:run_id, :session_id]
@@ -11,6 +15,7 @@ defmodule ASM.Result do
     :run_id,
     :session_id,
     :text,
+    :object,
     :messages,
     :cost,
     :error,
@@ -24,6 +29,7 @@ defmodule ASM.Result do
           run_id: String.t(),
           session_id: String.t(),
           text: String.t() | nil,
+          object: term() | nil,
           messages: list() | nil,
           cost: map() | nil,
           error: ASM.Error.t() | nil,

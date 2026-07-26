@@ -1,7 +1,13 @@
 defmodule ASM.Run.State do
   @moduledoc """
   Run process state with reducer-owned projection fields.
+
+  `:run_deadline_ms` is the total wall-clock budget for the whole run, armed
+  once the backend has started. Unlike `:stream_timeout_ms` it never re-arms,
+  so a backend that keeps emitting events still terminates.
   """
+
+  @default_run_deadline_ms 600_000
 
   @enforce_keys [:run_id, :session_id, :provider]
   # credo:disable-for-next-line Credo.Check.Warning.StructFieldAmount
@@ -39,13 +45,16 @@ defmodule ASM.Run.State do
     :pipeline_ctx,
     :started_at,
     :finished_at,
+    :deadline_timer_ref,
     pending_approvals: %{},
     approval_timers: %{},
     approval_timeout_ms: 120_000,
+    run_deadline_ms: @default_run_deadline_ms,
     metadata: %{}
   ]
 
   @type status :: :initializing | :running | :completed | :failed | :interrupted
+  @type run_deadline :: pos_integer() | :infinity
 
   @type cost_totals :: %{
           required(:input_tokens) => non_neg_integer(),
@@ -88,6 +97,8 @@ defmodule ASM.Run.State do
           pending_approvals: %{optional(String.t()) => term()},
           approval_timers: %{optional(String.t()) => reference()},
           approval_timeout_ms: pos_integer(),
+          run_deadline_ms: run_deadline(),
+          deadline_timer_ref: reference() | nil,
           started_at: DateTime.t(),
           finished_at: DateTime.t() | nil,
           metadata: map()
@@ -131,9 +142,24 @@ defmodule ASM.Run.State do
       approval_timers: %{},
       approval_timeout_ms:
         Keyword.get(opts, :approval_timeout_ms, app_default(:approval_timeout_ms, 120_000)),
+      run_deadline_ms: normalize_run_deadline!(Keyword.get(opts, :run_deadline_ms, :default)),
+      deadline_timer_ref: nil,
       started_at: DateTime.utc_now(),
       finished_at: nil
     }
+  end
+
+  @spec default_run_deadline_ms() :: run_deadline()
+  def default_run_deadline_ms, do: app_default(:run_deadline_ms, @default_run_deadline_ms)
+
+  defp normalize_run_deadline!(:default), do: normalize_run_deadline!(default_run_deadline_ms())
+  defp normalize_run_deadline!(:infinity), do: :infinity
+
+  defp normalize_run_deadline!(value) when is_integer(value) and value > 0, do: value
+
+  defp normalize_run_deadline!(value) do
+    raise ArgumentError,
+          "invalid :run_deadline_ms #{inspect(value)}; expected a positive integer or :infinity"
   end
 
   @spec materialize(t()) :: t()

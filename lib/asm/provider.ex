@@ -313,15 +313,44 @@ defmodule ASM.Provider do
     |> then(&Map.fetch(@provider_names_by_string, &1))
   end
 
+  # ASM owns no second capability catalog: every entry is the
+  # `cli_subprocess_core` partial-feature manifest plus the ASM option names
+  # that activate it. A provider the core catalog does not describe is
+  # reported as unsupported rather than omitted, so callers can query it.
   defp feature_manifest_for(provider) when is_atom(provider) do
-    ollama =
-      provider
-      |> CoreProviderFeatures.partial_feature!(:ollama)
-      |> Map.merge(%{
-        common_surface: true,
-        common_opts: [:ollama, :ollama_model, :ollama_base_url, :ollama_http, :ollama_timeout_ms]
-      })
+    %{
+      ollama:
+        common_feature_manifest(provider, :ollama, [
+          :ollama,
+          :ollama_model,
+          :ollama_base_url,
+          :ollama_http,
+          :ollama_timeout_ms
+        ]),
+      structured_output: common_feature_manifest(provider, :structured_output, [:output_schema])
+    }
+  end
 
-    %{ollama: ollama}
+  defp common_feature_manifest(provider, feature, common_opts)
+       when is_atom(provider) and is_atom(feature) and is_list(common_opts) do
+    provider
+    |> CoreProviderFeatures.partial_feature(feature)
+    |> case do
+      {:ok, manifest} -> manifest
+      :error -> undeclared_partial_feature(provider, feature)
+    end
+    |> Map.merge(%{common_surface: true, common_opts: common_opts})
+  end
+
+  defp undeclared_partial_feature(provider, feature) do
+    %{
+      supported?: false,
+      activation: nil,
+      model_strategy: nil,
+      compatibility: nil,
+      notes: [
+        "#{inspect(provider)} declares no #{inspect(feature)} partial feature in the shared CLI core catalog."
+      ]
+    }
   end
 end

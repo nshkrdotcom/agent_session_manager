@@ -918,10 +918,14 @@ Streaming helpers:
 - `{:ok, %ASM.Result{...}}` when the run completes successfully.
 - `{:error, %ASM.Error{...}}` for terminal run failures, transport failures, parse failures, and runtime failures.
 
-Result projections also include structured cost and terminal error:
+Result projections also include structured cost, terminal error, and any
+provider-returned structured object:
 
 - `%ASM.Result{cost: %{input_tokens: ..., output_tokens: ..., cost_usd: ...}}`
 - `%ASM.Result{error: %ASM.Error{} | nil}`
+- `%ASM.Result{object: term() | nil}` — the schema-conforming object for a run
+  that requested one through `:output_schema`, and `nil` otherwise. Nothing
+  reconstructs or guesses an object from prose.
 
 ## Execution Control Options
 
@@ -931,8 +935,35 @@ Session defaults and per-run overrides can also control execution behavior:
 - `lane` (`:auto | :core | :sdk`)
 - `stream_timeout_ms` (maximum wait for the next run event; default `60000`)
 - `queue_timeout_ms` (maximum time a queued run waits for capacity; default `:infinity`)
+- `run_deadline_ms` (total wall-clock budget for one whole run; default
+  `600000`, or `:infinity` to opt out)
 - `transport_call_timeout_ms` (backend control timeout used by the effective lane)
 - `driver_opts` (remote execution settings bag for `:remote_node`)
+
+`stream_timeout_ms` re-arms on every event, so it cannot end a run that keeps
+talking without finishing. `run_deadline_ms` is armed once, when the backend
+starts, and never re-arms: on expiry ASM closes the backend and its process
+group and the run fails with `%ASM.Error{kind: :timeout, domain: :runtime}`.
+
+## Session Ownership
+
+`ASM.start_session/1` accepts `owner: pid`. An owned session is bound to that
+process: when the owner goes down for any reason — including an untrappable
+`Process.exit(owner, :kill)` — a supervised guard terminates the session
+subtree and with it the provider process group.
+
+The provider form of `ASM.query/3` is owner-scoped automatically, because it
+starts a session the caller never sees:
+
+```elixir
+ASM.query(:claude, "Say hello", model: "sonnet")
+```
+
+Its ordinary teardown is an `after` block, which a killed caller never reaches.
+The owner guard is what makes the one-shot contract hold anyway. Pass an
+explicit `owner:` to bind the session to a different process, or start a
+session without `owner:` when you want it to outlive its starter and manage it
+with `ASM.stop_session/1`.
 
 ## Provider Options
 
@@ -984,8 +1015,20 @@ owning SDK or in an explicit provider-native extension.
 Provider-specific examples:
 
 - Claude: `model`, `include_thinking`, `max_turns`
-- Codex: `model`, `reasoning_effort`, `output_schema`
+- Codex: `model`, `reasoning_effort`, `skip_git_repo_check`
 - Amp: `model`, `mode`, `include_thinking`, `tools`
+
+Partial common options are a third category: they are normalized ASM options
+accepted by every provider schema, but gated on a per-provider capability, so
+an unsupported provider fails with a typed capability error instead of quietly
+ignoring the request.
+
+- `output_schema` is gated on `:structured_output` (Claude and Codex today)
+- the `ollama*` options are gated on `:ollama` (Claude and Codex today)
+- `completion_only` is offered only by the provider schemas whose CLI has a
+  real no-write, no-approval posture (Claude and Codex today)
+
+See [Common And Partial Provider Features](guides/common-and-partial-provider-features.md).
 
 Provider caveat:
 

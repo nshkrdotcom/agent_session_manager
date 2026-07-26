@@ -32,6 +32,7 @@ defmodule ASM.Options do
     :ollama_base_url,
     :ollama_http,
     :ollama_timeout_ms,
+    :output_schema,
     :model_payload,
     :queue_limit,
     :overflow_policy,
@@ -187,6 +188,10 @@ defmodule ASM.Options do
       ollama_base_url: [type: {:or, [:string, nil]}, default: nil],
       ollama_http: [type: {:or, [:boolean, nil]}, default: nil],
       ollama_timeout_ms: [type: {:or, [:pos_integer, nil]}, default: nil],
+      output_schema: [
+        type: {:custom, __MODULE__, :validate_passthrough_map, [:output_schema]},
+        default: nil
+      ],
       model_payload: [
         type: {:custom, __MODULE__, :validate_model_payload, [:model_payload]},
         default: nil
@@ -685,6 +690,7 @@ defmodule ASM.Options do
   defp normalize_common_features(validated) do
     validated
     |> normalize_ollama_surface()
+    |> normalize_structured_output_surface()
     |> then(&{:ok, &1})
   rescue
     error in [ArgumentError] ->
@@ -868,6 +874,37 @@ defmodule ASM.Options do
     else
       raise ArgumentError,
             "provider #{inspect(provider)} does not support the common Ollama surface"
+    end
+  end
+
+  # `:output_schema` is a normalized ASM option backed by the per-provider
+  # `:structured_output` partial feature. The option is structurally accepted
+  # for every provider so that an unsupported provider fails on the capability
+  # it actually lacks, instead of on option shape.
+  defp normalize_structured_output_surface(validated) when is_list(validated) do
+    if structured_output_requested?(validated) do
+      validated
+      |> Keyword.fetch!(:provider)
+      |> canonical_feature_provider()
+      |> ensure_structured_output_supported!()
+
+      validated
+    else
+      validated
+    end
+  end
+
+  defp structured_output_requested?(validated) when is_list(validated) do
+    not is_nil(Keyword.get(validated, :output_schema))
+  end
+
+  defp ensure_structured_output_supported!(provider) when is_atom(provider) do
+    if ProviderFeatures.supports_common_feature?(provider, :structured_output) do
+      :ok
+    else
+      raise ArgumentError,
+            "provider #{inspect(provider)} does not support the :structured_output " <>
+              "common feature required by the :output_schema option"
     end
   end
 

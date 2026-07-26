@@ -21,6 +21,10 @@ defmodule ASM.Options.Codex do
       model_provider: [type: {:or, [:string, nil]}, default: nil],
       oss_provider: [type: {:or, [:string, nil]}, default: nil],
       skip_git_repo_check: [type: :boolean, default: false],
+      # A completion is not a coding agent: a read-only sandbox and a never
+      # approval policy. It REPLACES any caller-supplied permission mode
+      # rather than merging with it.
+      completion_only: [type: :boolean, default: false],
       app_server: [type: :boolean, default: false],
       host_tools: [
         type: {:custom, ASM.Options, :validate_passthrough_list, [:host_tools]},
@@ -29,10 +33,6 @@ defmodule ASM.Options.Codex do
       dynamic_tools: [
         type: {:custom, ASM.Options, :validate_passthrough_list, [:dynamic_tools]},
         default: []
-      ],
-      output_schema: [
-        type: {:custom, ASM.Options, :validate_passthrough_map, [:output_schema]},
-        default: nil
       ],
       additional_directories: [type: {:list, :string}, default: []],
       # Allow a Codex model newer than the shared registry to pass through to

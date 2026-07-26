@@ -121,10 +121,19 @@ defmodule ASM do
     end
   end
 
+  # The provider form owns the session it starts. The `after` block below is
+  # the ordinary teardown, but it does not run when the caller is killed
+  # untrappably, so the session is additionally scoped to the caller: when the
+  # caller goes down the guard terminates the subtree and its process group.
   defp query_with_provider(provider, prompt, opts) do
-    case start_session(Keyword.put(opts, :provider, provider)) do
+    session_opts =
+      opts
+      |> Keyword.put(:provider, provider)
+      |> Keyword.put_new(:owner, self())
+
+    case start_session(session_opts) do
       {:ok, session} ->
-        run_opts = Keyword.drop(opts, [:session_id, :provider, :name, :options])
+        run_opts = Keyword.drop(opts, [:session_id, :provider, :name, :options, :owner])
 
         result =
           try do
@@ -154,6 +163,10 @@ defmodule ASM do
     Session.Server.get_state(session).session_id
   rescue
     _ -> nil
+  catch
+    # An owner-scoped session may already be gone by the time a caller asks,
+    # and a `GenServer.call` to a dead session exits rather than raising.
+    :exit, _reason -> nil
   end
 
   @spec session_info(session_ref()) :: {:ok, session_info()} | {:error, Error.t()}

@@ -48,12 +48,16 @@ defmodule ASM.Message do
   defmodule Result do
     @moduledoc """
     Terminal metadata describing why a run completed.
+
+    `:object` carries the provider-returned structured object when the run
+    requested one through `:output_schema`, and `nil` otherwise.
     """
     @enforce_keys [:stop_reason]
-    defstruct [:stop_reason, usage: %{}, duration_ms: nil, metadata: %{}]
+    defstruct [:stop_reason, :object, usage: %{}, duration_ms: nil, metadata: %{}]
 
     @type t :: %__MODULE__{
             stop_reason: atom() | String.t(),
+            object: term() | nil,
             usage: map(),
             duration_ms: non_neg_integer() | nil,
             metadata: map()

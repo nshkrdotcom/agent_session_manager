@@ -60,16 +60,17 @@ defmodule ASM.Run.EventReducer do
           nil
       end
 
-    stop_reason =
+    {stop_reason, object} =
       case state.result do
-        %Result{stop_reason: reason} -> reason
-        _ -> nil
+        %Result{stop_reason: reason, object: object} -> {reason, object}
+        _ -> {nil, nil}
       end
 
     %Result{
       run_id: state.run_id,
       session_id: state.session_id,
       text: state.text_acc,
+      object: object,
       messages: state.messages_acc,
       cost: state.cost,
       error: state.error,
@@ -142,6 +143,7 @@ defmodule ASM.Run.EventReducer do
         run_id: materialized.run_id,
         session_id: materialized.session_id,
         text: materialized.text_acc,
+        object: legacy.object,
         messages: materialized.messages_acc,
         cost: materialized.cost,
         error: materialized.error,

@@ -1042,6 +1042,35 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert options.permission_mode == :plan
   end
 
+  test "claude sdk backend threads output_schema into structured sdk options" do
+    provider = %{Provider.resolve!(:claude) | sdk_runtime: ClaudeRuntimeStub}
+
+    schema = %{
+      "type" => "object",
+      "properties" => %{"message" => %{"type" => "string"}},
+      "required" => ["message"]
+    }
+
+    config = %{
+      provider: provider,
+      prompt: "hello",
+      execution_config: execution_config([]),
+      provider_opts: [model: "opus", output_schema: schema],
+      metadata: %{test_pid: self()}
+    }
+
+    assert {:ok, proxy, _info} = SDK.start_run(config)
+    on_exit(fn -> SDK.close(proxy) end)
+
+    assert_receive {:claude_runtime_start_opts, start_opts}, 2_000
+
+    assert Keyword.fetch!(start_opts, :options).output_format == %{
+             type: :json_schema,
+             schema: schema,
+             output_format: :stream_json
+           }
+  end
+
   test "claude sdk backend keeps the caller's posture when completion_only is off" do
     provider = %{Provider.resolve!(:claude) | sdk_runtime: ClaudeRuntimeStub}
 

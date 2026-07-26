@@ -488,7 +488,7 @@ defmodule ASM.ProviderBackend.SDK do
         kw(config, :continue_conversation, continuation_continue_conversation(config)),
       resume: kw(config, :resume, continuation_resume_id(config)),
       include_partial_messages: true,
-      output_format: :stream_json,
+      output_format: claude_output_format(config),
       timeout_ms: kw(config, :transport_timeout_ms)
     ]
     |> Keyword.merge(claude_completion_only_attrs(config))
@@ -504,6 +504,16 @@ defmodule ASM.ProviderBackend.SDK do
       [tools: [], setting_sources: [], strict_mcp_config: true]
     else
       []
+    end
+  end
+
+  defp claude_output_format(config) do
+    case kw(config, :output_schema) do
+      nil ->
+        :stream_json
+
+      schema ->
+        %{type: :json_schema, schema: schema, output_format: :stream_json}
     end
   end
 

@@ -52,6 +52,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Claude structured-output requests now reach the Claude Agent SDK lane as a
+  streaming JSON Schema output format. ASM previously accepted
+  `:output_schema` but silently replaced it with plain `:stream_json` while
+  deriving SDK options, so the Claude CLI never received `--json-schema`.
 - The `:sdk` lane never emitted `--output-schema`. `ASM.ProviderBackend.SDK`
   set `output_schema` on the Codex thread options but built
   `Codex.Exec.Options` without `output_schema_path`, and ASM bypasses

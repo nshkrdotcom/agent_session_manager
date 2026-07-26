@@ -618,10 +618,24 @@ defmodule ASM.ProviderBackend.SDK do
 
   # `codex exec` has no `--ask-for-approval` flag, so the never-approval
   # posture travels as the thread's approval policy, which the SDK renders as
-  # the config override the CLI does accept.
+  # the config override the CLI does accept. The remaining fields suppress
+  # persisted sessions, ambient user/project configuration, policy rules,
+  # search, and skill instruction surfaces.
   defp codex_completion_only_attrs(config) do
     if completion_only?(config) do
-      [sandbox: :read_only, ask_for_approval: :never]
+      [
+        sandbox: :read_only,
+        ask_for_approval: :never,
+        ephemeral: true,
+        ignore_user_config: true,
+        ignore_rules: true,
+        web_search_mode: :disabled,
+        skills_enabled: false,
+        config_overrides: [
+          {"skills.include_instructions", false},
+          {"skills.bundled.enabled", false}
+        ]
+      ]
     else
       []
     end

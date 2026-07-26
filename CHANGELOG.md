@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-07-25
+
 ### Added
 
 - `structured_output` is now a capability-queryable partial provider feature.
@@ -32,9 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   skips the caller's `after` block.
 - `:completion_only` for Claude and Codex: an empty tool set, no settings
   sources, strict MCP config and plan mode for Claude; a read-only sandbox and
-  `approval_policy="never"` for Codex. It replaces any caller-supplied
-  permission mode instead of merging with it, and is carried by both the
-  `:core` and `:sdk` lanes.
+  ephemeral operation with user configuration, rules, web search, and skills
+  disabled plus `approval_policy="never"` for Codex. It replaces any
+  caller-supplied permission mode instead of merging with it, and is carried by
+  both the `:core` and `:sdk` lanes.
 
 ### Changed
 
@@ -59,6 +62,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ASM.session_id/1` returned nil only for exceptions, while a call to a stopped
   session exits; it now catches that exit, so `ASM.stop_session/1` on an
   already-collected session is an honest `{:error, :not_found}`.
+- `ASM.start_session/1` rejects a non-pid `:owner` with a typed
+  `:config_invalid` error and tears down the just-created subtree instead of
+  silently turning the session into an unowned one.
+- Optional SDK tests no longer scan sibling checkout `_build` trees or load
+  their transitive beams. Checked-in provider-shape stubs and local fake
+  transports keep the default suite hermetic and aligned with the current SDK
+  contracts. The explicit live-example `--sdk-root` workflow remains available.
+- Refreshed the `zoi` lock from 0.18.5 to the current 0.18.7 release.
 
 ## [0.10.0] - 2026-07-13
 
@@ -820,7 +831,8 @@ See `guides/migrating_to_v0.8.md` for migration details.
 - Basic project structure with mix.exs configuration
 - Project logo and assets
 
-[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.9.0...v0.9.1

@@ -314,12 +314,14 @@ permission mode rather than merging with it:
 | Provider | Effect                                                             |
 | -------- | ------------------------------------------------------------------ |
 | Claude   | empty tool set, no settings sources, strict MCP config, plan mode  |
-| Codex    | read-only sandbox, `approval_policy="never"`, no auto/bypass flags |
+| Codex    | read-only, ephemeral, no ambient config/rules/search/skills, never approvals |
 
 Both ASM lanes carry it. The `:core` lane passes the option to the shared
 provider profile; the `:sdk` lane re-expresses the same posture in each SDK's
-own vocabulary (`sandbox: :read_only` and `ask_for_approval: :never` for Codex
-thread options, `tools: []`, `setting_sources: []`, `strict_mcp_config: true`
+own vocabulary (`sandbox: :read_only`, `ephemeral: true`,
+`ignore_user_config: true`, `ignore_rules: true`, disabled web search and
+skills, and `ask_for_approval: :never` for Codex thread options;
+`tools: []`, `setting_sources: []`, `strict_mcp_config: true`
 and `permission_mode: :plan` for Claude SDK options), because the SDK lane
 derives its own options and would otherwise discard the request silently.
 

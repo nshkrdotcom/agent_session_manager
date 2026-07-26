@@ -982,6 +982,16 @@ defmodule ASM.ProviderBackend.SDKTest do
 
     assert thread_opts.sandbox == :read_only
     assert thread_opts.ask_for_approval == :never
+    assert thread_opts.ephemeral == true
+    assert thread_opts.ignore_user_config == true
+    assert thread_opts.ignore_rules == true
+    assert thread_opts.web_search_mode == :disabled
+    assert thread_opts.web_search_mode_explicit == true
+    assert thread_opts.skills_enabled == false
+
+    assert {"skills.include_instructions", false} in thread_opts.config_overrides
+    assert {"skills.bundled.enabled", false} in thread_opts.config_overrides
+
     assert thread_opts.full_auto == false
     assert thread_opts.dangerously_bypass_approvals_and_sandbox == false
   end

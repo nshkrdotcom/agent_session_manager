@@ -6,7 +6,7 @@ defmodule AgentSessionManager.MixProject do
   use Mix.Project
 
   @app :agent_session_manager
-  @version "0.10.0"
+  @version "0.11.0"
   @source_url "https://github.com/nshkrdotcom/agent_session_manager"
   @homepage_url "https://hex.pm/packages/agent_session_manager"
   @docs_url "https://hexdocs.pm/agent_session_manager"
@@ -115,7 +115,8 @@ defmodule AgentSessionManager.MixProject do
         "GitHub" => @source_url,
         "Hex" => @homepage_url,
         "HexDocs" => @docs_url,
-        "Changelog" => "#{@source_url}/blob/main/CHANGELOG.md"
+        "Changelog" => "#{@source_url}/blob/main/CHANGELOG.md",
+        "License" => "#{@source_url}/blob/main/LICENSE"
       }
     ]
   end

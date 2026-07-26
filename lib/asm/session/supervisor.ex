@@ -77,6 +77,18 @@ defmodule ASM.Session.Supervisor do
     end
   end
 
+  defp maybe_scope_to_owner({:ok, subtree_pid}, supervisor, session_id, _invalid_owner) do
+    _ = stop_session(supervisor, subtree_pid)
+
+    {:error,
+     Error.new(
+       :config_invalid,
+       :config,
+       "session owner must be a pid or nil",
+       cause: %{session_id: session_id}
+     )}
+  end
+
   defp maybe_scope_to_owner(result, _supervisor, _session_id, _owner), do: result
 
   @spec stop_session(String.t() | pid()) :: :ok | {:error, :not_found}

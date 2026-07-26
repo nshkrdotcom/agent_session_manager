@@ -54,12 +54,12 @@ Gemini model endpoints; it is not an ASM CLI provider.
 
 ## Install
 
-ASM 0.10.0 requires Elixir 1.19 or later.
+ASM 0.11.0 requires Elixir 1.19 or later.
 
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.10.0"}
+    {:agent_session_manager, "~> 0.11.0"}
   ]
 end
 ```
@@ -75,13 +75,13 @@ Optional provider SDK dependencies stay additive. Add one only when you want
 that provider's SDK lane/runtime kit or, where it exists today, its ASM
 provider-native namespace:
 
-- `{:claude_agent_sdk, "~> 0.18.0", optional: true}` for Claude control-protocol
+- `{:claude_agent_sdk, "~> 0.19.0", optional: true}` for Claude control-protocol
   helpers and `ASM.Extensions.ProviderSDK.Claude`
-- `{:codex_sdk, "~> 0.17.0", optional: true}` for Codex app-server, MCP,
+- `{:codex_sdk, "~> 0.18.0", optional: true}` for Codex app-server, MCP,
   realtime, voice helpers, and `ASM.Extensions.ProviderSDK.Codex`
 - `{:amp_sdk, "~> 0.6.0", optional: true}` for Amp SDK lane/runtime-kit
   availability and `ASM.Extensions.ProviderSDK.Amp`
-- `{:cursor_cli_sdk, "~> 0.1.0", optional: true}` for Cursor SDK
+- `{:cursor_cli_sdk, "~> 0.2.0", optional: true}` for Cursor SDK
   lane/runtime-kit availability and `ASM.Extensions.ProviderSDK.Cursor`
 - `{:antigravity_cli_sdk, "~> 0.1.0", optional: true}` for Antigravity SDK
   lane/runtime-kit availability. Antigravity currently composes through the

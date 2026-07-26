@@ -108,6 +108,19 @@ defmodule ASM.Session.OwnerScopeTest do
     refute Keyword.has_key?(info.options, :owner)
   end
 
+  test "an invalid owner fails closed and leaves no session subtree" do
+    session_id =
+      "owner-scope-invalid-" <> Integer.to_string(System.unique_integer([:positive]))
+
+    assert {:error, %ASM.Error{} = error} =
+             ASM.start_session(session_id: session_id, provider: :claude, owner: :not_a_pid)
+
+    assert error.kind == :config_invalid
+    assert error.domain == :config
+    assert await_unregistered(session_id, :subtree)
+    refute session_id in Session.Supervisor.list_sessions()
+  end
+
   test "stopping an already owner-collected session is an honest not_found, never an exit" do
     session_id = "owner-scope-gone-" <> Integer.to_string(System.unique_integer([:positive]))
     test_pid = self()

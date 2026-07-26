@@ -3,11 +3,10 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
 
   alias ASM.Extensions.ProviderSDK.Claude
   alias ASM.Options.ProviderNativeOptionError
+  alias ASM.TestSupport.ClaudeTransport
   alias ClaudeAgentSDK.{Client, Hooks, Options}
   alias ClaudeAgentSDK.Hooks.Matcher
-  alias ClaudeAgentSDK.TestSupport.FakeCLI
   alias CliSubprocessCore.ModelRegistry.Selection
-  alias CliSubprocessCore.TestSupport.FakeSSH
 
   test "derive_options/2 maps strict common ASM config and keeps Claude-native overrides explicit" do
     native_overrides = [
@@ -149,29 +148,20 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
     assert options.enable_file_checkpointing == true
   end
 
-  test "start_client/3 preserves ASM execution-surface config over fake SSH" do
-    fake_cli = FakeCLI.new!()
-    fake_ssh = FakeSSH.new!()
+  test "start_client/3 preserves ASM execution-surface config through the client transport" do
     hook = fn _input, _tool_use_id, _context -> Hooks.Output.allow() end
-    cwd = fake_cli.root_dir
-
-    on_exit(fn ->
-      FakeCLI.cleanup(fake_cli)
-      FakeSSH.cleanup(fake_ssh)
-    end)
 
     asm_opts =
       [
         provider: :claude,
-        cwd: cwd,
-        cli_path: fake_cli.script_path,
+        cwd: "/tmp/asm-claude-client",
+        cli_path: "/usr/local/bin/claude",
         permission_mode: :plan,
         model: "sonnet",
         max_turns: 4,
         execution_surface: [
           surface_kind: :ssh_exec,
-          transport_options:
-            FakeSSH.transport_options(fake_ssh, destination: "claude.extension.example")
+          transport_options: [destination: "claude.extension.example"]
         ]
       ]
 
@@ -181,25 +171,19 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
     ]
 
     assert {:ok, client} =
-             Claude.start_client(asm_opts, native_overrides, control_request_timeout_ms: 1_000)
+             Claude.start_client(asm_opts, native_overrides,
+               transport: ClaudeTransport,
+               transport_opts: [owner: self()],
+               control_request_timeout_ms: 1_000
+             )
 
     on_exit(fn -> safe_stop_client(client) end)
 
-    assert FakeCLI.wait_until_started(fake_cli, 1_000) == :ok
-    assert {:ok, request} = FakeCLI.initialize_request(fake_cli, 1_000)
-    assert request["type"] == "control_request"
-    assert request["request"]["subtype"] == "initialize"
-    assert is_map(request["request"]["hooks"])
-
-    request_id = FakeCLI.respond_initialize_success!(fake_cli, %{}, 1_000)
-    assert is_binary(request_id)
+    assert_receive {:claude_transport_options, %Options{} = options}, 1_000
+    assert options.execution_surface.surface_kind == :ssh_exec
+    assert options.execution_surface.transport_options[:destination] == "claude.extension.example"
+    assert options.path_to_claude_code_executable == "/usr/local/bin/claude"
     assert :ok = Client.await_initialized(client, 1_000)
-    assert FakeSSH.wait_until_written(fake_ssh, 1_000) == :ok
-
-    assert String.contains?(
-             FakeSSH.read_manifest!(fake_ssh),
-             "destination=claude.extension.example"
-           )
   end
 
   test "sdk_options/2 rejects non-Claude providers" do

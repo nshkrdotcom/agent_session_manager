@@ -14,25 +14,6 @@ defmodule ASM.TestSupport.OptionalSDK do
   end
 end
 
-workspace_build_glob = fn repo, env ->
-  Path.expand("../../../#{repo}/_build/#{env}/lib/*/ebin", __DIR__)
-end
-
-workspace_provider_ebins =
-  ["codex_sdk", "claude_agent_sdk", "amp_sdk", "cursor_cli_sdk"]
-  |> Enum.flat_map(fn repo ->
-    test_paths = workspace_build_glob.(repo, "test") |> Path.wildcard()
-
-    if test_paths == [] do
-      workspace_build_glob.(repo, "dev") |> Path.wildcard()
-    else
-      test_paths
-    end
-  end)
-  |> Enum.uniq()
-
-Code.prepend_paths(workspace_provider_ebins)
-
 unless Code.ensure_loaded?(ClaudeAgentSDK) do
   defmodule ClaudeAgentSDK do
     @moduledoc false
@@ -44,8 +25,6 @@ end
 unless Code.ensure_loaded?(ClaudeAgentSDK.Transport) do
   defmodule ClaudeAgentSDK.Transport do
     @moduledoc false
-
-    use Boundary, check: [in: false, out: false]
 
     @callback start(keyword()) :: GenServer.on_start()
     @callback start_link(keyword()) :: GenServer.on_start()
@@ -70,6 +49,8 @@ unless Code.ensure_loaded?(ClaudeAgentSDK.Options) do
               max_turns: nil,
               system_prompt: nil,
               append_system_prompt: nil,
+              continue_conversation: nil,
+              resume: nil,
               include_partial_messages: false,
               output_format: nil,
               timeout_ms: nil,
@@ -228,6 +209,8 @@ unless Code.ensure_loaded?(ClaudeAgentSDK.Client) do
     def handle_info(_message, state), do: {:noreply, state}
 
     defp start_transport(module, opts) do
+      Code.ensure_loaded?(module)
+
       cond do
         function_exported?(module, :start_link, 1) -> module.start_link(opts)
         function_exported?(module, :start, 1) -> module.start(opts)
@@ -269,9 +252,10 @@ unless Code.ensure_loaded?(Codex.Protocol.CollaborationMode) do
     @moduledoc false
 
     defstruct mode: nil,
-              model: "",
+              model: nil,
               reasoning_effort: nil,
-              developer_instructions: nil
+              developer_instructions: nil,
+              extra: %{}
 
     def new(attrs) when is_list(attrs) or is_map(attrs) do
       struct!(__MODULE__, Enum.into(attrs, %{}))
@@ -283,7 +267,9 @@ unless Code.ensure_loaded?(Codex.Options) do
   defmodule Codex.Options do
     @moduledoc false
 
-    defstruct model_payload: nil,
+    defstruct api_key: nil,
+              base_url: nil,
+              model_payload: nil,
               model: nil,
               reasoning_effort: nil,
               execution_surface: nil,
@@ -293,7 +279,15 @@ unless Code.ensure_loaded?(Codex.Options) do
               hide_agent_reasoning: false
 
     def new(attrs) when is_list(attrs) or is_map(attrs) do
-      struct!(__MODULE__, Enum.into(attrs, %{}))
+      attrs =
+        attrs
+        |> Enum.into(%{})
+        |> Map.update(:api_key, nil, fn
+          "" -> nil
+          value -> value
+        end)
+
+      struct!(__MODULE__, attrs)
     end
   end
 end
@@ -314,9 +308,16 @@ unless Code.ensure_loaded?(Codex.Thread.Options) do
               dangerously_bypass_approvals_and_sandbox: false,
               sandbox: :default,
               ask_for_approval: nil,
+              ephemeral: nil,
+              ignore_user_config: false,
+              ignore_rules: false,
               base_instructions: nil,
               additional_directories: [],
               skip_git_repo_check: false,
+              web_search_mode: :disabled,
+              web_search_mode_explicit: false,
+              skills_enabled: nil,
+              config_overrides: [],
               output_schema: nil,
               personality: nil,
               collaboration_mode: nil,
@@ -324,10 +325,15 @@ unless Code.ensure_loaded?(Codex.Thread.Options) do
               transport: nil
 
     def new(attrs) when is_list(attrs) or is_map(attrs) do
+      attrs = Enum.into(attrs, %{})
+
+      web_search_mode_explicit =
+        Map.has_key?(attrs, :web_search_mode) or Map.has_key?(attrs, "web_search_mode")
+
       attrs =
         attrs
-        |> Enum.into(%{})
         |> normalize_collaboration_mode()
+        |> Map.put_new(:web_search_mode_explicit, web_search_mode_explicit)
 
       struct!(__MODULE__, attrs)
     end
@@ -352,6 +358,8 @@ unless Code.ensure_loaded?(Codex.Exec.Options) do
               execution_surface: nil,
               thread: nil,
               output_schema_path: nil,
+              env: %{},
+              clear_env?: nil,
               timeout_ms: nil,
               max_stderr_buffer_bytes: nil
 
@@ -368,6 +376,7 @@ unless Code.ensure_loaded?(Codex.Thread) do
     defstruct codex_opts: nil,
               thread_opts: nil,
               thread_id: nil,
+              resume: nil,
               transport: nil
   end
 end
@@ -519,7 +528,11 @@ unless Code.ensure_loaded?(Codex.AppServer) do
   defmodule Codex.AppServer do
     @moduledoc false
 
-    def connect(_options, _connect_opts) do
+    def connect(options, connect_opts) do
+      if owner = Keyword.get(connect_opts, :test_owner) do
+        send(owner, {:codex_app_server_options, options})
+      end
+
       pid =
         spawn_link(fn ->
           receive do
@@ -564,11 +577,35 @@ unless Code.ensure_loaded?(Codex) do
     use Boundary, check: [in: false, out: false]
 
     def start_thread(%Codex.Options{} = codex_opts, %Codex.Thread.Options{} = thread_opts) do
+      build_thread(codex_opts, thread_opts)
+    end
+
+    def resume_thread(
+          thread_id,
+          %Codex.Options{} = codex_opts,
+          %Codex.Thread.Options{} = thread_opts
+        )
+        when is_binary(thread_id) or thread_id == :last do
+      case thread_id do
+        :last -> build_thread(codex_opts, thread_opts, nil, :last)
+        id -> build_thread(codex_opts, thread_opts, id, nil)
+      end
+    end
+
+    defp build_thread(codex_opts, thread_opts, thread_id \\ nil, resume \\ nil) do
+      thread_id =
+        if is_nil(thread_id) and is_nil(resume) do
+          "thread-#{System.unique_integer([:positive])}"
+        else
+          thread_id
+        end
+
       {:ok,
        %Codex.Thread{
          codex_opts: codex_opts,
          thread_opts: thread_opts,
-         thread_id: "thread-#{System.unique_integer([:positive])}",
+         thread_id: thread_id,
+         resume: resume,
          transport: thread_opts.transport
        }}
     end
@@ -600,6 +637,7 @@ unless Code.ensure_loaded?(Codex.Runtime.Exec) do
         prompt: Keyword.fetch!(opts, :input),
         command: Map.get(codex_opts, :codex_path_override) || Map.get(codex_opts, :codex_path),
         cwd: Map.get(thread_opts, :working_directory),
+        execution_surface: Map.get(exec_opts, :execution_surface),
         model_payload: Map.get(codex_opts, :model_payload),
         output_schema: Map.get(thread_opts, :output_schema),
         provider_permission_mode: permission_mode(thread_opts)
@@ -643,12 +681,25 @@ unless Code.ensure_loaded?(AmpSdk.Types.Options) do
               execution_surface: nil,
               mode: "smart",
               dangerously_allow_all: false,
+              visibility: "workspace",
+              settings_file: nil,
+              log_level: nil,
+              log_file: nil,
               env: %{},
+              continue_thread: nil,
+              mcp_config: nil,
+              toolbox: nil,
+              skills: nil,
+              permissions: nil,
+              labels: nil,
               thinking: false,
-              stream_timeout_ms: nil,
-              max_stderr_buffer_bytes: nil,
+              governed_authority: nil,
+              stream_timeout_ms: 300_000,
+              max_stderr_buffer_bytes: 262_144,
               no_ide: false,
-              no_notifications: false
+              no_notifications: false,
+              no_color: false,
+              no_jetbrains: false
   end
 end
 

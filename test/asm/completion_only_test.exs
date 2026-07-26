@@ -41,7 +41,13 @@ defmodule ASM.CompletionOnlyTest do
         )
 
       assert flag_value(args, "--sandbox") == "read-only"
+      assert "--ephemeral" in args
+      assert "--ignore-user-config" in args
+      assert "--ignore-rules" in args
       assert ~s(approval_policy="never") in args
+      assert ~s(web_search="disabled") in args
+      assert "skills.include_instructions=false" in args
+      assert "skills.bundled.enabled=false" in args
       refute "--dangerously-bypass-approvals-and-sandbox" in args
       refute "--full-auto" in args
     end

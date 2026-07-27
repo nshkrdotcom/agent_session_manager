@@ -21,10 +21,6 @@ defmodule ASM.Options.Codex do
       model_provider: [type: {:or, [:string, nil]}, default: nil],
       oss_provider: [type: {:or, [:string, nil]}, default: nil],
       skip_git_repo_check: [type: :boolean, default: false],
-      # A completion is not a coding agent: a read-only sandbox and a never
-      # approval policy. It REPLACES any caller-supplied permission mode
-      # rather than merging with it.
-      completion_only: [type: :boolean, default: false],
       app_server: [type: :boolean, default: false],
       host_tools: [
         type: {:custom, ASM.Options, :validate_passthrough_list, [:host_tools]},

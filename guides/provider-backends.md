@@ -251,7 +251,9 @@ Relevant Amp provider fields:
 `amp_sdk` does not expose a second raw model/backend surface. ASM finalizes any
 shared-core model selection before the Amp SDK boundary, and `AmpSdk.Types.Options.validate!/1`
 only canonicalizes a supplied payload rather than inventing another resolution
-path inside the Amp repo.
+path inside the Amp repo. ASM forwards `:transport_headless_timeout_ms`
+separately from Amp's rearming `:stream_timeout_ms`, so transport orphan
+reaping remains finite even when the stream timeout is configured differently.
 
 In governed ASM mode, Amp env/model defaults and native CLI auth remain
 standalone-only. Governed Amp starts fail closed until a verified provider-auth
@@ -279,7 +281,10 @@ Relevant Antigravity provider fields:
 ASM common `:cwd` remains the workspace placement key. The Antigravity core
 profile and SDK lane render the prompt with `agy --print <prompt>`. The CLI's
 plain-text stdout is normalized into assistant deltas and final result text by
-the core/SDK runtime layers.
+the core/SDK runtime layers. ASM also forwards
+`:transport_headless_timeout_ms` into `AntigravityCliSdk.Options`, preserving
+the SDK's finite transport orphan-reap bound independently of its stream idle
+timeout.
 
 Permission mapping:
 

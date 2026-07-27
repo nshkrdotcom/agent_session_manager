@@ -44,6 +44,9 @@ defmodule ASM.Schema.ProviderOptions do
     # gated per provider by the :structured_output partial feature; the CLI
     # flag spelling stays in cli_subprocess_core.
     output_schema: Zoi.optional(Zoi.nullish(Conventions.any_map())),
+    # Normalized completion-only posture. Common at the option layer and gated
+    # per provider by the shared :completion_only partial-feature manifest.
+    completion_only: Zoi.boolean(),
     model_payload: Conventions.optional_any(),
     queue_limit: Zoi.integer() |> Zoi.min(1),
     overflow_policy: Conventions.enum(@overflow_policies),
@@ -75,7 +78,6 @@ defmodule ASM.Schema.ProviderOptions do
     anthropic_base_url: Conventions.optional_trimmed_string(),
     anthropic_auth_token: Conventions.optional_trimmed_string(),
     include_thinking: Zoi.boolean(),
-    completion_only: Zoi.boolean(),
     max_turns: Zoi.optional(Zoi.nullish(Zoi.integer() |> Zoi.min(1)))
   }
 
@@ -87,7 +89,6 @@ defmodule ASM.Schema.ProviderOptions do
     model_provider: Conventions.optional_trimmed_string(),
     oss_provider: Conventions.optional_trimmed_string(),
     skip_git_repo_check: Zoi.boolean(),
-    completion_only: Zoi.boolean(),
     app_server: Zoi.boolean(),
     host_tools: Zoi.array(Conventions.optional_any()),
     dynamic_tools: Zoi.array(Conventions.optional_any()),

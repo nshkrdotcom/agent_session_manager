@@ -695,11 +695,43 @@ unless Code.ensure_loaded?(AmpSdk.Types.Options) do
               thinking: false,
               governed_authority: nil,
               stream_timeout_ms: 300_000,
+              transport_headless_timeout_ms: 5_000,
               max_stderr_buffer_bytes: 262_144,
               no_ide: false,
               no_notifications: false,
               no_color: false,
               no_jetbrains: false
+  end
+end
+
+unless Code.ensure_loaded?(AntigravityCliSdk) do
+  defmodule AntigravityCliSdk do
+    @moduledoc false
+
+    use Boundary, check: [in: false, out: false]
+  end
+end
+
+unless Code.ensure_loaded?(AntigravityCliSdk.Options) do
+  defmodule AntigravityCliSdk.Options do
+    @moduledoc false
+
+    defstruct execution_surface: nil,
+              model_payload: nil,
+              model: nil,
+              cli_command: nil,
+              cwd: nil,
+              env: %{},
+              sandbox: false,
+              dangerously_skip_permissions: false,
+              conversation: nil,
+              continue: false,
+              add_dirs: [],
+              print_timeout: nil,
+              log_file: nil,
+              timeout_ms: 60_000,
+              transport_headless_timeout_ms: 5_000,
+              max_stderr_buffer_bytes: 65_536
   end
 end
 

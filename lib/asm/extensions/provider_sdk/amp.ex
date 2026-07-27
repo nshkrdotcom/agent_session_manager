@@ -24,6 +24,7 @@ defmodule ASM.Extensions.ProviderSDK.Amp do
     :cwd,
     :execution_surface,
     :stream_timeout_ms,
+    :transport_headless_timeout_ms,
     :model_payload
   ]
 
@@ -89,5 +90,9 @@ defmodule ASM.Extensions.ProviderSDK.Amp do
     |> Derivation.maybe_put(:cwd, Map.get(common, :cwd))
     |> Derivation.maybe_put(:execution_surface, Map.get(common, :execution_surface))
     |> Derivation.maybe_put(:stream_timeout_ms, Map.get(common, :transport_timeout_ms))
+    |> Derivation.maybe_put(
+      :transport_headless_timeout_ms,
+      Map.get(common, :transport_headless_timeout_ms)
+    )
   end
 end

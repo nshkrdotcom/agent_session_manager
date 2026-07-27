@@ -13,7 +13,8 @@ defmodule ASM.Extensions.ProviderSDK.AmpTest do
         surface_kind: :ssh_exec,
         transport_options: [destination: "amp.extension.example", port: 2222]
       ],
-      transport_timeout_ms: 15_000
+      transport_timeout_ms: 15_000,
+      transport_headless_timeout_ms: 4_321
     ]
 
     native_overrides = [
@@ -28,6 +29,7 @@ defmodule ASM.Extensions.ProviderSDK.AmpTest do
     assert options.execution_surface.surface_kind == :ssh_exec
     assert options.execution_surface.transport_options[:destination] == "amp.extension.example"
     assert options.stream_timeout_ms == 15_000
+    assert options.transport_headless_timeout_ms == 4_321
     assert options.permissions == []
     assert options.mcp_config == %{"mcpServers" => %{}}
   end

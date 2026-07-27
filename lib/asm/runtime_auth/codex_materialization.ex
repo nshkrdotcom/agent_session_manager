@@ -785,7 +785,7 @@ defmodule ASM.RuntimeAuth.CodexMaterialization do
   defp present_override?(value) when is_binary(value), do: String.trim(value) != ""
   defp present_override?(value) when is_list(value), do: value != []
   defp present_override?(value) when is_map(value), do: map_size(value) > 0
-  defp present_override?(value), do: not is_nil(value)
+  defp present_override?(_value), do: true
 
   defp attr(attrs, key, default \\ nil)
 

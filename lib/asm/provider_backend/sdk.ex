@@ -538,6 +538,7 @@ defmodule ASM.ProviderBackend.SDK do
       env: kw(config, :env, %{}),
       thinking: kw(config, :include_thinking, false),
       stream_timeout_ms: kw(config, :transport_timeout_ms),
+      transport_headless_timeout_ms: kw(config, :transport_headless_timeout_ms),
       max_stderr_buffer_bytes: kw(config, :max_stderr_buffer_bytes),
       no_ide: true,
       no_notifications: true
@@ -585,6 +586,7 @@ defmodule ASM.ProviderBackend.SDK do
       print_timeout: kw(config, :print_timeout),
       log_file: kw(config, :log_file),
       timeout_ms: kw(config, :transport_timeout_ms),
+      transport_headless_timeout_ms: kw(config, :transport_headless_timeout_ms),
       max_stderr_buffer_bytes: kw(config, :max_stderr_buffer_bytes)
     ]
     |> drop_nil_values()

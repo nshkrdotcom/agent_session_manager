@@ -117,6 +117,9 @@ Activation-aware discovery follows a separate rule:
 - Cursor and Amp start with strict derivation helpers. They still have
   explicit namespaces so Cursor mode/MCP/plugin settings and Amp
   permissions/MCP/skills have one provider-native home.
+  Amp derivation forwards both `:transport_timeout_ms` as
+  `:stream_timeout_ms` and the independent
+  `:transport_headless_timeout_ms` orphan-reap bound.
   Antigravity has no derivation helper in this namespace layer yet; its SDK
   lane is available through the runtime kit when installed.
 

@@ -327,7 +327,8 @@ defmodule ASM.Provider do
           :ollama_http,
           :ollama_timeout_ms
         ]),
-      structured_output: common_feature_manifest(provider, :structured_output, [:output_schema])
+      structured_output: common_feature_manifest(provider, :structured_output, [:output_schema]),
+      completion_only: common_feature_manifest(provider, :completion_only, [:completion_only])
     }
   end
 

@@ -2,8 +2,6 @@
   <img src="assets/agent_session_manager.svg" alt="Agent Session Manager" width="200" />
 </p>
 
-# ASM (Agent Session Manager)
-
 <p align="center">
   <a href="https://github.com/nshkrdotcom/agent_session_manager">
     <img src="https://img.shields.io/badge/github-nshkrdotcom%2Fagent__session__manager-24292e.svg" alt="GitHub" />
@@ -12,6 +10,8 @@
     <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License" />
   </a>
 </p>
+
+# ASM (Agent Session Manager)
 
 `ASM` is an OTP-native Elixir runtime for running multi-turn AI sessions across
 five first-party CLI providers with one API.
@@ -39,6 +39,7 @@ Gemini model endpoints; it is not an ASM CLI provider.
 - `guides/common-and-partial-provider-features.md` - normalized permission terms and partial common features such as Ollama
 - `guides/event-model-and-result-projection.md` - stream projection and reducers
 - `guides/remote-node-execution.md` - remote execution model
+- `guides/migrating-to-0.12.md` - Core 0.4 and SDK-lane migration notes
 - `examples/README.md` - live and offline proof entrypoints
 
 ## Why ASM
@@ -54,12 +55,12 @@ Gemini model endpoints; it is not an ASM CLI provider.
 
 ## Install
 
-ASM 0.11.0 requires Elixir 1.19 or later.
+ASM 0.12.0 requires Elixir 1.19 or later.
 
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.11.0"}
+    {:agent_session_manager, "~> 0.12.0"}
   ]
 end
 ```
@@ -79,11 +80,11 @@ provider-native namespace:
   helpers and `ASM.Extensions.ProviderSDK.Claude`
 - `{:codex_sdk, "~> 0.18.0", optional: true}` for Codex app-server, MCP,
   realtime, voice helpers, and `ASM.Extensions.ProviderSDK.Codex`
-- `{:amp_sdk, "~> 0.6.0", optional: true}` for Amp SDK lane/runtime-kit
+- `{:amp_sdk, "~> 0.7.0", optional: true}` for Amp SDK lane/runtime-kit
   availability and `ASM.Extensions.ProviderSDK.Amp`
 - `{:cursor_cli_sdk, "~> 0.2.0", optional: true}` for Cursor SDK
   lane/runtime-kit availability and `ASM.Extensions.ProviderSDK.Cursor`
-- `{:antigravity_cli_sdk, "~> 0.1.0", optional: true}` for Antigravity SDK
+- `{:antigravity_cli_sdk, "~> 0.2.0", optional: true}` for Antigravity SDK
   lane/runtime-kit availability. Antigravity currently composes through the
   common ASM provider surface and SDK runtime kit; it does not register a
   separate `ASM.Extensions.ProviderSDK.Antigravity` namespace.
@@ -981,7 +982,8 @@ Strict common/session options include:
 - `cwd`
 - `approval_timeout_ms`
 - `transport_timeout_ms` (lane runtime timeout forwarded to the effective core or SDK backend)
-- `transport_headless_timeout_ms` (core lane subprocess headless timeout)
+- `transport_headless_timeout_ms` (finite subprocess orphan-reap timeout;
+  forwarded through Core and the Amp/Antigravity SDK lanes)
 - queue/subscriber/run-capacity options used by ASM session scheduling
 
 `ASM.query/3` takes the provider positionally:
@@ -1025,8 +1027,9 @@ ignoring the request.
 
 - `output_schema` is gated on `:structured_output` (Claude and Codex today)
 - the `ollama*` options are gated on `:ollama` (Claude and Codex today)
-- `completion_only` is offered only by the provider schemas whose CLI has a
-  real no-write, no-approval posture (Claude and Codex today)
+- `completion_only` is gated on `:completion_only` (Claude and Codex today).
+  Every provider schema accepts the option shape so unsupported providers fail
+  on the capability instead of reporting an unknown option.
 
 See [Common And Partial Provider Features](guides/common-and-partial-provider-features.md).
 

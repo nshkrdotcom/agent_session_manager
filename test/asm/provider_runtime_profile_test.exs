@@ -142,7 +142,7 @@ defmodule ASM.ProviderRuntimeProfileTest do
       {:codex, "phase5prelim://asm/codex",
        ~s({"type":"response.output_text.delta","delta":"codex asm","session_id":"codex-asm"}\n),
        "codex asm"},
-      {:antigravity, "phase5prelim://asm/antigravity", "antigravity asm\n", "antigravity asm"},
+      {:antigravity, "phase5prelim://asm/antigravity", "antigravity asm", "antigravity asm"},
       {:amp, "phase5prelim://asm/amp",
        ~s({"type":"message_streamed","delta":"amp asm","session_id":"amp-asm"}\n), "amp asm"}
     ]

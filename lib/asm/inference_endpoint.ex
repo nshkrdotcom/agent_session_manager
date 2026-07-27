@@ -276,7 +276,7 @@ defmodule ASM.InferenceEndpoint do
     |> Enum.reduce(%{}, fn {key, value}, acc ->
       normalized_key = normalize_ref_key(key)
 
-      if is_atom(normalized_key) and present_ref_value?(value) do
+      if not is_nil(normalized_key) and present_ref_value?(value) do
         Map.put(acc, normalized_key, value)
       else
         acc

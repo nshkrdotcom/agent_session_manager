@@ -33,6 +33,7 @@ defmodule ASM.Options do
     :ollama_http,
     :ollama_timeout_ms,
     :output_schema,
+    :completion_only,
     :model_payload,
     :queue_limit,
     :overflow_policy,
@@ -112,6 +113,7 @@ defmodule ASM.Options do
     :host_tools,
     :dynamic_tools,
     :output_schema,
+    :completion_only,
     :additional_directories,
     :sandbox,
     :extensions,
@@ -192,6 +194,7 @@ defmodule ASM.Options do
         type: {:custom, __MODULE__, :validate_passthrough_map, [:output_schema]},
         default: nil
       ],
+      completion_only: [type: :boolean, default: false],
       model_payload: [
         type: {:custom, __MODULE__, :validate_model_payload, [:model_payload]},
         default: nil
@@ -691,6 +694,7 @@ defmodule ASM.Options do
     validated
     |> normalize_ollama_surface()
     |> normalize_structured_output_surface()
+    |> normalize_completion_only_surface()
     |> then(&{:ok, &1})
   rescue
     error in [ArgumentError] ->
@@ -905,6 +909,28 @@ defmodule ASM.Options do
       raise ArgumentError,
             "provider #{inspect(provider)} does not support the :structured_output " <>
               "common feature required by the :output_schema option"
+    end
+  end
+
+  # `:completion_only` is structurally common so unsupported providers fail on
+  # the capability they lack instead of on an option-shape accident. The
+  # shared core catalog remains the single source of provider support.
+  defp normalize_completion_only_surface(validated) when is_list(validated) do
+    if Keyword.get(validated, :completion_only, false) do
+      provider =
+        validated
+        |> Keyword.fetch!(:provider)
+        |> canonical_feature_provider()
+
+      if ProviderFeatures.supports_common_feature?(provider, :completion_only) do
+        validated
+      else
+        raise ArgumentError,
+              "provider #{inspect(provider)} does not support the :completion_only " <>
+                "common feature required by the :completion_only option"
+      end
+    else
+      validated
     end
   end
 

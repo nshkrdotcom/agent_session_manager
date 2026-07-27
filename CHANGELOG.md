@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-07-27
+
+### Added
+
+- A total `:completion_only` common-feature manifest sourced from
+  `CliSubprocessCore.ProviderFeatures`. Every provider schema now accepts the
+  option shape; Amp, Antigravity, and Cursor fail with an explicit typed
+  capability error when it is requested.
+- Amp and Antigravity SDK-lane carriage for
+  `:transport_headless_timeout_ms`, keeping finite transport orphan reaping
+  separate from their stream idle timeouts.
+- A 0.12 migration guide and shared dependency-source helper v6 release-DAG
+  coverage.
+
+### Changed
+
+- Require `cli_subprocess_core ~> 0.4.0`.
+- Move `:completion_only` from the Claude/Codex-local option schemas into the
+  normalized common option and Zoi schema surfaces while retaining the
+  provider-specific posture implementation in both Core and SDK lanes.
+- Refresh the documented optional SDK train to Amp 0.7.0 and Antigravity
+  0.2.0; Cursor 0.2.0 remains the already-published reference.
+
+### Fixed
+
+- Elixir 1.20 compiler warnings caused by nil-after-atom clauses, an always-true
+  atom check, and a redundant non-nil predicate.
+
 ## [0.11.0] - 2026-07-27
 
 ### Added
@@ -839,7 +867,8 @@ See `guides/migrating_to_v0.8.md` for migration details.
 - Basic project structure with mix.exs configuration
 - Project logo and assets
 
-[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.9.1...v0.9.2

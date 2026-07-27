@@ -69,8 +69,8 @@ defmodule ASM.Schema.RemoteNode do
   def normalize_remote_cookie(value, opts), do: normalize_remote_cookie(value, [], opts)
 
   @doc false
-  def normalize_remote_cookie(value, _args, _opts) when is_atom(value), do: {:ok, value}
   def normalize_remote_cookie(nil, _args, _opts), do: {:ok, nil}
+  def normalize_remote_cookie(value, _args, _opts) when is_atom(value), do: {:ok, value}
 
   def normalize_remote_cookie(_value, _args, _opts) do
     {:error, "remote_cookie must be an atom"}

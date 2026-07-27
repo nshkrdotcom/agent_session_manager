@@ -6,7 +6,7 @@ defmodule AgentSessionManager.MixProject do
   use Mix.Project
 
   @app :agent_session_manager
-  @version "0.11.0"
+  @version "0.12.0"
   @source_url "https://github.com/nshkrdotcom/agent_session_manager"
   @homepage_url "https://hex.pm/packages/agent_session_manager"
   @docs_url "https://hexdocs.pm/agent_session_manager"
@@ -168,6 +168,7 @@ defmodule AgentSessionManager.MixProject do
       "guides/remote-node-execution.md": [title: "Remote Node Execution"],
       "guides/live-adapters.md": [title: "Live Adapters"],
       "guides/boundary-enforcement.md": [title: "Boundary Enforcement"],
+      "guides/migrating-to-0.12.md": [title: "Migrating to 0.12"],
       "examples/README.md": [title: "Examples", filename: "examples"],
       "CHANGELOG.md": [title: "Changelog"],
       LICENSE: [title: "License"]
@@ -194,7 +195,7 @@ defmodule AgentSessionManager.MixProject do
       ],
       Examples: ["examples/README.md"],
       Architecture: ["guides/boundary-enforcement.md"],
-      Reference: ["CHANGELOG.md", "LICENSE"]
+      Reference: ["guides/migrating-to-0.12.md", "CHANGELOG.md", "LICENSE"]
     ]
   end
 

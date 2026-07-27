@@ -311,6 +311,12 @@ It is available for Claude and Codex, the two providers whose CLIs have a
 real no-write, no-approval posture, and it **replaces** any caller-supplied
 permission mode rather than merging with it:
 
+Like `:output_schema`, `:completion_only` is structurally accepted by every
+provider option schema and gated by the total
+`CliSubprocessCore.ProviderFeatures` manifest. Amp, Antigravity, and Cursor
+therefore return a typed capability error naming `:completion_only`; they do
+not fail with an unknown-option shape error or silently ignore the request.
+
 | Provider | Effect                                                             |
 | -------- | ------------------------------------------------------------------ |
 | Claude   | empty tool set, no settings sources, strict MCP config, plan mode  |

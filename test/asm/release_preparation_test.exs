@@ -6,19 +6,19 @@ defmodule ASM.ReleasePreparationTest do
   @repo_root Path.expand("../..", __DIR__)
   @expected_providers [:amp, :antigravity, :claude, :codex, :cursor]
 
-  test "0.11.0 release metadata and Elixir floor are frozen" do
+  test "0.12.0 release metadata and Elixir floor are frozen" do
     project = Mix.Project.config()
 
-    assert project[:version] == "0.11.0"
+    assert project[:version] == "0.12.0"
     assert project[:elixir] == "~> 1.19"
-    assert project[:docs][:source_ref] == "v0.11.0"
+    assert project[:docs][:source_ref] == "v0.12.0"
     assert project[:homepage_url] == "https://hex.pm/packages/agent_session_manager"
   end
 
-  test "publish mode selects CLI core 0.3 and Cursor 0.2 from Hex" do
+  test "publish mode selects CLI core 0.4 and Cursor 0.2 from Hex" do
     publish_deps = DependencySources.deps(@repo_root, publish?: true)
 
-    assert Keyword.fetch!(publish_deps, :cli_subprocess_core) == "~> 0.3.0"
+    assert Keyword.fetch!(publish_deps, :cli_subprocess_core) == "~> 0.4.0"
     assert Keyword.fetch!(publish_deps, :cursor_cli_sdk) == "~> 0.2.0"
 
     refute inspect(publish_deps) =~ "path:"
@@ -92,8 +92,11 @@ defmodule ASM.ReleasePreparationTest do
     assert readme =~ "Antigravity is the current Google coding-agent SDK"
     assert readme =~ "`gemini_ex` is a distinct model API SDK"
     assert readme =~ ~s({:claude_agent_sdk, "~> 0.19.0", optional: true})
-    assert readme =~ ~s({:amp_sdk, "~> 0.6.0", optional: true})
-    assert changelog =~ "## [0.11.0] - 2026-07-25"
+    assert readme =~ ~s({:codex_sdk, "~> 0.18.0", optional: true})
+    assert readme =~ ~s({:amp_sdk, "~> 0.7.0", optional: true})
+    assert readme =~ ~s({:cursor_cli_sdk, "~> 0.2.0", optional: true})
+    assert readme =~ ~s({:antigravity_cli_sdk, "~> 0.2.0", optional: true})
+    assert changelog =~ "## [0.12.0] - 2026-07-27"
 
     refute features =~ "across six providers"
     refute backends =~ "sixth first-party provider"

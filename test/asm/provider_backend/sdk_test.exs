@@ -178,6 +178,39 @@ defmodule ASM.ProviderBackend.SDKTest do
     end
   end
 
+  defmodule AntigravityRuntimeStub do
+    @moduledoc false
+
+    def start_session(opts) when is_list(opts) do
+      metadata = Keyword.get(opts, :metadata, %{})
+
+      if is_pid(metadata[:test_pid]) do
+        send(metadata[:test_pid], {:antigravity_runtime_start_opts, opts})
+      end
+
+      session =
+        spawn_link(fn ->
+          receive do
+            :stop -> :ok
+          end
+        end)
+
+      {:ok, session, %{runtime: :antigravity_stub}}
+    end
+
+    def send_input(_session, _input, _opts), do: :ok
+    def end_input(_session), do: :ok
+    def interrupt(_session), do: :ok
+    def subscribe(_session, _pid, _ref), do: :ok
+    def info(_session), do: %{runtime: :antigravity_stub}
+    def capabilities, do: [:streaming]
+
+    def close(session) when is_pid(session) do
+      send(session, :stop)
+      :ok
+    end
+  end
+
   defmodule CursorRuntimeStub do
     @moduledoc false
 
@@ -762,7 +795,8 @@ defmodule ASM.ProviderBackend.SDKTest do
       provider_opts: [
         model: "amp-1",
         permission_mode: :bypass,
-        provider_permission_mode: :dangerously_allow_all
+        provider_permission_mode: :dangerously_allow_all,
+        transport_headless_timeout_ms: 7_654
       ],
       metadata: %{test_pid: self()}
     }
@@ -788,10 +822,50 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert options.dangerously_allow_all == true
     assert options.no_ide == true
     assert options.no_notifications == true
+    assert options.transport_headless_timeout_ms == 7_654
 
     metadata = Keyword.fetch!(start_opts, :metadata)
     assert metadata[:lane] == :sdk
     assert metadata[:asm_provider] == :amp
+  end
+
+  test "antigravity sdk backend threads the finite headless transport timeout" do
+    provider = %{Provider.resolve!(:antigravity) | sdk_runtime: AntigravityRuntimeStub}
+
+    config = %{
+      provider: provider,
+      prompt: "hello",
+      execution_config:
+        execution_config(
+          surface_kind: :ssh_exec,
+          transport_options: [destination: "antigravity.sdk.example"],
+          boundary_class: :workspace
+        ),
+      continuation: %{strategy: :latest},
+      provider_opts: [
+        model: "gemini-3-pro",
+        allow_unknown_model: true,
+        transport_headless_timeout_ms: 8_765
+      ],
+      metadata: %{test_pid: self()}
+    }
+
+    assert {:ok, proxy, info} = SDK.start_run(config)
+    on_exit(fn -> SDK.close(proxy) end)
+
+    assert info.lane == :sdk
+    assert info.provider == :antigravity
+
+    assert_receive {:antigravity_runtime_start_opts, start_opts}
+
+    assert %AntigravityCliSdk.Options{} = options = Keyword.fetch!(start_opts, :options)
+    assert options.transport_headless_timeout_ms == 8_765
+    assert options.continue == true
+    assert Keyword.fetch!(start_opts, :prompt) == "hello"
+
+    metadata = Keyword.fetch!(start_opts, :metadata)
+    assert metadata[:lane] == :sdk
+    assert metadata[:asm_provider] == :antigravity
   end
 
   test "cursor sdk backend maps ASM options into CursorCliSdk.Options" do

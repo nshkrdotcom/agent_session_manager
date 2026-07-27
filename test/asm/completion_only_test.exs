@@ -2,11 +2,32 @@ defmodule ASM.CompletionOnlyTest do
   use ASM.TestCase
 
   alias ASM.Options
+  alias ASM.ProviderFeatures
   alias CliSubprocessCore.ProviderProfile
   alias CliSubprocessCore.ProviderProfiles.Claude, as: ClaudeProfile
   alias CliSubprocessCore.ProviderProfiles.Codex, as: CodexProfile
 
   describe "option plumbing" do
+    test "capability manifest is total across every provider" do
+      for provider <- [:claude, :codex] do
+        manifest = ProviderFeatures.common_feature!(provider, :completion_only)
+
+        assert manifest.supported? == true
+        assert manifest.common_surface == true
+        assert manifest.common_opts == [:completion_only]
+        assert ProviderFeatures.supports_common_feature?(provider, :completion_only)
+      end
+
+      for provider <- [:amp, :antigravity, :cursor] do
+        manifest = ProviderFeatures.common_feature!(provider, :completion_only)
+
+        assert manifest.supported? == false
+        assert manifest.common_surface == true
+        assert manifest.common_opts == [:completion_only]
+        refute ProviderFeatures.supports_common_feature?(provider, :completion_only)
+      end
+    end
+
     test "completion_only survives ASM validation and model finalization" do
       for {provider, schema} <- [
             {:claude, Options.Claude.schema()},
@@ -22,12 +43,40 @@ defmodule ASM.CompletionOnlyTest do
       assert Keyword.fetch!(finalized, :completion_only) == false
     end
 
-    test "providers without a completion-only posture refuse the option" do
-      assert {:error, %ASM.Error{}} =
-               Options.validate(
-                 [provider: :cursor, completion_only: true],
-                 Options.Cursor.schema()
-               )
+    test "providers without a completion-only posture fail on capability, not shape" do
+      for {provider, schema} <- [
+            {:amp, Options.Amp.schema()},
+            {:antigravity, Options.Antigravity.schema()},
+            {:cursor, Options.Cursor.schema()}
+          ] do
+        assert {:error, %ASM.Error{} = error} =
+                 Options.validate(
+                   [provider: provider, completion_only: true],
+                   schema
+                 )
+
+        assert error.kind == :config_invalid
+        assert error.domain == :config
+        assert error.message =~ inspect(provider)
+        assert error.message =~ ":completion_only"
+        refute error.message =~ "unknown options"
+        refute match?(%NimbleOptions.ValidationError{}, error.cause)
+      end
+    end
+
+    test "completion_only false is accepted by every provider schema" do
+      for {provider, schema} <- [
+            {:amp, Options.Amp.schema()},
+            {:antigravity, Options.Antigravity.schema()},
+            {:claude, Options.Claude.schema()},
+            {:codex, Options.Codex.schema()},
+            {:cursor, Options.Cursor.schema()}
+          ] do
+        assert {:ok, validated} =
+                 Options.validate([provider: provider, completion_only: false], schema)
+
+        assert Keyword.fetch!(validated, :completion_only) == false
+      end
     end
   end
 
@@ -97,6 +146,9 @@ defmodule ASM.CompletionOnlyTest do
 
   defp core_args(provider, profile, schema, opts) do
     assert {:ok, finalized} = finalize(provider, schema, opts)
+
+    finalized =
+      Keyword.put(finalized, :command, System.find_executable("true") || "/usr/bin/true")
 
     assert {:ok, invocation, teardown} =
              ProviderProfile.normalize_build_result(

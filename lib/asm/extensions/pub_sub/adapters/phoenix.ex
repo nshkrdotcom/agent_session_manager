@@ -61,12 +61,12 @@ defmodule ASM.Extensions.PubSub.Adapters.Phoenix do
       {:error, runtime_error(message, reason)}
   end
 
-  defp normalize_name(name) when is_atom(name), do: {:ok, name}
-
   defp normalize_name(nil) do
     {:error,
      config_error("phoenix adapter requires :name pubsub server (optional dependency config)")}
   end
+
+  defp normalize_name(name) when is_atom(name), do: {:ok, name}
 
   defp normalize_name(other) do
     {:error, config_error("phoenix adapter :name must be an atom, got: #{inspect(other)}")}

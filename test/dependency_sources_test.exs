@@ -290,6 +290,8 @@ defmodule DependencySourcesTest do
       assert dag[:codex_sdk] == [:cli_subprocess_core]
       assert dag[:claude_agent_sdk] == [:cli_subprocess_core]
       assert dag[:cursor_cli_sdk] == [:cli_subprocess_core]
+      assert dag[:antigravity_cli_sdk] == [:cli_subprocess_core]
+      assert dag[:amp_sdk] == [:cli_subprocess_core]
       assert dag[:agent_session_manager] == [:cli_subprocess_core, :cursor_cli_sdk]
       assert dag[:gemini_ex] == []
       assert dag[:inference] == []
@@ -302,6 +304,17 @@ defmodule DependencySourcesTest do
           prerequisite <- prerequisites do
         assert index_of(order, prerequisite) < index_of(order, package),
                "#{prerequisite} must publish before #{package}"
+      end
+    end
+
+    test "helper v6 orders both target SDK releases after Core" do
+      assert @helper.helper_version() == 6
+      order = @helper.release_order()
+      core_index = index_of(order, :cli_subprocess_core)
+
+      for package <- [:antigravity_cli_sdk, :amp_sdk] do
+        assert @helper.release_prerequisites(package) == [:cli_subprocess_core]
+        assert core_index < index_of(order, package)
       end
     end
   end

@@ -93,6 +93,7 @@ defmodule ASM.Schema.ProviderOptions do
     app_server: Zoi.boolean(),
     host_tools: Zoi.array(Conventions.optional_any()),
     dynamic_tools: Zoi.array(Conventions.optional_any()),
+    reviewed_approval: Zoi.optional(Zoi.nullish(Conventions.any_map())),
     additional_directories: Zoi.array(Conventions.trimmed_string() |> Zoi.min(1))
   }
 

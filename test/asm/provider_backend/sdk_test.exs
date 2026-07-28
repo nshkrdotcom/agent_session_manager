@@ -464,6 +464,50 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert thread.thread_opts.working_directory == "/workspace/project"
   end
 
+  test "codex app-server backend binds one exact reviewed approval hook" do
+    saved_env = capture_codex_env()
+    clear_codex_env()
+    on_exit(fn -> restore_env(saved_env) end)
+
+    provider = %{Provider.resolve!(:codex) | sdk_runtime: CodexRuntimeStub}
+    reviewed_approval = reviewed_approval()
+
+    config = %{
+      provider: provider,
+      prompt: "perform the reviewed effect",
+      execution_config: execution_config([], [], provider_permission_mode: :auto_edit),
+      provider_opts: [
+        app_server: true,
+        model: "gpt-5.4",
+        reviewed_approval: reviewed_approval
+      ],
+      backend_opts: [
+        codex_app_server_module: CodexAppServerStub,
+        codex_thread_runner_module: CodexThreadRunnerStub,
+        connect_opts: [test_pid: self()],
+        run_opts: [test_pid: self()]
+      ],
+      codex_materialized_runtime: materialized_codex_runtime(),
+      metadata: Map.put(governed_runtime_metadata(), :test_pid, self())
+    }
+
+    assert {:ok, session, _info} = SDK.start_run(config)
+    on_exit(fn -> SDK.close(session) end)
+
+    assert_receive {:codex_app_server_run_streamed, thread, prompt, _run_opts}
+
+    assert thread.thread_opts.approval_hook ==
+             ASM.ProviderBackend.SDK.CodexReviewedApproval
+
+    binding = thread.thread_opts.metadata["asm_reviewed_codex_approval"]
+    assert binding.effect_ref == reviewed_approval.effect_ref
+    assert binding.workspace_root == reviewed_approval.workspace_root
+    assert binding.content_digest == reviewed_approval.content_digest
+    refute Map.has_key?(binding, :reviewed_content)
+    assert prompt =~ binding.inner_command
+    assert prompt =~ "Execute exactly this one command"
+  end
+
   test "codex sdk backend selects app-server runtime when host dynamic tools are requested" do
     provider = %{Provider.resolve!(:codex) | sdk_runtime: CodexRuntimeStub}
     subscription_ref = make_ref()
@@ -1292,6 +1336,18 @@ defmodule ASM.ProviderBackend.SDKTest do
         limits: %{secrets: :redacted, token_values: :not_read},
         redacted?: true
       }
+    }
+  end
+
+  defp reviewed_approval do
+    content = "NSHKR P04 governed Codex effect completed."
+
+    %{
+      effect_ref: "effect://nshkr/codex/reviewed",
+      workspace_root: "/workspace/project",
+      relative_path: "reviewed-codex-effect.txt",
+      reviewed_content: content,
+      content_digest: "sha256:" <> (:crypto.hash(:sha256, content) |> Base.encode16(case: :lower))
     }
   end
 

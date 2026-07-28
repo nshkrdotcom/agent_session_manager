@@ -30,6 +30,10 @@ defmodule ASM.Options.Codex do
         type: {:custom, ASM.Options, :validate_passthrough_list, [:dynamic_tools]},
         default: []
       ],
+      reviewed_approval: [
+        type: {:custom, ASM.Options, :validate_passthrough_map, [:reviewed_approval]},
+        default: nil
+      ],
       additional_directories: [type: {:list, :string}, default: []],
       # Allow a Codex model newer than the shared registry to pass through to
       # the CLI `--model` (default false = require a registered model).

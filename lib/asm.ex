@@ -262,6 +262,7 @@ defmodule ASM do
       :materialization_request,
       :secret_material,
       :workspace_root,
+      :reviewed_approval,
       :execution_environment,
       :execution_surface
     ])

@@ -301,6 +301,8 @@ unless Code.ensure_loaded?(Codex.Thread.Options) do
 
     defstruct working_directory: nil,
               cd: nil,
+              metadata: %{},
+              approval_hook: nil,
               approval_timeout_ms: nil,
               oss: nil,
               local_provider: nil,

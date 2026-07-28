@@ -6,8 +6,22 @@ defmodule ASM.ManagedRuntimeAuthTest do
   test "managed Codex admission pins account, generation, authority, workspace, and gateway refs" do
     session_id = unique_ref("managed-admission")
     bundle = managed_bundle(session_id)
+    reviewed_content = "reviewed-content-must-not-enter-public-session-info"
 
-    assert {:ok, session} = ASM.start_session(bundle.options)
+    reviewed_approval = %{
+      effect_ref: "effect://nshkr/codex/reviewed",
+      workspace_root: bundle.workspace_ref,
+      relative_path: "reviewed.txt",
+      reviewed_content: reviewed_content,
+      content_digest:
+        "sha256:" <>
+          (:crypto.hash(:sha256, reviewed_content)
+           |> Base.encode16(case: :lower))
+    }
+
+    assert {:ok, session} =
+             ASM.start_session(Keyword.put(bundle.options, :reviewed_approval, reviewed_approval))
+
     on_exit(fn -> ASM.stop_session(session) end)
 
     assert {:ok, info} = ASM.session_info(session)
@@ -28,7 +42,9 @@ defmodule ASM.ManagedRuntimeAuthTest do
     refute Keyword.has_key?(info.options, :workspace_root)
     refute Keyword.has_key?(info.options, :execution_environment)
     refute Keyword.has_key?(info.options, :execution_surface)
+    refute Keyword.has_key?(info.options, :reviewed_approval)
     refute String.contains?(inspect(info), bundle.config_root)
+    refute String.contains?(inspect(info), reviewed_content)
   end
 
   test "managed admission rejects account and lease-generation drift" do

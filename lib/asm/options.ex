@@ -112,6 +112,7 @@ defmodule ASM.Options do
     :app_server,
     :host_tools,
     :dynamic_tools,
+    :reviewed_approval,
     :output_schema,
     :completion_only,
     :additional_directories,

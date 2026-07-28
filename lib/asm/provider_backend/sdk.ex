@@ -8,6 +8,7 @@ defmodule ASM.ProviderBackend.SDK do
   alias ASM.{Error, Execution, HostTool, Options, Provider, RuntimeAuth}
   alias ASM.ProviderBackend.Proxy
   alias ASM.ProviderBackend.SDK.CodexAppServer
+  alias ASM.ProviderBackend.SDK.CodexReviewedApproval
   alias ASM.RuntimeAuth.CodexMaterialization
   alias CliSubprocessCore.OutputSchemaFile
 
@@ -322,6 +323,7 @@ defmodule ASM.ProviderBackend.SDK do
     provider_opts = Map.get(config, :provider_opts, [])
 
     Keyword.get(provider_opts, :app_server, false) == true or
+      is_map(Keyword.get(provider_opts, :reviewed_approval)) or
       non_empty_keyword_list?(provider_opts, :host_tools) or
       non_empty_keyword_list?(provider_opts, :dynamic_tools)
   end
@@ -341,6 +343,12 @@ defmodule ASM.ProviderBackend.SDK do
          config = Map.put(config, :provider_opts, provider_opts),
          {:ok, materialization} <- CodexMaterialization.authorize_config(config, provider_opts),
          config = put_codex_materialization(config, materialization),
+         {:ok, reviewed_approval} <-
+           CodexReviewedApproval.prepare(
+             Keyword.get(provider_opts, :reviewed_approval),
+             Keyword.get(provider_opts, :provider_permission_mode)
+           ),
+         config = Map.put(config, :codex_reviewed_approval, reviewed_approval),
          model_payload = Keyword.fetch!(provider_opts, :model_payload),
          {:ok, codex_opts} <-
            new_sdk_struct(
@@ -365,7 +373,11 @@ defmodule ASM.ProviderBackend.SDK do
              thread: thread,
              thread_runner:
                backend_opt(config, :codex_thread_runner_module, @codex_thread_runner_module),
-             prompt: Map.fetch!(config, :prompt),
+             prompt:
+               CodexReviewedApproval.prompt(
+                 Map.fetch!(config, :prompt),
+                 reviewed_approval
+               ),
              run_opts: backend_opt(config, :run_opts, []),
              tools: Map.get(config, :tools, %{}),
              metadata: Map.get(config, :metadata, %{}),
@@ -403,6 +415,9 @@ defmodule ASM.ProviderBackend.SDK do
   defp codex_app_server_thread_option_attrs(config, model_payload, conn) do
     config
     |> codex_thread_option_attrs(model_payload)
+    |> Keyword.merge(
+      CodexReviewedApproval.thread_option_attrs(Map.get(config, :codex_reviewed_approval))
+    )
     |> Keyword.put(:transport, {:app_server, conn})
     |> Keyword.put(:dynamic_tools, codex_dynamic_tools(config))
   end

@@ -117,7 +117,16 @@ defmodule ASM.Stream do
     {call_stream_opts, call_run_opts, call_provider_opts} = partition_opts(opts)
 
     stream_opts = merge_opts(session_stream_opts, call_stream_opts)
-    run_opts = merge_opts(session_run_opts, call_run_opts)
+
+    # The verified Codex materialization in session options is ASM-owned. Do
+    # not recast it as a call option when the stream submits the run; the
+    # session server merges that trusted baseline after validating raw call
+    # options. A caller-supplied value remains in call_run_opts and is rejected
+    # by RuntimeAuth.prepare_run_options/3.
+    run_opts =
+      session_run_opts
+      |> Keyword.delete(:codex_materialized_runtime)
+      |> merge_opts(call_run_opts)
 
     execution_config =
       resolve_execution_config!(

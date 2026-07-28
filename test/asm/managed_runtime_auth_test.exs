@@ -62,6 +62,40 @@ defmodule ASM.ManagedRuntimeAuthTest do
     assert generation_error.cause.field == :material_generation
   end
 
+  test "managed runs consume ASM-owned Codex materialization" do
+    session_id = unique_ref("managed-run")
+    bundle = managed_bundle(session_id)
+
+    assert {:ok, session} = ASM.start_session(bundle.options)
+    on_exit(fn -> ASM.stop_session(session) end)
+
+    assert {:ok, result} =
+             ASM.query(session, "trusted materialization",
+               backend_module: ASM.TestSupport.FakeBackend
+             )
+
+    assert result.text == "trusted materialization"
+  end
+
+  test "managed runs still reject caller-supplied Codex materialization" do
+    session_id = unique_ref("managed-run-override")
+    bundle = managed_bundle(session_id)
+
+    assert {:ok, session} = ASM.start_session(bundle.options)
+    on_exit(fn -> ASM.stop_session(session) end)
+
+    assert {:error, error} =
+             ASM.query(session, "must not dispatch",
+               backend_module: ASM.TestSupport.FakeBackend,
+               codex_materialized_runtime: %{cwd: "/tmp/caller-override"}
+             )
+
+    assert error.kind == :config_invalid
+
+    assert error.message ==
+             "managed session rejects caller-supplied materialized provider runtime"
+  end
+
   test "public opaque-id cleanup closes the materialization and rejects later work" do
     session_id = unique_ref("managed-cleanup")
     bundle = managed_bundle(session_id)

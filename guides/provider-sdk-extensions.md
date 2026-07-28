@@ -24,7 +24,7 @@ Provider-native extension discovery now lives under
 
 Schema ownership follows the same split:
 
-- ASM owns orchestration, provider-option, event, and remote-node envelopes.
+- ASM owns orchestration, provider-option, event, and managed-session envelopes.
 - provider-native runtime and protocol schemas stay local to the owning SDK
   repo.
 - `NimbleOptions` can still front the public ASM keyword API, but `Zoi` is the
@@ -302,8 +302,7 @@ launch auth placement stay in ASM config.
 - the Claude bridge keeps ASM config and Claude-native config in separate
   arguments on purpose
 - local `:core` and local `:sdk` lanes preserve the same normalized
-  `execution_surface` contract; `execution_mode: :remote_node`
-  remains a separate ASM-only rule
+  `execution_surface` contract
 - ASM-derived fields such as `:cwd`, `:execution_environment`, `:model`,
   `:effort`, `:max_turns`, and `:timeout_ms` must stay in ASM config and are
   rejected from `native_overrides`; callers select effort with ASM's

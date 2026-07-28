@@ -164,7 +164,6 @@ defmodule AgentSessionManager.MixProject do
       "guides/event-model-and-result-projection.md": [title: "Event Model And Result Projection"],
       "guides/recovery-projection.md": [title: "Recovery Projection"],
       "guides/approvals-and-interrupts.md": [title: "Approvals And Interrupts"],
-      "guides/remote-node-execution.md": [title: "Remote Node Execution"],
       "guides/live-adapters.md": [title: "Live Adapters"],
       "guides/boundary-enforcement.md": [title: "Boundary Enforcement"],
       "guides/migrating-to-0.12.md": [title: "Migrating to 0.12"],
@@ -189,7 +188,6 @@ defmodule AgentSessionManager.MixProject do
         "guides/event-model-and-result-projection.md",
         "guides/recovery-projection.md",
         "guides/approvals-and-interrupts.md",
-        "guides/remote-node-execution.md",
         "guides/live-adapters.md"
       ],
       Examples: ["examples/README.md"],

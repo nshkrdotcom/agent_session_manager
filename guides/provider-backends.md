@@ -9,7 +9,6 @@ driver/parser stacks.
 
 - starts `CliSubprocessCore.Session`
 - works in `execution_mode: :local`
-- works in `execution_mode: :remote_node`
 - uses the built-in provider profiles from `cli_subprocess_core`
 
 `ASM.ProviderBackend.SDK` is optional and additive:
@@ -79,16 +78,12 @@ with `%ASM.ProviderBackend.SdkUnavailableError{}` in `error.cause` for the
 SDK-unavailable category. Tests and callers should assert that category instead
 of matching human-readable error text.
 
-`execution_mode` is applied after lane discovery. In the landed Phase 3
-boundary, remote execution always uses the core backend even if `:auto`
-preferred `:sdk`.
-
-That split is intentional:
+The execution split is intentional:
 
 - local `:core` and local `:sdk` both preserve the same normalized
   `execution_surface` contract and its `ExecutionSurface` metadata
-- `:remote_node` remains a separate ASM execution mode, not another execution
-  surface
+- admitted distributed placement belongs to the Execution Plane Runtime Client,
+  not to an ASM provider backend
 
 ## Observability
 

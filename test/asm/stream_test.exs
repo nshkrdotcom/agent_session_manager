@@ -240,18 +240,27 @@ defmodule ASM.StreamTest do
     assert :ok = ASM.stop_session(session)
   end
 
-  test "execution_mode :remote_node is preserved at the public API boundary" do
+  test "removed manual remote-node execution is rejected at the public API boundary" do
     session_id = "stream-remote-mode-" <> Integer.to_string(System.unique_integer([:positive]))
     assert {:ok, session} = ASM.start_session(session_id: session_id, provider: :claude)
 
-    assert {:ok, result} =
+    assert {:error, error} =
              ASM.query(session, "hello",
                execution_mode: :remote_node,
-               driver_opts: [remote_node: :asm@test],
                backend_module: FakeBackend
              )
 
-    assert result.text == "hello"
+    assert error.kind == :config_invalid
+    assert String.contains?(error.message, "expected one of [:local]")
+
+    assert {:error, error} =
+             ASM.query(session, "hello",
+               driver_opts: [target: :somewhere],
+               backend_module: FakeBackend
+             )
+
+    assert error.kind == :config_invalid
+    assert String.contains?(error.message, "driver_opts")
     assert :ok = ASM.stop_session(session)
   end
 

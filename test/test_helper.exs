@@ -4,38 +4,12 @@ defmodule ASM.TestSupport.Capabilities do
   @spec default_excludes() :: [atom()]
   def default_excludes do
     []
-    |> maybe_exclude(:distributed, distributed_available?())
     |> maybe_exclude(:pty, pty_available?())
     |> Enum.reverse()
   end
 
   defp maybe_exclude(excludes, _tag, true), do: excludes
   defp maybe_exclude(excludes, tag, false), do: [tag | excludes]
-
-  defp distributed_available? do
-    case env_override("ASM_INCLUDE_DISTRIBUTED_TESTS") do
-      :enabled ->
-        true
-
-      :disabled ->
-        false
-
-      :auto ->
-        node_name = :asm_capability_probe
-
-        case Node.start(node_name, :shortnames) do
-          {:ok, _pid} ->
-            Node.stop()
-            true
-
-          {:error, {:already_started, _pid}} ->
-            true
-
-          {:error, _reason} ->
-            false
-        end
-    end
-  end
 
   defp pty_available? do
     case env_override("ASM_INCLUDE_PTY_TESTS") do

@@ -1338,8 +1338,7 @@ defmodule ASM.ProviderBackend.SDKTest do
       transport_call_timeout_ms: Keyword.get(attrs, :transport_call_timeout_ms, 5_000),
       execution_surface: execution_surface,
       execution_environment: execution_environment,
-      provider_permission_mode: Keyword.get(attrs, :provider_permission_mode),
-      remote: Keyword.get(attrs, :remote)
+      provider_permission_mode: Keyword.get(attrs, :provider_permission_mode)
     )
   end
 

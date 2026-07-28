@@ -10,7 +10,6 @@ defmodule ASM.Application do
     children = [
       {Registry, keys: :unique, name: :asm_sessions},
       {Task.Supervisor, name: ASM.TaskSupervisor},
-      {ASM.Remote.BackendSupervisor, []},
       {ASM.Session.Supervisor, []},
       {ASM.Session.GuardSupervisor, []},
       {ASM.InferenceEndpoint.LeaseStore, []},

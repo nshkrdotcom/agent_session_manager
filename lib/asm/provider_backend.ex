@@ -7,8 +7,8 @@ defmodule ASM.ProviderBackend do
   - `ASM.ProviderBackend.Core`
   - `ASM.ProviderBackend.SDK`
 
-  Lane selection is owned by `ASM.ProviderRegistry` and remains orthogonal to
-  `execution_mode`.
+  Lane selection is owned by `ASM.ProviderRegistry`. Provider backends execute
+  locally; admitted placement belongs to the Execution Plane Runtime Client.
   """
 
   defmodule Event do

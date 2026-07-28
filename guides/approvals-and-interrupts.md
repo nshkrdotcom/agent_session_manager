@@ -32,13 +32,5 @@ not remain routable.
 - active runs call the resolved backend's `interrupt/1`
 - the run then emits a terminal `user_cancelled` error
 
-The caller never needs to know whether the run is executing on the core lane,
-SDK lane, or a remote node.
-
-## Remote Execution
-
-Remote execution does not change the public control surface:
-
-- approvals still resolve through the local `ASM.Session.Server`
-- active remote runs still interrupt through the local `ASM.Run.Server`
-- the same timeout and `user_cancelled` semantics apply in local and remote mode
+The caller never needs to know whether the run is executing on the core or SDK
+lane.

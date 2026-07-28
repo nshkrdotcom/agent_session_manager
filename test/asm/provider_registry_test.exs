@@ -68,7 +68,7 @@ defmodule ASM.ProviderRegistryTest do
     assert info.available_lanes == [:core]
   end
 
-  test "lane_info/2 resolves lane preference independently from execution mode" do
+  test "lane_info/2 resolves the local lane preference" do
     assert {:ok, info} = ProviderRegistry.lane_info(:claude, lane: :auto)
 
     assert info.requested_lane == :auto
@@ -125,35 +125,18 @@ defmodule ASM.ProviderRegistryTest do
     assert cause.reason == :sdk_unavailable
   end
 
-  test "resolve/2 applies remote compatibility after lane selection" do
-    put_runtime_loader(fn
-      Codex.Runtime.Exec -> true
-      runtime -> Code.ensure_loaded?(runtime)
-    end)
-
-    assert {:ok, resolution} =
-             ProviderRegistry.resolve(:codex, lane: :auto, execution_mode: :remote_node)
-
-    assert resolution.preferred_lane == :sdk
-    assert resolution.lane == :core
-    assert resolution.lane_fallback_reason == :sdk_remote_unsupported
-    assert resolution.backend == ASM.ProviderBackend.Core
-  end
-
-  test "explicit remote sdk lane is rejected after lane selection" do
+  test "resolve/2 rejects removed manual remote-node execution before lane dispatch" do
     put_runtime_loader(fn
       Codex.Runtime.Exec -> true
       runtime -> Code.ensure_loaded?(runtime)
     end)
 
     assert {:error, error} =
-             ProviderRegistry.resolve(:codex, lane: :sdk, execution_mode: :remote_node)
+             ProviderRegistry.resolve(:codex, lane: :auto, execution_mode: :remote_node)
 
     assert error.kind == :config_invalid
-    assert String.contains?(error.message, "sdk lane")
-    assert %ASM.ProviderBackend.SdkUnavailableError{} = error.cause
-    assert error.cause.provider == :codex
-    assert error.cause.reason == :unsupported_execution_mode
+    assert error.domain == :config
+    assert String.contains?(error.message, "expected :local")
   end
 
   defp put_runtime_loader(fun) when is_function(fun, 1) do

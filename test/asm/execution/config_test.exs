@@ -19,45 +19,22 @@ defmodule ASM.Execution.ConfigTest do
     :ok
   end
 
-  test "resolve/2 merges execution config with precedence app -> session -> run -> driver_opts" do
+  test "resolve/2 merges local execution config with precedence app -> session -> run" do
     Application.put_env(:agent_session_manager, Config,
       execution_mode: :local,
-      remote_connect_timeout_ms: 3_000,
-      remote_rpc_timeout_ms: 12_000,
-      remote_boot_lease_timeout_ms: 10_000,
-      remote_bootstrap_mode: :require_prestarted,
       transport_call_timeout_ms: 4_000
     )
 
     session_stream_opts = [
-      execution_mode: :remote_node,
-      transport_call_timeout_ms: 5_000,
-      driver_opts: [
-        remote_node: :"asm@session-a",
-        remote_connect_timeout_ms: 6_000,
-        remote_cookie: :session_cookie
-      ]
+      execution_mode: :local,
+      transport_call_timeout_ms: 5_000
     ]
 
-    run_stream_opts = [
-      transport_call_timeout_ms: 7_000,
-      driver_opts: [
-        remote_node: :"asm@run-b",
-        remote_rpc_timeout_ms: 18_000,
-        remote_bootstrap_mode: :ensure_started,
-        remote_transport_call_timeout_ms: 9_000
-      ]
-    ]
+    run_stream_opts = [transport_call_timeout_ms: 7_000]
 
     assert {:ok, cfg} = Config.resolve(session_stream_opts, run_stream_opts)
-    assert cfg.execution_mode == :remote_node
-    assert cfg.transport_call_timeout_ms == 9_000
-    assert cfg.remote.remote_node == :"asm@run-b"
-    assert cfg.remote.remote_cookie == :session_cookie
-    assert cfg.remote.remote_connect_timeout_ms == 6_000
-    assert cfg.remote.remote_rpc_timeout_ms == 18_000
-    assert cfg.remote.remote_boot_lease_timeout_ms == 10_000
-    assert cfg.remote.remote_bootstrap_mode == :ensure_started
+    assert cfg.execution_mode == :local
+    assert cfg.transport_call_timeout_ms == 7_000
   end
 
   test "execution config publishes the Wave 5 lower-boundary vocabulary and metadata keys" do
@@ -151,15 +128,14 @@ defmodule ASM.Execution.ConfigTest do
     assert cfg.execution_surface.observability == %{scope: :run}
   end
 
-  test "resolve/2 validates remote-node schema-owned fields" do
+  test "resolve/2 rejects removed manual remote-node execution before dispatch" do
     assert {:error, error} =
-             Config.resolve(
-               [execution_mode: :remote_node, driver_opts: [remote_node: :asm@test]],
-               driver_opts: [remote_cookie: "not-an-atom"]
-             )
+             Config.resolve([execution_mode: :remote_node], [])
 
     assert error.kind == :config_invalid
-    assert String.contains?(error.message, "remote_cookie")
+    assert error.domain == :config
+    assert String.contains?(error.message, "execution_mode")
+    assert String.contains?(error.message, "expected one of [:local]")
   end
 
   test "resolve/2 rejects legacy execution-surface keys" do

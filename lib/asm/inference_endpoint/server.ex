@@ -8,8 +8,8 @@ defmodule ASM.InferenceEndpoint.Server do
   @recv_timeout 5_000
 
   alias ASM.InferenceEndpoint.LeaseStore
+  alias ASM.InferenceEndpoint.PromptNormalizer
   alias ASM.InferenceEndpoint.RuntimeConfig
-  alias ASM.Migration.MainCompat
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
@@ -133,7 +133,7 @@ defmodule ASM.InferenceEndpoint.Server do
              {:ok, payload} <- decode_json(body),
              :ok <- validate_model(payload, lease),
              :ok <- validate_request_capabilities(payload, lease),
-             {:ok, prompt} <- MainCompat.input_to_prompt(payload) do
+             {:ok, prompt} <- PromptNormalizer.normalize(payload) do
           dispatch_completion(socket, lease, payload, prompt)
         else
           {:error, :unauthorized} -> send_error(socket, 401, "unauthorized")

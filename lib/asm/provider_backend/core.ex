@@ -10,7 +10,6 @@ defmodule ASM.ProviderBackend.Core do
   alias ASM.Options
   alias ASM.Provider
   alias ASM.ProviderBackend.Proxy
-  alias ASM.Remote.NodeConnector
   alias ASM.RuntimeAuth
   alias ASM.RuntimeAuth.CodexMaterialization
   alias CliSubprocessCore.ProviderCLI.Error, as: ProviderCLIError
@@ -20,7 +19,7 @@ defmodule ASM.ProviderBackend.Core do
   @impl true
   def start_run(%{provider: %Provider{} = provider} = config) do
     with {:ok, execution_config} <- fetch_execution_config(config),
-         :ok <- reject_managed_manual_rpc(execution_config, config),
+         :ok <- validate_local_execution(execution_config),
          :ok <- validate_approval_posture(execution_config),
          {:ok, session_opts} <- build_session_opts(provider, config, execution_config),
          {:ok, proxy, info} <-
@@ -81,20 +80,19 @@ defmodule ASM.ProviderBackend.Core do
     {:error, Error.new(:config_invalid, :config, "missing execution config for core backend")}
   end
 
-  defp do_start_run(%Execution.Config{execution_mode: :local}, session_opts) do
-    Session.start_session(session_opts)
+  defp validate_local_execution(%Execution.Config{execution_mode: :local}), do: :ok
+
+  defp validate_local_execution(%Execution.Config{}) do
+    {:error,
+     Error.new(
+       :config_invalid,
+       :config,
+       "provider backends accept only local execution; use Runtime Client admission for placement"
+     )}
   end
 
-  defp do_start_run(
-         %Execution.Config{execution_mode: :remote_node, remote: remote_cfg},
-         session_opts
-       )
-       when is_map(remote_cfg) do
-    with :ok <- connect_remote(remote_cfg),
-         :ok <- preflight_remote(remote_cfg),
-         :ok <- maybe_bootstrap_remote(remote_cfg) do
-      remote_start(remote_cfg, session_opts)
-    end
+  defp do_start_run(%Execution.Config{execution_mode: :local}, session_opts) do
+    Session.start_session(session_opts)
   end
 
   defp build_session_opts(provider, config, execution_config) do
@@ -176,40 +174,6 @@ defmodule ASM.ProviderBackend.Core do
     end
   end
 
-  defp reject_managed_manual_rpc(
-         %Execution.Config{execution_mode: :remote_node},
-         config
-       ) do
-    if managed_session?(config) do
-      {:error,
-       Error.new(
-         :config_invalid,
-         :config,
-         "managed sessions cannot downgrade RuntimeGateway admission to manual remote RPC"
-       )}
-    else
-      :ok
-    end
-  end
-
-  defp reject_managed_manual_rpc(%Execution.Config{}, _config), do: :ok
-
-  defp managed_session?(config) do
-    metadata = Map.get(config, :metadata, %{})
-    runtime_auth = map_value(metadata, :runtime_auth, %{})
-
-    map_value(metadata, :managed_session, false) == true or
-      not is_nil(map_value(metadata, :managed_binding)) or
-      not is_nil(map_value(runtime_auth, :managed_binding))
-  end
-
-  defp map_value(map, key, default \\ nil)
-
-  defp map_value(map, key, default) when is_map(map),
-    do: Map.get(map, key, Map.get(map, Atom.to_string(key), default))
-
-  defp map_value(_map, _key, default), do: default
-
   defp validate_approval_posture(execution_config) when is_map(execution_config) do
     if Execution.Config.to_execution_environment(execution_config).approval_posture == :none do
       {:error,
@@ -221,85 +185,6 @@ defmodule ASM.ProviderBackend.Core do
     else
       :ok
     end
-  end
-
-  defp connect_remote(remote_cfg) do
-    case NodeConnector.ensure_connected(remote_cfg) do
-      :ok ->
-        :ok
-
-      {:error, reason} ->
-        {:error, remote_error("remote connect failed: #{inspect(reason)}", reason)}
-    end
-  end
-
-  defp preflight_remote(remote_cfg) do
-    case NodeConnector.preflight(remote_cfg) do
-      :ok ->
-        :ok
-
-      {:error, :remote_not_ready} ->
-        if Map.get(remote_cfg, :remote_bootstrap_mode, :require_prestarted) == :ensure_started do
-          :ok
-        else
-          {:error, remote_error("remote preflight failed: :remote_not_ready", :remote_not_ready)}
-        end
-
-      {:error, reason} ->
-        {:error, remote_error("remote preflight failed: #{inspect(reason)}", reason)}
-    end
-  end
-
-  defp maybe_bootstrap_remote(remote_cfg) do
-    if Map.get(remote_cfg, :remote_bootstrap_mode, :require_prestarted) == :ensure_started do
-      case :rpc.call(
-             remote_cfg.remote_node,
-             Application,
-             :ensure_all_started,
-             [:agent_session_manager],
-             remote_cfg.remote_rpc_timeout_ms
-           ) do
-        {:ok, _apps} ->
-          :ok
-
-        {:error, reason} ->
-          {:error, remote_error("remote bootstrap failed: #{inspect(reason)}", reason)}
-
-        {:badrpc, reason} ->
-          {:error, remote_error("remote bootstrap failed: #{inspect(reason)}", reason)}
-
-        _other ->
-          :ok
-      end
-    else
-      :ok
-    end
-  end
-
-  defp remote_start(remote_cfg, session_opts) do
-    case :rpc.call(
-           remote_cfg.remote_node,
-           ASM.Remote.BackendStarter,
-           :start_core_session,
-           [session_opts],
-           remote_cfg.remote_rpc_timeout_ms
-         ) do
-      {:ok, pid, info} when is_pid(pid) ->
-        {:ok, pid, info}
-
-      {:error, reason} ->
-        {:error, remote_error("remote backend start failed: #{inspect(reason)}", reason)}
-
-      {:badrpc, reason} ->
-        {:error, remote_error("remote backend start failed: #{inspect(reason)}", reason)}
-
-      other ->
-        {:error, remote_error("remote backend start failed: #{inspect(other)}", other)}
-    end
-  end
-
-  defp remote_error(message, cause) do
-    Error.new(:connection_failed, :runtime, message, cause: cause)
   end
 
   defp provider_cli_error(provider, %ProviderCLIError{} = error) do

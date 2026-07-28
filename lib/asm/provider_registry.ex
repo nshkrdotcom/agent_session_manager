@@ -2,18 +2,18 @@ defmodule ASM.ProviderRegistry do
   @moduledoc """
   Resolves providers to backend lanes and runtime metadata.
 
-  Lane selection is discovery-driven and independent from execution mode:
+  Lane selection is discovery-driven for local provider execution:
 
   - `provider_info/1` describes the provider and installed runtime-kit surface
   - `lane_info/2` resolves the preferred lane from `:auto | :core | :sdk`
-  - `resolve/2` applies execution-mode compatibility to produce the effective backend
+  - `resolve/2` produces the effective local backend
   """
 
   alias ASM.{AdapterSelectionPolicy, Error, Provider, ProviderRuntimeProfile}
   alias ASM.ProviderBackend.SdkUnavailableError
 
   @type lane :: :auto | :core | :sdk
-  @type execution_mode :: :local | :remote_node
+  @type execution_mode :: :local
 
   @type provider_info :: %{
           provider: Provider.t(),
@@ -236,12 +236,11 @@ defmodule ASM.ProviderRegistry do
 
   defp execution_mode(opts) when is_list(opts) do
     case Keyword.get(opts, :execution_mode, :local) do
-      mode when mode in [:local, :remote_node] ->
-        {:ok, mode}
+      :local ->
+        {:ok, :local}
 
       other ->
-        {:error,
-         config_error("invalid execution_mode #{inspect(other)}; expected :local or :remote_node")}
+        {:error, config_error("invalid execution_mode #{inspect(other)}; expected :local")}
     end
   end
 
@@ -292,27 +291,6 @@ defmodule ASM.ProviderRegistry do
       end
 
     finalize_resolution(info, :core, execution_mode, lane_fallback_reason, runtime_profile)
-  end
-
-  defp resolve_for_execution_mode(
-         %{requested_lane: :sdk, preferred_lane: :sdk} = info,
-         :remote_node,
-         nil
-       ) do
-    cause =
-      SdkUnavailableError.exception(
-        provider: info.provider.name,
-        lane: :sdk,
-        runtime: info.sdk_runtime,
-        execution_mode: :remote_node,
-        reason: :unsupported_execution_mode
-      )
-
-    {:error, config_error(cause.message, info.provider.name, cause)}
-  end
-
-  defp resolve_for_execution_mode(%{preferred_lane: :sdk} = info, :remote_node, nil) do
-    finalize_resolution(info, :core, :remote_node, :sdk_remote_unsupported, nil)
   end
 
   defp resolve_for_execution_mode(%{} = info, execution_mode, nil) do

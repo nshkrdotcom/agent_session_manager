@@ -1,16 +1,12 @@
 # Lane Selection Guide
 
-`ASM` separates lane discovery from execution mode. Provider resolution decides
-which backend lane is preferred, and only then does execution mode decide
-whether that lane can actually run.
+`ASM` discovers and resolves a local provider backend lane.
 
 ## The Three Lane Values
 
 - `requested_lane`: what the caller asked for (`:auto | :core | :sdk`)
-- `preferred_lane`: what provider/runtime discovery selected before execution-mode checks
+- `preferred_lane`: what provider/runtime discovery selected
 - `lane`: the backend lane that actually executed
-
-This distinction matters most when `execution_mode: :remote_node` is involved.
 
 ## Lane Policies
 
@@ -25,44 +21,22 @@ back to the core backend. `lane: :auto` is the only lane that may fall back to
 core for SDK absence.
 
 Use `ASM.ProviderRegistry.provider_info/1` when you want provider-level facts,
-`lane_info/2` when you want discovery without execution-mode compatibility, and
+`lane_info/2` when you want discovery without selecting an effective backend, and
 `resolve/2` when you need the effective backend choice for a real run.
 
 `lane_info(provider, lane: :core)` intentionally does not check SDK
 availability. Use `provider_info/1` when you explicitly need provider SDK
 availability discovery.
 
-## Local Versus Remote Execution
+## Local Execution
 
-Lane selection remains discovery-driven in both modes:
+Lane selection is discovery-driven:
 
 - local runs can execute either `:core` or `:sdk`
 - local `:core` and local `:sdk` preserve the same normalized
   `execution_surface` contract
-- remote runs execute only the core lane in the landed Phase 3 boundary
-- `lane: :sdk` with `execution_mode: :remote_node` is a configuration error
-- `lane: :auto` may still report `preferred_lane: :sdk` but execute with `lane: :core`
-
-Typical remote auto-lane resolution:
-
-```elixir
-{:ok, resolution} =
-  ASM.ProviderRegistry.resolve(:codex,
-    lane: :auto,
-    execution_mode: :remote_node
-  )
-
-resolution.observability
-# %{
-#   requested_lane: :auto,
-#   preferred_lane: :sdk,
-#   lane: :core,
-#   backend: ASM.ProviderBackend.Core,
-#   execution_mode: :remote_node,
-#   lane_fallback_reason: :sdk_remote_unsupported,
-#   ...
-# }
-```
+- admitted distributed placement belongs to the Execution Plane Runtime Client,
+  not to provider lane selection
 
 ## Observability Fields
 

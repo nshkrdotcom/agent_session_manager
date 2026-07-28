@@ -38,7 +38,6 @@ Gemini model endpoints; it is not an ASM CLI provider.
 - `guides/inference-endpoints.md` - `ASM.InferenceEndpoint` publication and endpoint contracts
 - `guides/common-and-partial-provider-features.md` - normalized permission terms and partial common features such as Ollama
 - `guides/event-model-and-result-projection.md` - stream projection and reducers
-- `guides/remote-node-execution.md` - remote execution model
 - `guides/migrating-to-0.12.md` - Core 0.4 and SDK-lane migration notes
 - `examples/README.md` - live and offline proof entrypoints
 
@@ -48,7 +47,8 @@ Gemini model endpoints; it is not an ASM CLI provider.
 - Shared core event vocabulary from `cli_subprocess_core`, wrapped in run/session-scoped `%ASM.Event{}` envelopes.
 - Native Elixir streaming (`Enumerable`) with reducer-based result projections.
 - Provider registry that resolves providers onto backend lanes instead of provider-specific command/parser ownership.
-- Remote-node execution that starts provider backends remotely while keeping the ASM session/run processes local.
+- Opaque managed-session identity that can be routed through a separately owned
+  Runtime Client without exposing provider PIDs.
 - Lower-boundary carriage aligned to the packet and Wave 5 durable session
   vocabulary without re-exporting raw
   `execution_plane/*` packages.
@@ -234,7 +234,6 @@ coexistence window, but schema-backed normalization now owns:
 
 - provider-option envelope conformance after keyword validation
 - `%ASM.Event{}` rebuild/serialization boundaries
-- resolved remote-node execution payloads
 - provider profile normalization
 
 Per-run options override session defaults. Session defaults are inherited automatically.
@@ -331,24 +330,16 @@ Phase D now proves that unchanged execution config path over SSH as well:
 Runtime execution path:
 
 - `ASM.ProviderRegistry` resolves the provider onto `:core` or `:sdk`.
-- `ASM.ProviderBackend.Core` runs `cli_subprocess_core` and is the required lane for `:remote_node`.
+- `ASM.ProviderBackend.Core` runs `cli_subprocess_core` locally.
 - `ASM.ProviderBackend.SDK` runs optional provider runtime kits when they are available locally.
 - `ASM.Run.Server` starts the resolved backend, subscribes to backend events, wraps core events in `%ASM.Event{}`, and applies pipelines/reducers.
 - `ASM.Session.Server` remains aggregate root for run admission, approval routing, and session-level cost accounting.
 
-Lane selection is intentionally separate from execution mode:
-
-- provider discovery chooses the preferred lane first
-- execution mode then decides whether that preferred lane can execute as requested
-- `:remote_node` always executes the core lane in the landed Phase 4 boundary
-
-This produces three distinct values in observability metadata:
+Lane selection produces three distinct values in observability metadata:
 
 - `requested_lane`: the caller request (`:auto | :core | :sdk`)
 - `preferred_lane`: the lane selected by provider/runtime discovery
-- `lane`: the effective lane that actually executed
-
-When `lane: :auto` prefers `:sdk` but `execution_mode: :remote_node`, ASM records `preferred_lane: :sdk` and executes with `lane: :core`, `backend: ASM.ProviderBackend.Core`, and `lane_fallback_reason: :sdk_remote_unsupported`. An explicit `lane: :sdk` with `execution_mode: :remote_node` is a configuration error.
+- `lane`: the effective local lane that actually executed
 
 See [Lane Selection](guides/lane-selection.md) for the full discovery and resolution flow.
 
@@ -438,12 +429,7 @@ Use `ASM.ProviderRegistry` to inspect lane availability and resolution:
 ```elixir
 {:ok, provider_info} = ASM.ProviderRegistry.provider_info(:codex)
 {:ok, lane_info} = ASM.ProviderRegistry.lane_info(:codex, lane: :auto)
-
-{:ok, resolution} =
-  ASM.ProviderRegistry.resolve(:codex,
-    lane: :auto,
-    execution_mode: :remote_node
-  )
+{:ok, resolution} = ASM.ProviderRegistry.resolve(:codex, lane: :auto)
 ```
 
 `provider_info/1` reports provider-level facts such as:
@@ -466,23 +452,23 @@ extension inventory is reported separately through
 - `lane_reason`
 - lane-specific `capabilities`
 
-`resolve/2` adds execution-mode compatibility and returns the effective:
+`resolve/2` returns the effective local:
 
 - `lane`
 - `backend`
 - `execution_mode`
 - `lane_fallback_reason`
 
-Typical projected metadata for a remote auto-lane run:
+Typical projected metadata for an auto-lane run:
 
 ```elixir
 %{
   requested_lane: :auto,
   preferred_lane: :sdk,
-  lane: :core,
-  backend: ASM.ProviderBackend.Core,
-  execution_mode: :remote_node,
-  lane_fallback_reason: :sdk_remote_unsupported
+  lane: :sdk,
+  backend: ASM.ProviderBackend.SDK,
+  execution_mode: :local,
+  lane_fallback_reason: nil
 }
 ```
 
@@ -498,7 +484,6 @@ Lane rules:
 
 - required dependency surface
 - works in `execution_mode: :local`
-- works in `execution_mode: :remote_node`
 - uses provider core profiles from `cli_subprocess_core`
 
 `ASM.ProviderBackend.SDK` is additive, not foundational:
@@ -826,64 +811,15 @@ Interrupts are run-scoped:
 - `ASM.interrupt/2` interrupts an active run through its backend and the run ends with a terminal `user_cancelled` error
 - queued runs are removed from the session queue before they start
 
-These control semantics stay the same across `:core` and `:sdk`, and across local versus remote execution.
+These control semantics stay the same across `:core` and `:sdk`.
 
 See [Approvals And Interrupts](guides/approvals-and-interrupts.md) for the session/run control flow in more detail.
 
-## Remote Node Execution
+## Placement Boundary
 
-Remote execution is opt-in per session or per run. Local mode remains the default.
-
-Session-level remote default:
-
-```elixir
-{:ok, session} =
-  ASM.start_session(
-    provider: :codex,
-    execution_mode: :remote_node,
-    # Remote backend options stay under :driver_opts
-    driver_opts: [
-      remote_node: :"asm@sandbox-a",
-      remote_cookie: :cluster_cookie,
-      remote_cwd: "/workspaces/t-123"
-    ]
-  )
-```
-
-Per-run remote override:
-
-```elixir
-ASM.query(session, "analyze this",
-  execution_mode: :remote_node,
-  driver_opts: [remote_node: :"asm@sandbox-b"]
-)
-```
-
-Per-run local override (when session default is remote):
-
-```elixir
-ASM.query(session, "quick local check", execution_mode: :local)
-```
-
-Remote execution options:
-
-- `remote_node` (required for `:remote_node`)
-- `remote_cookie` (optional)
-- `remote_connect_timeout_ms` (default `5000`)
-- `remote_rpc_timeout_ms` (default `15000`)
-- `remote_boot_lease_timeout_ms` (accepted for config compatibility; retained in resolved execution config but not consumed by the current remote backend start path)
-- `remote_bootstrap_mode` (`:require_prestarted` | `:ensure_started`, default `:require_prestarted`)
-- `remote_cwd` (optional remote workspace override)
-- `remote_transport_call_timeout_ms` (overrides `transport_call_timeout_ms` for remote backend control calls)
-
-Operational requirements for remote worker nodes:
-
-- Erlang distribution enabled with trusted cookie
-- `:agent_session_manager` available on the remote node
-- provider CLI binaries installed remotely
-- provider credentials available on remote host
-- compatible OTP major version
-- ASM major/minor compatibility
+ASM provider backends execute locally. Distributed admission and placement are
+owned by the Execution Plane Runtime Client; ASM does not accept node names,
+distribution cookies, or RPC placement options.
 
 ## Public API
 
@@ -939,14 +875,13 @@ provider-returned structured object:
 
 Session defaults and per-run overrides can also control execution behavior:
 
-- `execution_mode` (`:local | :remote_node`)
+- `execution_mode` (`:local`)
 - `lane` (`:auto | :core | :sdk`)
 - `stream_timeout_ms` (maximum wait for the next run event; default `60000`)
 - `queue_timeout_ms` (maximum time a queued run waits for capacity; default `:infinity`)
 - `run_deadline_ms` (total wall-clock budget for one whole run; default
   `600000`, or `:infinity` to opt out)
 - `transport_call_timeout_ms` (backend control timeout used by the effective lane)
-- `driver_opts` (remote execution settings bag for `:remote_node`)
 
 `stream_timeout_ms` re-arms on every event, so it cannot end a run that keeps
 talking without finishing. `run_deadline_ms` is armed once, when the backend
@@ -1087,7 +1022,6 @@ The promotion-path hub is [examples/promotion_path/README.md](examples/promotion
 - [Recovery Projection](guides/recovery-projection.md)
 - [Approvals And Interrupts](guides/approvals-and-interrupts.md)
 - [Live Adapter Feature Matrix](guides/live-adapters.md)
-- [Remote Node Execution](guides/remote-node-execution.md)
 
 ## Architecture Notes
 
@@ -1097,8 +1031,6 @@ Per-session subtree strategy uses `:rest_for_one`:
 - `ASM.Session.Server`
 
 Run workers are `restart: :temporary` to avoid restart loops after normal completion.
-
-Remote backend sessions are supervised on the remote node, and startup is performed through the remote backend starter.
 
 ## Quality Gates
 

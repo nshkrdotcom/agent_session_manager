@@ -17,16 +17,7 @@ defmodule ASM.Stream do
     :allowed_tools,
     :approval_posture,
     :permission_mode,
-    :lane,
-    :driver_opts,
-    :remote_node,
-    :remote_cookie,
-    :remote_connect_timeout_ms,
-    :remote_rpc_timeout_ms,
-    :remote_boot_lease_timeout_ms,
-    :remote_bootstrap_mode,
-    :remote_cwd,
-    :remote_transport_call_timeout_ms
+    :lane
   ]
 
   @run_keys [

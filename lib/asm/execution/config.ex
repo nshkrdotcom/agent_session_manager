@@ -31,7 +31,6 @@ defmodule ASM.Execution.Config do
   """
 
   alias ASM.{Error, Execution.Environment, Permission}
-  alias ASM.Schema.RemoteNode, as: RemoteNodeSchema
   alias CliSubprocessCore.ExecutionSurface
 
   @boundary_contract_keys [
@@ -68,8 +67,7 @@ defmodule ASM.Execution.Config do
     :boundary_class,
     :observability
   ]
-  @valid_execution_modes [:local, :remote_node]
-  @valid_bootstrap_modes [:require_prestarted, :ensure_started]
+  @valid_execution_modes [:local]
   @legacy_execution_surface_keys [
     :surface_kind,
     :transport_options,
@@ -85,26 +83,14 @@ defmodule ASM.Execution.Config do
             transport_call_timeout_ms: 5_000,
             execution_surface: %ExecutionSurface{},
             execution_environment: %Environment{},
-            provider_permission_mode: nil,
-            remote: nil
-
-  @type remote_t :: %{
-          required(:remote_node) => atom(),
-          required(:remote_cookie) => atom() | nil,
-          required(:remote_connect_timeout_ms) => pos_integer(),
-          required(:remote_rpc_timeout_ms) => pos_integer(),
-          required(:remote_boot_lease_timeout_ms) => pos_integer(),
-          required(:remote_bootstrap_mode) => :require_prestarted | :ensure_started,
-          required(:remote_cwd) => String.t() | nil
-        }
+            provider_permission_mode: nil
 
   @type t :: %__MODULE__{
-          execution_mode: :local | :remote_node,
+          execution_mode: :local,
           transport_call_timeout_ms: pos_integer(),
           execution_surface: ExecutionSurface.t(),
           execution_environment: Environment.t(),
-          provider_permission_mode: atom() | nil,
-          remote: remote_t() | nil
+          provider_permission_mode: atom() | nil
         }
 
   @spec execution_plane_contracts() :: [String.t(), ...]
@@ -120,10 +106,6 @@ defmodule ASM.Execution.Config do
   def resolve(session_stream_opts, run_stream_opts, opts \\ [])
       when is_list(session_stream_opts) and is_list(run_stream_opts) and is_list(opts) do
     app_cfg = app_config()
-    session_driver_opts = normalize_keyword(Keyword.get(session_stream_opts, :driver_opts, []))
-    run_driver_opts = normalize_keyword(Keyword.get(run_stream_opts, :driver_opts, []))
-    merged_driver_opts = Keyword.merge(session_driver_opts, run_driver_opts)
-
     explicit_driver? = Keyword.get(opts, :explicit_driver?, false)
 
     with :ok <- reject_legacy_execution_surface_keys(session_stream_opts, run_stream_opts),
@@ -133,8 +115,7 @@ defmodule ASM.Execution.Config do
            resolve_transport_call_timeout(
              app_cfg,
              session_stream_opts,
-             run_stream_opts,
-             merged_driver_opts
+             run_stream_opts
            ),
          {:ok, session_execution_surface} <- resolve_execution_surface(session_stream_opts),
          {:ok, run_execution_surface} <- resolve_execution_surface(run_stream_opts),
@@ -153,14 +134,6 @@ defmodule ASM.Execution.Config do
            resolve_provider_permission_mode(
              execution_environment.permission_mode,
              Keyword.get(opts, :provider)
-           ),
-         {:ok, remote} <-
-           resolve_remote_config(
-             execution_mode,
-             app_cfg,
-             session_stream_opts,
-             run_stream_opts,
-             merged_driver_opts
            ) do
       {:ok,
        %__MODULE__{
@@ -168,8 +141,7 @@ defmodule ASM.Execution.Config do
          transport_call_timeout_ms: transport_call_timeout_ms,
          execution_surface: execution_surface,
          execution_environment: execution_environment,
-         provider_permission_mode: provider_permission_mode,
-         remote: remote
+         provider_permission_mode: provider_permission_mode
        }}
     end
   end
@@ -211,13 +183,10 @@ defmodule ASM.Execution.Config do
   defp resolve_transport_call_timeout(
          app_cfg,
          session_stream_opts,
-         run_stream_opts,
-         merged_driver_opts
+         run_stream_opts
        ) do
     timeout_ms =
-      Keyword.get(merged_driver_opts, :remote_transport_call_timeout_ms) ||
-        Keyword.get(merged_driver_opts, :transport_call_timeout_ms) ||
-        Keyword.get(run_stream_opts, :transport_call_timeout_ms) ||
+      Keyword.get(run_stream_opts, :transport_call_timeout_ms) ||
         Keyword.get(session_stream_opts, :transport_call_timeout_ms) ||
         Keyword.get(app_cfg, :transport_call_timeout_ms, 5_000)
 
@@ -233,133 +202,8 @@ defmodule ASM.Execution.Config do
     end
   end
 
-  defp resolve_remote_config(
-         :local,
-         _app_cfg,
-         _session_stream_opts,
-         _run_stream_opts,
-         _driver_opts
-       ),
-       do: {:ok, nil}
-
-  defp resolve_remote_config(
-         :remote_node,
-         app_cfg,
-         session_stream_opts,
-         run_stream_opts,
-         driver_opts
-       ) do
-    remote_node =
-      Keyword.get(driver_opts, :remote_node) ||
-        Keyword.get(run_stream_opts, :remote_node) ||
-        Keyword.get(session_stream_opts, :remote_node) ||
-        Keyword.get(app_cfg, :remote_node)
-
-    with {:ok, remote_connect_timeout_ms} <-
-           normalize_timeout(
-             driver_opts,
-             run_stream_opts,
-             session_stream_opts,
-             app_cfg,
-             :remote_connect_timeout_ms,
-             5_000
-           ),
-         {:ok, remote_rpc_timeout_ms} <-
-           normalize_timeout(
-             driver_opts,
-             run_stream_opts,
-             session_stream_opts,
-             app_cfg,
-             :remote_rpc_timeout_ms,
-             15_000
-           ),
-         {:ok, remote_boot_lease_timeout_ms} <-
-           normalize_timeout(
-             driver_opts,
-             run_stream_opts,
-             session_stream_opts,
-             app_cfg,
-             :remote_boot_lease_timeout_ms,
-             10_000
-           ),
-         {:ok, remote_bootstrap_mode} <-
-           normalize_bootstrap_mode(
-             Keyword.get(driver_opts, :remote_bootstrap_mode) ||
-               Keyword.get(run_stream_opts, :remote_bootstrap_mode) ||
-               Keyword.get(session_stream_opts, :remote_bootstrap_mode) ||
-               Keyword.get(app_cfg, :remote_bootstrap_mode, :require_prestarted)
-           ) do
-      build_remote_config(
-        remote_node,
-        Keyword.get(driver_opts, :remote_cookie),
-        remote_connect_timeout_ms,
-        remote_rpc_timeout_ms,
-        remote_boot_lease_timeout_ms,
-        remote_bootstrap_mode,
-        Keyword.get(driver_opts, :remote_cwd)
-      )
-    end
-  end
-
-  defp normalize_timeout(driver_opts, run_stream_opts, session_stream_opts, app_cfg, key, default) do
-    value =
-      Keyword.get(driver_opts, key) ||
-        Keyword.get(run_stream_opts, key) ||
-        Keyword.get(session_stream_opts, key) ||
-        Keyword.get(app_cfg, key, default)
-
-    case normalize_pos_integer(value) do
-      {:ok, timeout} ->
-        {:ok, timeout}
-
-      :error ->
-        {:error, config_error("#{key} must be a positive integer, got: #{inspect(value)}")}
-    end
-  end
-
-  defp normalize_bootstrap_mode(mode) when mode in @valid_bootstrap_modes, do: {:ok, mode}
-
-  defp normalize_bootstrap_mode(mode) do
-    {:error,
-     config_error(
-       "remote_bootstrap_mode must be one of #{inspect(@valid_bootstrap_modes)}, got: #{inspect(mode)}"
-     )}
-  end
-
   defp normalize_pos_integer(value) when is_integer(value) and value > 0, do: {:ok, value}
   defp normalize_pos_integer(_value), do: :error
-
-  defp build_remote_config(
-         remote_node,
-         remote_cookie,
-         remote_connect_timeout_ms,
-         remote_rpc_timeout_ms,
-         remote_boot_lease_timeout_ms,
-         remote_bootstrap_mode,
-         remote_cwd
-       ) do
-    attrs =
-      %{
-        remote_connect_timeout_ms: remote_connect_timeout_ms,
-        remote_rpc_timeout_ms: remote_rpc_timeout_ms,
-        remote_boot_lease_timeout_ms: remote_boot_lease_timeout_ms,
-        remote_bootstrap_mode: remote_bootstrap_mode
-      }
-      |> maybe_put(:remote_node, remote_node)
-      |> maybe_put(:remote_cookie, remote_cookie)
-      |> maybe_put(:remote_cwd, remote_cwd)
-
-    case RemoteNodeSchema.parse(attrs) do
-      {:ok, remote} ->
-        {:ok, remote}
-
-      {:error, {:invalid_remote_node_config, details}} ->
-        {:error, config_error(details.message)}
-    end
-  end
-
-  defp maybe_put(map, _key, nil), do: map
-  defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
   defp reject_legacy_execution_surface_keys(session_stream_opts, run_stream_opts) do
     legacy_keys =
@@ -598,16 +442,9 @@ defmodule ASM.Execution.Config do
 
   defp resolve_provider_permission_mode(_permission_mode, _provider), do: {:ok, nil}
 
-  defp normalize_keyword(value) when is_list(value), do: value
-  defp normalize_keyword(_value), do: []
-
   defp app_config do
     defaults = [
       execution_mode: :local,
-      remote_connect_timeout_ms: 5_000,
-      remote_rpc_timeout_ms: 15_000,
-      remote_boot_lease_timeout_ms: 10_000,
-      remote_bootstrap_mode: :require_prestarted,
       transport_call_timeout_ms: 5_000
     ]
 

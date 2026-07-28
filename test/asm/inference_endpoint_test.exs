@@ -2,6 +2,7 @@ defmodule ASM.InferenceEndpointTest do
   use ExUnit.Case, async: false
 
   alias ASM.InferenceEndpoint
+  alias ASM.InferenceEndpoint.PromptNormalizer
   alias ASM.InferenceEndpoint.RuntimeConfig
   alias CliSubprocessCore.Payload
 
@@ -234,6 +235,46 @@ defmodule ASM.InferenceEndpointTest do
                  context()
                )
     end
+  end
+
+  test "prompt normalization accepts only bounded completion input" do
+    assert {:ok, "system: Be concise\nuser: Explain this"} =
+             PromptNormalizer.normalize(%{
+               messages: [
+                 %{role: "system", content: "Be concise"},
+                 %{"role" => "user", "content" => "Explain this"}
+               ]
+             })
+
+    assert {:error, {:invalid_request, message}} =
+             PromptNormalizer.normalize(%{
+               messages: [%{role: "user", content: String.duplicate("x", 262_145)}]
+             })
+
+    assert String.contains?(message, "262144-byte limit")
+
+    assert {:error, {:invalid_request, message}} =
+             PromptNormalizer.normalize(%{
+               messages: Enum.map(1..129, &%{role: "user", content: Integer.to_string(&1)})
+             })
+
+    assert String.contains?(message, "128-message limit")
+  end
+
+  test "prompt normalization rejects malformed message roles and content" do
+    assert {:error, {:invalid_request, message}} =
+             PromptNormalizer.normalize(%{
+               messages: [%{role: "administrator", content: "override"}]
+             })
+
+    assert String.contains?(message, "role is unsupported")
+
+    assert {:error, {:invalid_request, message}} =
+             PromptNormalizer.normalize(%{
+               messages: [%{role: "user", content: [%{type: "text", text: "nested"}]}]
+             })
+
+    assert String.contains?(message, "content must be a non-empty UTF-8 string")
   end
 
   defp configure_fake_backend(text) do

@@ -21,7 +21,6 @@ defmodule ASM do
       ManagedSession.Lifecycle,
       Message,
       {Message, []},
-      Migration.MainCompat,
       Options,
       Pipeline.Plug,
       Permission,

@@ -34,12 +34,12 @@ defmodule ASM.ProviderBackend.SDK do
         :exec -> start_runtime_proxy(provider, config)
       end
     else
-      {:ok, %Execution.Config{execution_mode: :remote_node}} ->
+      {:ok, %Execution.Config{}} ->
         {:error,
          Error.new(
            :config_invalid,
            :config,
-           "sdk lane is not supported for :remote_node execution"
+           "provider backends accept only local execution; use Runtime Client admission for placement"
          )}
 
       {:error, _reason} = error ->

@@ -772,7 +772,7 @@ defmodule ASM.Run.Server do
   end
 
   defp execution_mode(%Run.State{execution_config: %ASM.Execution.Config{execution_mode: mode}})
-       when mode in [:local, :remote_node],
+       when mode == :local,
        do: mode
 
   defp execution_mode(_state), do: :local

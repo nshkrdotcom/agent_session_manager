@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Amp and Antigravity SDK-lane carriage for
   `:transport_headless_timeout_ms`, keeping finite transport orphan reaping
   separate from their stream idle timeouts.
-- A 0.12 migration guide and shared dependency-source helper v6 release-DAG
+- A 0.12 migration guide and shared dependency-source helper v7 release-DAG
   coverage.
 
 ### Changed
@@ -28,12 +28,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   normalized common option and Zoi schema surfaces while retaining the
   provider-specific posture implementation in both Core and SDK lanes.
 - Refresh the documented optional SDK train to Amp 0.7.0 and Antigravity
-  0.2.0; Cursor 0.2.0 remains the already-published reference.
+  0.2.0.
+- Normalize Cursor to the same dynamically discovered optional-SDK boundary
+  used by Claude, Codex, Amp, and Antigravity. ASM no longer declares
+  `cursor_cli_sdk` as a package dependency or release prerequisite.
 
 ### Fixed
 
 - Elixir 1.20 compiler warnings caused by nil-after-atom clauses, an always-true
   atom check, and a redundant non-nil predicate.
+- Prevent the unsatisfiable published graph in which Cursor SDK 0.2 required
+  Core `~> 0.3.0` while ASM 0.12 required Core `~> 0.4.0`; Cursor core-lane
+  support remains available without the optional SDK.
 
 ## [0.11.0] - 2026-07-27
 

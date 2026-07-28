@@ -6,13 +6,6 @@
       hex: "~> 0.4.0",
       default_order: [:path, :github, :hex],
       publish_order: [:hex]
-    },
-    cursor_cli_sdk: %{
-      path: "../cursor_cli_sdk",
-      github: %{repo: "nshkrdotcom/cursor_cli_sdk", branch: "main"},
-      hex: "~> 0.2.0",
-      default_order: [:path, :github, :hex],
-      publish_order: [:hex]
     }
   }
 }

@@ -15,11 +15,11 @@ defmodule ASM.ReleasePreparationTest do
     assert project[:homepage_url] == "https://hex.pm/packages/agent_session_manager"
   end
 
-  test "publish mode selects CLI core 0.4 and Cursor 0.2 from Hex" do
+  test "publish mode selects only CLI core 0.4 from Hex" do
     publish_deps = DependencySources.deps(@repo_root, publish?: true)
 
     assert Keyword.fetch!(publish_deps, :cli_subprocess_core) == "~> 0.4.0"
-    assert Keyword.fetch!(publish_deps, :cursor_cli_sdk) == "~> 0.2.0"
+    refute Keyword.has_key?(publish_deps, :cursor_cli_sdk)
 
     refute inspect(publish_deps) =~ "path:"
     refute inspect(publish_deps) =~ "github:"
@@ -94,8 +94,8 @@ defmodule ASM.ReleasePreparationTest do
     assert readme =~ ~s({:claude_agent_sdk, "~> 0.19.0", optional: true})
     assert readme =~ ~s({:codex_sdk, "~> 0.18.0", optional: true})
     assert readme =~ ~s({:amp_sdk, "~> 0.7.0", optional: true})
-    assert readme =~ ~s({:cursor_cli_sdk, "~> 0.2.0", optional: true})
     assert readme =~ ~s({:antigravity_cli_sdk, "~> 0.2.0", optional: true})
+    assert readme =~ "`cursor_cli_sdk 0.2.0` cannot be combined"
     assert changelog =~ "## [0.12.0] - 2026-07-27"
 
     refute features =~ "across six providers"

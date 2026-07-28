@@ -31,7 +31,7 @@ defmodule DependencySources do
   #   H4 `release_dag/0` / `release_order/0` - the machine-readable release
   #      order that H1 reads.
 
-  @helper_version 6
+  @helper_version 7
   @repo_root Path.dirname(__DIR__)
 
   @source_keys [:path, :github, :hex]
@@ -86,7 +86,7 @@ defmodule DependencySources do
     cursor_cli_sdk: [:cli_subprocess_core],
     antigravity_cli_sdk: [:cli_subprocess_core],
     amp_sdk: [:cli_subprocess_core],
-    agent_session_manager: [:cli_subprocess_core, :cursor_cli_sdk],
+    agent_session_manager: [:cli_subprocess_core],
     gemini_ex: [],
     inference: []
   }

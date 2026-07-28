@@ -735,6 +735,63 @@ unless Code.ensure_loaded?(AntigravityCliSdk.Options) do
   end
 end
 
+unless Code.ensure_loaded?(CursorCliSdk) do
+  defmodule CursorCliSdk do
+    @moduledoc false
+
+    use Boundary, check: [in: false, out: false]
+  end
+end
+
+unless Code.ensure_loaded?(CursorCliSdk.Options) do
+  defmodule CursorCliSdk.Options do
+    @moduledoc false
+
+    defstruct execution_surface: nil,
+              governed_authority: nil,
+              model_payload: nil,
+              model: nil,
+              mode: :agent,
+              api_key: nil,
+              cli_command: nil,
+              cwd: nil,
+              permission_mode: :default,
+              trust: true,
+              output_format: "stream-json",
+              stream_partial_output: true,
+              resume: nil,
+              continue: false,
+              sandbox: nil,
+              approve_mcps: false,
+              worktree: nil,
+              worktree_base: nil,
+              skip_worktree_setup: false,
+              plugin_dirs: [],
+              headers: [],
+              timeout_ms: 300_000,
+              max_stderr_buffer_bytes: 262_144,
+              env: %{}
+
+    def new(attrs) when is_list(attrs) or is_map(attrs) do
+      {:ok, struct!(__MODULE__, attrs)}
+    rescue
+      error in [ArgumentError, KeyError] -> {:error, error}
+    end
+  end
+end
+
+unless Code.ensure_loaded?(CursorCliSdk.Runtime.CLI) do
+  defmodule CursorCliSdk.Runtime.CLI do
+    @moduledoc false
+
+    alias CliSubprocessCore.ProviderProfiles.Cursor
+
+    def capabilities do
+      Cursor.capabilities()
+    end
+  end
+end
+
 unless Code.ensure_loaded?(AmpSdk.Runtime.CLI) do
   defmodule AmpSdk.Runtime.CLI do
     @moduledoc false

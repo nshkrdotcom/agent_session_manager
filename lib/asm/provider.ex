@@ -256,7 +256,7 @@ defmodule ASM.Provider do
         name: :cursor,
         display_name: "Cursor Agent CLI",
         core_profile: CliSubprocessCore.ProviderProfiles.Cursor,
-        sdk_runtime: CursorCliSdk.Runtime.CLI,
+        sdk_runtime: :"Elixir.CursorCliSdk.Runtime.CLI",
         example_support: %ExampleSupport{
           cli_command: "agent",
           cli_path_env: "CURSOR_CLI_PATH",

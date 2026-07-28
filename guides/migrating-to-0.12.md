@@ -21,10 +21,15 @@ Optional SDK lanes use these prepared releases:
 ```elixir
 {:amp_sdk, "~> 0.7.0", optional: true}
 {:antigravity_cli_sdk, "~> 0.2.0", optional: true}
-{:cursor_cli_sdk, "~> 0.2.0", optional: true}
 {:claude_agent_sdk, "~> 0.19.0", optional: true}
 {:codex_sdk, "~> 0.18.0", optional: true}
 ```
+
+Do not add `cursor_cli_sdk 0.2.0` to this dependency set: it requires
+`cli_subprocess_core ~> 0.3.0` and cannot resolve alongside ASM 0.12's Core
+0.4 requirement. Cursor remains fully available through ASM's Core lane. Its
+SDK lane is dynamically discovered when a separately installed,
+Core-0.4-compatible Cursor SDK release exists.
 
 Publish Core 0.4 before publishing or resolving the SDK and ASM releases that
 require it.
@@ -62,4 +67,4 @@ The prepared release train is:
 2. provider SDK releases that require Core 0.4
 3. `agent_session_manager` 0.12.0
 
-No Hex publication or Git tag is performed by the preparation workflow.
+Cursor is not a publication prerequisite for ASM.

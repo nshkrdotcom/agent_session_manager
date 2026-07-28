@@ -82,12 +82,17 @@ provider-native namespace:
   realtime, voice helpers, and `ASM.Extensions.ProviderSDK.Codex`
 - `{:amp_sdk, "~> 0.7.0", optional: true}` for Amp SDK lane/runtime-kit
   availability and `ASM.Extensions.ProviderSDK.Amp`
-- `{:cursor_cli_sdk, "~> 0.2.0", optional: true}` for Cursor SDK
-  lane/runtime-kit availability and `ASM.Extensions.ProviderSDK.Cursor`
 - `{:antigravity_cli_sdk, "~> 0.2.0", optional: true}` for Antigravity SDK
   lane/runtime-kit availability. Antigravity currently composes through the
   common ASM provider surface and SDK runtime kit; it does not register a
   separate `ASM.Extensions.ProviderSDK.Antigravity` namespace.
+
+Cursor follows the same dynamically discovered optional-SDK boundary, but the
+published `cursor_cli_sdk 0.2.0` cannot be combined with Core 0.4 because it
+requires Core `~> 0.3.0`. ASM 0.12 therefore keeps Cursor available through
+the Core lane and does not declare or recommend a Cursor SDK dependency. The
+SDK lane activates automatically when an independently installed,
+Core-0.4-compatible Cursor SDK release is available.
 
 Declaring the optional dependency is the only client-side activation step. No
 extra ASM wiring is required. ASM always keeps the common surface available
@@ -95,9 +100,9 @@ through `cli_subprocess_core`, auto-detects optional provider runtime
 availability, and activates only the provider-native extension namespaces
 backed by the installed optional SDKs.
 
-The package publication order for this stack remains:
-`cli_subprocess_core` first, then the provider SDK packages, then
-`agent_session_manager`.
+The package publication order for this stack remains `cli_subprocess_core`
+first, then compatible provider SDK packages, then `agent_session_manager`.
+Cursor is not a publication prerequisite for ASM.
 
 ## CLI Setup
 

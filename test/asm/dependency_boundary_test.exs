@@ -8,6 +8,7 @@ defmodule ASM.DependencyBoundaryTest do
     :claude_agent_sdk,
     :codex_sdk,
     :amp_sdk,
+    :cursor_cli_sdk,
     :inference
   ]
 

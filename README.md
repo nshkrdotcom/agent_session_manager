@@ -55,12 +55,12 @@ Gemini model endpoints; it is not an ASM CLI provider.
 
 ## Install
 
-ASM 0.12.0 requires Elixir 1.19 or later.
+ASM 0.12.1 requires Elixir 1.19 or later.
 
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.12.0"}
+    {:agent_session_manager, "~> 0.12.1"}
   ]
 end
 ```
@@ -631,7 +631,8 @@ asm_opts = [
   provider: :claude,
   cwd: File.cwd!(),
   execution_environment: [permission_mode: :plan],
-  model: "sonnet"
+  model: "sonnet",
+  reasoning_effort: :high
 ]
 
 native_overrides = [
@@ -655,8 +656,9 @@ That bridge is intentionally separate from the normalized kernel:
 
 - ASM-style options stay in the first argument
 - Claude-native options stay in `native_overrides`
-- overlapping keys such as `:cwd`, `:execution_environment`, `:model`, and
-  `:max_turns` are rejected and must stay in `asm_opts`
+- overlapping keys such as `:cwd`, `:execution_environment`, `:model`,
+  `:effort`, and `:max_turns` are rejected and must stay in `asm_opts`;
+  callers select effort with ASM's `:reasoning_effort`
 - control calls still use `ClaudeAgentSDK.Client.*`
 
 The Codex namespace now exposes a narrow bridge into the SDK-local app-server
@@ -1021,7 +1023,7 @@ owning SDK or in an explicit provider-native extension.
 
 Provider-specific examples:
 
-- Claude: `model`, `include_thinking`, `max_turns`
+- Claude: `model`, `reasoning_effort`, `include_thinking`, `max_turns`
 - Codex: `model`, `reasoning_effort`, `skip_git_repo_check`
 - Amp: `model`, `mode`, `include_thinking`, `tools`
 

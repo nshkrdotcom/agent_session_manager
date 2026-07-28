@@ -153,6 +153,7 @@ asm_opts = [
   cwd: File.cwd!(),
   execution_environment: [permission_mode: :plan],
   model: "sonnet",
+  reasoning_effort: :high,
   execution_surface: [
     surface_kind: :ssh_exec,
     transport_options: [destination: "buildbox-a", port: 2222]
@@ -304,8 +305,9 @@ launch auth placement stay in ASM config.
   `execution_surface` contract; `execution_mode: :remote_node`
   remains a separate ASM-only rule
 - ASM-derived fields such as `:cwd`, `:execution_environment`, `:model`,
-  `:max_turns`, and `:timeout_ms` must stay in ASM config and are rejected
-  from `native_overrides`
+  `:effort`, `:max_turns`, and `:timeout_ms` must stay in ASM config and are
+  rejected from `native_overrides`; callers select effort with ASM's
+  `:reasoning_effort`
 - the Codex bridge follows the same rule for ASM-derived fields such as
   `:model`, `:reasoning_effort`, `:cwd`, `:approval_timeout_ms`, and
   `:output_schema`

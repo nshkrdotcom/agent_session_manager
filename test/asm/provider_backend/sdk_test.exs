@@ -259,6 +259,8 @@ defmodule ASM.ProviderBackend.SDKTest do
         ),
       continuation: %{strategy: :latest},
       provider_opts: [
+        model: "sonnet",
+        reasoning_effort: :xhigh,
         max_stderr_buffer_bytes: 2048,
         system_prompt: %{type: :preset, preset: :claude_code, append: "Stay concise."},
         append_system_prompt: "Include exact file paths."
@@ -287,6 +289,7 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert Keyword.fetch!(start_opts, :options).execution_surface == execution_surface
     assert Keyword.fetch!(start_opts, :options).continue_conversation == true
     assert Keyword.fetch!(start_opts, :options).resume == nil
+    assert Keyword.fetch!(start_opts, :options).effort == :xhigh
 
     assert Keyword.fetch!(start_opts, :options).system_prompt == %{
              type: :preset,

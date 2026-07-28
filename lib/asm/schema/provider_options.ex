@@ -77,6 +77,7 @@ defmodule ASM.Schema.ProviderOptions do
     external_model_overrides: Zoi.optional(Zoi.nullish(Conventions.any_map())),
     anthropic_base_url: Conventions.optional_trimmed_string(),
     anthropic_auth_token: Conventions.optional_trimmed_string(),
+    reasoning_effort: Conventions.optional_any(),
     include_thinking: Zoi.boolean(),
     max_turns: Zoi.optional(Zoi.nullish(Zoi.integer() |> Zoi.min(1)))
   }

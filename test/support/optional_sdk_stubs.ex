@@ -46,6 +46,7 @@ unless Code.ensure_loaded?(ClaudeAgentSDK.Options) do
               execution_surface: nil,
               model_payload: nil,
               model: nil,
+              effort: nil,
               max_turns: nil,
               system_prompt: nil,
               append_system_prompt: nil,

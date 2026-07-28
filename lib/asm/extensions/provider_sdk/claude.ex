@@ -32,6 +32,7 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
     :path_to_claude_code_executable,
     :permission_mode,
     :model,
+    :effort,
     :max_turns,
     :timeout_ms
   ]
@@ -292,6 +293,7 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
       permission_mode: Keyword.get(finalized, :provider_permission_mode),
       model_payload: model_payload,
       model: model_payload_value(model_payload, :resolved_model),
+      effort: reasoning_atom(model_payload_value(model_payload, :reasoning)),
       max_turns: Keyword.get(finalized, :max_turns),
       timeout_ms: Keyword.get(finalized, :transport_timeout_ms)
     ]
@@ -406,5 +408,19 @@ defmodule ASM.Extensions.ProviderSDK.Claude do
        )
        when is_atom(key) do
     Map.get(payload, key)
+  end
+
+  defp reasoning_atom(nil), do: nil
+  defp reasoning_atom(value) when is_atom(value), do: value
+
+  defp reasoning_atom(value) when is_binary(value) do
+    case value |> String.trim() |> String.downcase() do
+      "low" -> :low
+      "medium" -> :medium
+      "high" -> :high
+      "xhigh" -> :xhigh
+      "max" -> :max
+      _other -> nil
+    end
   end
 end

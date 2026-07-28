@@ -40,6 +40,16 @@ defmodule ASM.ClaudeOpusModelTest do
       assert payload.resolved_model == "opus[1m]"
       assert payload.model_source == :catalog
     end
+
+    test "Claude reasoning effort is resolved by the shared catalog" do
+      assert {:ok, attrs} =
+               Options.finalize_provider_opts(:claude,
+                 model: "opus",
+                 reasoning_effort: :xhigh
+               )
+
+      assert Keyword.fetch!(attrs, :model_payload).reasoning == "xhigh"
+    end
   end
 
   test "ASM ships no model catalog of its own" do

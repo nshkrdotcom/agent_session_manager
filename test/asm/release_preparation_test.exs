@@ -6,19 +6,19 @@ defmodule ASM.ReleasePreparationTest do
   @repo_root Path.expand("../..", __DIR__)
   @expected_providers [:amp, :antigravity, :claude, :codex, :cursor]
 
-  test "0.12.0 release metadata and Elixir floor are frozen" do
+  test "0.12.1 release metadata and Elixir floor are frozen" do
     project = Mix.Project.config()
 
-    assert project[:version] == "0.12.0"
+    assert project[:version] == "0.12.1"
     assert project[:elixir] == "~> 1.19"
-    assert project[:docs][:source_ref] == "v0.12.0"
+    assert project[:docs][:source_ref] == "v0.12.1"
     assert project[:homepage_url] == "https://hex.pm/packages/agent_session_manager"
   end
 
-  test "publish mode selects only CLI core 0.4 from Hex" do
+  test "publish mode selects only CLI core 0.4.1 from Hex" do
     publish_deps = DependencySources.deps(@repo_root, publish?: true)
 
-    assert Keyword.fetch!(publish_deps, :cli_subprocess_core) == "~> 0.4.0"
+    assert Keyword.fetch!(publish_deps, :cli_subprocess_core) == "~> 0.4.1"
     refute Keyword.has_key?(publish_deps, :cursor_cli_sdk)
 
     refute inspect(publish_deps) =~ "path:"
@@ -96,7 +96,7 @@ defmodule ASM.ReleasePreparationTest do
     assert readme =~ ~s({:amp_sdk, "~> 0.7.0", optional: true})
     assert readme =~ ~s({:antigravity_cli_sdk, "~> 0.2.0", optional: true})
     assert readme =~ "`cursor_cli_sdk 0.2.0` cannot be combined"
-    assert changelog =~ "## [0.12.0] - 2026-07-27"
+    assert changelog =~ "## [0.12.1] - 2026-07-27"
 
     refute features =~ "across six providers"
     refute backends =~ "sixth first-party provider"

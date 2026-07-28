@@ -60,6 +60,7 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
       cli_path: "/usr/local/bin/claude",
       permission_mode: :auto,
       model: "sonnet",
+      reasoning_effort: :high,
       max_turns: 3,
       include_thinking: true,
       transport_timeout_ms: 12_000,
@@ -81,6 +82,7 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
     assert options.path_to_claude_code_executable == "/usr/local/bin/claude"
     assert options.permission_mode == :accept_edits
     assert options.model == "sonnet"
+    assert options.effort == :high
     assert options.max_turns == 3
     assert options.timeout_ms == 12_000
     assert options.execution_surface.surface_kind == :ssh_exec

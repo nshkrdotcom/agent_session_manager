@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-07-27
+
+### Fixed
+
+- Claude `:reasoning_effort` now resolves through the shared model registry and
+  reaches `ClaudeAgentSDK.Options.effort` in both ASM SDK integration paths.
+  The direct CLI fallback receives the same normalized effort through
+  `cli_subprocess_core 0.4.1`; `:include_thinking` remains the separate control
+  for thinking output/configuration.
+
 ## [0.12.0] - 2026-07-27
 
 ### Added
@@ -873,7 +883,8 @@ See `guides/migrating_to_v0.8.md` for migration details.
 - Basic project structure with mix.exs configuration
 - Project logo and assets
 
-[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.9.2...v0.10.0

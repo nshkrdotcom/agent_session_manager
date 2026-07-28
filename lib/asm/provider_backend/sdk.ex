@@ -481,6 +481,7 @@ defmodule ASM.ProviderBackend.SDK do
       permission_mode: claude_permission_mode(config),
       model_payload: model_payload,
       model: model_payload_value(model_payload, :resolved_model),
+      effort: reasoning_atom(model_payload_value(model_payload, :reasoning)),
       max_turns: kw(config, :max_turns),
       system_prompt: kw(config, :system_prompt),
       append_system_prompt: kw(config, :append_system_prompt),

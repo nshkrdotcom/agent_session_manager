@@ -127,6 +127,8 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
              )
 
     assert options.full_auto == true
+    assert options.ask_for_approval == :never
+    assert options.sandbox == :workspace_write
     assert options.dangerously_bypass_approvals_and_sandbox == false
   end
 

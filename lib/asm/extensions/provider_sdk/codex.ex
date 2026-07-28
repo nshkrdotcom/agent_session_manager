@@ -332,6 +332,8 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
   end
 
   defp thread_option_attrs(validated, model_payload) do
+    auto? = Keyword.get(validated, :provider_permission_mode) == :auto_edit
+
     [
       working_directory: Keyword.get(validated, :cwd),
       additional_directories: Keyword.get(validated, :additional_directories, []),
@@ -339,7 +341,9 @@ defmodule ASM.Extensions.ProviderSDK.Codex do
       oss: codex_payload_oss?(model_payload),
       local_provider: codex_payload_oss_provider(model_payload),
       model_provider: codex_payload_model_provider(model_payload),
-      full_auto: Keyword.get(validated, :provider_permission_mode) == :auto_edit,
+      ask_for_approval: if(auto?, do: :never),
+      sandbox: if(auto?, do: :workspace_write),
+      full_auto: auto?,
       dangerously_bypass_approvals_and_sandbox:
         Keyword.get(validated, :provider_permission_mode) == :yolo,
       skip_git_repo_check: Keyword.get(validated, :skip_git_repo_check, false),

@@ -609,6 +609,7 @@ defmodule ASM.ProviderBackend.SDK do
 
   defp codex_thread_option_attrs(config, model_payload) do
     materialization = Map.get(config, :codex_materialization)
+    auto? = not completion_only?(config) and kw(config, :provider_permission_mode) == :auto_edit
 
     [
       working_directory: kw(config, :cwd),
@@ -617,8 +618,9 @@ defmodule ASM.ProviderBackend.SDK do
       oss: codex_payload_oss?(model_payload),
       local_provider: codex_payload_oss_provider(model_payload),
       model_provider: codex_payload_model_provider(model_payload),
-      full_auto:
-        not completion_only?(config) and kw(config, :provider_permission_mode) == :auto_edit,
+      ask_for_approval: if(auto?, do: :never),
+      sandbox: if(auto?, do: :workspace_write),
+      full_auto: auto?,
       dangerously_bypass_approvals_and_sandbox:
         not completion_only?(config) and kw(config, :provider_permission_mode) == :yolo,
       skip_git_repo_check: kw(config, :skip_git_repo_check, false),

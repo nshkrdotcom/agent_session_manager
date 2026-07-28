@@ -1128,6 +1128,8 @@ defmodule ASM.ProviderBackend.SDKTest do
     thread_opts = Keyword.fetch!(start_opts, :exec_opts).thread.thread_opts
 
     assert thread_opts.full_auto == true
+    assert thread_opts.ask_for_approval == :never
+    assert thread_opts.sandbox == :workspace_write
     assert thread_opts.dangerously_bypass_approvals_and_sandbox == false
   end
 

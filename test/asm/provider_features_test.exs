@@ -152,16 +152,14 @@ defmodule ASM.ProviderFeaturesTest do
     assert String.contains?(error.message, ":app_server")
   end
 
-  test "ASM rejects normalized auto mode for Codex while preserving native feature discovery" do
+  test "ASM maps normalized auto mode for Codex while preserving native feature discovery" do
     schema = Provider.resolve!(:codex).options_schema
 
-    assert {:error, error} =
+    assert {:ok, validated} =
              Options.validate([provider: :codex, permission_mode: :auto], schema)
 
-    assert String.contains?(
-             error.message,
-             "Permission mode :auto is not valid for provider :codex_exec"
-           )
+    assert validated[:permission_mode] == :auto
+    assert validated[:provider_permission_mode] == :auto_edit
 
     assert ProviderFeatures.permission_mode!(:codex, :yolo).cli_excerpt ==
              "--dangerously-bypass-approvals-and-sandbox"

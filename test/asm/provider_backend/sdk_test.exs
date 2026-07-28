@@ -1109,6 +1109,28 @@ defmodule ASM.ProviderBackend.SDKTest do
     assert thread_opts.ask_for_approval == nil
   end
 
+  test "codex sdk backend derives the sandboxed automatic posture when requested" do
+    provider = %{Provider.resolve!(:codex) | sdk_runtime: CodexRuntimeStub}
+
+    config = %{
+      provider: provider,
+      prompt: "hello",
+      execution_config: execution_config([], [], provider_permission_mode: :auto_edit),
+      provider_opts: [model: "gpt-5.4"],
+      metadata: %{test_pid: self()}
+    }
+
+    assert {:ok, proxy, _info} = SDK.start_run(config)
+    on_exit(fn -> SDK.close(proxy) end)
+
+    assert_receive {:codex_runtime_start_opts, start_opts}, 2_000
+
+    thread_opts = Keyword.fetch!(start_opts, :exec_opts).thread.thread_opts
+
+    assert thread_opts.full_auto == true
+    assert thread_opts.dangerously_bypass_approvals_and_sandbox == false
+  end
+
   test "claude sdk backend derives a completion-only posture into sdk options" do
     provider = %{Provider.resolve!(:claude) | sdk_runtime: ClaudeRuntimeStub}
 

@@ -118,18 +118,16 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
            }
   end
 
-  test "thread_options/2 rejects ASM normalized auto mode for Codex" do
-    assert {:error, error} =
+  test "thread_options/2 maps ASM normalized auto mode to sandboxed Codex automation" do
+    assert {:ok, %ThreadOptions{} = options} =
              CodexExtension.thread_options(
                provider: :codex,
                cwd: "/tmp/asm-codex-thread",
                permission_mode: :auto
              )
 
-    assert String.contains?(
-             error.message,
-             "Permission mode :auto is not valid for provider :codex_exec"
-           )
+    assert options.full_auto == true
+    assert options.dangerously_bypass_approvals_and_sandbox == false
   end
 
   test "Codex bridges accept the ASM common Ollama surface" do

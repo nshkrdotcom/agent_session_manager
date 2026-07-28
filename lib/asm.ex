@@ -17,6 +17,8 @@ defmodule ASM do
       HostTool,
       {HostTool, []},
       InferenceEndpoint,
+      ManagedSession,
+      ManagedSession.Lifecycle,
       Message,
       {Message, []},
       Migration.MainCompat,
@@ -177,7 +179,7 @@ defmodule ASM do
      %{
        session_id: state.session_id,
        provider: state.provider.name,
-       options: state.options,
+       options: public_session_options(state),
        status: state.status,
        execution_context_ref: state.runtime_auth.execution_context.ref,
        connector_instance_ref: state.runtime_auth.connector_instance.ref,
@@ -229,9 +231,42 @@ defmodule ASM do
   def list_provider_sessions(provider_or_session, opts \\ []),
     do: SessionControl.list_provider_sessions(provider_or_session, opts)
 
+  @doc "Revokes a governed managed session by opaque session id."
+  @spec revoke_managed_session(String.t(), map() | keyword()) ::
+          :ok | {:error, Error.t() | :not_found}
+  def revoke_managed_session(session_id, revocation) when is_binary(session_id),
+    do: Session.Supervisor.revoke_managed_session(session_id, revocation)
+
+  @doc "Closes a governed managed session materialization by opaque session id."
+  @spec cleanup_managed_session(String.t(), atom()) ::
+          :ok | {:error, Error.t() | :not_found}
+  def cleanup_managed_session(session_id, reason \\ :scope_closed)
+      when is_binary(session_id) and is_atom(reason),
+      do: Session.Supervisor.cleanup_managed_session(session_id, reason)
+
   @spec approve(session_ref(), String.t(), :allow | :deny) :: :ok | {:error, Error.t()}
   def approve(session, approval_id, decision),
     do: Session.Server.resolve_approval(session, approval_id, decision)
+
+  defp public_session_options(%{
+         runtime_auth: %RuntimeAuth{managed_binding: nil},
+         options: options
+       }),
+       do: options
+
+  defp public_session_options(%{runtime_auth: %RuntimeAuth{}, options: options}) do
+    Keyword.drop(options, [
+      :codex_materialized_runtime,
+      :materialized_runtime,
+      :managed_session,
+      :managed_binding,
+      :materialization_request,
+      :secret_material,
+      :workspace_root,
+      :execution_environment,
+      :execution_surface
+    ])
+  end
 
   defp lookup_session_server(session_id) do
     case Registry.lookup(:asm_sessions, {session_id, :server}) do

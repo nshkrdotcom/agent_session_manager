@@ -103,6 +103,30 @@ defmodule ASM.ProviderBackend.CoreTest do
     assert :command in error.cause.keys
   end
 
+  test "managed sessions reject manual remote RPC before placement or provider dispatch" do
+    execution_config = %Execution.Config{
+      execution_mode: :remote_node,
+      transport_call_timeout_ms: 5_000,
+      remote: %{
+        remote_node: :must_not_connect@invalid,
+        remote_rpc_timeout_ms: 5_000
+      },
+      execution_environment: %Environment{}
+    }
+
+    config = %{
+      provider: Provider.resolve!(:codex),
+      prompt: "must not dispatch",
+      provider_opts: [],
+      execution_config: execution_config,
+      metadata: %{managed_session: true}
+    }
+
+    assert {:error, error} = Core.start_run(config)
+    assert error.kind == :config_invalid
+    assert String.contains?(error.message, "manual remote RPC")
+  end
+
   defp governed_runtime_metadata do
     "core-governed-runtime"
     |> ASM.RuntimeAuth.new!(:codex,

@@ -588,6 +588,12 @@ defmodule ASM.ProviderBackend.SDKTest do
         command: "mix test",
         cwd: "/workspace/project"
       },
+      %Codex.Events.FileApprovalRequested{
+        id: 0,
+        thread_id: "thread-app-2",
+        turn_id: "turn-2",
+        item_id: "item-file-1"
+      },
       %Codex.Events.RequestUserInput{
         id: "input-jsonrpc-1",
         thread_id: "thread-app-2",
@@ -665,6 +671,14 @@ defmodule ASM.ProviderBackend.SDKTest do
 
     assert approval.approval_id == "approval-1"
     assert approval.subject == "codex.command_approval"
+
+    assert %CoreEvent{
+             kind: :approval_requested,
+             payload: %Payload.ApprovalRequested{} = file_approval
+           } = assert_core_event(subscription_ref, :approval_requested)
+
+    assert file_approval.approval_id == "0"
+    assert file_approval.subject == "codex.file_approval"
 
     assert %CoreEvent{kind: :approval_requested, payload: %Payload.ApprovalRequested{} = input} =
              assert_core_event(subscription_ref, :approval_requested)

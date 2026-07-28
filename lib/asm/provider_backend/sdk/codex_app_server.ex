@@ -719,8 +719,12 @@ defmodule ASM.ProviderBackend.SDK.CodexAppServer do
     Enum.map(List.wrap(questions), &raw_event_content/1)
   end
 
-  defp approval_id(event),
-    do: field(event, [:approval_id, "approval_id", :id, "id"]) || request_id(event)
+  defp approval_id(event) do
+    case field(event, [:approval_id, "approval_id", :id, "id"]) do
+      nil -> request_id(event)
+      id -> to_string(id)
+    end
+  end
 
   defp request_id(event), do: event |> field([:id, "id"]) |> to_string()
 

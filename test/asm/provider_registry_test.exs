@@ -136,7 +136,28 @@ defmodule ASM.ProviderRegistryTest do
 
     assert error.kind == :config_invalid
     assert error.domain == :config
-    assert String.contains?(error.message, "expected :local")
+    assert String.contains?(error.message, "expected :local or :runtime")
+  end
+
+  test "runtime mode selects the Runtime Client backend and never an SDK backend" do
+    put_runtime_loader(fn
+      Codex.Runtime.Exec -> true
+      runtime -> Code.ensure_loaded?(runtime)
+    end)
+
+    assert {:ok, resolution} =
+             ProviderRegistry.resolve(:codex, lane: :auto, execution_mode: :runtime)
+
+    assert resolution.execution_mode == :runtime
+    assert resolution.lane == :core
+    assert resolution.backend == ASM.Remote.RuntimeClient
+    assert resolution.lane_fallback_reason == :runtime_client_gateway
+
+    assert {:error, error} =
+             ProviderRegistry.resolve(:codex, lane: :sdk, execution_mode: :runtime)
+
+    assert error.kind == :config_invalid
+    assert error.cause.reason == :unsupported_execution_mode
   end
 
   defp put_runtime_loader(fun) when is_function(fun, 1) do

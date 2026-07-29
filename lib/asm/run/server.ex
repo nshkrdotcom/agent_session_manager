@@ -336,7 +336,8 @@ defmodule ASM.Run.Server do
 
   defp resolve_backend(provider, %Run.State{backend: backend} = state)
        when is_atom(backend) and not is_nil(backend) do
-    with {:ok, runtime_profile} <- ProviderRuntimeProfile.resolve(provider.name),
+    with :ok <- reject_runtime_backend_override(state),
+         {:ok, runtime_profile} <- ProviderRuntimeProfile.resolve(provider.name),
          :ok <- validate_backend_override(provider, backend, runtime_profile) do
       lane = backend_override_lane(state.lane)
       capabilities = backend_override_capabilities(provider, lane)
@@ -392,7 +393,13 @@ defmodule ASM.Run.Server do
       execution_config: state.execution_config,
       subscriber_pid: self(),
       subscription_ref: subscription_ref,
-      metadata: Map.merge(state.metadata, %{run_id: state.run_id, session_id: state.session_id})
+      metadata: Map.merge(state.metadata, %{run_id: state.run_id, session_id: state.session_id}),
+      managed_binding: state.managed_binding,
+      runtime_gateway_module: state.runtime_gateway_module,
+      runtime_client: state.runtime_client,
+      runtime_client_opts: state.runtime_client_opts,
+      runtime_attestation_classes: state.runtime_attestation_classes,
+      governed_lower_envelope: state.governed_lower_envelope
     }
   end
 
@@ -772,10 +779,23 @@ defmodule ASM.Run.Server do
   end
 
   defp execution_mode(%Run.State{execution_config: %ASM.Execution.Config{execution_mode: mode}})
-       when mode == :local,
+       when mode in [:local, :runtime],
        do: mode
 
   defp execution_mode(_state), do: :local
+
+  defp reject_runtime_backend_override(%Run.State{} = state) do
+    if execution_mode(state) == :runtime do
+      {:error,
+       Error.new(
+         :config_invalid,
+         :config,
+         "runtime-admitted execution cannot use a direct backend override"
+       )}
+    else
+      :ok
+    end
+  end
 
   defp backend_override_lane(lane) when lane in [:core, :sdk], do: lane
   defp backend_override_lane(_lane), do: :core

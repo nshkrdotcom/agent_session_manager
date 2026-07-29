@@ -21,7 +21,7 @@ defmodule ASM.ProviderBackend.Core do
     with {:ok, execution_config} <- fetch_execution_config(config),
          :ok <- validate_local_execution(execution_config),
          :ok <- validate_approval_posture(execution_config),
-         {:ok, session_opts} <- build_session_opts(provider, config, execution_config),
+         {:ok, session_opts} <- runtime_session_opts(config),
          {:ok, proxy, info} <-
            Proxy.start_link(
              starter: fn subscriber ->
@@ -48,6 +48,15 @@ defmodule ASM.ProviderBackend.Core do
          Error.new(:runtime, :runtime, "core backend start failed: #{inspect(reason)}",
            cause: reason
          )}
+    end
+  end
+
+  @doc false
+  @spec runtime_session_opts(map()) :: {:ok, keyword()} | {:error, term()}
+  def runtime_session_opts(%{provider: %Provider{} = provider} = config) do
+    with {:ok, execution_config} <- fetch_execution_config(config),
+         :ok <- validate_approval_posture(execution_config) do
+      build_session_opts(provider, config, execution_config)
     end
   end
 
@@ -107,6 +116,7 @@ defmodule ASM.ProviderBackend.Core do
              provider.name,
              effective_provider_opts(config, execution_config)
            ),
+         {:ok, provider_opts} <- put_continuation_opts(provider, config, provider_opts),
          {:ok, materialization} <-
            authorize_provider_runtime(provider, config, provider_opts) do
       provider_opts =
@@ -163,6 +173,35 @@ defmodule ASM.ProviderBackend.Core do
     |> Keyword.put(:env, materialization.env)
     |> Keyword.put(:clear_env?, materialization.clear_env?)
   end
+
+  defp put_continuation_opts(%Provider{name: :codex}, config, provider_opts) do
+    case Map.get(config, :continuation) do
+      nil ->
+        {:ok, provider_opts}
+
+      %{strategy: :exact, provider_session_id: provider_session_id}
+      when is_binary(provider_session_id) and provider_session_id != "" ->
+        {:ok, Keyword.put(provider_opts, :resume, provider_session_id)}
+
+      %{strategy: :latest} ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :config,
+           "Codex core continuation requires an exact provider session id"
+         )}
+
+      continuation ->
+        {:error,
+         Error.new(
+           :config_invalid,
+           :config,
+           "invalid Codex core continuation: #{inspect(continuation)}"
+         )}
+    end
+  end
+
+  defp put_continuation_opts(%Provider{}, _config, provider_opts), do: {:ok, provider_opts}
 
   defp authorize_provider_runtime(%Provider{name: :codex}, config, provider_opts) do
     CodexMaterialization.authorize_config(config, provider_opts)

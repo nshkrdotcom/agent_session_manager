@@ -37,6 +37,11 @@ defmodule ASM.Execution.ConfigTest do
     assert cfg.transport_call_timeout_ms == 7_000
   end
 
+  test "resolve/2 preserves an explicitly authored Runtime Client execution mode" do
+    assert {:ok, cfg} = Config.resolve([execution_mode: :runtime], [])
+    assert cfg.execution_mode == :runtime
+  end
+
   test "execution config publishes the Wave 5 lower-boundary vocabulary and metadata keys" do
     assert Config.execution_plane_contracts() == [
              "BoundarySessionDescriptor.v1",
@@ -135,7 +140,7 @@ defmodule ASM.Execution.ConfigTest do
     assert error.kind == :config_invalid
     assert error.domain == :config
     assert String.contains?(error.message, "execution_mode")
-    assert String.contains?(error.message, "expected one of [:local]")
+    assert String.contains?(error.message, "expected one of [:local, :runtime]")
   end
 
   test "resolve/2 rejects legacy execution-surface keys" do

@@ -390,7 +390,9 @@ defmodule ASM.Session.Server do
        ) do
     with {:ok, runtime_auth} <- RuntimeAuth.for_run(state.runtime_auth, run_id, runtime_auth_opts) do
       passthrough_opts =
-        put_runtime_auth_metadata(passthrough_opts, RuntimeAuth.to_metadata(runtime_auth))
+        passthrough_opts
+        |> put_private_runtime_route(runtime_auth, state.options)
+        |> put_runtime_auth_metadata(RuntimeAuth.to_metadata(runtime_auth))
 
       child_opts =
         [
@@ -404,6 +406,31 @@ defmodule ASM.Session.Server do
       DynamicSupervisor.start_child(run_sup, {run_module, child_opts})
     end
   end
+
+  defp put_private_runtime_route(
+         opts,
+         %{managed_binding: %ManagedBinding{} = binding},
+         session_options
+       )
+       when is_list(opts) and is_list(session_options) do
+    opts
+    |> Keyword.put(:managed_binding, binding)
+    |> Keyword.put(:runtime_gateway_module, binding.runtime_gateway_module)
+    |> maybe_put_private_route(:runtime_client, Keyword.get(session_options, :runtime_client))
+    |> maybe_put_private_route(
+      :runtime_client_opts,
+      Keyword.get(session_options, :runtime_client_opts)
+    )
+    |> maybe_put_private_route(
+      :runtime_attestation_classes,
+      Keyword.get(session_options, :runtime_attestation_classes)
+    )
+  end
+
+  defp put_private_runtime_route(opts, _runtime_auth, _session_options), do: opts
+
+  defp maybe_put_private_route(opts, _key, nil), do: opts
+  defp maybe_put_private_route(opts, key, value), do: Keyword.put(opts, key, value)
 
   defp put_runtime_auth_metadata(opts, metadata) when is_list(opts) and is_map(metadata) do
     existing_metadata =

@@ -67,7 +67,7 @@ defmodule ASM.Execution.Config do
     :boundary_class,
     :observability
   ]
-  @valid_execution_modes [:local]
+  @valid_execution_modes [:local, :runtime]
   @legacy_execution_surface_keys [
     :surface_kind,
     :transport_options,
@@ -86,7 +86,7 @@ defmodule ASM.Execution.Config do
             provider_permission_mode: nil
 
   @type t :: %__MODULE__{
-          execution_mode: :local,
+          execution_mode: :local | :runtime,
           transport_call_timeout_ms: pos_integer(),
           execution_surface: ExecutionSurface.t(),
           execution_environment: Environment.t(),

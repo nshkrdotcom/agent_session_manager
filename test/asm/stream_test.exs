@@ -251,7 +251,7 @@ defmodule ASM.StreamTest do
              )
 
     assert error.kind == :config_invalid
-    assert String.contains?(error.message, "expected one of [:local]")
+    assert String.contains?(error.message, "expected one of [:local, :runtime]")
 
     assert {:error, error} =
              ASM.query(session, "hello",

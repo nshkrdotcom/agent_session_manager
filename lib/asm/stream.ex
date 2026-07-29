@@ -34,6 +34,10 @@ defmodule ASM.Stream do
     :backend_module,
     :backend_opts,
     :codex_materialized_runtime,
+    :runtime_client,
+    :runtime_client_opts,
+    :runtime_attestation_classes,
+    :governed_lower_envelope,
     :metadata
   ]
 

@@ -13,7 +13,7 @@ defmodule ASM.ProviderRegistry do
   alias ASM.ProviderBackend.SdkUnavailableError
 
   @type lane :: :auto | :core | :sdk
-  @type execution_mode :: :local
+  @type execution_mode :: :local | :runtime
 
   @type provider_info :: %{
           provider: Provider.t(),
@@ -236,11 +236,12 @@ defmodule ASM.ProviderRegistry do
 
   defp execution_mode(opts) when is_list(opts) do
     case Keyword.get(opts, :execution_mode, :local) do
-      :local ->
-        {:ok, :local}
+      mode when mode in [:local, :runtime] ->
+        {:ok, mode}
 
       other ->
-        {:error, config_error("invalid execution_mode #{inspect(other)}; expected :local")}
+        {:error,
+         config_error("invalid execution_mode #{inspect(other)}; expected :local or :runtime")}
     end
   end
 
@@ -263,6 +264,28 @@ defmodule ASM.ProviderRegistry do
 
   defp resolve_for_execution_mode(
          %{requested_lane: :sdk} = info,
+         :runtime,
+         _runtime_profile
+       ) do
+    cause =
+      SdkUnavailableError.exception(
+        provider: info.provider.name,
+        lane: :sdk,
+        runtime: info.sdk_runtime,
+        execution_mode: :runtime,
+        reason: :unsupported_execution_mode
+      )
+
+    {:error,
+     config_error(
+       "runtime-admitted provider execution uses the CLI RuntimeGateway family, not an SDK lane",
+       info.provider.name,
+       cause
+     )}
+  end
+
+  defp resolve_for_execution_mode(
+         %{requested_lane: :sdk} = info,
          _execution_mode,
          %{ref: ref}
        ) do
@@ -280,6 +303,13 @@ defmodule ASM.ProviderRegistry do
        info.provider.name,
        cause
      )}
+  end
+
+  defp resolve_for_execution_mode(%{} = info, :runtime, runtime_profile) do
+    lane_fallback_reason =
+      if info.preferred_lane == :core, do: nil, else: :runtime_client_gateway
+
+    finalize_resolution(info, :core, :runtime, lane_fallback_reason, runtime_profile)
   end
 
   defp resolve_for_execution_mode(%{} = info, execution_mode, %{} = runtime_profile) do
@@ -306,13 +336,15 @@ defmodule ASM.ProviderRegistry do
        ) do
     capabilities = lane_capabilities(info.provider, lane)
 
+    backend = backend_module(lane, execution_mode)
+
     {:ok,
      %{
        provider: info.provider,
        requested_lane: info.requested_lane,
        preferred_lane: info.preferred_lane,
        lane: lane,
-       backend: backend_module(lane),
+       backend: backend,
        sdk_available?: info.sdk_available?,
        core_profile: info.core_profile,
        core_profile_id: info.core_profile_id,
@@ -325,7 +357,7 @@ defmodule ASM.ProviderRegistry do
        observability:
          Map.merge(info.observability, %{
            lane: lane,
-           backend: backend_module(lane),
+           backend: backend,
            execution_mode: execution_mode,
            capabilities: capabilities,
            lane_fallback_reason: lane_fallback_reason
@@ -333,6 +365,9 @@ defmodule ASM.ProviderRegistry do
          |> Map.merge(ProviderRuntimeProfile.observability(runtime_profile))
      }}
   end
+
+  defp backend_module(_lane, :runtime), do: ASM.Remote.RuntimeClient
+  defp backend_module(lane, :local), do: backend_module(lane)
 
   defp available_lanes(true), do: [:core, :sdk]
   defp available_lanes(false), do: [:core]

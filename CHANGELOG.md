@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.2] - 2026-08-10
+
+### Removed
+
+- The unreachable fallback clause in `ASM.ProviderBackend.SDK.start_run/1`.
+  Every clause of that `with` yields an `{:ok, _}` the head matches, a non-local
+  execution config, or an `{:error, %ASM.Error{}}` — all already handled — so
+  the trailing catch-all was dead code rather than a safety net. The sibling
+  `with` in `start_runtime_proxy/2` keeps its own, where clauses can yield bare
+  `false` and `nil` and it is genuinely reachable.
+- The `%ASM.Error{}` clause from the inference endpoint's chat-completions
+  handler. No step of that `with` produces one — `PromptNormalizer` included,
+  which reports invalid input as `{:invalid_request, message}` — so the clause
+  could never be selected.
+
+The package is Dialyzer- and Credo-clean with no ignore entries.
+
+### Notes
+
+- No behavioural change. Compiles without warnings on Elixir 1.19.
+- `ASM.Execution.PolicyPlug` rejects a `tool_use` whose `tool_name` is absent
+  from a non-empty `allowed_tools`. This is only meaningful for a lane that can
+  intercept a tool call *before* it runs. A CLI that executes tools internally
+  and reports them as completed items — `codex exec` under a bypass permission
+  mode, for example — has already run the tool by the time the event arrives,
+  so the guardrail cannot prevent the action and can only fail the run.
+  Configure `allowed_tools` only on lanes where interception is real.
+
 ## [0.12.1] - 2026-07-27
 
 ### Fixed

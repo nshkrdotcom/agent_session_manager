@@ -136,10 +136,13 @@ defmodule ASM.InferenceEndpoint.Server do
              {:ok, prompt} <- PromptNormalizer.normalize(payload) do
           dispatch_completion(socket, lease, payload, prompt)
         else
+          # No %ASM.Error{} clause: every step of this `with` reports either
+          # `:error`, `{:error, :unauthorized}`, or
+          # `{:error, {:invalid_request, message}}`. PromptNormalizer included —
+          # it reports invalid input as {:invalid_request, _}, not a struct.
           {:error, :unauthorized} -> send_error(socket, 401, "unauthorized")
           :error -> send_error(socket, 404, "unknown lease")
           {:error, {:invalid_request, message}} -> send_error(socket, 400, message)
-          {:error, %ASM.Error{} = error} -> send_error(socket, 400, error.message)
         end
 
       {_method, _segments} ->

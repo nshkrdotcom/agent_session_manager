@@ -43,14 +43,13 @@ defmodule ASM.ProviderBackend.SDK do
            "provider backends accept only local execution; use Runtime Client admission for placement"
          )}
 
+      # No catch-all: every clause of this `with` returns either an `{:ok, _}`
+      # that the head matches, a non-local config, or an `{:error, %Error{}}`,
+      # so a fallback here is unreachable rather than defensive. The sibling
+      # `with` in start_runtime_proxy/2 does need one -- its clauses can yield
+      # bare `false` and `nil`.
       {:error, _reason} = error ->
         error
-
-      other ->
-        {:error,
-         Error.new(:runtime, :runtime, "sdk backend start failed: #{inspect(other)}",
-           cause: other
-         )}
     end
   end
 

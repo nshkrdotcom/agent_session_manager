@@ -5,28 +5,27 @@ defmodule ASM.Execution.PolicyPlug do
   Enforcement depends on the lane, because a `:tool_use` event does not mean
   the same thing on every one of them.
 
-  A lane that declares the `:approval` capability has a decision point before
-  the tool runs — it can be asked, and it can be told no. Blocking there
-  prevents the action, which is what a guardrail is for. `claude` and `amp`
-  declare it.
+  A lane that declares `:host_tools` delegates tool execution to the host. Its
+  `:tool_use` event is therefore a decision point before execution, and blocking
+  there prevents the action.
 
-  A lane without it reports tools as items that have already completed.
-  `codex exec` under a bypass permission mode runs its tools internally and
-  reports them afterwards, so by the time the event arrives the tool has run:
-  raising cannot prevent anything and can only kill a run that was working.
-  That is not a guardrail, it is a delayed abort. On those lanes a non-matching
-  tool is recorded on the event and in telemetry, and the run continues.
+  A lane without it owns tool execution inside its provider process. Even when
+  it advertises approvals, this pipeline has no host callback that can deny the
+  call; raising on the observed event cannot provide the promised enforcement
+  and can only kill a run. On those lanes a non-matching tool is recorded on the
+  event and in telemetry, and the run continues.
 
-  With no `:lane_capabilities` option this stays fail-closed and blocks, because
-  an unknown lane is not evidence that interception is impossible.
+  With no `:lane_capabilities` option this records rather than manufacturing an
+  enforcement guarantee. Blocking requires positive `:host_tools` evidence.
   """
 
   @behaviour ASM.Pipeline.Plug
 
   alias ASM.{Error, Event, Telemetry}
 
-  # The capability that means "this lane can be asked before the tool runs".
-  @interception_capability :approval
+  # The capability that means ASM, rather than the provider process, owns the
+  # tool execution decision.
+  @interception_capability :host_tools
 
   @impl true
   def call(%Event{kind: :tool_use} = event, ctx, opts) when is_map(ctx) and is_list(opts) do
@@ -59,7 +58,8 @@ defmodule ASM.Execution.PolicyPlug do
   end
 
   @doc """
-  Whether a lane with these capabilities can prevent a tool call or only observe it.
+  Whether a lane with these capabilities can prevent a tool call or only
+  observe it.
   """
   @spec enforcement_for([atom()]) :: :block | :record
   def enforcement_for(capabilities) when is_list(capabilities) do
@@ -69,7 +69,7 @@ defmodule ASM.Execution.PolicyPlug do
   defp enforcement(opts) do
     case Keyword.fetch(opts, :lane_capabilities) do
       {:ok, capabilities} when is_list(capabilities) -> enforcement_for(capabilities)
-      _other -> :block
+      _other -> :record
     end
   end
 
@@ -77,7 +77,7 @@ defmodule ASM.Execution.PolicyPlug do
     record = %{
       rule: :allowed_tools,
       action: :recorded,
-      reason: :lane_observes_tools_after_execution,
+      reason: :lane_does_not_delegate_tool_execution_to_host,
       tool_name: tool_name,
       allowed_tools: allowed_tools
     }

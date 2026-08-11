@@ -124,6 +124,24 @@ defmodule ASM.ProviderBackend.CoreTest do
     assert :command in error.cause.keys
   end
 
+  test "Antigravity exact continuation reaches its conversation option" do
+    config = %{
+      provider: Provider.resolve!(:antigravity),
+      prompt: "continue",
+      provider_opts: [],
+      continuation: %{strategy: :exact, provider_session_id: "agy-conversation-1"},
+      execution_config: %Execution.Config{
+        execution_mode: :local,
+        transport_call_timeout_ms: 5_000,
+        execution_environment: %Environment{}
+      }
+    }
+
+    assert {:ok, opts} = Core.runtime_session_opts(config)
+    assert opts[:conversation] == "agy-conversation-1"
+    refute Keyword.has_key?(opts, :resume)
+  end
+
   defp governed_runtime_metadata do
     "core-governed-runtime"
     |> ASM.RuntimeAuth.new!(:codex,

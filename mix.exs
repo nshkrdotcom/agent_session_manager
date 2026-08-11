@@ -13,7 +13,7 @@ defmodule AgentSessionManager.MixProject do
   @workspace_checkout? File.regular?(Path.expand("build_support/dependency_sources.exs", __DIR__))
 
   @app :agent_session_manager
-  @version "0.12.3"
+  @version "0.13.0"
   @source_url "https://github.com/nshkrdotcom/agent_session_manager"
   @homepage_url "https://hex.pm/packages/agent_session_manager"
   @docs_url "https://hexdocs.pm/agent_session_manager"
@@ -62,7 +62,7 @@ defmodule AgentSessionManager.MixProject do
 
   defp deps do
     [
-      workspace_dep(:cli_subprocess_core, "~> 0.5.1"),
+      workspace_dep(:cli_subprocess_core, "~> 0.6.0"),
       {:boundary, "~> 0.10.4", runtime: false},
       {:jason, "~> 1.4"},
       {:nimble_options, "~> 1.1"},

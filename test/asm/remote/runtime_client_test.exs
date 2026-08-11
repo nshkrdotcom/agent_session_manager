@@ -215,9 +215,12 @@ defmodule ASM.Remote.RuntimeClientTest do
   end
 
   setup do
+    saved_env = capture_codex_env()
+    clear_codex_env()
     {:ok, state} = FakeRuntimeClient.start_state!()
 
     on_exit(fn ->
+      restore_codex_env(saved_env)
       if Process.alive?(state), do: Agent.stop(state)
     end)
 
@@ -493,5 +496,24 @@ defmodule ASM.Remote.RuntimeClientTest do
 
   defp unique_ref(prefix) do
     "#{prefix}-#{System.unique_integer([:positive])}"
+  end
+
+  defp capture_codex_env do
+    Map.new(codex_env_keys(), &{&1, ASM.Env.get(&1)})
+  end
+
+  defp clear_codex_env do
+    Enum.each(codex_env_keys(), &ASM.Env.delete/1)
+  end
+
+  defp restore_codex_env(saved) do
+    Enum.each(saved, fn
+      {key, nil} -> ASM.Env.delete(key)
+      {key, value} -> ASM.Env.put(key, value)
+    end)
+  end
+
+  defp codex_env_keys do
+    ["CODEX_API_KEY", "OPENAI_API_KEY", "CODEX_HOME", "OPENAI_BASE_URL"]
   end
 end

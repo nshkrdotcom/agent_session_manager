@@ -184,17 +184,18 @@ defmodule ASM.ProviderBackend.Core do
   # Fail closed rather than continuing without it. A caller that asked to
   # resume a specific thread and silently got a fresh one is the failure this
   # replaces, and it is not improved by being quiet.
-  @resumable_providers [:claude, :codex, :antigravity]
+  @continuation_options %{claude: :resume, codex: :resume, antigravity: :conversation}
 
   defp put_continuation_opts(%Provider{name: name}, config, provider_opts)
-       when name in @resumable_providers do
+       when is_map_key(@continuation_options, name) do
     case Map.get(config, :continuation) do
       nil ->
         {:ok, provider_opts}
 
       %{strategy: :exact, provider_session_id: provider_session_id}
       when is_binary(provider_session_id) and provider_session_id != "" ->
-        {:ok, Keyword.put(provider_opts, :resume, provider_session_id)}
+        {:ok,
+         Keyword.put(provider_opts, Map.fetch!(@continuation_options, name), provider_session_id)}
 
       %{strategy: :latest} ->
         {:error, continuation_error(name, "requires an exact provider session id")}

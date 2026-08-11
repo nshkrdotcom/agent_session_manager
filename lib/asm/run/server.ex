@@ -38,8 +38,9 @@ defmodule ASM.Run.Server do
   @doc """
   Hands more input to a run's backend without ending its turn.
 
-  Only meaningful on a lane that left stdin open. `ASM.send_input/3` decides
-  that; this delivers it.
+  Only a lane that explicitly declares `:incremental_input` may receive it.
+  An open stdin descriptor alone is not evidence that the provider still reads
+  from it after startup.
   """
   @spec send_input(GenServer.server(), iodata()) :: :ok | {:error, term()}
   def send_input(server, input) do
@@ -102,9 +103,23 @@ defmodule ASM.Run.Server do
     {:reply, Run.State.materialize(state), state}
   end
 
-  def handle_call({:send_input, input}, _from, %Run.State{backend_pid: pid} = state)
-      when is_pid(pid) do
-    {:reply, state.backend.send_input(pid, input, []), state}
+  def handle_call(
+        {:send_input, input},
+        _from,
+        %Run.State{backend_pid: pid, lane_capabilities: capabilities} = state
+      )
+      when is_pid(pid) and is_list(capabilities) do
+    if :incremental_input in capabilities do
+      {:reply, state.backend.send_input(pid, input, []), state}
+    else
+      {:reply,
+       {:error,
+        Error.new(
+          :config_invalid,
+          :runtime,
+          "the active provider lane does not accept input after startup; interrupt and resume it"
+        )}, state}
+    end
   end
 
   def handle_call({:send_input, _input}, _from, state) do

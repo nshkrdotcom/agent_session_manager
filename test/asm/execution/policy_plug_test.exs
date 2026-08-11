@@ -16,7 +16,8 @@ defmodule ASM.Execution.PolicyPlugTest do
   end
 
   test "enforcement_for/1 keys on the capability that means a tool can be refused before it runs" do
-    assert PolicyPlug.enforcement_for([:approval, :interrupt]) == :block
+    assert PolicyPlug.enforcement_for([:host_tools, :approval]) == :block
+    assert PolicyPlug.enforcement_for([:approval, :interrupt]) == :record
     assert PolicyPlug.enforcement_for([:interrupt, :resume, :tools]) == :record
     assert PolicyPlug.enforcement_for([]) == :record
   end
@@ -32,14 +33,14 @@ defmodule ASM.Execution.PolicyPlugTest do
     event = tool_event("TodoWrite")
 
     assert {:ok, ^event, %{}} =
-             PolicyPlug.call(event, %{}, allowed_tools: [], lane_capabilities: [:approval])
+             PolicyPlug.call(event, %{}, allowed_tools: [], lane_capabilities: [:host_tools])
   end
 
-  test "a lane that can be asked first blocks a non-matching tool" do
+  test "a host-tool lane blocks a non-matching tool before execution" do
     assert {:error, error, %{}} =
              PolicyPlug.call(tool_event("TodoWrite"), %{},
                allowed_tools: ["search"],
-               lane_capabilities: [:approval, :interrupt]
+               lane_capabilities: [:host_tools, :approval]
              )
 
     assert error.kind == :guardrail_blocked
@@ -56,7 +57,7 @@ defmodule ASM.Execution.PolicyPlugTest do
     assert event.metadata.guardrail == %{
              rule: :allowed_tools,
              action: :recorded,
-             reason: :lane_observes_tools_after_execution,
+             reason: :lane_does_not_delegate_tool_execution_to_host,
              tool_name: "TodoWrite",
              allowed_tools: ["search"]
            }
@@ -89,13 +90,11 @@ defmodule ASM.Execution.PolicyPlugTest do
     assert metadata.run_id == "run-1"
   end
 
-  # A caller that never states the lane is not evidence that interception is
-  # impossible, so the guardrail stays fail-closed.
-  test "no lane capabilities option blocks" do
-    assert {:error, error, %{}} =
+  test "no lane capabilities option records instead of claiming enforcement" do
+    assert {:ok, event, %{}} =
              PolicyPlug.call(tool_event("TodoWrite"), %{}, allowed_tools: ["search"])
 
-    assert error.kind == :guardrail_blocked
+    assert event.metadata.guardrail.action == :recorded
   end
 
   test "events other than tool_use are untouched" do

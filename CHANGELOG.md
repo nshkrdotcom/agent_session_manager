@@ -7,16 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-08-10
+
 ### Added
 
 - `ASM.send_input/3` and `ASM.Run.Server.send_input/2`: hand more input to a
-  run that is still going, without ending its turn. `ProviderBackend` exposed
-  `send_input` and nothing above it did, so there was no way to say something
-  to a run in flight without already holding its backend pid. Only meaningful
-  on a lane that left stdin open —
-  `CliSubprocessCore.ProviderProfile.accepts_input_after_start?/1` is the fact
-  that decides it; on a lane that closed stdin, `intervene/4` remains the way
-  in, interrupting and resuming the same provider thread.
+  run that is still going, without ending its turn, when the resolved lane
+  explicitly declares `:incremental_input`. An open descriptor is not enough:
+  unsupported lanes fail closed and `intervene/4` remains the route that
+  interrupts and resumes the same provider thread.
 
 ### Fixed
 
@@ -27,24 +26,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failure-recovery resume and a steer started a brand new session with no
   memory of the work, while every layer above reported a successful resume.
   A live run made it visible — the resumed session answered "What would you
-  like me to help with?". `:claude` and `:antigravity` now take the same
-  translation, and a lane that cannot resume fails closed on a continuation
-  rather than continuing without one.
+  like me to help with?". Claude and Codex receive `resume:`; Antigravity
+  receives the `conversation:` option its profile actually reads. A lane that
+  cannot resume fails closed rather than discarding the continuation.
 
 - `ASM.Execution.PolicyPlug` no longer fails a run for a tool outside a
   non-empty `allowed_tools` on a lane that cannot intercept the call. The plug
-  now consults the lane's capabilities: a lane declaring `:approval` has a
-  decision point before the tool runs, so a non-matching tool is still blocked;
-  a lane without it reports tools as already-completed items, so blocking
-  prevents nothing and only kills a working run. On those lanes the allowlist
-  miss is recorded — as `metadata.guardrail` on the event and as an
+  now requires the lane's positive `:host_tools` capability before claiming it
+  can block, because that capability means ASM owns the pre-execution decision.
+  A generic provider `:approval` capability does not connect this event
+  pipeline to that decision. On provider-owned lanes the allowlist miss is
+  recorded — as `metadata.guardrail` on the event and as an
   `[:asm, :guardrail, :recorded]` telemetry span — and the run continues. With
-  no `:lane_capabilities` option the plug stays fail-closed and blocks.
+  no `:lane_capabilities` evidence the plug records rather than manufacturing
+  a fail-closed guarantee it cannot enforce.
   `codex exec` under a bypass permission mode runs its tools internally and
   reports them afterwards; this is the shape that killed a live packet's prompt
   02 on `TodoWrite` the moment Codex tool decoding started working.
 - `ASM.Run.State` carries `:lane_capabilities`, resolved with the backend, so
   the execution pipeline can be built from what the lane can actually do.
+- Ambient Codex credentials and config paths no longer leak into remote client
+  tests; each test restores the caller's environment after exercising the
+  isolated runtime boundary.
 
 ## [0.12.3] - 2026-08-10
 
@@ -964,7 +967,10 @@ See `guides/migrating_to_v0.8.md` for migration details.
 - Basic project structure with mix.exs configuration
 - Project logo and assets
 
-[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.12.1...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.12.3...v0.13.0
+[0.12.3]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.12.2...v0.12.3
+[0.12.2]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.12.1...v0.12.2
 [0.12.1]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.10.0...v0.11.0

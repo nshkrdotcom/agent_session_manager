@@ -165,7 +165,7 @@ defmodule ASM.APITest do
     assert :ok = ASM.stop_session(session)
   end
 
-  test "query/3 blocks tool_use events outside a non-empty allowed_tools list" do
+  test "stream/3 records an allowlist miss when the provider owns tool execution" do
     session_id = "api-allowlist-" <> Integer.to_string(System.unique_integer([:positive]))
 
     assert {:ok, session} =
@@ -182,18 +182,18 @@ defmodule ASM.APITest do
     script = [
       {:core, :run_started, RunStarted.new(command: "fake")},
       {:core, :tool_use,
-       ToolUse.new(tool_name: "bash", tool_id: "tool-1", input: %{"cmd" => "pwd"})}
+       ToolUse.new(tool_name: "bash", tool_id: "tool-1", input: %{"cmd" => "pwd"})},
+      {:core, :result, Result.new(stop_reason: :end_turn)}
     ]
 
-    assert {:error, error} =
-             ASM.query(session, "hello",
-               backend_module: FakeBackend,
-               backend_opts: [script: script]
-             )
+    events =
+      session
+      |> ASM.stream("hello", backend_module: FakeBackend, backend_opts: [script: script])
+      |> Enum.to_list()
 
-    assert error.kind == :guardrail_blocked
-    assert error.domain == :guardrail
-    assert String.contains?(error.message, "bash")
+    refute Enum.any?(events, &(&1.kind == :error))
+    assert [tool_event] = Enum.filter(events, &(&1.kind == :tool_use))
+    assert tool_event.metadata.guardrail.action == :recorded
   end
 
   # `codex exec` under a bypass permission mode runs its tools internally and
@@ -233,16 +233,13 @@ defmodule ASM.APITest do
     assert tool_event.metadata.guardrail == %{
              rule: :allowed_tools,
              action: :recorded,
-             reason: :lane_observes_tools_after_execution,
+             reason: :lane_does_not_delegate_tool_execution_to_host,
              tool_name: "TodoWrite",
              allowed_tools: ["search"]
            }
   end
 
-  # The caller the steering path needed and did not have: `ProviderBackend`
-  # exposed `send_input`, but nothing above it did, so there was no way to say
-  # something to a run in flight without already holding its backend pid.
-  test "send_input/3 reaches a live run's backend" do
+  test "send_input/3 refuses a lane that does not read incremental stdin" do
     session_id = "api-send-input-" <> Integer.to_string(System.unique_integer([:positive]))
     assert {:ok, session} = ASM.start_session(session_id: session_id, provider: :claude)
     on_exit(fn -> _ = ASM.stop_session(session) end)
@@ -263,12 +260,12 @@ defmodule ASM.APITest do
     assert_eventually(fn -> active_run_id(session) != nil end)
     run_id = active_run_id(session)
 
-    assert :ok = ASM.send_input(session, run_id, "and one more thing")
+    assert {:error, error} = ASM.send_input(session, run_id, "and one more thing")
+    assert error.kind == :config_invalid
+    assert error.message =~ "does not accept input after startup"
 
-    events = Task.await(task, 5_000)
-    deltas = Enum.filter(events, &(&1.kind == :assistant_delta))
-
-    assert Enum.any?(deltas, &(&1.payload.content == "and one more thing"))
+    assert :ok = ASM.interrupt(session, run_id)
+    _events = Task.await(task, 5_000)
   end
 
   test "send_input/3 refuses a run id the session does not have" do

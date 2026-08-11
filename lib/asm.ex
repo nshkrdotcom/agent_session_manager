@@ -212,11 +212,10 @@ defmodule ASM do
   @doc """
   Hands more input to a run that is still going, without ending its turn.
 
-  Only meaningful on a lane that left stdin open —
-  `CliSubprocessCore.ProviderProfile.accepts_input_after_start?/1` is the fact
-  that decides it. On a lane that closed stdin there is no channel back into a
-  running turn, and `intervene/4` is the way in: it interrupts and resumes the
-  same provider thread.
+  The resolved lane must explicitly declare `:incremental_input`. An open stdin
+  descriptor is not enough: a CLI may leave it open without reading it after
+  startup. Unsupported lanes fail closed; use `intervene/4` to interrupt and
+  resume the same provider thread.
   """
   @spec send_input(session_ref(), String.t(), iodata()) :: :ok | {:error, Error.t()}
   def send_input(session, run_id, input),

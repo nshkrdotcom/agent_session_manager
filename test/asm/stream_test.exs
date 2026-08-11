@@ -85,6 +85,70 @@ defmodule ASM.StreamTest do
     end
   end
 
+  defmodule HangingCloseBackend do
+    @moduledoc false
+    use GenServer
+
+    @behaviour ASM.ProviderBackend
+
+    alias ASM.ProviderBackend.{Event, Info}
+    alias CliSubprocessCore.Payload
+
+    @impl true
+    def start_run(config) do
+      {:ok, pid} = GenServer.start_link(__MODULE__, config)
+
+      {:ok, pid,
+       Info.new(
+         provider: config.provider.name,
+         lane: :core,
+         backend: __MODULE__,
+         runtime: __MODULE__
+       )}
+    end
+
+    @impl true
+    def send_input(_pid, _input, _opts \\ []), do: :ok
+
+    @impl true
+    def end_input(_pid), do: :ok
+
+    @impl true
+    def interrupt(_pid), do: :ok
+
+    @impl true
+    def close(pid), do: GenServer.call(pid, :close, :infinity)
+
+    @impl true
+    def subscribe(pid, subscriber, ref), do: GenServer.call(pid, {:subscribe, subscriber, ref})
+
+    @impl true
+    def info(_pid), do: Info.new(provider: :claude, lane: :core, backend: __MODULE__)
+
+    @impl true
+    def init(config) do
+      if test_pid = Keyword.get(config.backend_opts, :test_pid) do
+        send(test_pid, {:hanging_close_backend_started, self()})
+      end
+
+      {:ok, %{subscriber: nil, ref: nil}}
+    end
+
+    @impl true
+    def handle_call({:subscribe, subscriber, ref}, _from, state) do
+      event =
+        CliSubprocessCore.Event.new(:result,
+          provider: :claude,
+          payload: Payload.Result.new(status: :completed, stop_reason: :end_turn)
+        )
+
+      send(subscriber, Event.new(ref, event))
+      {:reply, :ok, %{state | subscriber: subscriber, ref: ref}}
+    end
+
+    def handle_call(:close, _from, state), do: {:noreply, state}
+  end
+
   defmodule ContinuationRunProbe do
     @moduledoc false
     use GenServer
@@ -226,6 +290,37 @@ defmodule ASM.StreamTest do
     assert Stream.final_result(events).text == "cleanup"
     assert_receive {:cleanup_message_backend_closed, _pid}
 
+    assert :ok = ASM.stop_session(session)
+  end
+
+  test "a backend close that hangs cannot hide terminal completion" do
+    previous = Application.get_env(:agent_session_manager, :backend_close_timeout_ms)
+    Application.put_env(:agent_session_manager, :backend_close_timeout_ms, 40)
+
+    on_exit(fn ->
+      if previous,
+        do: Application.put_env(:agent_session_manager, :backend_close_timeout_ms, previous),
+        else: Application.delete_env(:agent_session_manager, :backend_close_timeout_ms)
+    end)
+
+    session_id = "stream-hanging-close-" <> Integer.to_string(System.unique_integer([:positive]))
+    assert {:ok, session} = ASM.start_session(session_id: session_id, provider: :claude)
+
+    started_at = System.monotonic_time(:millisecond)
+
+    events =
+      ASM.stream(session, "hello",
+        backend_module: HangingCloseBackend,
+        backend_opts: [test_pid: self()]
+      )
+      |> Enum.to_list()
+
+    assert_receive {:hanging_close_backend_started, backend_pid}
+    assert Enum.any?(events, &(&1.kind == :result))
+    assert System.monotonic_time(:millisecond) - started_at < 1_000
+
+    backend_ref = Process.monitor(backend_pid)
+    assert_receive {:DOWN, ^backend_ref, :process, ^backend_pid, _reason}, 1_000
     assert :ok = ASM.stop_session(session)
   end
 

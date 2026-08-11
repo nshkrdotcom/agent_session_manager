@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-08-10
+
+### Fixed
+
+- Deliver terminal run completion before provider-backend cleanup, so a
+  backend whose close call stalls cannot hide a result the stream already
+  emitted.
+- Bound backend close to two seconds by default, terminate the stuck closer and
+  backend process after the bound, and make the bound configurable through
+  `:backend_close_timeout_ms`.
+- Add an end-to-end stream regression with a deliberately hanging backend.
+
 ## [0.13.0] - 2026-08-10
 
 ### Added
@@ -967,7 +979,8 @@ See `guides/migrating_to_v0.8.md` for migration details.
 - Basic project structure with mix.exs configuration
 - Project logo and assets
 
-[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.12.3...v0.13.0
 [0.12.3]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.12.2...v0.12.3
 [0.12.2]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.12.1...v0.12.2

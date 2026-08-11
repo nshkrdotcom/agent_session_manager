@@ -12,6 +12,7 @@ defmodule ASM.Run.Server do
   alias CliSubprocessCore.Payload
 
   @boot_timeout_ms 15_000
+  @default_backend_close_timeout_ms 2_000
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) when is_list(opts) do
@@ -604,9 +605,12 @@ defmodule ASM.Run.Server do
   defp fanout_to_subscriber(_state, _event), do: :ok
 
   defp finish_run(state) do
-    _ = maybe_close_backend(state)
+    # Terminal delivery is a protocol fact, not a side effect of backend
+    # cleanup. A provider whose close call stalls must never hide a terminal
+    # event that was already emitted from the stream consumer.
     notify_done(state)
     _ = ASM.Telemetry.run_completed(state.session_id, state.run_id, state.provider, state.status)
+    _ = maybe_close_backend(state)
     {:stop, :normal, state}
   end
 
@@ -672,9 +676,64 @@ defmodule ASM.Run.Server do
   defp maybe_close_backend(_state), do: :ok
 
   defp safe_close_backend(backend, pid) when is_atom(backend) and is_pid(pid) do
-    backend.close(pid)
-  rescue
-    _ -> :ok
+    if Process.alive?(pid) do
+      close_backend_bounded(backend, pid, backend_close_timeout_ms())
+    else
+      :ok
+    end
+  end
+
+  defp close_backend_bounded(backend, pid, timeout_ms) do
+    caller = self()
+    token = make_ref()
+
+    {closer, monitor} =
+      spawn_monitor(fn ->
+        result =
+          try do
+            backend.close(pid)
+          rescue
+            _error -> :ok
+          catch
+            _kind, _reason -> :ok
+          end
+
+        send(caller, {token, result})
+      end)
+
+    receive do
+      {^token, _result} ->
+        Process.demonitor(monitor, [:flush])
+        :ok
+
+      {:DOWN, ^monitor, :process, ^closer, _reason} ->
+        :ok
+    after
+      timeout_ms ->
+        Process.exit(closer, :kill)
+        await_closer_down(monitor, closer)
+        if Process.alive?(pid), do: Process.exit(pid, :kill)
+        :ok
+    end
+  end
+
+  defp await_closer_down(monitor, closer) do
+    receive do
+      {:DOWN, ^monitor, :process, ^closer, _reason} -> :ok
+    after
+      100 -> Process.demonitor(monitor, [:flush])
+    end
+  end
+
+  defp backend_close_timeout_ms do
+    case Application.get_env(
+           :agent_session_manager,
+           :backend_close_timeout_ms,
+           @default_backend_close_timeout_ms
+         ) do
+      timeout when is_integer(timeout) and timeout > 0 -> timeout
+      _other -> @default_backend_close_timeout_ms
+    end
   end
 
   defp await_bootstrap(pid, reply_ref, timeout_ms) when is_pid(pid) and is_reference(reply_ref) do

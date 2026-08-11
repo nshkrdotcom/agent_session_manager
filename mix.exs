@@ -13,7 +13,7 @@ defmodule AgentSessionManager.MixProject do
   @workspace_checkout? File.regular?(Path.expand("build_support/dependency_sources.exs", __DIR__))
 
   @app :agent_session_manager
-  @version "0.13.0"
+  @version "0.14.0"
   @source_url "https://github.com/nshkrdotcom/agent_session_manager"
   @homepage_url "https://hex.pm/packages/agent_session_manager"
   @docs_url "https://hexdocs.pm/agent_session_manager"

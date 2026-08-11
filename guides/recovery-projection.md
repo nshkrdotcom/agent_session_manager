@@ -1,5 +1,10 @@
 # Recovery Projection
 
+As of ASM 0.14.0, terminal completion is projected to the subscriber before
+backend cleanup begins. Backend close is bounded (two seconds by default via
+`:backend_close_timeout_ms`), so cleanup failure cannot turn an already emitted
+terminal result into a hung stream.
+
 `agent_session_manager` preserves lower-layer recovery facts from
 `cli_subprocess_core` and projects them into ASM's own error/result surface.
 

@@ -1,12 +1,19 @@
-unless Code.ensure_loaded?(DependencySources) do
-  Code.require_file("build_support/dependency_sources.exs", __DIR__)
+# `build_support/` is not shipped in the published package, so its absence is
+# how this file knows it is running inside a consumer's deps/ rather than in a
+# source checkout.
+workspace_helper = Path.expand("build_support/dependency_sources.exs", __DIR__)
+
+if File.regular?(workspace_helper) and not Code.ensure_loaded?(DependencySources) do
+  Code.require_file(workspace_helper)
 end
 
 defmodule AgentSessionManager.MixProject do
   use Mix.Project
 
+  @workspace_checkout? File.regular?(Path.expand("build_support/dependency_sources.exs", __DIR__))
+
   @app :agent_session_manager
-  @version "0.12.2"
+  @version "0.12.3"
   @source_url "https://github.com/nshkrdotcom/agent_session_manager"
   @homepage_url "https://hex.pm/packages/agent_session_manager"
   @docs_url "https://hexdocs.pm/agent_session_manager"
@@ -55,7 +62,7 @@ defmodule AgentSessionManager.MixProject do
 
   defp deps do
     [
-      DependencySources.dep(:cli_subprocess_core, __DIR__),
+      workspace_dep(:cli_subprocess_core, "~> 0.5.1"),
       {:boundary, "~> 0.10.4", runtime: false},
       {:jason, "~> 1.4"},
       {:nimble_options, "~> 1.1"},
@@ -102,12 +109,23 @@ defmodule AgentSessionManager.MixProject do
     ]
   end
 
+  # In a source checkout the registry decides the source (path first). In a
+  # published package there is no registry, and the requirement stated here is
+  # the whole answer.
+  defp workspace_dep(app, hex_requirement) do
+    if @workspace_checkout? do
+      apply(DependencySources, :dep, [app, __DIR__])
+    else
+      {app, hex_requirement}
+    end
+  end
+
   defp package do
     [
       name: "agent_session_manager",
       description: description(),
       files:
-        ~w(lib assets build_support mix.exs README.md CHANGELOG.md LICENSE guides examples/README.md),
+        ~w(lib assets mix.exs README.md CHANGELOG.md LICENSE guides examples/README.md),
       licenses: ["MIT"],
       maintainers: ["nshkrdotcom"],
       links: %{

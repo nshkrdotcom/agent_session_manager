@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.3] - 2026-08-10
+
+### Fixed
+
+- Make the published package loadable by any consumer. `mix.exs` required
+  `build_support/dependency_sources.exs` and the package shipped that build
+  tooling, so a consumer either failed to load the project or received git
+  dependencies instead of Hex ones. The tooling is no longer packaged, and
+  `mix.exs` detects a source checkout by that file's presence: in a checkout the
+  registry resolves siblings path-first as before, and in a published package
+  the Hex requirements stated in `mix.exs` are the whole answer. 0.12.2 is
+  retired.
+
 ## [0.12.2] - 2026-08-10
 
 ### Removed

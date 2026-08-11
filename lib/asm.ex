@@ -209,6 +209,19 @@ defmodule ASM do
   @spec interrupt(session_ref(), String.t()) :: :ok | {:error, Error.t()}
   def interrupt(session, run_id), do: Session.Server.cancel_run(session, run_id)
 
+  @doc """
+  Hands more input to a run that is still going, without ending its turn.
+
+  Only meaningful on a lane that left stdin open —
+  `CliSubprocessCore.ProviderProfile.accepts_input_after_start?/1` is the fact
+  that decides it. On a lane that closed stdin there is no channel back into a
+  running turn, and `intervene/4` is the way in: it interrupts and resumes the
+  same provider thread.
+  """
+  @spec send_input(session_ref(), String.t(), iodata()) :: :ok | {:error, Error.t()}
+  def send_input(session, run_id, input),
+    do: Session.Server.send_input(session, run_id, input)
+
   @spec pause(session_ref(), String.t()) :: :ok | {:error, Error.t()}
   def pause(session, run_id), do: SessionControl.pause(session, run_id)
 

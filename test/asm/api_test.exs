@@ -1,6 +1,7 @@
 defmodule ASM.APITest do
   use ASM.TestCase
 
+  alias ASM.Session.Server, as: SessionServer
   alias ASM.TestSupport.FakeBackend
   alias CliSubprocessCore.Payload.{AssistantDelta, Error, Result, RunStarted, ToolUse}
 
@@ -238,6 +239,50 @@ defmodule ASM.APITest do
            }
   end
 
+  # The caller the steering path needed and did not have: `ProviderBackend`
+  # exposed `send_input`, but nothing above it did, so there was no way to say
+  # something to a run in flight without already holding its backend pid.
+  test "send_input/3 reaches a live run's backend" do
+    session_id = "api-send-input-" <> Integer.to_string(System.unique_integer([:positive]))
+    assert {:ok, session} = ASM.start_session(session_id: session_id, provider: :claude)
+    on_exit(fn -> _ = ASM.stop_session(session) end)
+
+    # No result in the script, so the run stays open until the input arrives.
+    script = [{:core, :run_started, RunStarted.new(command: "fake")}]
+
+    task =
+      Task.async(fn ->
+        session
+        |> ASM.stream("hello",
+          backend_module: FakeBackend,
+          backend_opts: [script: script, echo_input: true]
+        )
+        |> Enum.to_list()
+      end)
+
+    assert_eventually(fn -> active_run_id(session) != nil end)
+    run_id = active_run_id(session)
+
+    assert :ok = ASM.send_input(session, run_id, "and one more thing")
+
+    events = Task.await(task, 5_000)
+    deltas = Enum.filter(events, &(&1.kind == :assistant_delta))
+
+    assert Enum.any?(deltas, &(&1.payload.content == "and one more thing"))
+  end
+
+  test "send_input/3 refuses a run id the session does not have" do
+    session_id =
+      "api-send-input-unknown-" <> Integer.to_string(System.unique_integer([:positive]))
+
+    assert {:ok, session} = ASM.start_session(session_id: session_id, provider: :claude)
+    on_exit(fn -> _ = ASM.stop_session(session) end)
+
+    assert {:error, error} = ASM.send_input(session, "no-such-run", "hello?")
+    assert error.kind == :unknown
+    assert error.message =~ "no-such-run"
+  end
+
   test "health/1 and cost/1 reflect session process status" do
     session_id = "api-health-" <> Integer.to_string(System.unique_integer([:positive]))
     assert {:ok, session} = ASM.start_session(session_id: session_id, provider: :claude)
@@ -252,6 +297,14 @@ defmodule ASM.APITest do
     assert :ok = ASM.stop_session(session)
     assert {:ok, _reason} = wait_for_process_death(session, 2_000)
     assert_eventually(fn -> ASM.health(session_id) == {:unhealthy, :not_found} end)
+  end
+
+  defp active_run_id(session) do
+    session
+    |> SessionServer.get_state()
+    |> Map.get(:active_runs, %{})
+    |> Map.keys()
+    |> List.first()
   end
 
   defp assert_eventually(fun, attempts \\ 40)

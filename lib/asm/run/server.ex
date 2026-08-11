@@ -35,6 +35,17 @@ defmodule ASM.Run.Server do
     :ok
   end
 
+  @doc """
+  Hands more input to a run's backend without ending its turn.
+
+  Only meaningful on a lane that left stdin open. `ASM.send_input/3` decides
+  that; this delivers it.
+  """
+  @spec send_input(GenServer.server(), iodata()) :: :ok | {:error, term()}
+  def send_input(server, input) do
+    GenServer.call(server, {:send_input, input})
+  end
+
   @spec ingest_event(GenServer.server(), Event.t()) :: :ok
   def ingest_event(server, %Event{} = event) do
     GenServer.cast(server, {:ingest_event, event})
@@ -89,6 +100,15 @@ defmodule ASM.Run.Server do
   @impl true
   def handle_call(:get_state, _from, state) do
     {:reply, Run.State.materialize(state), state}
+  end
+
+  def handle_call({:send_input, input}, _from, %Run.State{backend_pid: pid} = state)
+      when is_pid(pid) do
+    {:reply, state.backend.send_input(pid, input, []), state}
+  end
+
+  def handle_call({:send_input, _input}, _from, state) do
+    {:reply, {:error, Error.new(:runtime, :runtime, "run has no live backend")}, state}
   end
 
   @impl true

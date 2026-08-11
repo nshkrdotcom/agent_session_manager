@@ -8,6 +8,7 @@ defmodule ASM.Session.Server do
   alias ASM.{Control, Error, Metadata, RuntimeAuth}
   alias ASM.Provider
   alias ASM.Run.ApprovalCoordinator
+  alias ASM.Run.Server, as: RunServer
   alias ASM.RuntimeAuth.ManagedBinding
   alias ASM.Session.Continuation
   alias ASM.Session.State
@@ -62,6 +63,11 @@ defmodule ASM.Session.Server do
   def intervene(server, run_id, prompt, opts \\ [])
       when is_binary(run_id) and is_binary(prompt) and is_list(opts) do
     GenServer.call(server, {:intervene, run_id, prompt, opts})
+  end
+
+  @spec send_input(GenServer.server(), String.t(), iodata()) :: :ok | {:error, Error.t()}
+  def send_input(server, run_id, input) when is_binary(run_id) do
+    GenServer.call(server, {:send_input, run_id, input})
   end
 
   @spec revoke_materialization(GenServer.server(), map() | keyword()) ::
@@ -215,6 +221,19 @@ defmodule ASM.Session.Server do
     else
       {:error, %Error{} = error} ->
         {:reply, {:error, error}, state}
+    end
+  end
+
+  # Deliberately not routed through `intervene`: this does not end the turn, and
+  # a lane that takes input on stdin must not have its run torn down and
+  # restarted just to be told something.
+  def handle_call({:send_input, run_id, input}, _from, %State{} = state) do
+    case Map.fetch(state.active_runs, run_id) do
+      {:ok, run_pid} ->
+        {:reply, RunServer.send_input(run_pid, input), state}
+
+      :error ->
+        {:reply, {:error, runtime_error(:unknown, "Unknown active run id: #{run_id}")}, state}
     end
   end
 

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ASM.send_input/3` and `ASM.Run.Server.send_input/2`: hand more input to a
+  run that is still going, without ending its turn. `ProviderBackend` exposed
+  `send_input` and nothing above it did, so there was no way to say something
+  to a run in flight without already holding its backend pid. Only meaningful
+  on a lane that left stdin open —
+  `CliSubprocessCore.ProviderProfile.accepts_input_after_start?/1` is the fact
+  that decides it; on a lane that closed stdin, `intervene/4` remains the way
+  in, interrupting and resuming the same provider thread.
+
 ### Fixed
 
 - `ASM.Execution.PolicyPlug` no longer fails a run for a tool outside a

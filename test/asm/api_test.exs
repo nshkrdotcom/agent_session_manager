@@ -195,6 +195,49 @@ defmodule ASM.APITest do
     assert String.contains?(error.message, "bash")
   end
 
+  # `codex exec` under a bypass permission mode runs its tools internally and
+  # reports them as completed items, so blocking a non-matching tool cannot
+  # prevent the action and can only kill a run that was working. This is the
+  # shape that killed prompt 02 of a live packet on `TodoWrite`.
+  test "query/3 records rather than blocks a non-matching tool on a lane that cannot intercept" do
+    session_id = "api-allowlist-record-" <> Integer.to_string(System.unique_integer([:positive]))
+
+    assert {:ok, session} =
+             ASM.start_session(
+               session_id: session_id,
+               provider: :codex,
+               allowed_tools: ["search"]
+             )
+
+    on_exit(fn ->
+      _ = ASM.stop_session(session)
+    end)
+
+    script = [
+      {:core, :run_started, RunStarted.new(command: "fake")},
+      {:core, :tool_use,
+       ToolUse.new(tool_name: "TodoWrite", tool_id: "tool-1", input: %{"todos" => []})},
+      {:core, :result, Result.new(stop_reason: :end_turn)}
+    ]
+
+    events =
+      session
+      |> ASM.stream("hello", backend_module: FakeBackend, backend_opts: [script: script])
+      |> Enum.to_list()
+
+    refute Enum.any?(events, &(&1.kind == :error))
+
+    assert [tool_event] = Enum.filter(events, &(&1.kind == :tool_use))
+
+    assert tool_event.metadata.guardrail == %{
+             rule: :allowed_tools,
+             action: :recorded,
+             reason: :lane_observes_tools_after_execution,
+             tool_name: "TodoWrite",
+             allowed_tools: ["search"]
+           }
+  end
+
   test "health/1 and cost/1 reflect session process status" do
     session_id = "api-health-" <> Integer.to_string(System.unique_integer([:positive]))
     assert {:ok, session} = ASM.start_session(session_id: session_id, provider: :claude)

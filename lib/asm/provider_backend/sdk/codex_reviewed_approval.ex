@@ -103,37 +103,66 @@ defmodule ASM.ProviderBackend.SDK.CodexReviewedApproval do
 
   defp normalize_key(_key), do: nil
 
+  # Ordered, and the order is load-bearing: the workspace containment check is
+  # meaningless on a path that is not a safe relative path, and the digest check
+  # is meaningless on content that is not a valid string of bounded size.
+  @binding_checks [
+    :effect_ref,
+    :workspace_root,
+    :relative_path,
+    :path_inside_workspace,
+    :content,
+    :digest
+  ]
+
   defp validate(binding) do
-    workspace_root = Map.get(binding, :workspace_root)
-    relative_path = Map.get(binding, :relative_path)
-    reviewed_content = Map.get(binding, :reviewed_content)
-    content_digest = Map.get(binding, :content_digest)
-    effect_ref = Map.get(binding, :effect_ref)
-
-    cond do
-      not present_string?(effect_ref) ->
-        {:error, :invalid_reviewed_effect_ref}
-
-      not absolute_normalized_path?(workspace_root) ->
-        {:error, :invalid_reviewed_workspace_root}
-
-      not safe_relative_path?(relative_path) ->
-        {:error, :invalid_reviewed_relative_path}
-
-      not inside_workspace?(workspace_root, relative_path) ->
-        {:error, :reviewed_path_outside_workspace}
-
-      not is_binary(reviewed_content) or not String.valid?(reviewed_content) or
-          byte_size(reviewed_content) > @max_content_bytes ->
-        {:error, :invalid_reviewed_content}
-
-      digest(reviewed_content) != content_digest ->
-        {:error, :reviewed_content_digest_mismatch}
-
-      true ->
-        :ok
-    end
+    Enum.find_value(@binding_checks, :ok, fn check ->
+      case check_binding(check, binding) do
+        :ok -> nil
+        {:error, _reason} = error -> error
+      end
+    end)
   end
+
+  defp check_binding(:effect_ref, binding) do
+    hold(present_string?(Map.get(binding, :effect_ref)), :invalid_reviewed_effect_ref)
+  end
+
+  defp check_binding(:workspace_root, binding) do
+    hold(
+      absolute_normalized_path?(Map.get(binding, :workspace_root)),
+      :invalid_reviewed_workspace_root
+    )
+  end
+
+  defp check_binding(:relative_path, binding) do
+    hold(safe_relative_path?(Map.get(binding, :relative_path)), :invalid_reviewed_relative_path)
+  end
+
+  defp check_binding(:path_inside_workspace, binding) do
+    hold(
+      inside_workspace?(Map.get(binding, :workspace_root), Map.get(binding, :relative_path)),
+      :reviewed_path_outside_workspace
+    )
+  end
+
+  defp check_binding(:content, binding) do
+    hold(reviewed_content?(Map.get(binding, :reviewed_content)), :invalid_reviewed_content)
+  end
+
+  defp check_binding(:digest, binding) do
+    hold(
+      digest(Map.get(binding, :reviewed_content)) == Map.get(binding, :content_digest),
+      :reviewed_content_digest_mismatch
+    )
+  end
+
+  defp reviewed_content?(content) do
+    is_binary(content) and String.valid?(content) and byte_size(content) <= @max_content_bytes
+  end
+
+  defp hold(true, _error), do: :ok
+  defp hold(false, error), do: {:error, error}
 
   defp inner_command(binding) do
     encoded = Base.encode64(Map.fetch!(binding, :reviewed_content))
@@ -151,38 +180,66 @@ defmodule ASM.ProviderBackend.SDK.CodexReviewedApproval do
     end
   end
 
+  # Everything the approved review covered, and everything it did not. Each
+  # entry is checked against the event in order; the first mismatch denies.
+  @command_checks [
+    {:command, "command does not match the reviewed operation"},
+    {:cwd, "command workspace does not match the reviewed operation"},
+    {:command_actions, "command actions do not match the reviewed operation"},
+    {:execpolicy_amendment, "exec policy amendment does not match the reviewed operation"}
+  ]
+
+  # Fields whose presence means the provider is asking for something the review
+  # never granted. Any non-empty value denies.
+  @unauthorized_fields [
+    {:network_approval_context, "reviewed operation does not authorize network access"},
+    {:proposed_network_policy_amendments,
+     "reviewed operation does not authorize network policy amendments"},
+    {:additional_permissions, "reviewed operation does not authorize additional permissions"},
+    {:skill_metadata, "reviewed operation does not authorize skills"}
+  ]
+
+  # `Enum.find_value/2` stops at the first mismatch, so a later `Map.fetch!` is
+  # never reached on a binding that failed an earlier check — the same
+  # short-circuit the `cond` this replaced relied on.
   defp exact_command?(event, binding) do
-    inner_command = Map.fetch!(binding, :inner_command)
-    execpolicy_amendment = event_value(event, :proposed_execpolicy_amendment)
-
-    cond do
-      event_value(event, :command) != Map.fetch!(binding, :command) ->
-        {:error, "command does not match the reviewed operation"}
-
-      event_value(event, :cwd) != Map.fetch!(binding, :workspace_root) ->
-        {:error, "command workspace does not match the reviewed operation"}
-
-      not exact_command_actions?(event_value(event, :command_actions), inner_command) ->
-        {:error, "command actions do not match the reviewed operation"}
-
-      execpolicy_amendment not in [nil, [], Map.fetch!(binding, :execpolicy_amendment)] ->
-        {:error, "exec policy amendment does not match the reviewed operation"}
-
-      not empty_value?(event_value(event, :network_approval_context)) ->
-        {:error, "reviewed operation does not authorize network access"}
-
-      not empty_value?(event_value(event, :proposed_network_policy_amendments)) ->
-        {:error, "reviewed operation does not authorize network policy amendments"}
-
-      not empty_value?(event_value(event, :additional_permissions)) ->
-        {:error, "reviewed operation does not authorize additional permissions"}
-
-      not empty_value?(event_value(event, :skill_metadata)) ->
-        {:error, "reviewed operation does not authorize skills"}
-
-      true ->
-        :ok
+    case Enum.find_value(@command_checks, &command_mismatch(&1, event, binding)) do
+      nil -> unauthorized_request(event)
+      {:error, _message} = error -> error
     end
+  end
+
+  defp command_mismatch({check, message}, event, binding) do
+    if command_check_holds?(check, event, binding), do: nil, else: {:error, message}
+  end
+
+  defp unauthorized_request(event) do
+    Enum.find_value(@unauthorized_fields, :ok, fn {field, message} ->
+      if empty_value?(event_value(event, field)), do: nil, else: {:error, message}
+    end)
+  end
+
+  defp command_check_holds?(:command, event, binding) do
+    event_value(event, :command) == Map.fetch!(binding, :command)
+  end
+
+  defp command_check_holds?(:cwd, event, binding) do
+    event_value(event, :cwd) == Map.fetch!(binding, :workspace_root)
+  end
+
+  defp command_check_holds?(:command_actions, event, binding) do
+    exact_command_actions?(
+      event_value(event, :command_actions),
+      Map.fetch!(binding, :inner_command)
+    )
+  end
+
+  defp command_check_holds?(:execpolicy_amendment, event, binding) do
+    event_value(event, :proposed_execpolicy_amendment) in [
+      nil,
+      [],
+      Map.fetch!(binding, :execpolicy_amendment)
+    ]
   end
 
   defp exact_command_actions?([action], inner_command) when is_map(action) do

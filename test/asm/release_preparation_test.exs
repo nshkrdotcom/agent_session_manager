@@ -6,26 +6,34 @@ defmodule ASM.ReleasePreparationTest do
   @repo_root Path.expand("../..", __DIR__)
   @expected_providers [:amp, :antigravity, :claude, :codex, :cursor]
 
-  test "0.12.1 release metadata and Elixir floor are frozen" do
+  # Every assertion here used to name a patch version, so an ordinary release
+  # left the suite red until someone edited this file — which teaches people to
+  # edit this file rather than to read it. What is actually load-bearing is that
+  # the version, the docs ref, and the CHANGELOG agree, and that the dependency
+  # line has not silently moved.
+  test "release metadata is internally consistent and the Elixir floor holds" do
     project = Mix.Project.config()
+    changelog = File.read!(Path.join(@repo_root, "CHANGELOG.md"))
 
-    assert project[:version] == "0.12.1"
     assert project[:elixir] == "~> 1.19"
-    assert project[:docs][:source_ref] == "v0.12.1"
     assert project[:homepage_url] == "https://hex.pm/packages/agent_session_manager"
+    assert project[:docs][:source_ref] == "v#{project[:version]}"
+
+    assert [_, newest] = Regex.run(~r/^## \[(\d+\.\d+\.\d+)\]/m, changelog)
+    assert project[:version] == newest
   end
 
-  test "publish mode selects only CLI core 0.4.1 from Hex" do
+  test "publish mode selects only the CLI core 0.5 line from Hex" do
     publish_deps = DependencySources.deps(@repo_root, publish?: true)
 
-    assert Keyword.fetch!(publish_deps, :cli_subprocess_core) == "~> 0.4.1"
+    assert Keyword.fetch!(publish_deps, :cli_subprocess_core) =~ ~r/^~> 0\.5\./
     refute Keyword.has_key?(publish_deps, :cursor_cli_sdk)
 
     refute inspect(publish_deps) =~ "path:"
     refute inspect(publish_deps) =~ "github:"
   end
 
-  test "package metadata includes the public docs and dependency helper" do
+  test "package metadata includes the public docs" do
     package = Mix.Project.config()[:package]
 
     assert package[:name] == "agent_session_manager"
@@ -39,11 +47,18 @@ defmodule ASM.ReleasePreparationTest do
              "https://github.com/nshkrdotcom/agent_session_manager/blob/main/LICENSE"
 
     for required <-
-          ~w(lib assets build_support mix.exs README.md CHANGELOG.md LICENSE guides examples/README.md) do
+          ~w(lib assets mix.exs README.md CHANGELOG.md LICENSE guides examples/README.md) do
       assert required in package[:files]
     end
 
     refute ".formatter.exs" in package[:files]
+
+    # 0.12.2 shipped `build_support/`, and `mix.exs` requires that file when it
+    # is present — so a consumer resolving the package either failed to load the
+    # project or received git dependencies instead of Hex ones. Its absence is
+    # now the signal that tells `mix.exs` it is running inside a consumer's
+    # deps/, so shipping it again re-breaks every downstream package.
+    refute "build_support" in package[:files]
   end
 
   test "README and HexDocs use the named 200px release asset" do

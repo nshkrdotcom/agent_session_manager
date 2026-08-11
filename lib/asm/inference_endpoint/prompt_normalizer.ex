@@ -46,24 +46,27 @@ defmodule ASM.InferenceEndpoint.PromptNormalizer do
   defp normalize_message_lines(messages) do
     messages
     |> Enum.with_index()
-    |> Enum.reduce_while({:ok, [], 0}, fn {message, index}, {:ok, lines, bytes} ->
-      case normalize_message(message, index) do
-        {:ok, line} ->
-          next_bytes = bytes + byte_size(line) + if(lines == [], do: 0, else: 1)
-
-          if next_bytes <= @max_prompt_bytes do
-            {:cont, {:ok, [line | lines], next_bytes}}
-          else
-            {:halt, invalid("prompt exceeds the #{@max_prompt_bytes}-byte limit")}
-          end
-
-        {:error, _reason} = error ->
-          {:halt, error}
-      end
-    end)
+    |> Enum.reduce_while({:ok, [], 0}, &accumulate_message_line/2)
     |> case do
       {:ok, lines, _bytes} -> {:ok, Enum.reverse(lines)}
       {:error, _reason} = error -> error
+    end
+  end
+
+  defp accumulate_message_line({message, index}, {:ok, lines, bytes}) do
+    case normalize_message(message, index) do
+      {:ok, line} -> append_message_line(line, lines, bytes)
+      {:error, _reason} = error -> {:halt, error}
+    end
+  end
+
+  defp append_message_line(line, lines, bytes) do
+    next_bytes = bytes + byte_size(line) + if(lines == [], do: 0, else: 1)
+
+    if next_bytes <= @max_prompt_bytes do
+      {:cont, {:ok, [line | lines], next_bytes}}
+    else
+      {:halt, invalid("prompt exceeds the #{@max_prompt_bytes}-byte limit")}
     end
   end
 

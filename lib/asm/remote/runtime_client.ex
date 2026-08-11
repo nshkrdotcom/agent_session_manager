@@ -13,6 +13,7 @@ defmodule ASM.Remote.RuntimeClient do
   @behaviour ASM.ProviderBackend
 
   alias ASM.Error
+  alias ASM.ProviderBackend.Core, as: CoreBackend
   alias ASM.ProviderBackend.Event, as: BackendEvent
   alias ASM.ProviderBackend.Info, as: BackendInfo
   alias ASM.RuntimeAuth.CodexMaterialization
@@ -60,7 +61,7 @@ defmodule ASM.Remote.RuntimeClient do
   @impl true
   def init(config) do
     with {:ok, route} <- runtime_route(config),
-         {:ok, session_opts} <- ASM.ProviderBackend.Core.runtime_session_opts(config),
+         {:ok, session_opts} <- CoreBackend.runtime_session_opts(config),
          {:ok, authority} <- governed_authority(route.binding, route.materialization),
          session_opts = bind_session_opts(session_opts, authority, route.binding),
          {:ok, run_session_ref} <- run_session_ref(route.binding, config),

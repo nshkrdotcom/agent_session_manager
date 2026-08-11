@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `ASM.Execution.PolicyPlug` no longer fails a run for a tool outside a
+  non-empty `allowed_tools` on a lane that cannot intercept the call. The plug
+  now consults the lane's capabilities: a lane declaring `:approval` has a
+  decision point before the tool runs, so a non-matching tool is still blocked;
+  a lane without it reports tools as already-completed items, so blocking
+  prevents nothing and only kills a working run. On those lanes the allowlist
+  miss is recorded — as `metadata.guardrail` on the event and as an
+  `[:asm, :guardrail, :recorded]` telemetry span — and the run continues. With
+  no `:lane_capabilities` option the plug stays fail-closed and blocks.
+  `codex exec` under a bypass permission mode runs its tools internally and
+  reports them afterwards; this is the shape that killed a live packet's prompt
+  02 on `TodoWrite` the moment Codex tool decoding started working.
+- `ASM.Run.State` carries `:lane_capabilities`, resolved with the backend, so
+  the execution pipeline can be built from what the lane can actually do.
+
 ## [0.12.3] - 2026-08-10
 
 ### Fixed
@@ -24,7 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- The unreachable fallback clause in `ASM.ProviderBackend.SDK.start_run/1`.
+- The unreachable fallback clause in the `ASM.ProviderBackend.SDK`
+  implementation of `c:ASM.ProviderBackend.start_run/1`.
   Every clause of that `with` yields an `{:ok, _}` the head matches, a non-local
   execution config, or an `{:error, %ASM.Error{}}` — all already handled — so
   the trailing catch-all was dead code rather than a safety net. The sibling

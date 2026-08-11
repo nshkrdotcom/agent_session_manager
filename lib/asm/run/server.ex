@@ -449,6 +449,7 @@ defmodule ASM.Run.Server do
         backend_subscription_ref: start_config.subscription_ref,
         backend_info: backend_info,
         lane: resolution.lane,
+        lane_capabilities: resolution.capabilities,
         metadata: Map.merge(state.metadata, backend_info.observability)
     }
   end
@@ -511,10 +512,16 @@ defmodule ASM.Run.Server do
       {:error, Error.new(:runtime, :runtime, Exception.message(error), cause: error), state}
   end
 
-  defp execution_policy_pipeline(%Run.State{execution_config: %Config{} = config}) do
+  defp execution_policy_pipeline(%Run.State{execution_config: %Config{} = config} = state) do
     case Config.to_execution_environment(config).allowed_tools do
-      [] -> []
-      allowed_tools -> [{PolicyPlug, allowed_tools: allowed_tools}]
+      [] ->
+        []
+
+      allowed_tools ->
+        [
+          {PolicyPlug,
+           allowed_tools: allowed_tools, lane_capabilities: state.lane_capabilities || []}
+        ]
     end
   end
 

@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Require `cli_subprocess_core ~> 0.7.0`, which embeds its provider catalogs
+  for consumers running from an installed escript instead of a source tree.
 - Deliver terminal run completion before provider-backend cleanup, so a
   backend whose close call stalls cannot hide a result the stream already
   emitted.

@@ -23,10 +23,10 @@ defmodule ASM.ReleasePreparationTest do
     assert project[:version] == newest
   end
 
-  test "publish mode selects only the CLI core 0.6 line from Hex" do
+  test "publish mode selects only the CLI core 0.7 line from Hex" do
     publish_deps = DependencySources.deps(@repo_root, publish?: true)
 
-    assert Keyword.fetch!(publish_deps, :cli_subprocess_core) =~ ~r/^~> 0\.6\./
+    assert Keyword.fetch!(publish_deps, :cli_subprocess_core) =~ ~r/^~> 0\.7\./
     refute Keyword.has_key?(publish_deps, :cursor_cli_sdk)
 
     refute inspect(publish_deps) =~ "path:"

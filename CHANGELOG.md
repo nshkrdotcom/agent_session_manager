@@ -20,6 +20,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A continuation is honoured on every lane that can resume, not only Codex.
+  `ProviderBackend.Core.put_continuation_opts/3` translated a continuation into
+  the profile's `resume:` option for `:codex` and silently dropped it for
+  everything else, so a Claude resume never carried `--resume`: both the
+  failure-recovery resume and a steer started a brand new session with no
+  memory of the work, while every layer above reported a successful resume.
+  A live run made it visible — the resumed session answered "What would you
+  like me to help with?". `:claude` and `:antigravity` now take the same
+  translation, and a lane that cannot resume fails closed on a continuation
+  rather than continuing without one.
+
 - `ASM.Execution.PolicyPlug` no longer fails a run for a tool outside a
   non-empty `allowed_tools` on a lane that cannot intercept the call. The plug
   now consults the lane's capabilities: a lane declaring `:approval` has a

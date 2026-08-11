@@ -174,7 +174,20 @@ defmodule ASM.ProviderBackend.Core do
     |> Keyword.put(:clear_env?, materialization.clear_env?)
   end
 
-  defp put_continuation_opts(%Provider{name: :codex}, config, provider_opts) do
+  # A continuation names the provider thread to carry on. Translating it for
+  # Codex alone meant every other lane dropped it silently: a Claude resume
+  # never carried `--resume`, so both the failure-recovery resume and a steer
+  # started a brand new session with no memory of the work, while every layer
+  # above reported a successful resume. `antigravity` takes the same treatment
+  # through `--conversation`.
+  #
+  # Fail closed rather than continuing without it. A caller that asked to
+  # resume a specific thread and silently got a fresh one is the failure this
+  # replaces, and it is not improved by being quiet.
+  @resumable_providers [:claude, :codex, :antigravity]
+
+  defp put_continuation_opts(%Provider{name: name}, config, provider_opts)
+       when name in @resumable_providers do
     case Map.get(config, :continuation) do
       nil ->
         {:ok, provider_opts}
@@ -184,24 +197,27 @@ defmodule ASM.ProviderBackend.Core do
         {:ok, Keyword.put(provider_opts, :resume, provider_session_id)}
 
       %{strategy: :latest} ->
-        {:error,
-         Error.new(
-           :config_invalid,
-           :config,
-           "Codex core continuation requires an exact provider session id"
-         )}
+        {:error, continuation_error(name, "requires an exact provider session id")}
 
       continuation ->
-        {:error,
-         Error.new(
-           :config_invalid,
-           :config,
-           "invalid Codex core continuation: #{inspect(continuation)}"
-         )}
+        {:error, continuation_error(name, "is invalid: #{inspect(continuation)}")}
     end
   end
 
-  defp put_continuation_opts(%Provider{}, _config, provider_opts), do: {:ok, provider_opts}
+  defp put_continuation_opts(%Provider{name: name}, config, provider_opts) do
+    case Map.get(config, :continuation) do
+      nil ->
+        {:ok, provider_opts}
+
+      _continuation ->
+        {:error,
+         continuation_error(name, "is not supported; this lane cannot resume a provider thread")}
+    end
+  end
+
+  defp continuation_error(provider, detail) do
+    Error.new(:config_invalid, :config, "#{provider} core continuation #{detail}")
+  end
 
   defp authorize_provider_runtime(%Provider{name: :codex}, config, provider_opts) do
     CodexMaterialization.authorize_config(config, provider_opts)

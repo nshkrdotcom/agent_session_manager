@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-08-11
+
+### Changed
+
+- Document the compatible optional provider SDK train: Claude 0.20, Codex
+  0.19, Antigravity 0.3, Amp 0.8, and Cursor 0.3, all on
+  `cli_subprocess_core ~> 0.7.0`.
+- Remove the obsolete Cursor/Core incompatibility warning while preserving
+  ASM's narrow package boundary: provider SDKs remain optional and dynamically
+  discovered rather than mandatory dependencies.
+
 ## [0.14.0] - 2026-08-10
 
 ### Fixed
@@ -981,7 +992,8 @@ See `guides/migrating_to_v0.8.md` for migration details.
 - Basic project structure with mix.exs configuration
 - Project logo and assets
 
-[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.12.3...v0.13.0
 [0.12.3]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.12.2...v0.12.3

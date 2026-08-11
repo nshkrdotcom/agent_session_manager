@@ -106,11 +106,12 @@ defmodule ASM.ReleasePreparationTest do
     assert readme =~ "five first-party CLI providers"
     assert readme =~ "Antigravity is the current Google coding-agent SDK"
     assert readme =~ "`gemini_ex` is a distinct model API SDK"
-    assert readme =~ ~s({:claude_agent_sdk, "~> 0.19.0", optional: true})
-    assert readme =~ ~s({:codex_sdk, "~> 0.18.0", optional: true})
-    assert readme =~ ~s({:amp_sdk, "~> 0.7.0", optional: true})
-    assert readme =~ ~s({:antigravity_cli_sdk, "~> 0.2.0", optional: true})
-    assert readme =~ "`cursor_cli_sdk 0.2.0` cannot be combined"
+    assert readme =~ ~s({:claude_agent_sdk, "~> 0.20.0", optional: true})
+    assert readme =~ ~s({:codex_sdk, "~> 0.19.0", optional: true})
+    assert readme =~ ~s({:amp_sdk, "~> 0.8.0", optional: true})
+    assert readme =~ ~s({:antigravity_cli_sdk, "~> 0.3.0", optional: true})
+    assert readme =~ ~s({:cursor_cli_sdk, "~> 0.3.0", optional: true})
+    refute readme =~ "cannot be combined with Core"
     assert changelog =~ "## [0.12.1] - 2026-07-27"
 
     refute features =~ "across six providers"

@@ -55,12 +55,12 @@ Gemini model endpoints; it is not an ASM CLI provider.
 
 ## Install
 
-ASM 0.14.0 requires Elixir 1.19 or later.
+ASM 0.15.0 requires Elixir 1.19 or later.
 
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.14.0"}
+    {:agent_session_manager, "~> 0.15.0"}
   ]
 end
 ```
@@ -76,23 +76,18 @@ Optional provider SDK dependencies stay additive. Add one only when you want
 that provider's SDK lane/runtime kit or, where it exists today, its ASM
 provider-native namespace:
 
-- `{:claude_agent_sdk, "~> 0.19.0", optional: true}` for Claude control-protocol
+- `{:claude_agent_sdk, "~> 0.20.0", optional: true}` for Claude control-protocol
   helpers and `ASM.Extensions.ProviderSDK.Claude`
-- `{:codex_sdk, "~> 0.18.0", optional: true}` for Codex app-server, MCP,
+- `{:codex_sdk, "~> 0.19.0", optional: true}` for Codex app-server, MCP,
   realtime, voice helpers, and `ASM.Extensions.ProviderSDK.Codex`
-- `{:amp_sdk, "~> 0.7.0", optional: true}` for Amp SDK lane/runtime-kit
+- `{:amp_sdk, "~> 0.8.0", optional: true}` for Amp SDK lane/runtime-kit
   availability and `ASM.Extensions.ProviderSDK.Amp`
-- `{:antigravity_cli_sdk, "~> 0.2.0", optional: true}` for Antigravity SDK
+- `{:antigravity_cli_sdk, "~> 0.3.0", optional: true}` for Antigravity SDK
   lane/runtime-kit availability. Antigravity currently composes through the
   common ASM provider surface and SDK runtime kit; it does not register a
   separate `ASM.Extensions.ProviderSDK.Antigravity` namespace.
-
-Cursor follows the same dynamically discovered optional-SDK boundary, but the
-published `cursor_cli_sdk 0.2.0` cannot be combined with Core 0.4 because it
-requires Core `~> 0.3.0`. ASM 0.12 therefore keeps Cursor available through
-the Core lane and does not declare or recommend a Cursor SDK dependency. The
-SDK lane activates automatically when an independently installed,
-Core-0.4-compatible Cursor SDK release is available.
+- `{:cursor_cli_sdk, "~> 0.3.0", optional: true}` for Cursor SDK lane/runtime-kit
+  availability and `ASM.Extensions.ProviderSDK.Cursor`.
 
 Declaring the optional dependency is the only client-side activation step. No
 extra ASM wiring is required. ASM always keeps the common surface available
@@ -102,7 +97,8 @@ backed by the installed optional SDKs.
 
 The package publication order for this stack remains `cli_subprocess_core`
 first, then compatible provider SDK packages, then `agent_session_manager`.
-Cursor is not a publication prerequisite for ASM.
+Provider SDKs remain optional runtime additions, not package dependencies or
+publication prerequisites of ASM itself.
 
 ## CLI Setup
 

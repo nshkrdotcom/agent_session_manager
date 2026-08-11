@@ -13,7 +13,7 @@ defmodule AgentSessionManager.MixProject do
   @workspace_checkout? File.regular?(Path.expand("build_support/dependency_sources.exs", __DIR__))
 
   @app :agent_session_manager
-  @version "0.14.0"
+  @version "0.15.0"
   @source_url "https://github.com/nshkrdotcom/agent_session_manager"
   @homepage_url "https://hex.pm/packages/agent_session_manager"
   @docs_url "https://hexdocs.pm/agent_session_manager"
@@ -184,6 +184,7 @@ defmodule AgentSessionManager.MixProject do
       "guides/live-adapters.md": [title: "Live Adapters"],
       "guides/boundary-enforcement.md": [title: "Boundary Enforcement"],
       "guides/migrating-to-0.12.md": [title: "Migrating to 0.12"],
+      "guides/migrating-to-0.15.md": [title: "Migrating to 0.15"],
       "examples/README.md": [title: "Examples", filename: "examples"],
       "CHANGELOG.md": [title: "Changelog"],
       LICENSE: [title: "License"]
@@ -209,7 +210,12 @@ defmodule AgentSessionManager.MixProject do
       ],
       Examples: ["examples/README.md"],
       Architecture: ["guides/boundary-enforcement.md"],
-      Reference: ["guides/migrating-to-0.12.md", "CHANGELOG.md", "LICENSE"]
+      Reference: [
+        "guides/migrating-to-0.15.md",
+        "guides/migrating-to-0.12.md",
+        "CHANGELOG.md",
+        "LICENSE"
+      ]
     ]
   end
 

@@ -1,16 +1,7 @@
-# `build_support/` is not shipped in the published package, so its absence is
-# how this file knows it is running inside a consumer's deps/ rather than in a
-# source checkout.
-workspace_helper = Path.expand("build_support/dependency_sources.exs", __DIR__)
-
-if File.regular?(workspace_helper) and not Code.ensure_loaded?(DependencySources) do
-  Code.require_file(workspace_helper)
-end
+if bootstrap = System.get_env("MIX_WORKSPACE_OPS_BOOTSTRAP"), do: Code.require_file(bootstrap)
 
 defmodule AgentSessionManager.MixProject do
   use Mix.Project
-
-  @workspace_checkout? File.regular?(Path.expand("build_support/dependency_sources.exs", __DIR__))
 
   @app :agent_session_manager
   @version "0.15.0"
@@ -62,7 +53,7 @@ defmodule AgentSessionManager.MixProject do
 
   defp deps do
     [
-      workspace_dep(:cli_subprocess_core, "~> 0.7.0"),
+      workspace_dep({:cli_subprocess_core, "~> 0.7.0"}),
       {:boundary, "~> 0.10.4", runtime: false},
       {:jason, "~> 1.4"},
       {:nimble_options, "~> 1.1"},
@@ -109,15 +100,10 @@ defmodule AgentSessionManager.MixProject do
     ]
   end
 
-  # In a source checkout the registry decides the source (path first). In a
-  # published package there is no registry, and the requirement stated here is
-  # the whole answer.
-  defp workspace_dep(app, hex_requirement) do
-    if @workspace_checkout? do
-      apply(DependencySources, :dep, [app, __DIR__])
-    else
-      {app, hex_requirement}
-    end
+  defp workspace_dep(committed) do
+    if function_exported?(MixWorkspaceOpsBootstrap, :dep, 2),
+      do: apply(MixWorkspaceOpsBootstrap, :dep, [committed, __DIR__]),
+      else: committed
   end
 
   defp package do

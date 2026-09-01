@@ -24,7 +24,7 @@ defmodule ASM.ReleasePreparationTest do
   end
 
   test "publish mode selects only the CLI core 0.7 line from Hex" do
-    publish_deps = DependencySources.deps(@repo_root, publish?: true)
+    publish_deps = Mix.Project.config()[:deps]
 
     assert Keyword.fetch!(publish_deps, :cli_subprocess_core) =~ ~r/^~> 0\.7\./
     refute Keyword.has_key?(publish_deps, :cursor_cli_sdk)
@@ -53,11 +53,8 @@ defmodule ASM.ReleasePreparationTest do
 
     refute ".formatter.exs" in package[:files]
 
-    # 0.12.2 shipped `build_support/`, and `mix.exs` requires that file when it
-    # is present — so a consumer resolving the package either failed to load the
-    # project or received git dependencies instead of Hex ones. Its absence is
-    # now the signal that tells `mix.exs` it is running inside a consumer's
-    # deps/, so shipping it again re-breaks every downstream package.
+    # Workspace source policy is operator-owned and is never shipped in the
+    # package.
     refute "build_support" in package[:files]
   end
 

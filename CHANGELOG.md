@@ -1,11 +1,20 @@
 # Changelog
 
+[0.16.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.15.0...v0.16.0
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.16.0] - 2026-09-07
+
+### Changed
+
+- Require `cli_subprocess_core ~> 0.8.0` and project current provider model defaults and reasoning capabilities.
+- Preserve explicit unknown-model passthrough and provider-native boundaries.
 
 ## [0.15.0] - 2026-08-11
 

@@ -358,11 +358,11 @@ defmodule ASM.Examples.CommonTest do
       prompt: @default_prompt,
       lane: :core,
       sdk_root: nil,
-      session_opts: [provider: :codex, lane: :core, cli_path: @cli_path, model: "gpt-5.4"],
+      session_opts: [provider: :codex, lane: :core, cli_path: @cli_path, model: "gpt-5.4-mini"],
       provider_opts: [
         provider: :codex,
         cli_path: @cli_path,
-        model: "gpt-5.4",
+        model: "gpt-5.4-mini",
         permission_mode: :bypass,
         provider_permission_mode: :yolo
       ],
@@ -372,7 +372,7 @@ defmodule ASM.Examples.CommonTest do
     assert Common.sdk_bridge_opts(config) == [
              provider: :codex,
              cli_path: @cli_path,
-             model: "gpt-5.4",
+             model: "gpt-5.4-mini",
              permission_mode: :bypass,
              provider_permission_mode: :yolo
            ]

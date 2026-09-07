@@ -59,7 +59,7 @@ defmodule ASM.ProviderBackend.CoreTest do
       config = %{
         provider: Provider.resolve!(:codex),
         prompt: "hello",
-        provider_opts: [model: "gpt-5.4"],
+        provider_opts: [model: "gpt-5.4-mini"],
         execution_config: execution_config,
         metadata: governed_runtime_metadata()
       }

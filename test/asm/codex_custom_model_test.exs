@@ -54,16 +54,30 @@ defmodule ASM.CodexCustomModelTest do
                Options.finalize_provider_opts(:codex, model: "gpt-5.6")
     end
 
-    test "Spark resolves strictly with its live default reasoning" do
+    test "GPT-6 Astra resolves with aliases and low default reasoning" do
+      for model_name <- ~w(gpt-6-astra gpt-6 astra) do
+        assert {:ok, attrs} =
+                 Options.finalize_provider_opts(:codex,
+                   model: model_name
+                 )
+
+        payload = Keyword.fetch!(attrs, :model_payload)
+        assert payload.resolved_model == "gpt-6-astra"
+        assert payload.reasoning == "low"
+        refute Map.get(payload.extra, "unregistered")
+      end
+    end
+
+    test "retired picker models remain explicit unknown-model passthroughs" do
       assert {:ok, attrs} =
                Options.finalize_provider_opts(:codex,
-                 model: "gpt-5.3-codex-spark"
+                 model: "gpt-5.3-codex-spark",
+                 allow_unknown_model: true
                )
 
       payload = Keyword.fetch!(attrs, :model_payload)
       assert payload.resolved_model == "gpt-5.3-codex-spark"
-      assert payload.reasoning == "high"
-      refute Map.get(payload.extra, "unregistered")
+      assert payload.extra["unregistered"]
     end
 
     test "delegates GPT-5.6 max and ultra boundaries to the shared core" do

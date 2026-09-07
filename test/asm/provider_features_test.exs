@@ -309,7 +309,7 @@ defmodule ASM.ProviderFeaturesTest do
              Options.validate(
                [
                  provider: :codex,
-                 model: "gpt-5.4",
+                 model: "gpt-5.4-mini",
                  system_prompt: "Respect repository instructions."
                ],
                codex_schema
@@ -357,7 +357,7 @@ defmodule ASM.ProviderFeaturesTest do
              Options.validate(
                [
                  provider: :codex,
-                 model: "gpt-5.4",
+                 model: "gpt-5.4-mini",
                  ollama: true,
                  ollama_model: "llama3.2"
                ],

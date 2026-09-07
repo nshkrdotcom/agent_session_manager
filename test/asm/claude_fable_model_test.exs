@@ -28,5 +28,25 @@ defmodule ASM.ClaudeFableModelTest do
       assert payload.resolved_model == "fable"
       assert payload.model_source == :catalog
     end
+
+    test "claude-fable-5-1 and fable-5.1 resolve to the canonical fable id" do
+      for alias_name <- ~w(claude-fable-5-1 fable-5.1 fable-5-1) do
+        assert {:ok, attrs} = Options.finalize_provider_opts(:claude, model: alias_name)
+
+        payload = Keyword.fetch!(attrs, :model_payload)
+        assert payload.requested_model == alias_name
+        assert payload.resolved_model == "fable"
+        assert payload.model_source == :catalog
+      end
+    end
+
+    test "claude-mythos-5-1 resolves to mythos-5.1 under restricted visibility" do
+      assert {:ok, attrs} = Options.finalize_provider_opts(:claude, model: "claude-mythos-5-1")
+
+      payload = Keyword.fetch!(attrs, :model_payload)
+      assert payload.requested_model == "claude-mythos-5-1"
+      assert payload.resolved_model == "claude-mythos-5-1"
+      assert payload.visibility == :restricted
+    end
   end
 end

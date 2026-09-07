@@ -4,7 +4,7 @@ defmodule AgentSessionManager.MixProject do
   use Mix.Project
 
   @app :agent_session_manager
-  @version "0.15.0"
+  @version "0.16.0"
   @source_url "https://github.com/nshkrdotcom/agent_session_manager"
   @homepage_url "https://hex.pm/packages/agent_session_manager"
   @docs_url "https://hexdocs.pm/agent_session_manager"
@@ -53,7 +53,7 @@ defmodule AgentSessionManager.MixProject do
 
   defp deps do
     [
-      workspace_dep({:cli_subprocess_core, "~> 0.7.0"}),
+      workspace_dep({:cli_subprocess_core, "~> 0.8.0"}),
       {:boundary, "~> 0.10.4", runtime: false},
       {:jason, "~> 1.4"},
       {:nimble_options, "~> 1.1"},

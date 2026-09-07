@@ -319,7 +319,7 @@ defmodule ASM.ProviderBackend.SDKTest do
         ),
       continuation: %{strategy: :exact, provider_session_id: "codex-thread-123"},
       provider_opts: [
-        model: "gpt-5.4",
+        model: "gpt-5.4-mini",
         system_prompt: "Stay inside the repo instructions.",
         reasoning_effort: :high,
         provider_backend: :model_provider,
@@ -372,7 +372,7 @@ defmodule ASM.ProviderBackend.SDKTest do
       provider: provider,
       prompt: "hello",
       execution_config: execution_config([]),
-      provider_opts: [model: "gpt-5.4"],
+      provider_opts: [model: "gpt-5.4-mini"],
       codex_materialized_runtime: materialized_codex_runtime(),
       metadata: Map.put(governed_runtime_metadata(), :test_pid, self())
     }
@@ -409,7 +409,7 @@ defmodule ASM.ProviderBackend.SDKTest do
       provider: provider,
       prompt: "hello",
       execution_config: execution_config([]),
-      provider_opts: [model: "gpt-5.4", env: %{"CODEX_API_KEY" => "secret"}],
+      provider_opts: [model: "gpt-5.4-mini", env: %{"CODEX_API_KEY" => "secret"}],
       codex_materialized_runtime: materialized_codex_runtime(),
       metadata: governed_runtime_metadata()
     }
@@ -430,7 +430,7 @@ defmodule ASM.ProviderBackend.SDKTest do
       provider: provider,
       prompt: "use app-server",
       execution_config: execution_config([]),
-      provider_opts: [app_server: true, model: "gpt-5.4"],
+      provider_opts: [app_server: true, model: "gpt-5.4-mini"],
       backend_opts: [
         codex_app_server_module: CodexAppServerStub,
         codex_thread_runner_module: CodexThreadRunnerStub,
@@ -478,7 +478,7 @@ defmodule ASM.ProviderBackend.SDKTest do
       execution_config: execution_config([], [], provider_permission_mode: :auto_edit),
       provider_opts: [
         app_server: true,
-        model: "gpt-5.4",
+        model: "gpt-5.4-mini",
         reviewed_approval: reviewed_approval
       ],
       backend_opts: [
@@ -679,7 +679,7 @@ defmodule ASM.ProviderBackend.SDKTest do
       provider: provider,
       prompt: "exercise app-server events",
       execution_config: execution_config([]),
-      provider_opts: [app_server: true, model: "gpt-5.4"],
+      provider_opts: [app_server: true, model: "gpt-5.4-mini"],
       backend_opts: [
         codex_app_server_module: CodexAppServerStub,
         codex_thread_runner_module: CodexThreadRunnerStub,
@@ -1066,7 +1066,7 @@ defmodule ASM.ProviderBackend.SDKTest do
             provider: %{Provider.resolve!(:codex) | sdk_runtime: CodexRuntimeStub},
             prompt: "hello",
             execution_config: execution_config([]),
-            provider_opts: [model: "gpt-5.4", output_schema: schema],
+            provider_opts: [model: "gpt-5.4-mini", output_schema: schema],
             metadata: %{test_pid: test_pid}
           })
 
@@ -1104,7 +1104,7 @@ defmodule ASM.ProviderBackend.SDKTest do
       provider: provider,
       prompt: "hello",
       execution_config: execution_config([], [], provider_permission_mode: :yolo),
-      provider_opts: [model: "gpt-5.4", completion_only: true],
+      provider_opts: [model: "gpt-5.4-mini", completion_only: true],
       metadata: %{test_pid: self()}
     }
 
@@ -1138,7 +1138,7 @@ defmodule ASM.ProviderBackend.SDKTest do
       provider: provider,
       prompt: "hello",
       execution_config: execution_config([], [], provider_permission_mode: :yolo),
-      provider_opts: [model: "gpt-5.4"],
+      provider_opts: [model: "gpt-5.4-mini"],
       metadata: %{test_pid: self()}
     }
 
@@ -1160,7 +1160,7 @@ defmodule ASM.ProviderBackend.SDKTest do
       provider: provider,
       prompt: "hello",
       execution_config: execution_config([], [], provider_permission_mode: :auto_edit),
-      provider_opts: [model: "gpt-5.4"],
+      provider_opts: [model: "gpt-5.4-mini"],
       metadata: %{test_pid: self()}
     }
 
@@ -1260,7 +1260,7 @@ defmodule ASM.ProviderBackend.SDKTest do
       provider: provider,
       prompt: "hello",
       execution_config: execution_config([]),
-      provider_opts: [model: "gpt-5.4"],
+      provider_opts: [model: "gpt-5.4-mini"],
       metadata: %{test_pid: self()}
     }
 

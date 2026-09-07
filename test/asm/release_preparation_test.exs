@@ -23,10 +23,20 @@ defmodule ASM.ReleasePreparationTest do
     assert project[:version] == newest
   end
 
-  test "publish mode selects only the CLI core 0.7 line from Hex" do
-    publish_deps = Mix.Project.config()[:deps]
+  test "standalone dependencies select the CLI core 0.8 line from Hex" do
+    code =
+      "Mix.Project.config()[:deps] |> :erlang.term_to_binary() |> Base.encode64() |> IO.puts()"
 
-    assert Keyword.fetch!(publish_deps, :cli_subprocess_core) =~ ~r/^~> 0\.7\./
+    {output, 0} =
+      System.cmd("mix", ["run", "--no-start", "--no-compile", "--no-deps-check", "-e", code],
+        cd: @repo_root,
+        env: [{"MIX_WORKSPACE_OPS_BOOTSTRAP", nil}, {"MIX_EXS", nil}],
+        stderr_to_stdout: true
+      )
+
+    publish_deps = output |> String.trim() |> Base.decode64!() |> :erlang.binary_to_term()
+
+    assert Keyword.fetch!(publish_deps, :cli_subprocess_core) == "~> 0.8.0"
     refute Keyword.has_key?(publish_deps, :cursor_cli_sdk)
 
     refute inspect(publish_deps) =~ "path:"
@@ -103,11 +113,11 @@ defmodule ASM.ReleasePreparationTest do
     assert readme =~ "five first-party CLI providers"
     assert readme =~ "Antigravity is the current Google coding-agent SDK"
     assert readme =~ "`gemini_ex` is a distinct model API SDK"
-    assert readme =~ ~s({:claude_agent_sdk, "~> 0.20.0", optional: true})
-    assert readme =~ ~s({:codex_sdk, "~> 0.19.0", optional: true})
-    assert readme =~ ~s({:amp_sdk, "~> 0.8.0", optional: true})
-    assert readme =~ ~s({:antigravity_cli_sdk, "~> 0.3.0", optional: true})
-    assert readme =~ ~s({:cursor_cli_sdk, "~> 0.3.0", optional: true})
+    assert readme =~ ~s({:claude_agent_sdk, "~> 0.21.0", optional: true})
+    assert readme =~ ~s({:codex_sdk, "~> 0.20.0", optional: true})
+    assert readme =~ ~s({:amp_sdk, "~> 0.9.0", optional: true})
+    assert readme =~ ~s({:antigravity_cli_sdk, "~> 0.4.0", optional: true})
+    assert readme =~ ~s({:cursor_cli_sdk, "~> 0.4.0", optional: true})
     refute readme =~ "cannot be combined with Core"
     assert changelog =~ "## [0.12.1] - 2026-07-27"
 

@@ -20,22 +20,22 @@ defmodule ASM.ClaudeFableModelTest do
       refute Map.get(payload.extra, "unregistered")
     end
 
-    test "the claude-fable-5 alias resolves to the canonical fable id" do
+    test "the claude-fable-5 alias resolves to the pinned claude-fable-5 id" do
       assert {:ok, attrs} = Options.finalize_provider_opts(:claude, model: "claude-fable-5")
 
       payload = Keyword.fetch!(attrs, :model_payload)
       assert payload.requested_model == "claude-fable-5"
-      assert payload.resolved_model == "fable"
+      assert payload.resolved_model == "claude-fable-5"
       assert payload.model_source == :catalog
     end
 
-    test "claude-fable-5-1 and fable-5.1 resolve to the canonical fable id" do
+    test "claude-fable-5-1 and fable-5.1 resolve to the pinned claude-fable-5-1 id" do
       for alias_name <- ~w(claude-fable-5-1 fable-5.1 fable-5-1) do
         assert {:ok, attrs} = Options.finalize_provider_opts(:claude, model: alias_name)
 
         payload = Keyword.fetch!(attrs, :model_payload)
         assert payload.requested_model == alias_name
-        assert payload.resolved_model == "fable"
+        assert payload.resolved_model == "claude-fable-5-1"
         assert payload.model_source == :catalog
       end
     end

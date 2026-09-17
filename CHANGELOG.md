@@ -7,9 +7,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-## [0.16.0] - 2026-09-07
+## [0.16.0] - 2026-09-17
 
 ### Changed
 
@@ -1001,7 +999,6 @@ See `guides/migrating_to_v0.8.md` for migration details.
 - Basic project structure with mix.exs configuration
 - Project logo and assets
 
-[Unreleased]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.15.0...HEAD
 [0.15.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.12.3...v0.13.0

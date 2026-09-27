@@ -205,12 +205,11 @@ Relevant Codex provider fields:
 - `:model`
 - `:reasoning_effort`
 
-The current shared catalog exposes `gpt-5.6-sol` as the live default plus
-`gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, and
-the text-only ChatGPT Pro preview `gpt-5.3-codex-spark`. ASM does not add a
-`gpt-5.6` alias. Sol and Terra admit `:max` and `:ultra`; Luna admits `:max`
-but rejects `:ultra`, while Spark supports `:low` through `:xhigh` and defaults
-to `:high` through the shared registry contract.
+The shared Codex picker defaults to `gpt-6-astra` and also lists
+`gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`,
+`gpt-5.6-luna`, and `gpt-5.5`. Sol and Luna default to medium reasoning
+and support `:none` through `:max`. ASM does not add a `gpt-5.6` alias.
+
 
 For the current local Ollama path, ASM callers should use:
 

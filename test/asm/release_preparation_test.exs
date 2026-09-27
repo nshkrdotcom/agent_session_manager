@@ -23,7 +23,7 @@ defmodule ASM.ReleasePreparationTest do
     assert project[:version] == newest
   end
 
-  test "standalone dependencies select the CLI core 0.8 line from Hex" do
+  test "standalone dependencies select the CLI core 0.9 line from Hex" do
     code =
       "Mix.Project.config()[:deps] |> :erlang.term_to_binary() |> Base.encode64() |> IO.puts()"
 
@@ -36,7 +36,7 @@ defmodule ASM.ReleasePreparationTest do
 
     publish_deps = output |> String.trim() |> Base.decode64!() |> :erlang.binary_to_term()
 
-    assert Keyword.fetch!(publish_deps, :cli_subprocess_core) == "~> 0.8.0"
+    assert Keyword.fetch!(publish_deps, :cli_subprocess_core) == "~> 0.9.0"
     refute Keyword.has_key?(publish_deps, :cursor_cli_sdk)
 
     refute inspect(publish_deps) =~ "path:"

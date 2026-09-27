@@ -68,6 +68,20 @@ defmodule ASM.CodexCustomModelTest do
       end
     end
 
+    test "GPT-6 Sol and Luna resolve with medium default and low effort" do
+      for model <- ~w(gpt-6-sol gpt-6-luna) do
+        assert {:ok, attrs} = Options.finalize_provider_opts(:codex, model: model)
+        payload = Keyword.fetch!(attrs, :model_payload)
+        assert payload.resolved_model == model
+        assert payload.reasoning == "medium"
+
+        assert {:ok, low_attrs} =
+                 Options.finalize_provider_opts(:codex, model: model, reasoning_effort: :low)
+
+        assert Keyword.fetch!(low_attrs, :model_payload).reasoning == "low"
+      end
+    end
+
     test "retired picker models remain explicit unknown-model passthroughs" do
       assert {:ok, attrs} =
                Options.finalize_provider_opts(:codex,

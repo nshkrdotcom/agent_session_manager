@@ -55,12 +55,12 @@ Gemini model endpoints; it is not an ASM CLI provider.
 
 ## Install
 
-ASM 0.16.0 requires Elixir 1.19 or later.
+ASM 0.17.0 requires Elixir 1.19 or later.
 
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.16.0"}
+    {:agent_session_manager, "~> 0.17.0"}
   ]
 end
 ```

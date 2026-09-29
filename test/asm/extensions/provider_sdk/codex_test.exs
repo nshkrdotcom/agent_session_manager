@@ -13,7 +13,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
              CodexExtension.derive_options(
                [
                  cli_path: "/usr/local/bin/codex",
-                 model: "gpt-5.4-mini",
+                 model: "gpt-6-luna",
                  execution_surface: [
                    surface_kind: :ssh_exec,
                    transport_options: [destination: "codex.strict-extension.example"]
@@ -23,7 +23,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
              )
 
     assert options.codex_path_override == "/usr/local/bin/codex"
-    assert options.model == "gpt-5.4-mini"
+    assert options.model == "gpt-6-luna"
     assert options.execution_surface.surface_kind == :ssh_exec
 
     assert options.execution_surface.transport_options[:destination] ==
@@ -36,7 +36,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
   test "derive_options/2 rejects Codex-native settings in generic ASM input" do
     assert {:error, %ProviderNativeOptionError{} = error} =
              CodexExtension.derive_options(
-               model: "gpt-5.4-mini",
+               model: "gpt-6-luna",
                output_schema: %{"type" => "object"}
              )
 
@@ -48,7 +48,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
     asm_opts = [
       provider: :codex,
       cli_path: "/usr/local/bin/codex",
-      model: "gpt-5.4-mini",
+      model: "gpt-6-luna",
       reasoning_effort: :high,
       execution_surface: [
         surface_kind: :ssh_exec,
@@ -65,7 +65,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
              CodexExtension.codex_options(asm_opts, native_overrides)
 
     assert options.codex_path_override == "/usr/local/bin/codex"
-    assert options.model == "gpt-5.4-mini"
+    assert options.model == "gpt-6-luna"
     assert options.reasoning_effort == :high
     assert options.execution_surface.surface_kind == :ssh_exec
     assert options.execution_surface.transport_options[:destination] == "codex.options.example"
@@ -75,9 +75,9 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
 
   test "codex bridge accepts ASM's canonicalized :codex_exec provider alias" do
     assert {:ok, %Options{} = options} =
-             CodexExtension.codex_options(provider: :codex_exec, model: "gpt-5.4-mini")
+             CodexExtension.codex_options(provider: :codex_exec, model: "gpt-6-luna")
 
-    assert options.model == "gpt-5.4-mini"
+    assert options.model == "gpt-6-luna"
   end
 
   test "thread_options/2 maps ASM config and keeps Codex-native thread overrides explicit" do
@@ -192,7 +192,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
       provider: :codex,
       provider_backend: :model_provider,
       model_provider: "gateway",
-      model: "gpt-5.4-mini"
+      model: "gpt-6-luna"
     ]
 
     assert {:ok, %ThreadOptions{} = options} = CodexExtension.thread_options(asm_opts)
@@ -209,7 +209,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
         workspace_root: "/tmp/asm-codex-session",
         permission_mode: :bypass,
         approval_timeout_ms: 10_000,
-        model: "gpt-5.4-mini",
+        model: "gpt-6-luna",
         reasoning_effort: :medium,
         execution_surface: [
           surface_kind: :ssh_exec,
@@ -225,7 +225,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
     assert {:ok, %Options{} = codex_options} =
              CodexExtension.codex_options_for_session(
                session,
-               [model: "gpt-5.4-mini"],
+               [model: "gpt-6-luna"],
                model_personality: :friendly
              )
 
@@ -236,7 +236,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
                personality: :none
              )
 
-    assert codex_options.model == "gpt-5.4-mini"
+    assert codex_options.model == "gpt-6-luna"
     assert codex_options.reasoning_effort == :medium
     assert codex_options.execution_surface.surface_kind == :ssh_exec
 
@@ -259,7 +259,7 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
                [
                  provider: :codex,
                  cli_path: "/usr/local/bin/codex",
-                 model: "gpt-5.4-mini",
+                 model: "gpt-6-luna",
                  execution_surface: [
                    surface_kind: :ssh_exec,
                    transport_options: [
@@ -306,8 +306,8 @@ defmodule ASM.Extensions.ProviderSDK.CodexTest do
   test "native overrides may not redefine ASM-derived Codex option fields" do
     assert {:error, error} =
              CodexExtension.codex_options(
-               [provider: :codex, model: "gpt-5.4-mini"],
-               model: "gpt-5.4-mini"
+               [provider: :codex, model: "gpt-6-luna"],
+               model: "gpt-6-luna"
              )
 
     assert error.kind == :config_invalid

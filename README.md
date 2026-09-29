@@ -55,12 +55,12 @@ Gemini model endpoints; it is not an ASM CLI provider.
 
 ## Install
 
-ASM 0.17.1 requires Elixir 1.19 or later.
+ASM 0.17.2 requires Elixir 1.19 or later.
 
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.17.1"}
+    {:agent_session_manager, "~> 0.17.2"}
   ]
 end
 ```
@@ -78,9 +78,9 @@ provider-native namespace:
 
 - `{:claude_agent_sdk, "~> 0.21.0", optional: true}` for Claude control-protocol
   helpers and `ASM.Extensions.ProviderSDK.Claude`
-- `{:codex_sdk, "~> 0.20.0", optional: true}` for Codex app-server, MCP,
+- `{:codex_sdk, "~> 0.21.2", optional: true}` for Codex app-server, MCP,
   realtime, voice helpers, and `ASM.Extensions.ProviderSDK.Codex`
-- `{:amp_sdk, "~> 0.9.0", optional: true}` for Amp SDK lane/runtime-kit
+- `{:amp_sdk, "~> 0.9.1", optional: true}` for Amp SDK lane/runtime-kit
   availability and `ASM.Extensions.ProviderSDK.Amp`
 - `{:antigravity_cli_sdk, "~> 0.4.0", optional: true}` for Antigravity SDK
   lane/runtime-kit availability. Antigravity currently composes through the
@@ -1065,3 +1065,5 @@ conversation with `Continue` after a recoverable runtime failure.
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+
+Release preparation and Hex lock handoff: [2026-09-29 release train](guides/release-train-2026-09-29.md).

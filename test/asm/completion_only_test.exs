@@ -86,7 +86,7 @@ defmodule ASM.CompletionOnlyTest do
         core_args(:codex, CodexProfile, Options.Codex.schema(),
           completion_only: true,
           permission_mode: :bypass,
-          model: "gpt-5.4-mini"
+          model: "gpt-6-luna"
         )
 
       assert flag_value(args, "--sandbox") == "read-only"
@@ -120,7 +120,7 @@ defmodule ASM.CompletionOnlyTest do
       codex_args =
         core_args(:codex, CodexProfile, Options.Codex.schema(),
           permission_mode: :bypass,
-          model: "gpt-5.4-mini"
+          model: "gpt-6-luna"
         )
 
       assert "--dangerously-bypass-approvals-and-sandbox" in codex_args

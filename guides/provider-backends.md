@@ -205,10 +205,10 @@ Relevant Codex provider fields:
 - `:model`
 - `:reasoning_effort`
 
-The shared Codex picker defaults to `gpt-6-astra` and also lists
-`gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`,
+The shared Codex picker defaults to `gpt-6.1-sol` at low effort and also lists
+`gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`,
 `gpt-5.6-luna`, and `gpt-5.5`. Sol and Luna default to medium reasoning
-and support `:none` through `:max`. ASM does not add a `gpt-5.6` alias.
+and support `:low` through `:max`; GPT-6 Sol also supports CLI `:ultra`. ASM does not add a `gpt-5.6` alias.
 
 
 For the current local Ollama path, ASM callers should use:

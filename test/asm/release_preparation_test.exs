@@ -36,7 +36,7 @@ defmodule ASM.ReleasePreparationTest do
 
     publish_deps = output |> String.trim() |> Base.decode64!() |> :erlang.binary_to_term()
 
-    assert Keyword.fetch!(publish_deps, :cli_subprocess_core) == "~> 0.9.1"
+    assert Keyword.fetch!(publish_deps, :cli_subprocess_core) == "~> 0.9.2"
     refute Keyword.has_key?(publish_deps, :cursor_cli_sdk)
 
     refute inspect(publish_deps) =~ "path:"
@@ -114,7 +114,7 @@ defmodule ASM.ReleasePreparationTest do
     assert readme =~ "Antigravity is the current Google coding-agent SDK"
     assert readme =~ "`gemini_ex` is a distinct model API SDK"
     assert readme =~ ~s({:claude_agent_sdk, "~> 0.21.0", optional: true})
-    assert readme =~ ~s({:codex_sdk, "~> 0.20.0", optional: true})
+    assert readme =~ ~s({:codex_sdk, "~> 0.21.2", optional: true})
     assert readme =~ ~s({:amp_sdk, "~> 0.9.1", optional: true})
     assert readme =~ ~s({:antigravity_cli_sdk, "~> 0.4.0", optional: true})
     assert readme =~ ~s({:cursor_cli_sdk, "~> 0.4.0", optional: true})

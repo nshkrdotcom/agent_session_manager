@@ -27,7 +27,7 @@ defmodule ASM.BoundaryEnforcementTest do
         _other -> false
       end)
 
-    assert {:boundary, "~> 0.10.4", opts} = boundary_dep
+    assert {:boundary, "~> 0.11.0", opts} = boundary_dep
     assert opts[:runtime] == false
     refute Keyword.has_key?(opts, :only)
   end

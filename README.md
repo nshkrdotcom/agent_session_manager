@@ -55,12 +55,12 @@ Gemini model endpoints; it is not an ASM CLI provider.
 
 ## Install
 
-ASM 0.17.2 requires Elixir 1.19 or later.
+ASM 0.17.3 requires Elixir 1.19 or later.
 
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.17.2"}
+    {:agent_session_manager, "~> 0.17.3"}
   ]
 end
 ```
@@ -78,7 +78,7 @@ provider-native namespace:
 
 - `{:claude_agent_sdk, "~> 0.21.0", optional: true}` for Claude control-protocol
   helpers and `ASM.Extensions.ProviderSDK.Claude`
-- `{:codex_sdk, "~> 0.21.2", optional: true}` for Codex app-server, MCP,
+- `{:codex_sdk, "~> 0.21.3", optional: true}` for Codex app-server, MCP,
   realtime, voice helpers, and `ASM.Extensions.ProviderSDK.Codex`
 - `{:amp_sdk, "~> 0.9.1", optional: true}` for Amp SDK lane/runtime-kit
   availability and `ASM.Extensions.ProviderSDK.Amp`

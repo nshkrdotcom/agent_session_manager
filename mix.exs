@@ -4,7 +4,7 @@ defmodule AgentSessionManager.MixProject do
   use Mix.Project
 
   @app :agent_session_manager
-  @version "0.17.2"
+  @version "0.17.3"
   @source_url "https://github.com/nshkrdotcom/agent_session_manager"
   @homepage_url "https://hex.pm/packages/agent_session_manager"
   @docs_url "https://hexdocs.pm/agent_session_manager"
@@ -53,18 +53,18 @@ defmodule AgentSessionManager.MixProject do
 
   defp deps do
     [
-      workspace_dep({:cli_subprocess_core, "~> 0.9.2"}),
-      {:boundary, "~> 0.10.4", runtime: false},
-      {:jason, "~> 1.4"},
-      {:nimble_options, "~> 1.1"},
-      {:zoi, "~> 0.18"},
-      {:telemetry, "~> 1.4"},
-      {:ex_doc, "~> 0.40", only: :dev, runtime: false},
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:dialyxir, "~> 1.4", only: :dev, runtime: false},
-      {:nimble_ownership, "~> 1.0", only: :test},
-      {:stream_data, "~> 1.3", only: :test},
-      {:mox, "~> 1.2", only: :test},
+      workspace_dep({:cli_subprocess_core, "~> 0.9.3"}),
+      {:boundary, "~> 0.11.0", runtime: false},
+      {:jason, "~> 1.4.5"},
+      {:nimble_options, "~> 1.1.1"},
+      {:zoi, "~> 0.18.11"},
+      {:telemetry, "~> 1.4.2"},
+      {:ex_doc, "~> 0.40.4", only: :dev, runtime: false},
+      {:credo, "~> 1.7.19", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4.8", only: :dev, runtime: false},
+      {:nimble_ownership, "~> 1.0.2", only: :test},
+      {:stream_data, "~> 1.4.0", only: :test},
+      {:mox, "~> 1.3.2", only: :test},
       {:supertester, "~> 0.6.0", only: :test}
     ]
   end

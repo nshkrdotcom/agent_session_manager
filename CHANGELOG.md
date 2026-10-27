@@ -11,6 +11,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.4] - 2026-10-26
+
+### Changed
+
+- Require `cli_subprocess_core ~> 0.9.5` for the current eight-model Codex catalog, including GPT-6.1 Terra, with GPT-6.1 Sol as the low-effort default.
+- Update all direct dependency requirements and the complete Hex lockfile to current stable releases, including Zoi 0.19.0.
+
 ## [0.17.3] - 2026-09-29
 
 ### Changed

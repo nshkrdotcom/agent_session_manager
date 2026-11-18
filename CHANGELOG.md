@@ -11,6 +11,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.5] - 2026-11-11
+
+### Changed
+
+- Use CLI Subprocess Core 0.9.6 for the current Codex picker and its GPT-6.2 Sol default at medium effort.
+- Refresh direct dependency requirements and the Hex lockfile.
+
 ## [0.17.4] - 2026-10-26
 
 ### Changed

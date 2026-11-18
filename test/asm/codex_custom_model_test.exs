@@ -16,12 +16,12 @@ defmodule ASM.CodexCustomModelTest do
   alias ASM.Options.{Amp, Antigravity, Codex, Cursor}
 
   describe "finalize_provider_opts/3 model resolution" do
-    test "GPT-6.1 Sol resolves strictly and supplies the shared default" do
-      for opts <- [[], [model: "gpt-6.1-sol", reasoning_effort: :ultra]] do
+    test "GPT-6.2 Sol resolves strictly and supplies the shared default" do
+      for opts <- [[], [model: "gpt-6.2-sol", reasoning_effort: :ultra]] do
         assert {:ok, attrs} = Options.finalize_provider_opts(:codex, opts)
         payload = Keyword.fetch!(attrs, :model_payload)
-        assert payload.resolved_model == "gpt-6.1-sol"
-        assert payload.reasoning == if(opts == [], do: "low", else: "ultra")
+        assert payload.resolved_model == "gpt-6.2-sol"
+        assert payload.reasoning == if(opts == [], do: "medium", else: "ultra")
         refute payload.extra["unregistered"]
       end
     end

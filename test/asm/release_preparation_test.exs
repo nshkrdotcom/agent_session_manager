@@ -25,10 +25,15 @@ defmodule ASM.ReleasePreparationTest do
 
   test "standalone dependencies select the CLI core 0.9 line from Hex" do
     code =
-      "Mix.Project.config()[:deps] |> :erlang.term_to_binary() |> Base.encode64() |> IO.puts()"
+      """
+      Mix.start()
+      Mix.Project.in_project(:agent_session_manager, ".", fn _ ->
+        Mix.Project.config()[:deps] |> :erlang.term_to_binary() |> Base.encode64() |> IO.puts()
+      end)
+      """
 
     {output, 0} =
-      System.cmd("mix", ["run", "--no-start", "--no-compile", "--no-deps-check", "-e", code],
+      System.cmd("elixir", ["-e", code],
         cd: @repo_root,
         env: [{"MIX_WORKSPACE_OPS_BOOTSTRAP", nil}, {"MIX_EXS", nil}],
         stderr_to_stdout: true
@@ -36,7 +41,7 @@ defmodule ASM.ReleasePreparationTest do
 
     publish_deps = output |> String.trim() |> Base.decode64!() |> :erlang.binary_to_term()
 
-    assert Keyword.fetch!(publish_deps, :cli_subprocess_core) == "~> 0.9.5"
+    assert Keyword.fetch!(publish_deps, :cli_subprocess_core) == "~> 0.9.6"
     refute Keyword.has_key?(publish_deps, :cursor_cli_sdk)
 
     refute inspect(publish_deps) =~ "path:"
@@ -114,7 +119,7 @@ defmodule ASM.ReleasePreparationTest do
     assert readme =~ "Antigravity is the current Google coding-agent SDK"
     assert readme =~ "`gemini_ex` is a distinct model API SDK"
     assert readme =~ ~s({:claude_agent_sdk, "~> 0.21.0", optional: true})
-    assert readme =~ ~s({:codex_sdk, "~> 0.21.4", optional: true})
+    assert readme =~ ~s({:codex_sdk, "~> 0.21.5", optional: true})
     assert readme =~ ~s({:amp_sdk, "~> 0.9.1", optional: true})
     assert readme =~ ~s({:antigravity_cli_sdk, "~> 0.4.0", optional: true})
     assert readme =~ ~s({:cursor_cli_sdk, "~> 0.4.0", optional: true})

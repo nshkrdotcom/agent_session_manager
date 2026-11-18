@@ -247,3 +247,9 @@ hardening work:
 
 Those examples exercise the same provider-session history and resume seams now exposed through
 `ASM.SessionControl`.
+
+
+For the Antigravity Core example, omit `--model` to use the selection in
+`agy`, or select an exact slug from `agy models`. For example,
+`--model gemini-4-argon-medium` pins Argon on accounts that advertise it.
+Gemini 4 Carbon requires an eligible account.

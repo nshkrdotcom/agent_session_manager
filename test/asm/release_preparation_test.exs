@@ -41,7 +41,7 @@ defmodule ASM.ReleasePreparationTest do
 
     publish_deps = output |> String.trim() |> Base.decode64!() |> :erlang.binary_to_term()
 
-    assert Keyword.fetch!(publish_deps, :cli_subprocess_core) == "~> 0.9.6"
+    assert Keyword.fetch!(publish_deps, :cli_subprocess_core) == "~> 0.10.0"
     refute Keyword.has_key?(publish_deps, :cursor_cli_sdk)
 
     refute inspect(publish_deps) =~ "path:"

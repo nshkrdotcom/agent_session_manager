@@ -1,11 +1,5 @@
 # Changelog
 
-[0.17.2]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.17.1...v0.17.2
-
-[0.17.1]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.17.0...v0.17.1
-[0.17.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.16.0...v0.17.0
-[0.16.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.15.0...v0.16.0
-
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
@@ -1056,6 +1050,15 @@ See `guides/migrating_to_v0.8.md` for migration details.
 - Basic project structure with mix.exs configuration
 - Project logo and assets
 
+[0.17.7]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.17.6...v0.17.7
+[0.17.6]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.17.5...v0.17.6
+[0.17.5]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.17.4...v0.17.5
+[0.17.4]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.17.3...v0.17.4
+[0.17.3]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.17.2...v0.17.3
+[0.17.2]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.17.1...v0.17.2
+[0.17.1]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.17.0...v0.17.1
+[0.17.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.16.0...v0.17.0
+[0.16.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.12.3...v0.13.0
@@ -1077,6 +1080,6 @@ See `guides/migrating_to_v0.8.md` for migration details.
 [0.4.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.1.1...v0.2.0
-[0.1.1]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.1.0...v0.1.1
+[0.2.0]: https://github.com/nshkrdotcom/agent_session_manager/compare/b284f82515a7e363f4434f873795c1761dd21ec4...v0.2.0
+[0.1.1]: https://github.com/nshkrdotcom/agent_session_manager/compare/v0.1.0...b284f82515a7e363f4434f873795c1761dd21ec4
 [0.1.0]: https://github.com/nshkrdotcom/agent_session_manager/releases/tag/v0.1.0

@@ -152,8 +152,8 @@ asm_opts = [
   provider: :claude,
   cwd: File.cwd!(),
   execution_environment: [permission_mode: :plan],
-  model: "sonnet",
-  reasoning_effort: :high,
+  model: "claude-sonnet-5-5",
+  reasoning_effort: :medium,
   execution_surface: [
     surface_kind: :ssh_exec,
     transport_options: [destination: "buildbox-a", port: 2222]

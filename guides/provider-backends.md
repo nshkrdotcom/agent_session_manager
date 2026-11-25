@@ -172,6 +172,7 @@ The relevant Claude provider fields are:
 - `:anthropic_base_url`
 - `:anthropic_auth_token`
 - `:model`
+- `:reasoning_effort`
 - `:allow_unknown_model` (default `false`) — pass a Claude model newer than the
   shared registry straight through to the CLI `--model` instead of erroring.
   Common across every provider (`:codex`, `:amp`, `:antigravity`,
@@ -184,6 +185,19 @@ ASM does not validate Ollama models itself and does not build Ollama CLI env
 itself. It forwards those values to
 `CliSubprocessCore.ModelRegistry.build_arg_payload/3`, then passes the resolved
 payload to either the core Claude profile or `ClaudeAgentSDK.Options`.
+
+ASM inherits the default `sonnet` alias and medium effort from Core. Claude
+Code resolves aliases for your CLI version and provider. Core recognizes the
+pinned IDs `claude-sonnet-5-5`, `claude-opus-5-5`, `claude-haiku-5-5`, and
+`claude-fable-5-2`. These models support `:low`, `:medium`, `:high`,
+`:xhigh`, and `:max` in Claude Code. `claude-mythos-5-2` is a restricted
+selection. Check provider access and CLI version in the
+[Claude Code model configuration](https://code.claude.com/docs/en/model-config).
+
+ASM forwards the effort selected by Core to both lanes, including the
+catalog default when you omit `:reasoning_effort`. A direct
+`ClaudeAgentSDK` call with no explicit `:effort` uses Claude Code's own
+effort resolution.
 
 In governed ASM mode, Claude env/model defaults, native login state,
 `anthropic_auth_token`, command paths, cwd, session refs, and target refs cannot

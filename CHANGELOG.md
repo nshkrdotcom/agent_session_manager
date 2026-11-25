@@ -11,6 +11,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.7] - 2026-11-25
+
+### Changed
+
+- Require CLI Subprocess Core 0.10.2 for Claude Sonnet, Opus, and Haiku 5.5, plus Fable and restricted Mythos 5.2. ASM uses Core's Claude model and effort policy across the core and SDK lanes.
+- Refresh direct dependency requirements and the Hex lockfile.
+
 ## [0.17.6] - 2026-11-18
 
 ### Changed

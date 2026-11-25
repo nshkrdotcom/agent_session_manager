@@ -123,6 +123,7 @@ smoke-test targets.
 
 ```bash
 mix run --no-start examples/live_query.exs -- --provider claude
+mix run --no-start examples/live_query.exs -- --provider claude --model claude-haiku-5-5
 mix run --no-start examples/live_stream.exs -- --provider antigravity
 mix run --no-start examples/live_session_lifecycle.exs -- --provider codex --model gpt-5.6-sol
 mix run --no-start examples/inference_endpoint_http.exs -- --provider amp --stream
@@ -143,6 +144,9 @@ mix run --no-start examples/live_codex_app_server_session.exs -- --provider code
 mix run --no-start examples/live_codex_app_server_dynamic_tools.exs -- --provider codex --lane sdk
 mix run --no-start examples/live_codex_app_server_resume.exs -- --provider codex --lane sdk
 ```
+
+The first Claude example uses Core's default `sonnet` alias at medium
+effort. The second pins Haiku 5.5 for a smaller model.
 
 Shared flags:
 

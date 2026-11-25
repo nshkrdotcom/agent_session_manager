@@ -59,8 +59,8 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
       env: %{"FOO" => "bar"},
       cli_path: "/usr/local/bin/claude",
       permission_mode: :auto,
-      model: "sonnet",
-      reasoning_effort: :high,
+      model: "claude-sonnet-5-5",
+      reasoning_effort: :xhigh,
       max_turns: 3,
       include_thinking: true,
       transport_timeout_ms: 12_000,
@@ -81,8 +81,8 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
     assert options.env == %{"FOO" => "bar"}
     assert options.path_to_claude_code_executable == "/usr/local/bin/claude"
     assert options.permission_mode == :accept_edits
-    assert options.model == "sonnet"
-    assert options.effort == :high
+    assert options.model == "claude-sonnet-5-5"
+    assert options.effort == :xhigh
     assert options.max_turns == 3
     assert options.timeout_ms == 12_000
     assert options.execution_surface.surface_kind == :ssh_exec
@@ -90,6 +90,12 @@ defmodule ASM.Extensions.ProviderSDK.ClaudeTest do
     assert options.thinking == %{type: :adaptive}
     assert options.enable_file_checkpointing == true
     assert options.hooks == %{pre_tool_use: [Matcher.new("Bash", [hook])]}
+  end
+
+  test "sdk_options/2 forwards the shared Claude default model and effort" do
+    assert {:ok, %Options{} = options} = Claude.sdk_options(provider: :claude)
+    assert options.model == "sonnet"
+    assert options.effort == :medium
   end
 
   test "sdk_options/2 accepts the ASM common Ollama surface for Claude" do

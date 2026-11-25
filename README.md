@@ -55,12 +55,12 @@ Gemini model endpoints; it is not an ASM CLI provider.
 
 ## Install
 
-ASM 0.17.6 requires Elixir 1.19 or later.
+ASM 0.17.7 requires Elixir 1.19 or later.
 
 ```elixir
 def deps do
   [
-    {:agent_session_manager, "~> 0.17.6"}
+    {:agent_session_manager, "~> 0.17.7"}
   ]
 end
 ```
@@ -72,22 +72,18 @@ the built-in provider SDK extension namespaces. Those namespace modules are
 always present in ASM, but they activate only when the matching optional
 provider SDK dependency is installed.
 
-Optional provider SDK dependencies stay additive. Add one only when you want
-that provider's SDK lane/runtime kit or, where it exists today, its ASM
-provider-native namespace:
+Add the matching optional provider SDK when you need its SDK lane or native
+extension. These releases resolve alongside ASM 0.17.7 on Core 0.10:
 
-- `{:claude_agent_sdk, "~> 0.21.0", optional: true}` for Claude control-protocol
+- `{:claude_agent_sdk, "~> 0.21.2", optional: true}` for Claude control-protocol
   helpers and `ASM.Extensions.ProviderSDK.Claude`
-- `{:codex_sdk, "~> 0.21.5", optional: true}` for Codex app-server, MCP,
-  realtime, voice helpers, and `ASM.Extensions.ProviderSDK.Codex`
-- `{:amp_sdk, "~> 0.9.1", optional: true}` for Amp SDK lane/runtime-kit
-  availability and `ASM.Extensions.ProviderSDK.Amp`
-- `{:antigravity_cli_sdk, "~> 0.4.0", optional: true}` for Antigravity SDK
+- `{:antigravity_cli_sdk, "~> 0.5.0", optional: true}` for Antigravity SDK
   lane/runtime-kit availability. Antigravity currently composes through the
   common ASM provider surface and SDK runtime kit; it does not register a
   separate `ASM.Extensions.ProviderSDK.Antigravity` namespace.
-- `{:cursor_cli_sdk, "~> 0.4.0", optional: true}` for Cursor SDK lane/runtime-kit
-  availability and `ASM.Extensions.ProviderSDK.Cursor`.
+
+The published Codex SDK 0.21.6, Amp SDK 0.9.2, and Cursor CLI SDK 0.4.1
+require Core 0.9. Use ASM's core lane for those providers with this release.
 
 Declaring the optional dependency is the only client-side activation step. No
 extra ASM wiring is required. ASM always keeps the common surface available
@@ -387,6 +383,7 @@ Relevant Claude provider opts:
 - `:anthropic_base_url`
 - `:anthropic_auth_token`
 - `:model`
+- `:reasoning_effort`
 - `:allow_unknown_model` — when `true`, a Claude model id that is not in the
   shared registry is passed through to the CLI `--model` as-is (with a warning)
   instead of erroring. Use it to run a Claude model newer than the registry.
@@ -401,6 +398,11 @@ Relevant Claude provider opts:
   while ASM is strict by default. Same registry machinery, opposite
   defaults — ASM is a governed multi-provider manager, so unknown models
   require an explicit opt-in here. Do not "align" the two.
+
+Core supplies ASM's default `sonnet` selection at medium effort. Current
+Claude Code versions resolve `sonnet` to Sonnet 5.5 on Anthropic's first-party
+service. Use a full model ID to pin the version or set `:reasoning_effort`
+to choose a different effort level. See the [provider backend guide](guides/provider-backends.md#claude-backend-specific-model-inputs).
 
 Example:
 

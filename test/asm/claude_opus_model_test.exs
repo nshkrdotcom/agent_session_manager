@@ -1,12 +1,11 @@
 defmodule ASM.ClaudeOpusModelTest do
   @moduledoc """
-  Regression guard: Opus 5 must stay resolvable through the ASM Claude lane via
+  Regression guard: Claude models must stay resolvable through the ASM Claude lane via
   the shared `CliSubprocessCore.ModelRegistry` catalog.
 
   ASM deliberately keeps no model catalog of its own — it inherits the lineup
   transitively from `cli_subprocess_core` — so the only parity this repo owns is
-  that the shared catalog's Opus entries still resolve here. A stale or
-  regressed registry would otherwise break Opus selection silently.
+  that the shared catalog's current defaults and pinned model IDs resolve here.
   """
   use ExUnit.Case, async: true
 
@@ -23,13 +22,13 @@ defmodule ASM.ClaudeOpusModelTest do
       refute Map.get(payload.extra, "unregistered")
     end
 
-    test "the claude-opus-5 alias resolves through the catalog" do
+    test "a pinned Opus 5 model ID does not drift with the alias" do
       assert {:ok, attrs} = Options.finalize_provider_opts(:claude, model: "claude-opus-5")
 
       payload = Keyword.fetch!(attrs, :model_payload)
       assert payload.requested_model == "claude-opus-5"
       assert payload.model_source == :catalog
-      assert payload.resolved_model in ["opus", "opus[1m]"]
+      assert payload.resolved_model == "claude-opus-5"
       refute Map.get(payload.extra, "unregistered")
     end
 
@@ -49,6 +48,18 @@ defmodule ASM.ClaudeOpusModelTest do
                )
 
       assert Keyword.fetch!(attrs, :model_payload).reasoning == "xhigh"
+    end
+  end
+
+  test "current Claude Code model IDs and default effort flow through ASM" do
+    assert {:ok, default} = Options.resolve_model_payload(:claude, [])
+    assert default.resolved_model == "sonnet"
+    assert default.reasoning == "medium"
+
+    for model <- ~w(claude-opus-5-5 claude-sonnet-5-5 claude-haiku-5-5 claude-fable-5-2) do
+      assert {:ok, payload} = Options.resolve_model_payload(:claude, model: model)
+      assert payload.resolved_model == model
+      assert payload.reasoning == "medium"
     end
   end
 
